@@ -299,13 +299,6 @@ pub fn run() -> Result<(), String> {
         .manage(native_relay_client::NativeRelayClient::default())
         .manage(observed_unread::ObservedUnreadStore::default())
         .setup(move |app| {
-            #[cfg(feature = "punks-desktop-social-loop")]
-            {
-                app.manage(punks_client::PunksDesktopClient::from_distribution());
-                app.manage(std::sync::Arc::new(
-                    punks_client::KeyringSessionPersistence::shared(),
-                ));
-            }
             let app_handle = app.handle().clone();
             #[cfg(target_os = "macos")]
             {
@@ -594,60 +587,6 @@ pub fn run() -> Result<(), String> {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            #[cfg(feature = "punks-desktop-social-loop")]
-            punks_client::punks_check_compatibility,
-            #[cfg(feature = "punks-desktop-social-loop")]
-            punks_client::punks_get_session,
-            #[cfg(feature = "punks-desktop-social-loop")]
-            punks_client::punks_validate_navigation,
-            #[cfg(feature = "punks-desktop-social-loop")]
-            punks_client::punks_list_workspaces,
-            #[cfg(feature = "punks-desktop-social-loop")]
-            punks_client::punks_resolve_workspace,
-            #[cfg(feature = "punks-desktop-social-loop")]
-            punks_client::punks_open_workspace,
-            #[cfg(feature = "punks-desktop-social-loop")]
-            punks_client::punks_close_workspace,
-            #[cfg(feature = "punks-desktop-social-loop")]
-            punks_client::punks_list_streams,
-            #[cfg(feature = "punks-desktop-social-loop")]
-            punks_client::punks_get_stream,
-            #[cfg(feature = "punks-desktop-social-loop")]
-            punks_client::punks_get_timeline,
-            #[cfg(feature = "punks-desktop-social-loop")]
-            punks_client::punks_get_thread,
-            #[cfg(feature = "punks-desktop-social-loop")]
-            punks_client::punks_resolve_authors,
-            #[cfg(feature = "punks-desktop-social-loop")]
-            punks_client::punks_follow_conversation,
-            #[cfg(feature = "punks-desktop-social-loop")]
-            punks_client::punks_follow_next,
-            #[cfg(feature = "punks-desktop-social-loop")]
-            punks_client::punks_confirm_follow_batch,
-            #[cfg(feature = "punks-desktop-social-loop")]
-            punks_client::punks_close_follow,
-            #[cfg(feature = "punks-desktop-social-loop")]
-            punks_client::punks_post_message,
-            #[cfg(feature = "punks-desktop-social-loop")]
-            punks_client::punks_message_lifecycle::punks_edit_message,
-            #[cfg(feature = "punks-desktop-social-loop")]
-            punks_client::punks_message_lifecycle::punks_retract_message,
-            #[cfg(feature = "punks-desktop-social-loop")]
-            punks_client::punks_message_lifecycle::punks_restore_message,
-            #[cfg(feature = "punks-desktop-social-loop")]
-            punks_client::punks_add_reaction,
-            #[cfg(feature = "punks-desktop-social-loop")]
-            punks_client::punks_remove_reaction,
-            #[cfg(feature = "punks-desktop-social-loop")]
-            punks_client::punks_ceremony_start,
-            #[cfg(feature = "punks-desktop-social-loop")]
-            punks_client::punks_ceremony_status,
-            #[cfg(feature = "punks-desktop-social-loop")]
-            punks_client::punks_ceremony_cancel,
-            #[cfg(feature = "punks-desktop-social-loop")]
-            punks_client::punks_session_renew,
-            #[cfg(feature = "punks-desktop-social-loop")]
-            punks_client::punks_logout,
             terminal_runtime::terminal_attach,
             terminal_runtime::terminal_detach,
             terminal_runtime::terminal_close,
