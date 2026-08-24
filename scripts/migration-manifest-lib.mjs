@@ -34,7 +34,25 @@ export const VERDITS_CONSERVATION = [
   "outillage",
   "attente-refonte-ui",
 ];
+const CLIENTS_REQUIS = ["desktop", "web", "mobile", "admin-web"];
 export const CLIENTS_GELES = ["web", "mobile", "admin-web"];
+const ALLOWLIST_NOSTR = [
+  {
+    envelope: "Journal interne Punks",
+    portee: "backend cloudflare/ uniquement, jamais un actif client",
+  },
+  {
+    envelope: "Attestation Punks",
+    portee: "backend cloudflare/ uniquement, jamais un actif client",
+  },
+];
+/** Chemins canoniques des artefacts goldens référencés par le manifeste. */
+export const CHEMINS_GOLDENS = {
+  foyer: "goldens/",
+  registre: "docs/migration/goldens-ledger.yaml",
+  univers: "docs/migration/goldens-universe.yaml",
+  "univers-tests": "docs/migration/buzz-tests-universe.yaml",
+};
 export const VERDITS_GOLDENS = [
   "preuve-punks",
   "difference-intentionnelle",
@@ -125,6 +143,7 @@ export function discoverBuzzTestSources(baselineFiles) {
  * une famille ou un répertoire ancêtre est ajouté au manifeste.
  */
 export const DERNIERS_CONSOMMATEURS_DESKTOP = new Map([
+  ["desktop/src/main.tsx", "scellement"],
   ["desktop/src/app/App.tsx", "scellement"],
   ["desktop/src/app/AppShell.tsx", "scellement"],
   ["desktop/src/app/routes/root.tsx", "scellement"],
@@ -149,8 +168,12 @@ export const DERNIERS_CONSOMMATEURS_DESKTOP_PAR_PREFIXE = new Map([
   ["desktop/src/features/channels/", "tranche:30"],
   ["desktop/src/features/messages/", "tranche:30"],
   ["desktop/src/features/settings/", "tranche:31"],
+  ["desktop/src/features/sidebar/", "tranche:30"],
+  ["desktop/src/testing/", "scellement"],
+  ["desktop/tests/", "scellement"],
 ]);
 export const SEPARATIONS_DESKTOP_OBLIGATOIRES = new Set([
+  "desktop/src/main.tsx",
   "desktop/src/app/App.tsx",
   "desktop/src/app/AppShell.tsx",
   "desktop/src/app/routes/root.tsx",
@@ -158,7 +181,54 @@ export const SEPARATIONS_DESKTOP_OBLIGATOIRES = new Set([
   "desktop/src/app/routes/ChannelRouteScreen.tsx",
   "desktop/src/app/routes/channels.$channelId.tsx",
   "desktop/src/app/routes/channels.$channelId.posts.$postId.tsx",
+  "desktop/src-tauri/src/lib.rs",
+  "desktop/src-tauri/src/main.rs",
 ]);
+
+const ACTIFS_PUNKS_DESKTOP = [
+  /^desktop\/punks-product\//,
+  /^desktop\/scripts\/(?:check-punks-|punks-product-entry)/,
+  /^desktop\/src\/features\/punks\//,
+  /^desktop\/src\/punks(?:-main\.tsx|\.css)$/,
+  /^desktop\/src\/shared\/api\/punks[^/]*$/,
+  /^desktop\/src\/shared\/capabilities\//,
+  /^desktop\/src-tauri\/capabilities\/punks\.json$/,
+  /^desktop\/src-tauri\/crates\/punks-[^/]+\//,
+  /^desktop\/src-tauri\/signing\/punks-[^/]+$/,
+  /^desktop\/src-tauri\/src\/(?:lib|main)\.rs$/,
+  /^desktop\/src-tauri\/src\/punks[^/]*\.rs$/,
+  /^desktop\/src-tauri\/tauri\.punks[^/]*\.json$/,
+  /^desktop\/(?:tailwind|tsconfig)\.punks\./,
+  /^desktop\/tests\/e2e\/capability-masking\.spec\.ts$/,
+];
+
+function estActifPunksDesktop(file) {
+  return ACTIFS_PUNKS_DESKTOP.some((pattern) => pattern.test(file));
+}
+
+function texteNonVide(value) {
+  return typeof value === "string" && value.trim() !== "";
+}
+
+function listeExacte(value, attendu) {
+  return (
+    Array.isArray(value) &&
+    value.length === attendu.length &&
+    value.every((item, index) => item === attendu[index])
+  );
+}
+
+function allowlistNostrValide(value) {
+  return (
+    Array.isArray(value) &&
+    value.length === ALLOWLIST_NOSTR.length &&
+    value.every(
+      (item, index) =>
+        item?.envelope === ALLOWLIST_NOSTR[index].envelope &&
+        item?.portee === ALLOWLIST_NOSTR[index].portee,
+    )
+  );
+}
 
 export function loadYamlDocument(absolutePath) {
   return parse(readFileSync(absolutePath, "utf8"));
@@ -357,6 +427,19 @@ export function validateManifest(manifest, trackedFiles) {
   if (manifest["baseline-buzz"] !== BASELINE_BUZZ) {
     push("en-tête invalide : baseline Buzz invalide");
   }
+  if (!listeExacte(manifest["clients-requis"], CLIENTS_REQUIS)) {
+    push(
+      `en-tête invalide : clients-requis doit être exactement [${CLIENTS_REQUIS.join(", ")}]`,
+    );
+  }
+  if (!texteNonVide(manifest["critere-retrait-global"])) {
+    push("en-tête invalide : critère de retrait global manquant");
+  }
+  if (!allowlistNostrValide(manifest["allowlist-nostr"])) {
+    push(
+      "en-tête invalide : allowlist Nostr doit contenir uniquement le Journal interne Punks et l’Attestation Punks côté cloudflare/",
+    );
+  }
   if (!Array.isArray(manifest.actifs) || manifest.actifs.length === 0) {
     return [...errors, "aucun actif inventorié"];
   }
@@ -485,12 +568,13 @@ export function validateManifest(manifest, trackedFiles) {
         `${file} : dernier consommateur attendu ${verdictAttendu}, reçu ${proprietaire?.verdict ?? "aucun verdict"}`,
       );
     }
-    if (
-      SEPARATIONS_DESKTOP_OBLIGATOIRES.has(file) &&
-      proprietaire !== undefined &&
-      (typeof proprietaire.separation !== "string" ||
-        proprietaire.separation.trim() === "")
-    ) {
+  }
+  for (const file of SEPARATIONS_DESKTOP_OBLIGATOIRES) {
+    if (!trackedFiles.includes(file)) {
+      continue;
+    }
+    const proprietaire = proprietairesEffectifs.get(file);
+    if (proprietaire !== undefined && !texteNonVide(proprietaire.separation)) {
       push(
         `${proprietaire.chemin} : frontière de scission manquante pour un module partagé`,
       );
@@ -498,6 +582,9 @@ export function validateManifest(manifest, trackedFiles) {
   }
   const separationsVerifiees = new Set();
   for (const file of trackedFiles) {
+    if (estActifPunksDesktop(file)) {
+      continue;
+    }
     const attendu = [...DERNIERS_CONSOMMATEURS_DESKTOP_PAR_PREFIXE].find(
       ([prefixe]) => file.startsWith(prefixe),
     );
@@ -524,20 +611,38 @@ export function validateManifest(manifest, trackedFiles) {
     }
   }
 
-  if (manifest.goldens) {
+  for (const file of trackedFiles) {
+    if (!estActifPunksDesktop(file)) {
+      continue;
+    }
+    const proprietaire = proprietairesEffectifs.get(file);
     if (
-      typeof manifest.goldens.registre !== "string" ||
-      manifest.goldens.registre === "" ||
-      !cheminRelatifDepot(manifest.goldens.registre)
+      proprietaire?.verdict !== "conserve" ||
+      proprietaire?.conservation !== "actif-punks"
     ) {
+      push(
+        `${file} : actif Punks attendu conserve/actif-punks, reçu ${proprietaire?.verdict ?? "aucun verdict"}${proprietaire?.conservation ? `/${proprietaire.conservation}` : ""}`,
+      );
+    }
+  }
+
+  if (manifest.goldens) {
+    if (manifest.goldens.registre !== CHEMINS_GOLDENS.registre) {
       push("section goldens : registre invalide");
     }
-    if (
-      typeof manifest.goldens.foyer !== "string" ||
-      manifest.goldens.foyer === "" ||
-      !cheminRelatifDepot(manifest.goldens.foyer)
-    ) {
+    if (manifest.goldens.foyer !== CHEMINS_GOLDENS.foyer) {
       push("section goldens : foyer invalide");
+    }
+    if (manifest.goldens.univers !== CHEMINS_GOLDENS.univers) {
+      push("section goldens : univers indépendant invalide");
+    }
+    if (
+      manifest.goldens["univers-tests"] !== CHEMINS_GOLDENS["univers-tests"]
+    ) {
+      push("section goldens : univers des tests Buzz invalide");
+    }
+    if (!texteNonVide(manifest.goldens.politique)) {
+      push("section goldens : politique des goldens manquante");
     }
   } else {
     push("section goldens manquante");
@@ -883,6 +988,9 @@ export function validateLedger(
       if (!cheminGitCanonique(ligne.test)) {
         push(`${id} : chemin de test invalide « ${ligne.test} »`);
         continue;
+      }
+      if (tracked.has(ligne.test)) {
+        push(`${ligne.test} : retrait déclaré mais fichier encore suivi`);
       }
       if (
         testsAttendus !== null &&

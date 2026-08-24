@@ -22,8 +22,9 @@
 #     base désigne une partie d’un fichier (cibles, blocs, arêtes).
 #   - Validation : node scripts/check-migration-manifests.mjs — refuse doublons,
 #     omissions (tout fichier suivi doit être couvert), références invalides et
-#     verdicts incomplets ; --hashes émet le SHA-256 canonique cité par les
-#     attestations.
+#     verdicts incomplets ; protège aussi les actifs Punks desktop contre un
+#     propriétaire legacy et les frontières terminales du format ; --hashes
+#     émet le SHA-256 canonique cité par les attestations.
 
 version: 1
 checkpoint-recuperation: 50e16de180dda4365f8001a8a73503f16977a175
@@ -84,11 +85,11 @@ actifs:
     verdict: conserve
     conservation: mecanisme-test
     note: "mécanisme React Query/invoke neutre ; l’instance devient par WorkspaceSession (décision #11)"
-  - chemin: desktop/src/shared/api/{punksClient.ts,punksClient.test.mjs}
+  - chemin: desktop/src/shared/api/punks*
     classe: client
     verdict: conserve
     conservation: actif-punks
-    note: façade sémantique Punks préparée derrière la feature punks-desktop-social-loop
+    note: façade, erreurs, Réactions et adaptateur Tauri sémantiques Punks
   - chemin: desktop/src/shared/api/
     classe: transport
     verdict: scellement
@@ -121,6 +122,11 @@ actifs:
     verdict: conserve
     conservation: outillage
     note: feature-gating local, sert les gardes de capacités indisponibles
+  - chemin: desktop/src/shared/capabilities/
+    classe: store
+    verdict: conserve
+    conservation: actif-punks
+    note: disponibilité Punks fermée et garde commune des surfaces desktop
   # ── Desktop : coquille React ───────────────────────────────────────────────
   - chemin: desktop/src/app/routes/messages.new.tsx
     classe: route
@@ -185,11 +191,24 @@ actifs:
     separation: >
       reste de l'orchestration de shell partagé ; les routes et capacités dont
       le dernier consommateur est connu ont une entrée plus spécifique ci-dessus
-  - chemin: desktop/src/{features-manifest.d.ts,jdenticon.d.ts,main.tsx,types/,upng-js.d.ts,vite-env.d.ts}
+  - chemin: desktop/src/main.tsx
+    classe: route
+    verdict: scellement
+    separation: >
+      bootstrap, providers, onboarding, communautés, profil Nostr et Huddle Buzz
+      meurent avec leurs derniers consommateurs ; l’entrée produit Punks est déjà
+      extraite dans desktop/punks-product/main.tsx et desktop/src/punks-main.tsx
+    note: dernière entrée React Buzz, retirée au gate terminal après extraction des mécanismes neutres
+  - chemin: desktop/src/{features-manifest.d.ts,jdenticon.d.ts,types/,upng-js.d.ts,vite-env.d.ts}
     classe: ui
     verdict: conserve
     conservation: ui-neutre
-    note: "entrée React, déclarations de types et shims sans sémantique Buzz"
+    note: "déclarations de types et shims sans sémantique Buzz"
+  - chemin: desktop/src/{punks-main.tsx,punks.css}
+    classe: ui
+    verdict: conserve
+    conservation: actif-punks
+    note: entrée et styles du produit desktop Punks vérifié
 
   # ── Desktop : features ─────────────────────────────────────────────────────
   - chemin: desktop/src/features/channels/
@@ -213,7 +232,13 @@ actifs:
     classe: feature
     verdict: conserve
     conservation: ui-neutre
+    separation: "types Channel Buzz remplacés par les vues Conversation Punks ; chrome et rendu neutres conservés"
     note: rendu neutre alimenté par les vues Punks
+  - chemin: desktop/src/features/punks/
+    classe: feature
+    verdict: conserve
+    conservation: actif-punks
+    note: produit Punks, runtime Workspace et boucle sociale du candidat desktop
   - chemin: desktop/src/features/communities/
     classe: feature
     verdict: tranche:5
@@ -283,8 +308,14 @@ actifs:
       extraits vers le shell Punks conservé avant le retrait du module mixte
   - chemin: desktop/src/features/sidebar/
     classe: feature
-    verdict: tranche:6
-    note: stores indexés par relay/pubkey
+    verdict: tranche:30
+    separation: >
+      communautés et stores relay/pubkey → tranche:6 ; Forum → tranche:11 ;
+      recherche → tranche:13 ; Projects → tranche:24 ; Huddle → tranche:25 ;
+      Agents → tranche:26 ; Reminders → tranche:27 ; Templates → tranche:28 ;
+      dernier consommateur Buzz : navigation Pulse à la tranche:30 ; chrome,
+      mise à jour et primitives visuelles neutres extraits avant le retrait
+    note: sidebar mixte conservée jusqu’au dernier consommateur, jamais retirée avec les seules communautés
   - chemin: desktop/src/features/terminal/
     classe: feature
     verdict: conserve
@@ -306,13 +337,17 @@ actifs:
   # ── Desktop : tests et pont E2E ────────────────────────────────────────────
   - chemin: desktop/src/testing/
     classe: mock-test
-    verdict: conserve
-    conservation: mecanisme-test
-    separation: "harnais Buzz (signature nostr-tools, émission RelayEvent) remplacés à partir de la tranche:1 par la façade Punks"
+    verdict: scellement
+    separation: "harnais Buzz (signature nostr-tools, émission RelayEvent) retirés par tranche ; façade Punks extraite et conservée dans le harnais du candidat"
   - chemin: desktop/tests/
     classe: mock-test
+    verdict: scellement
+    separation: "scénarios Buzz retirés avec leur dernière capacité et enregistrés dans retraits-par-tranche ; mécanismes Playwright neutres extraits"
+  - chemin: desktop/tests/e2e/capability-masking.spec.ts
+    classe: mock-test
     verdict: conserve
-    conservation: mecanisme-test
+    conservation: actif-punks
+    note: garde structurelle Punks commune aux routes et surfaces indisponibles
   - chemin: desktop/playwright.release-smoke.config.ts
     classe: mock-test
     verdict: tranche:5
@@ -330,6 +365,12 @@ actifs:
     classe: script
     verdict: conserve
     conservation: outillage
+    separation: "checks et entrée produit Punks classés explicitement ; outils Buzz restants suivent leur actif ou le scellement"
+  - chemin: desktop/scripts/*punks*
+    classe: script
+    verdict: conserve
+    conservation: actif-punks
+    note: gates du candidat, du frontend et de l’entrée produit desktop Punks
 
   # ── Desktop : backend Tauri (Rust) ─────────────────────────────────────────
   - chemin: desktop/src-tauri/src/{native_websocket.rs,native_websocket_batch.rs,native_relay_client.rs,native_relay_client_tests.rs}
@@ -415,11 +456,20 @@ actifs:
     conservation: outillage
     separation: "parcours d’onboarding sous-jacent retiré à la tranche:1"
     note: wipe atomique deux phases au changement de compte
-  - chemin: desktop/src-tauri/src/punks_client.rs
+  - chemin: desktop/src-tauri/src/{lib.rs,main.rs}
+    classe: commande
+    verdict: conserve
+    conservation: actif-punks
+    separation: >
+      modules, commandes et diagnostics sous cfg buzz-desktop retirés avec leurs
+      tranches puis au scellement ; dispatcher desktop_lib::run et branche
+      punks_runtime::run conservés pour le produit natif Punks
+    note: entrypoints Tauri mixtes dont la branche Punks est une dépendance active du candidat
+  - chemin: desktop/src-tauri/src/punks*.rs
     classe: client
     verdict: conserve
     conservation: actif-punks
-    note: commandes Tauri Punks préparées derrière la feature punks-desktop-social-loop
+    note: commandes, runtime, lifecycle Message et store de Session Tauri Punks
   - chemin: desktop/src-tauri/src/{terminal_runtime.rs,terminal_runtime/,terminal_transport.rs}
     classe: commande
     verdict: conserve
@@ -428,8 +478,8 @@ actifs:
     classe: transport
     verdict: scellement
     note: >
-      reste du socle relay/Nostr du backend Tauri (lib Buzz résiduelle, modèles
-      d’identité) — retiré au gate terminal avec ses arêtes Cargo
+      reste du socle relay/Nostr du backend Tauri (modules Buzz résiduels,
+      modèles d’identité) — retiré au gate terminal avec ses arêtes Cargo
 
   # ── Desktop : mécanismes OS du backend Tauri ───────────────────────────────
   - chemin: desktop/src-tauri/src/{app_menu.rs,initial_window.rs,macos_notifications.rs,mouse_nav.rs,prevent_sleep.rs,shutdown.rs,tray_menu.rs,webkit_rendering.rs,webkit_rendering/}
@@ -448,6 +498,11 @@ actifs:
     verdict: conserve
     conservation: actif-punks
     note: client sémantique Rust Punks (HTTP, cookies, FOLLOW, bail de génération)
+  - chemin: desktop/src-tauri/crates/punks-promotion-session/
+    classe: crate
+    verdict: conserve
+    conservation: actif-punks
+    note: processus natif borné utilisé par la preuve de promotion Punks
   - chemin: desktop/src-tauri/resources/
     classe: ui
     verdict: tranche:25
@@ -473,6 +528,16 @@ actifs:
     verdict: conserve
     conservation: outillage
     note: coquille Tauri neutre (manifestes, plists, icônes, capabilities, build.rs)
+  - chemin: desktop/src-tauri/{capabilities/punks.json,signing/punks-linux-release.asc}
+    classe: manifeste
+    verdict: conserve
+    conservation: actif-punks
+    note: capacité Tauri et identité de signature native du candidat Punks
+  - chemin: desktop/src-tauri/tauri.punks*.json
+    classe: manifeste
+    verdict: conserve
+    conservation: actif-punks
+    note: configurations Tauri fermées du produit et de la signature Windows Punks
 
   # ── Desktop : racine du package ────────────────────────────────────────────
   - chemin: desktop/package.json (dépendances nostr 0.44 et nostr-tools)
@@ -483,6 +548,16 @@ actifs:
     verdict: conserve
     conservation: outillage
     note: configuration de build du desktop (package.json, biome, vite, tsconfig, tailwind…)
+  - chemin: desktop/punks-product/
+    classe: client
+    verdict: conserve
+    conservation: actif-punks
+    note: entrée HTML/TypeScript isolée du produit desktop Punks
+  - chemin: desktop/{tailwind.punks.config.js,tsconfig.punks.json}
+    classe: manifeste
+    verdict: conserve
+    conservation: actif-punks
+    note: configurations de build fermées de la surface Punks
 
   # ── Autres clients (gelés — décision #17) ─────────────────────────────────
   - chemin: web/

@@ -65,10 +65,26 @@ function manifestMinimal(actifs) {
     version: 1,
     "checkpoint-recuperation": "50e16de180dda4365f8001a8a73503f16977a175",
     "baseline-buzz": "da818eddc2f470c006a1073c8c5452f8a989f272",
+    "clients-requis": ["desktop", "web", "mobile", "admin-web"],
+    "critere-retrait-global":
+      "les quatre clients possèdent un verdict terminal",
+    "allowlist-nostr": [
+      {
+        envelope: "Journal interne Punks",
+        portee: "backend cloudflare/ uniquement, jamais un actif client",
+      },
+      {
+        envelope: "Attestation Punks",
+        portee: "backend cloudflare/ uniquement, jamais un actif client",
+      },
+    ],
     actifs,
     goldens: {
       foyer: "goldens/",
       registre: "docs/migration/goldens-ledger.yaml",
+      univers: "docs/migration/goldens-universe.yaml",
+      "univers-tests": "docs/migration/buzz-tests-universe.yaml",
+      politique: "une ligne par invariant et par test retiré",
     },
   };
 }
@@ -320,6 +336,45 @@ test("validateManifest : les références goldens restent dans le dépôt", () =
   assert.ok(erreurs.some((e) => e.includes("registre invalide")));
 });
 
+test("validateManifest : les invariants terminaux du format canonique sont obligatoires", () => {
+  const actifs = [
+    { chemin: "a/", verdict: "conserve", conservation: "outillage" },
+    { chemin: "web/", verdict: "retrait-global" },
+  ];
+  const mutations = [
+    ["clients-requis", (doc) => delete doc["clients-requis"]],
+    [
+      "critère de retrait global",
+      (doc) => {
+        doc["critere-retrait-global"] = " ";
+      },
+    ],
+    ["allowlist Nostr", (doc) => doc["allowlist-nostr"].pop()],
+    [
+      "univers indépendant",
+      (doc) => {
+        doc.goldens.univers = "docs/migration/autre-univers.yaml";
+      },
+    ],
+    [
+      "politique des goldens",
+      (doc) => {
+        doc.goldens.politique = "";
+      },
+    ],
+  ];
+
+  for (const [attendu, mutate] of mutations) {
+    const doc = manifestMinimal(actifs);
+    mutate(doc);
+    const erreurs = validateManifest(doc, [...MANIFEST_FILES]);
+    assert.ok(
+      erreurs.some((erreur) => erreur.includes(attendu)),
+      `${attendu}: ${erreurs.join(" | ")}`,
+    );
+  }
+});
+
 test("validateManifest : client gelé jamais retiré par avance", () => {
   const doc = manifestMinimal([
     { chemin: "a/", verdict: "conserve", conservation: "outillage" },
@@ -466,6 +521,170 @@ test("validateManifest : les modules partagés restent au dernier consommateur e
     erreurs.some((e) => e.includes("dernier consommateur attendu tranche:30")),
   );
   assert.ok(erreurs.some((e) => e.includes("frontière de scission manquante")));
+});
+
+test("validateManifest : l’entrée React Buzz reste au scellement après extraction de l’entrée Punks", () => {
+  const fichier = "desktop/src/main.tsx";
+  const doc = manifestMinimal([
+    {
+      chemin: fichier,
+      verdict: "conserve",
+      conservation: "ui-neutre",
+    },
+  ]);
+
+  let erreurs = validateManifest(doc, [fichier]);
+  assert.ok(
+    erreurs.some((erreur) =>
+      erreur.includes("dernier consommateur attendu scellement"),
+    ),
+  );
+
+  doc.actifs[0] = {
+    chemin: fichier,
+    verdict: "scellement",
+    separation: "l’entrée Punks est extraite avant le retrait de Buzz",
+  };
+  assert.deepEqual(validateManifest(doc, [fichier]), []);
+
+  doc.actifs[0].separation = "";
+  erreurs = validateManifest(doc, [fichier]);
+  assert.ok(erreurs.some((erreur) => erreur.includes("frontière de scission")));
+});
+
+test("validateManifest : la sidebar mixte reste au dernier consommateur Pulse", () => {
+  const fichiers = [
+    "desktop/src/features/sidebar/ui/AppSidebarPinnedHeader.tsx",
+    "desktop/src/features/sidebar/ui/SidebarProjectsSection.tsx",
+  ];
+  const doc = manifestMinimal([
+    {
+      chemin: "desktop/src/features/sidebar/",
+      verdict: "tranche:6",
+      separation: "les fragments sont retirés avec leurs consommateurs",
+    },
+  ]);
+
+  let erreurs = validateManifest(doc, fichiers);
+  assert.ok(
+    erreurs.some((erreur) =>
+      erreur.includes("dernier consommateur attendu tranche:30"),
+    ),
+  );
+
+  doc.actifs[0].verdict = "tranche:30";
+  assert.deepEqual(validateManifest(doc, fichiers), []);
+
+  doc.actifs[0].separation = "";
+  erreurs = validateManifest(doc, fichiers);
+  assert.ok(erreurs.some((erreur) => erreur.includes("frontière de scission")));
+});
+
+test("validateManifest : les entrypoints Tauri mixtes conservent la branche Punks", () => {
+  const fichiers = [
+    "desktop/src-tauri/src/lib.rs",
+    "desktop/src-tauri/src/main.rs",
+  ];
+  const doc = manifestMinimal([
+    {
+      chemin: "desktop/src-tauri/src/",
+      verdict: "scellement",
+      separation: "les branches Buzz meurent au scellement",
+    },
+  ]);
+
+  let erreurs = validateManifest(doc, fichiers);
+  for (const fichier of fichiers) {
+    assert.ok(
+      erreurs.some(
+        (erreur) =>
+          erreur.startsWith(`${fichier} :`) && erreur.includes("actif Punks"),
+      ),
+      `${fichier}: ${erreurs.join(" | ")}`,
+    );
+  }
+
+  doc.actifs.push({
+    chemin: "desktop/src-tauri/src/{lib.rs,main.rs}",
+    verdict: "conserve",
+    conservation: "actif-punks",
+    separation: "les branches Buzz sont retirées, le dispatcher Punks survit",
+  });
+  assert.deepEqual(validateManifest(doc, fichiers), []);
+
+  doc.actifs[1].separation = "";
+  erreurs = validateManifest(doc, fichiers);
+  assert.ok(erreurs.some((erreur) => erreur.includes("frontière de scission")));
+});
+
+test("validateManifest : les actifs Punks desktop ne peuvent pas être absorbés par un propriétaire legacy", () => {
+  const fichiers = [
+    "desktop/src/shared/api/punksFailure.ts",
+    "desktop/src/shared/capabilities/availability.ts",
+    "desktop/src/features/punks/PunksApp.tsx",
+    "desktop/src-tauri/src/punks_runtime.rs",
+    "desktop/tests/e2e/capability-masking.spec.ts",
+  ];
+  const doc = manifestMinimal([
+    { chemin: "desktop/src/", verdict: "scellement" },
+    { chemin: "desktop/src-tauri/src/", verdict: "scellement" },
+    {
+      chemin: "desktop/tests/",
+      verdict: "conserve",
+      conservation: "mecanisme-test",
+    },
+  ]);
+
+  const erreurs = validateManifest(doc, fichiers);
+  for (const fichier of fichiers) {
+    assert.ok(
+      erreurs.some(
+        (erreur) =>
+          erreur.startsWith(`${fichier} :`) && erreur.includes("actif Punks"),
+      ),
+      `${fichier}: ${erreurs.join(" | ")}`,
+    );
+  }
+});
+
+test("validateManifest : les harnais Buzz desktop restent au scellement après extraction du test Punks", () => {
+  const fichiers = [
+    "desktop/src/testing/e2eBridge.ts",
+    "desktop/tests/e2e/channels.spec.ts",
+    "desktop/tests/e2e/capability-masking.spec.ts",
+  ];
+  const doc = manifestMinimal([
+    {
+      chemin: "desktop/src/testing/",
+      verdict: "scellement",
+      separation: "la façade Punks est extraite du pont Buzz",
+    },
+    {
+      chemin: "desktop/tests/",
+      verdict: "scellement",
+      separation: "les scénarios Buzz meurent avec leurs dernières capacités",
+    },
+    {
+      chemin: "desktop/tests/e2e/capability-masking.spec.ts",
+      verdict: "conserve",
+      conservation: "actif-punks",
+    },
+  ]);
+
+  assert.deepEqual(validateManifest(doc, fichiers), []);
+  doc.actifs[1] = {
+    chemin: "desktop/tests/",
+    verdict: "conserve",
+    conservation: "mecanisme-test",
+  };
+  const erreurs = validateManifest(doc, fichiers);
+  assert.ok(
+    erreurs.some(
+      (erreur) =>
+        erreur.includes("channels.spec.ts") &&
+        erreur.includes("dernier consommateur attendu scellement"),
+    ),
+  );
 });
 
 test("validateGoldenUniverse : inventaire indépendant, fermé et suivi", () => {
@@ -700,6 +919,41 @@ test("validateLedger : chaque test Buzz retiré exige une ligne et refuse les fa
     [testHistorique],
   );
   assert.ok(erreurs.some((e) => e.includes("absent des univers baseline")));
+});
+
+test("validateLedger : un retrait déclaré doit déjà être absent des fichiers suivis", () => {
+  const testHistorique = "desktop/tests/e2e/channels.spec.ts";
+  const doc = ledgerMinimal([
+    {
+      cle: "invariant.a",
+      invariant: "description",
+      sources: ["goldens/g.json"],
+      verdict: "hors-perimetre",
+      note: "gelé",
+    },
+  ]);
+  doc["retraits-par-tranche"].lignes = [
+    {
+      test: testHistorique,
+      tranche: "tranche:1",
+      verdict: "difference-intentionnelle",
+      decision: "#47 — retrait décidé",
+    },
+  ];
+
+  const erreurs = validateLedger(
+    doc,
+    [...LEDGER_FILES, testHistorique],
+    () => true,
+    universeMinimal().sources,
+    [testHistorique],
+  );
+  assert.ok(
+    erreurs.some(
+      (erreur) =>
+        erreur.includes(testHistorique) && erreur.includes("encore suivi"),
+    ),
+  );
 });
 
 test("validateLedger : seules les versions de format supportées sont admises", () => {

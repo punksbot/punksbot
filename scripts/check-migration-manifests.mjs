@@ -11,6 +11,8 @@
  *     résout un fichier réel du dépôt ;
  *   - verdicts incomplets : vocabulaire fermé, conservation typée exigée,
  *     échéances et décisions présentes, clients gelés non retirés par avance ;
+ *   - destinations : les actifs Punks desktop ne peuvent pas être absorbés par
+ *     un catch-all legacy et un retrait déclaré doit déjà être absent de Git ;
  *   - dérive de la vue : withdrawal-inventory.md doit être la sortie exacte
  *     du générateur.
  *
@@ -24,6 +26,7 @@ import {
   BASELINE_BUZZ,
   BUZZ_TEST_SOURCE_SET_SHA256,
   canonicalSha256,
+  CHEMINS_GOLDENS,
   discoverBuzzTestSources,
   discoverGoldenSources,
   GOLDEN_SOURCE_SET_SHA256,
@@ -40,12 +43,9 @@ import {
   viewPath,
 } from "./render-withdrawal-inventory.mjs";
 
-const ledgerPath = join(repoRoot, "docs/migration/goldens-ledger.yaml");
-const universePath = join(repoRoot, "docs/migration/goldens-universe.yaml");
-const testsUniversePath = join(
-  repoRoot,
-  "docs/migration/buzz-tests-universe.yaml",
-);
+const ledgerPath = join(repoRoot, CHEMINS_GOLDENS.registre);
+const universePath = join(repoRoot, CHEMINS_GOLDENS.univers);
+const testsUniversePath = join(repoRoot, CHEMINS_GOLDENS["univers-tests"]);
 
 function repoFileExists(path) {
   if (typeof path !== "string" || path.length === 0) {
@@ -142,7 +142,7 @@ export function runValidation() {
       `[manifeste] section goldens : registre introuvable (${manifest.goldens.registre})`,
     );
   }
-  if (manifest.goldens?.univers !== "docs/migration/goldens-universe.yaml") {
+  if (manifest.goldens?.univers !== CHEMINS_GOLDENS.univers) {
     erreurs.push(
       "[manifeste] section goldens : univers indépendant manquant ou invalide",
     );
@@ -152,8 +152,7 @@ export function runValidation() {
     );
   }
   if (
-    manifest.goldens?.["univers-tests"] !==
-    "docs/migration/buzz-tests-universe.yaml"
+    manifest.goldens?.["univers-tests"] !== CHEMINS_GOLDENS["univers-tests"]
   ) {
     erreurs.push(
       "[manifeste] section goldens : univers des tests Buzz manquant ou invalide",

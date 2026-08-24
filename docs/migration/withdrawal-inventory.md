@@ -3,7 +3,7 @@
 > Vue dérivée de [`withdrawal-inventory.yaml`](./withdrawal-inventory.yaml), qui est canonique.
 > Régénérée par `scripts/render-withdrawal-inventory.mjs` (`pnpm migration:render`) — ne pas éditer.
 > Décisions : issues [#13](https://github.com/punksbot/punksbot/issues/13), [#14](https://github.com/punksbot/punksbot/issues/14) et [#17](https://github.com/punksbot/punksbot/issues/17).
-> Checkpoint de récupération : `50e16de180dda4365f8001a8a73503f16977a175` — baseline Buzz gelée : `da818eddc2f470c006a1073c8c5452f8a989f272` — version 1 — sha256 canonique `48c5eaff76918bbaa3bdc8ffdc202fae22ee3dfee4c6fd769d1f2b7fb7343f65`.
+> Checkpoint de récupération : `50e16de180dda4365f8001a8a73503f16977a175` — baseline Buzz gelée : `da818eddc2f470c006a1073c8c5452f8a989f272` — version 1 — sha256 canonique `32386d67a64363b68173ed7e1d0e39a3fb3c7b20f208cd41d96059366878d653`.
 
 Chaque actif reçoit exactement un verdict. Un module partagé appartient à la tranche de
 son **dernier** consommateur ; ses parties antérieures disparaissent plus tôt (champ
@@ -17,7 +17,6 @@ une dépendance active.
 | 3 | `desktop/src/features/identity-archive/` |
 | 4 | `desktop/src/features/community-members/` ; `desktop/src/features/profile/` ; `desktop/src-tauri/src/nostr_bind.rs` ; `desktop/src-tauri/src/relay_admission.rs` |
 | 5 | `desktop/src/features/communities/` ; `desktop/playwright.release-smoke.config.ts` ; `desktop/src-tauri/src/builderlab.rs` ; `Justfile (cibles desktop-release-smoke)` ; `scripts/run-desktop-release-smoke.sh` |
-| 6 | `desktop/src/features/sidebar/` |
 | 7 | `desktop/src/features/notifications/` ; `desktop/src-tauri/src/{observed_unread.rs,unread_catch_up.rs}` |
 | 8 | `desktop/src/features/{presence,user-status}/` |
 | 10 | `desktop/src/features/moderation/` |
@@ -35,7 +34,7 @@ une dépendance active.
 | 27 | `desktop/src/app/routes/reminders.tsx` ; `desktop/src/features/reminders/` |
 | 28 | `desktop/src/features/channel-templates/` ; `desktop/src-tauri/src/templates/` |
 | 29 | `desktop/src-tauri/Cargo.toml (arête buzz-voice)` ; `crates/buzz-voice/` |
-| 30 | `desktop/src/app/routes/pulse.tsx` ; `desktop/src/features/channels/` ; `desktop/src/features/messages/` ; `desktop/src/features/pulse/` |
+| 30 | `desktop/src/app/routes/pulse.tsx` ; `desktop/src/features/channels/` ; `desktop/src/features/messages/` ; `desktop/src/features/pulse/` ; `desktop/src/features/sidebar/` |
 | 31 | `desktop/src/features/mesh-compute/` ; `desktop/src/features/settings/` |
 
 ## Scellement desktop (gate terminal, après la tranche 31)
@@ -56,6 +55,10 @@ une dépendance active.
 - `desktop/src/app/routes/root.tsx` — séparation : la route racine reste le point de montage du shell ; AppShell Buzz est remplacé avant conservation de l'enveloppe neutre
 - `desktop/src/app/` — séparation : reste de l'orchestration de shell partagé ; les routes et capacités dont le dernier consommateur est connu ont une entrée plus spécifique ci-dessus
 
+- `desktop/src/main.tsx` — séparation : bootstrap, providers, onboarding, communautés, profil Nostr et Huddle Buzz meurent avec leurs derniers consommateurs ; l’entrée produit Punks est déjà extraite dans desktop/punks-product/main.tsx et desktop/src/punks-main.tsx
+ — dernière entrée React Buzz, retirée au gate terminal après extraction des mécanismes neutres
+- `desktop/src/testing/` — séparation : harnais Buzz (signature nostr-tools, émission RelayEvent) retirés par tranche ; façade Punks extraite et conservée dans le harnais du candidat
+- `desktop/tests/` — séparation : scénarios Buzz retirés avec leur dernière capacité et enregistrés dans retraits-par-tranche ; mécanismes Playwright neutres extraits
 - `desktop/src-tauri/src/{native_websocket.rs,native_websocket_batch.rs,native_relay_client.rs,native_relay_client_tests.rs}`
 - `desktop/src-tauri/src/{relay.rs,relay/}` — séparation : commandes de la boucle sociale retirées du graphe accepté à la tranche:1
 - `desktop/src-tauri/src/{nostr_convert.rs,nostr_convert/}`
@@ -65,7 +68,7 @@ une dépendance active.
 - `desktop/src-tauri/src/commands/` — séparation : chaque groupe de commandes meurt avec sa tranche : signalement/relay-admission:4, canaux/DM:6-12, présence:8, modération:10, unread:7, recherche:9-13, workflows:23, personas/teams:26, archive Nostr:scellement
 - `desktop/src-tauri/src/archive/` — archives locales d’événements Nostr (gate terminal #14)
 - `desktop/src-tauri/src/{migration.rs,migration/}` — réconciliation des données Buzz persistées (renames Sprout→Buzz, partage dev)
-- `desktop/src-tauri/src/` — reste du socle relay/Nostr du backend Tauri (lib Buzz résiduelle, modèles d’identité) — retiré au gate terminal avec ses arêtes Cargo
+- `desktop/src-tauri/src/` — reste du socle relay/Nostr du backend Tauri (modules Buzz résiduels, modèles d’identité) — retiré au gate terminal avec ses arêtes Cargo
 - `desktop/src-tauri/Cargo.toml (arêtes buzz-core, buzz-sdk, buzz-ws-client, buzz-media dev)`
 - `desktop/package.json (dépendances nostr 0.44 et nostr-tools)`
 - `scripts/nostr-tools-test-package.json` — suit la devDep nostr-tools
@@ -122,15 +125,13 @@ L’entrée « Retrait global du serveur historique » s’ouvre uniquement lors
 
 - `desktop/src/shared/` — séparation : api/ et lib Nostr scellés ci-dessus ; constants/kinds.ts au scellement ; deep-links à la tranche:1 — reste neutre (context, hooks, layout, theme, styles, lib datetime/emoji/markdown/clipboard…)
 - `desktop/src/app/routes/settings.tsx`
-- `desktop/src/{features-manifest.d.ts,jdenticon.d.ts,main.tsx,types/,upng-js.d.ts,vite-env.d.ts}` — entrée React, déclarations de types et shims sans sémantique Buzz
-- `desktop/src/features/chat/` — rendu neutre alimenté par les vues Punks
+- `desktop/src/{features-manifest.d.ts,jdenticon.d.ts,types/,upng-js.d.ts,vite-env.d.ts}` — déclarations de types et shims sans sémantique Buzz
+- `desktop/src/features/chat/` — séparation : types Channel Buzz remplacés par les vues Conversation Punks ; chrome et rendu neutres conservés — rendu neutre alimenté par les vues Punks
 - `desktop/public/` — séparation : marque Buzz (buzz.svg, landing/) reprise par l’effort Punks UI ; visuels d’onboarding retirés à la tranche:1
 
 ### Mécanismes de test
 
 - `desktop/src/shared/api/{queryClient.ts,tauri.ts}` — mécanisme React Query/invoke neutre ; l’instance devient par WorkspaceSession (décision #11)
-- `desktop/src/testing/` — séparation : harnais Buzz (signature nostr-tools, émission RelayEvent) remplacés à partir de la tranche:1 par la façade Punks
-- `desktop/tests/`
 - `desktop/{playwright.config.ts,playwright.perf.config.ts}`
 - `desktop/src-tauri/tests/`
 
@@ -140,9 +141,21 @@ L’entrée « Retrait global du serveur historique » s’ouvre uniquement lors
 
 ### Actifs Punks
 
-- `desktop/src/shared/api/{punksClient.ts,punksClient.test.mjs}` — façade sémantique Punks préparée derrière la feature punks-desktop-social-loop
-- `desktop/src-tauri/src/punks_client.rs` — commandes Tauri Punks préparées derrière la feature punks-desktop-social-loop
+- `desktop/src/shared/api/punks*` — façade, erreurs, Réactions et adaptateur Tauri sémantiques Punks
+- `desktop/src/shared/capabilities/` — disponibilité Punks fermée et garde commune des surfaces desktop
+- `desktop/src/{punks-main.tsx,punks.css}` — entrée et styles du produit desktop Punks vérifié
+- `desktop/src/features/punks/` — produit Punks, runtime Workspace et boucle sociale du candidat desktop
+- `desktop/tests/e2e/capability-masking.spec.ts` — garde structurelle Punks commune aux routes et surfaces indisponibles
+- `desktop/scripts/*punks*` — gates du candidat, du frontend et de l’entrée produit desktop Punks
+- `desktop/src-tauri/src/{lib.rs,main.rs}` — séparation : modules, commandes et diagnostics sous cfg buzz-desktop retirés avec leurs tranches puis au scellement ; dispatcher desktop_lib::run et branche punks_runtime::run conservés pour le produit natif Punks
+ — entrypoints Tauri mixtes dont la branche Punks est une dépendance active du candidat
+- `desktop/src-tauri/src/punks*.rs` — commandes, runtime, lifecycle Message et store de Session Tauri Punks
 - `desktop/src-tauri/crates/punks-account-client/` — client sémantique Rust Punks (HTTP, cookies, FOLLOW, bail de génération)
+- `desktop/src-tauri/crates/punks-promotion-session/` — processus natif borné utilisé par la preuve de promotion Punks
+- `desktop/src-tauri/{capabilities/punks.json,signing/punks-linux-release.asc}` — capacité Tauri et identité de signature native du candidat Punks
+- `desktop/src-tauri/tauri.punks*.json` — configurations Tauri fermées du produit et de la signature Windows Punks
+- `desktop/punks-product/` — entrée HTML/TypeScript isolée du produit desktop Punks
+- `desktop/{tailwind.punks.config.js,tsconfig.punks.json}` — configurations de build fermées de la surface Punks
 - `scripts/{check-migration-manifests.mjs,check-migration-manifests.test.mjs,migration-manifest-lib.mjs,render-withdrawal-inventory.mjs}` — gate et générateur des manifestes de migration (issue #49)
 - `scripts/{release-graph-lib.mjs,check-release-graph.mjs,check-release-graph.test.mjs}` — gate du graphe de release et du modèle d'attestation (issue #51)
 - `scripts/{promotion-dossier-lib.mjs,check-promotion-dossier.mjs,check-promotion-dossier.test.mjs,promotion-publish-lib.mjs,promotion-publish.mjs,promotion-publish.test.mjs,punks-desktop-candidate-workflow.test.mjs,punks-desktop-promotion-workflow.test.mjs,check-punks-rust.mjs,punks-native-artifact.mjs,punks-native-artifact.test.mjs,windows-artifact-sign.ps1,windows-artifact-sign.test.ps1}` — harnais d'acceptation d'une promotion : dossier de preuve, gates d'autorisation, chaîne de candidat Tauri signé et émission create-only de l'attestation (issues #52 et #58)
@@ -160,7 +173,7 @@ L’entrée « Retrait global du serveur historique » s’ouvre uniquement lors
 
 - `desktop/src/shared/lib/safeStorage.ts` — mécanisme coffre OS réutilisé par le jar natif Punks
 - `desktop/src/shared/features/` — feature-gating local, sert les gardes de capacités indisponibles
-- `desktop/scripts/`
+- `desktop/scripts/` — séparation : checks et entrée produit Punks classés explicitement ; outils Buzz restants suivent leur actif ou le scellement
 - `desktop/src-tauri/src/reset.rs` — séparation : parcours d’onboarding sous-jacent retiré à la tranche:1 — wipe atomique deux phases au changement de compte
 - `desktop/src-tauri/` — coquille Tauri neutre (manifestes, plists, icônes, capabilities, build.rs)
 - `desktop/` — configuration de build du desktop (package.json, biome, vite, tsconfig, tailwind…)

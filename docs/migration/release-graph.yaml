@@ -121,7 +121,7 @@ releases:
         sha256: e317ab42ffa0c0aaea7bc7b6ebe5d8ede446a4f0cc9738ed750c96f73d75e483
       manifeste-retrait:
         version: 1
-        sha256: 48c5eaff76918bbaa3bdc8ffdc202fae22ee3dfee4c6fd769d1f2b7fb7343f65
+        sha256: 32386d67a64363b68173ed7e1d0e39a3fb3c7b20f208cd41d96059366878d653
     staging:
       environnement: staging
       compte: 3a391620584c792dbbd8cfa148d7634a
