@@ -2,6 +2,19 @@
 
 Frozen source: `block/buzz@da818eddc2f470c006a1073c8c5452f8a989f272`.
 
+## Index immuable des Reçus de release
+
+Chaque Reçu post-promotion présent dans le graphe de release possède ici un
+marqueur canonique contenant son identifiant, son SHA-256 intégral et son
+verdict. `pnpm migration:check` refuse un marqueur manquant, divergent,
+réécrit ou orphelin ; `scripts/receipt-publish.mjs` refuse la publication
+GitHub/R2 tant que l'index complet ne correspond pas au graphe validé.
+
+Le candidat actuel est encore en préparation : aucun Reçu post-promotion
+n'existe donc à indexer. Les marqueurs create-only seront ajoutés sous ce
+paragraphe par la modification qui scellera la première exécution, sous la
+forme exacte imprimée par le publisher.
+
 “Provisioned” means that an isolated Cloudflare resource exists. It does not
 mean that the corresponding product capability is implemented. “Foundation”
 means contracts or infrastructure exist but an end user cannot yet rely on

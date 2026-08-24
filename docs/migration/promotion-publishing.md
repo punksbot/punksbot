@@ -1,129 +1,200 @@
 # Publication immuable d'une promotion
 
-`scripts/promotion-publish.mjs` publie la paire locale créée par
-`promotion:valider` sans reconstruire ni modifier son contenu :
+Deux chemins de publication existent et partagent les mêmes frontières
+create-only :
 
-1. deux assets create-only dans la draft GitHub exacte du candidat ;
-2. les deux mêmes documents dans un bucket verrouillé en mode `compliance`
-   de chacun de deux comptes R2 distincts.
+- `scripts/promotion-publish.mjs` finalise puis publie la paire locale
+  attestation/Reçu de promotion produite par `promotion:valider` ;
+- `scripts/receipt-publish.mjs` publie un Reçu opérationnel déjà signé
+  (`transition`, démarrage/événement d'exécution, roll-forward, retour Punks,
+  retrait, certificat ou invalidation d'attestation) et, lorsqu'elle existe,
+  son attestation exacte.
 
-Le publisher ne contient aucun client GitHub ou Cloudflare implicite. Le
-processus qui l'exécute injecte explicitement un module de frontières. Cette
-séparation permet de tester toute l'orchestration avec des doubles uniquement
-aux limites GitHub/Cloudflare et empêche un test local de contacter un service
-réel par défaut.
+Aucun des deux CLI ne reconstruit un artefact et aucun ne possède de client
+distant implicite. Les seules frontières réelles livrées par le dépôt sont dans
+`scripts/promotion-frontiers.mjs`; elles restent injectables afin que les tests
+n'effectuent jamais d'appel réseau.
 
-## CLI public
+## Scellement de la première paire
+
+La paire locale est volontairement non publiée et non signée. Avant toute
+frontière distante, `promotion-publish.mjs` :
+
+1. lit `docs/migration/release-graph.yaml`, vérifie le canal, la baseline, le
+   checkpoint, l'unique candidat encore en `preparation`, la politique de
+   bootstrap et les deux destinations R2 ancrées ;
+2. impose `--bootstrap-r2` pour la tranche 1 et le refuse pour les suivantes ;
+3. ajoute `publiee: [release, r2]` à l'attestation ;
+4. recalcule son hash canonique, l'inscrit dans le Reçu avec les deux
+   approbateurs ancrés et, pour la tranche 1, avec
+   `bootstrap-github-attestation-sha256` ;
+5. fait signer les octets canoniques par exactement deux clés Ed25519
+   distinctes puis vérifie lui-même les signatures ;
+6. ajoute `publication: [release, r2]` au Reçu final.
+
+Les octets finaux sont déterministes pour une même paire et un même registre
+d'approbateurs ordonné. Le premier bootstrap écrit et relit obligatoirement les
+deux assets GitHub avant la première écriture R2. Ce choix n'est pas un booléen
+opérateur libre : un graphe ou une commande qui tente de publier R2 d'abord est
+refusé avant toute création irréversible.
+
+## Commandes
+
+Publication initiale de la tranche 1 :
 
 ```bash
-node scripts/promotion-publish.mjs \
+pnpm promotion:publier -- \
+  --graphe docs/migration/release-graph.yaml \
   --attestation ./promotion/attestation-tranche-1.json \
   --recu ./promotion/recu-promotion-1.json \
-  --depot owner/repository \
+  --depot punksbot/punksbot \
   --tag punks-staging-0123456789abcdef0123456789abcdef01234567 \
   --canal punks-desktop \
-  --r2-primaire account-a/promotion-a \
-  --r2-secondaire account-b/promotion-b \
-  --frontieres ./operations/promotion-boundaries.mjs
+  --r2-primaire 11111111111111111111111111111111/promotion-a \
+  --r2-secondaire 22222222222222222222222222222222/promotion-b \
+  --bootstrap-r2 \
+  --frontieres scripts/promotion-frontiers.mjs
 ```
 
-`--canal` vaut `punks-desktop` par défaut. Les deux valeurs R2 sont toujours
-de la forme canonique `<compte>/<bucket>`. Les comptes doivent être distincts
-et les noms de buckets doivent eux aussi être distincts.
+Publication d'un Reçu opérationnel déjà présent dans le graphe validé :
 
-Le succès écrit une seule ligne JSON sur stdout. `statut` vaut :
+```bash
+pnpm promotion:publier-recu -- \
+  --graphe docs/migration/release-graph.yaml \
+  --recu ./promotion/recu-execution-signe.json \
+  --parity cloudflare/PARITY.md \
+  --depot punksbot/punksbot \
+  --tag punks-staging-0123456789abcdef0123456789abcdef01234567 \
+  --sha 0123456789abcdef0123456789abcdef01234567 \
+  --release-id tranche:1/expansion/execution-1 \
+  --etat-release draft \
+  --canal punks-desktop \
+  --r2-primaire 11111111111111111111111111111111/promotion-a \
+  --r2-secondaire 22222222222222222222222222222222/promotion-b \
+  --frontieres scripts/promotion-frontiers.mjs
+```
 
-- `publiee` si les six objets ont été créés par ce passage ;
-- `reprise` si des objets exacts existaient déjà et que seuls les objets
-  manquants ont été créés ;
-- `deja-publiee` si les six objets existaient déjà avec leurs octets exacts.
+Un Reçu de `transition` ou de supersession documentaire exige en plus
+`--attestation ./promotion/attestation-transition.json` avec l'attestation
+exactement citée par le graphe. Après activation de la GitHub Release,
+`--etat-release published` est obligatoire. Le tag cite toujours le SHA Punks
+intégral de 40 caractères ; aucun préfixe abrégé n'est une identité.
 
-Le résultat cite le SHA candidat, le tag, l'identifiant GitHub de la draft,
-les deux clés d'objet, les SHA-256 des octets publiés et la répartition entre
-objets créés et déjà présents. Un refus écrit une erreur JSON sur stderr et
-retourne le code processus `1`.
+Le succès écrit une ligne JSON. `statut` vaut `publiee`, `reprise` ou
+`deja-publiee`. Un refus écrit une erreur JSON sur stderr et retourne le code
+processus `1`.
 
-## Layout fixe
+## Noms et clés content-addressés
 
-Pour la tranche `N`, le publisher utilise exactement :
+Pour un identifiant canonique de release `{id}` :
 
 ```text
-GitHub : attestation-tranche-N.json
-GitHub : recu-promotion-N.json
-R2     : releases/{canal}/tranche:N/attestation.json
-R2     : releases/{canal}/tranche:N/recus/{recu.id}.json
+GitHub : attestation-{attestation-sha256}.json
+GitHub : recu-{recu-sha256}.json
+R2     : releases/{canal}/{id}/attestations/{attestation-sha256}.json
+R2     : releases/{canal}/{id}/recus/{recu-sha256}.json
 ```
 
-Le tag doit être exactement `punks-staging-{attestation.sha}`. La release
-observée doit rester une draft portant ce tag et ciblant ce même SHA. Le Reçu
-doit citer le hash canonique de l'attestation et son identifiant doit citer la
-tranche et les douze premiers caractères du même SHA.
+Le SHA-256 est toujours l'empreinte intégrale des octets canoniques attendus.
+Une clé fondée sur `recu.id`, un nom mutable comme `attestation.json` ou un hash
+tronqué est refusé par le contrat.
 
-## Contrat du module de frontières
+## Frontières réelles et confiance indépendante
 
-Le module passé à `--frontieres` exporte :
+Le module de frontières retourne exactement les capacités nécessaires :
 
 ```js
 export async function creerFrontieresPublication(configuration) {
-  return { github, cloudflare };
+  return { github, cloudflare, approbation, confiance };
 }
 ```
 
-`configuration` contient `{ depot, tag, canal, r2 }`. Les interfaces retournées
-respectent les coutures suivantes :
+Les lectures renvoient les octets réels afin que le publisher recalcule le hash.
+Les créations ne clobberent jamais :
 
 ```js
-github.lireDraft({ depot, tag })
-// -> { id, tag, sha, draft }
-
-github.lireAsset({ depot, releaseId, nom })
-// -> Uint8Array | Buffer | null
-
-github.creerAsset({ depot, releaseId, nom, contenu, attendu })
-// création stricte, jamais de clobber
+github.lireDraft({ tag })
+github.lireRelease({ tag })
+github.lireAsset({ releaseId, nom })
+github.creerAsset({ releaseId, nom, contenu })
 
 cloudflare.lireVerrouillage({ role, compte, bucket })
-// -> { mode: "compliance", actif: true }
-
 cloudflare.lireObjet({ role, compte, bucket, cle })
-// -> Uint8Array | Buffer | null
+cloudflare.creerObjet({ role, compte, bucket, cle, contenu })
 
-cloudflare.creerObjet({
-  role,
-  compte,
-  bucket,
-  cle,
-  contenu,
-  modeRequis: "compliance",
-})
-// création stricte, jamais d'overwrite
+approbation.signerRecu({ contenu, sha256, approbateurs })
 ```
 
-Les opérations `creerAsset` et `creerObjet` doivent être create-only au niveau
-du fournisseur. Un conflit d'existence porte `erreur.code = "ALREADY_EXISTS"`.
-Pour GitHub, `attendu` oblige l'adaptateur à revalider le tag, le SHA cible et
-l'état draft au plus près de la création. Pour R2, `modeRequis` oblige
-l'adaptateur à vérifier le verrouillage au plus près de l'écriture.
+`scripts/promotion-frontiers.mjs` utilise les API GitHub Release et Cloudflare
+R2, `If-None-Match: *`, et vérifie une règle Bucket Lock `Indefinite` active sur
+`releases/` (ou sur tout le bucket). Les conflits fournisseur sont normalisés en
+`ALREADY_EXISTS`, puis les octets sont relus ; une réponse de succès sans objet
+vérifiable est un échec.
 
-Les lectures retournent les octets réels, pas uniquement une métadonnée de
-hash. Le publisher recalcule ainsi le SHA-256 lui-même avant toute reprise et
-après la publication.
+Variables protégées requises :
 
-## Create-only et reprise
+```text
+GITHUB_TOKEN
+PUNKS_R2_PRIMARY_API_TOKEN
+PUNKS_R2_PRIMARY_ACCESS_KEY_ID
+PUNKS_R2_PRIMARY_SECRET_ACCESS_KEY
+PUNKS_R2_RECOVERY_API_TOKEN
+PUNKS_R2_RECOVERY_ACCESS_KEY_ID
+PUNKS_R2_RECOVERY_SECRET_ACCESS_KEY
+PUNKS_RELEASE_APPROVERS_JSON
+PUNKS_RELEASE_APPROVERS_ANCHOR_SHA256
+PUNKS_R2_DESTINATIONS_ANCHOR_SHA256
+```
 
-Le préflight lit la draft, les deux politiques de verrouillage et les six
-objets avant la première écriture. Un objet existant n'est accepté que si ses
-octets ont exactement le SHA-256 attendu ; il n'est jamais réécrit. Tout objet
-divergent bloque l'opération avant les nouvelles créations.
+Chaque rôle R2 possède un jeton API pour lire le verrouillage Bucket Lock et
+une paire S3 dédiée pour les lectures/écritures d'objets signées SigV4. Les deux
+jetons API, les deux identifiants de clé et les deux secrets doivent rester
+distincts entre les comptes primaire et récupération.
+Chaque `compte` est l'identifiant Cloudflare exact de 32 caractères
+hexadécimaux ; chaque bucket suit le nom canonique R2 (3 à 63 caractères
+minuscules, chiffres ou tirets, sans tiret initial ou final). La frontière
+refuse tout appel dont le triplet `role/compte/bucket` diffère de la liste
+ordonnée ancrée dans le graphe.
+`PUNKS_RELEASE_APPROVERS_JSON`
+contient exactement deux objets `{id, cle-publique-spki,
+cle-privee-pkcs8}` en DER base64. L'adaptateur recalcule chaque clé publique
+depuis la clé privée Ed25519 et refuse une paire divergente. Les deux ancrages
+sont des SHA-256 canoniques protégés, comparés respectivement au registre public
+et à la liste ordonnée `primaire`, `secondaire` du graphe. Ils ne sont jamais
+déduits de l'objet à signer.
 
-Les objets R2 sont créés avant les assets de la draft. Une panne peut donc
-laisser une publication partielle, mais aucun rollback destructif n'est tenté.
-L'erreur `PUBLICATION_PARTIELLE` contient `reprenable: true`, `publies` et
-`restants`. Il faut relancer exactement la même commande : les objets exacts
-sont relus et conservés, les objets manquants seuls sont créés. Une course
-create-only ou une réponse distante ambiguë suit la même règle : relecture des
-octets, acceptation seulement du hash exact, refus de toute divergence.
+## PARITY et appartenance au graphe
 
-Avant de déclarer le succès, le publisher relit la draft, les deux verrous et
-les six contenus. Une dérive tardive produit `VALIDATION_POST_PUBLICATION` et
-exige une nouvelle exécution après correction de l'état externe.
+`receipt-publish.mjs` valide le graphe complet avant toute frontière, retrouve
+le Reçu exact (identifiant, SHA et contenu), vérifie ses deux signatures et
+refuse un Reçu orphelin. Il exige aussi que chaque Reçu opérationnel du graphe
+possède dans `cloudflare/PARITY.md` son marqueur canonique :
+
+```text
+<!-- punks-release-receipt {"id":"…","sha256":"…","verdict":"…"} -->
+```
+
+Un marqueur manquant, divergent, dupliqué ou sans Reçu correspondant bloque
+`pnpm migration:check` et la publication.
+
+## Reprise et validation post-publication
+
+Le préflight lit la release GitHub exacte, les deux verrous et chaque objet
+attendu avant la première écriture. Un contenu existant exact est conservé ; un
+contenu divergent bloque immédiatement. Une panne après une création produit
+`PUBLICATION_PARTIELLE` avec `reprenable`, `publies` et `restants`. Aucun
+rollback destructif n'est tenté : il faut relancer la commande avec les mêmes
+octets et le même graphe.
+
+Avant de déclarer le succès, le publisher relit la release, les verrous et tous
+les contenus. Une dérive tardive produit `VALIDATION_POST_PUBLICATION`. Les
+assets GitHub et objets R2 ne sont jamais modifiés ou supprimés par ces outils.
+
+## État opérationnel actuel
+
+Le graphe versionné reste honnêtement en `preparation` : ses destinations R2 et
+son registre d'approbateurs sont vides tant que les deux comptes, les deux
+buckets verrouillés, les jetons séparés et les ancrages protégés n'ont pas été
+provisionnés. Dans cet état, aucune commande de scellement réel ne peut réussir.
+La préparation du mécanisme n'est donc pas présentée comme une promotion déjà
+effectuée.

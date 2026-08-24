@@ -10,7 +10,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFile, execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import {
+  createHash,
+  generateKeyPairSync,
+  sign as signerEd25519,
+} from "node:crypto";
 import {
   chmodSync,
   existsSync,
@@ -30,14 +34,14 @@ import {
 import {
   BASELINE_BUZZ,
   CHECKPOINT_RECUPERATION,
+  canonicalJson,
   canonicalSha256,
 } from "./migration-manifest-lib.mjs";
+import { finaliserPromotion } from "./promotion-publish-lib.mjs";
 import {
-  CHAINE_TRANSITIONS,
-  ETATS,
   PLATEFORMES,
   PREUVES_OBLIGATOIRES,
-  validateReleaseGraph,
+  verifierSignatureRecu,
 } from "./release-graph-lib.mjs";
 import {
   MATRICE_ACCESSIBILITE,
@@ -63,40 +67,9 @@ const STAGING = {
   zone: "b91146ce242a275de0b7e6e0cc3804c7",
   deploiement: "staging-tranche-1-abc123",
 };
-const ADR =
-  "docs/adr/0060-graphe-de-release-expansion-activation-contraction.md";
-const POLITIQUE = {
-  "fenetre-support-jours": 90,
-  "seuil-usage-contraction": 1,
-  "fenetre-mesure-contraction-jours": 14,
-  recuperation: {
-    normale: "roll-forward",
-    "retour-punks-anterieur": "certificat-compatibilite-exige",
-    "retour-buzz": "interdit",
-  },
-  "rpo-logique-nul": true,
-  immuabilite: {
-    attestations: {
-      publication: ["release", "r2"],
-      ecriture: "create-only",
-      "verrouillage-objet": "compliance",
-      "comptes-r2": 2,
-    },
-    recus: {
-      publication: ["release", "r2"],
-      ecriture: "create-only",
-      "verrouillage-objet": "compliance",
-      "comptes-r2": 2,
-    },
-  },
-};
-const PUBLICATION = {
-  r2: {
-    layout: {
-      attestations: "releases/{canal}/{id}/attestation.json",
-      recus: "releases/{canal}/{id}/recus/{recu}.json",
-    },
-  },
+const DIGESTS_PRODUCTION = {
+  bundle: "4a".repeat(32),
+  manifeste: "4b".repeat(32),
 };
 const LIGNES_REGISTRE = [
   {
@@ -111,6 +84,53 @@ const LIGNES_REGISTRE = [
   },
 ];
 const RACINE_PREUVES = mkdtempSync(join(tmpdir(), "punks-preuves-"));
+
+const CLES_APPROBATION = new Map(
+  ["ops:alice", "ops:bob"].map((id) => {
+    const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+    return [
+      id,
+      {
+        privateKey,
+        publique: publicKey
+          .export({ format: "der", type: "spki" })
+          .toString("base64"),
+      },
+    ];
+  }),
+);
+const APPROBATION = {
+  approbateurs: [...CLES_APPROBATION].map(([id, cle]) => ({
+    id,
+    "cle-publique-spki": cle.publique,
+  })),
+  async signerRecu({ contenu, approbateurs }) {
+    return signaturesRecu(contenu, approbateurs);
+  },
+};
+const CONFIANCE_APPROBATION = {
+  registreApprobateursRelease: APPROBATION.approbateurs.map((entree) => ({
+    ...entree,
+  })),
+  ancrageApprobateursRelease: canonicalSha256(APPROBATION.approbateurs),
+};
+
+function signaturesRecu(contenu, approbateurs = ["ops:alice", "ops:bob"]) {
+  return approbateurs.map((approbateur) => {
+    const cle = CLES_APPROBATION.get(approbateur);
+    assert.ok(cle, `clé de test absente pour ${approbateur}`);
+    return {
+      approbateur,
+      algorithme: "ed25519",
+      "cle-publique-spki": cle.publique,
+      valeur: signerEd25519(
+        null,
+        Buffer.from(canonicalJson(contenu), "utf8"),
+        cle.privateKey,
+      ).toString("hex"),
+    };
+  });
+}
 
 function preuvePour(identifiant) {
   const contenu = `${JSON.stringify({ identifiant, resultat: "vert" })}\n`;
@@ -155,6 +175,10 @@ function preuvesPourDossier(dossier) {
 
   dossier.liaison.staging["materiau-sha256"] =
     ajouter("staging/materiau").sha256;
+  for (const nom of ["bundle", "manifeste"]) {
+    ajouter(`production/${nom}`).subjectSha256 =
+      dossier.liaison["digests-production"][nom];
+  }
   for (const scenario of dossier.fautes) {
     ajouter(`faute/${scenario.type}`);
   }
@@ -465,6 +489,7 @@ function dossierValide(surcharges = {}) {
         materiau: "cloudflare/staging.resources.json",
         "materiau-sha256": "3f".repeat(32),
       },
+      "digests-production": { ...DIGESTS_PRODUCTION },
       registres: [
         {
           nom: "registre-contrats",
@@ -568,13 +593,21 @@ test("un dossier complet et autorisé produit l'attestation au format du graphe"
   assert.equal(emission.attestation.sha, SHA_CANDIDAT);
   assert.equal(emission.attestation["checkpoint-baseline"], BASELINE_BUZZ);
   assert.equal(emission.attestation.staging.deploiement, STAGING.deploiement);
+  assert.deepEqual(
+    emission.attestation["digests-production"],
+    DIGESTS_PRODUCTION,
+  );
   assert.equal(emission.attestation.registres.length, 4);
   assert.equal(emission.attestation.artefacts.length, PLATEFORMES.length);
   assert.equal("publiee" in emission.attestation, false);
   assert.equal("publication" in emission.attestation, false);
   assert.equal("publication" in emission.recu, false);
   assert.ok(emission.recu.id.startsWith("recu-promotion-1-"));
-  assert.equal(emission.recu.sha256, canonicalSha256(emission.attestation));
+  assert.equal(
+    emission.recu.contenu["attestation-sha256"],
+    canonicalSha256(emission.attestation),
+  );
+  assert.equal(emission.recu.sha256, canonicalSha256(emission.recu.contenu));
 });
 
 test("le Reçu lie l'attestation locale complète, pas seulement ses registres", () => {
@@ -634,6 +667,14 @@ test("l'en-tête du dossier est figé", () => {
     validerDossier({ ...dossierValide(), candidat: { sha: "zz", tranche: 1 } }),
     "SHA exact",
   );
+  for (const shaInterdit of [BASELINE_BUZZ, CHECKPOINT_RECUPERATION]) {
+    const dossier = dossierValide();
+    dossier.candidat.sha = shaInterdit;
+    attendu(
+      validerDossier(dossier, contexteValide()),
+      "distinct des checkpoints Buzz interdits",
+    );
+  }
 });
 
 test("la liaison relie sans ambiguïté SHA, artefacts et déploiement", () => {
@@ -659,6 +700,14 @@ test("la liaison relie sans ambiguïté SHA, artefacts et déploiement", () => {
     [
       (d) => (d.liaison.staging.compte = "0".repeat(32)),
       "divergents du matériau réel",
+    ],
+    [
+      (d) => delete d.liaison["digests-production"],
+      "digests du bundle et du manifeste production",
+    ],
+    [
+      (d) => (d.liaison["digests-production"].bundle = "court"),
+      "digest production « bundle » invalide",
     ],
     [
       (d) => d.liaison.registres.pop(),
@@ -933,92 +982,43 @@ test("une URL de provenance garde une copie locale dont le digest est recalculé
   );
 });
 
-test("l'émission locale ne peut être scellée avant une publication distante séparée", () => {
+test("l'émission locale est finalisée et scellée par la couture de publication réelle", async () => {
   const dossier = dossierValide();
   const emission = construireAttestation(dossier, contexteValide());
   assert.equal(emission.erreur, undefined);
   assert.equal(emission.attestation.gates.length, PREUVES_OBLIGATOIRES.length);
-  const release = {
-    id: "tranche:1",
-    tranche: 1,
-    etat: "expansion",
-    sha: SHA_CANDIDAT,
-    materiaux: {
-      "registre-contrats": {
-        version: 1,
-        sha256: HASH_REGISTRE["registre-contrats"],
-      },
-      schemas: { version: 1, sha256: "5".repeat(64) },
-      generes: { version: 1, sha256: "6".repeat(64) },
-      profil: {
-        id: "desktop-social-loop@1",
-        version: 1,
-        sha256: HASH_REGISTRE.profil,
-      },
-      "registre-goldens": {
-        version: 1,
-        sha256: HASH_REGISTRE["registre-goldens"],
-      },
-      "manifeste-retrait": {
-        version: 1,
-        sha256: HASH_REGISTRE["manifeste-retrait"],
-      },
-    },
-    staging: {
-      environnement: "staging",
-      compte: STAGING.compte,
-      zone: STAGING.zone,
-      materiau: "cloudflare/staging.resources.json",
-      "materiau-sha256": "7".repeat(64),
-      deploiement: STAGING.deploiement,
-    },
-    artefacts: dossier.liaison.artefacts.map((a) => ({
-      plateforme: a.plateforme,
-      nom: a.nom,
-      sha256: a.sha256,
-      signature: a.signature,
-    })),
-    preuves: Object.fromEntries(
-      PREUVES_OBLIGATOIRES.map((p) => [
-        p,
-        { resultat: "vert", sha: SHA_CANDIDAT },
-      ]),
-    ),
-    retrait: {
-      "lignes-registre": LIGNES_REGISTRE.map((l) => l.test),
-      "verdicts-manifeste": 4,
-    },
-    attestation: emission.attestation,
-    recus: [emission.recu],
-    journal: [{ vers: "expansion", date: "2026-08-22" }],
-  };
-  const erreursGraphe = validateReleaseGraph(
-    {
-      version: 1,
-      "checkpoint-recuperation": CHECKPOINT_RECUPERATION,
-      "baseline-buzz": BASELINE_BUZZ,
-      politique: POLITIQUE,
-      etats: [...ETATS],
-      transitions: CHAINE_TRANSITIONS.map((vers, index) => ({
-        de: ETATS[index],
-        vers,
-      })),
-      "preuves-obligatoires": [...PREUVES_OBLIGATOIRES],
-      plateformes: [...PLATEFORMES],
-      references: { spec: 47, decisions: [13, 14, 16, 17], adr: [ADR] },
-      publication: PUBLICATION,
-      releases: [release],
-      recuperations: [],
-    },
-    {
-      ledgerRetraits: LIGNES_REGISTRE,
-      fileExists: (chemin) => chemin === ADR,
-    },
+  assert.equal("publiee" in emission.attestation, false);
+  assert.equal("publication" in emission.recu, false);
+  assert.equal("signatures" in emission.recu, false);
+  const finale = await finaliserPromotion(
+    emission,
+    APPROBATION,
+    CONFIANCE_APPROBATION,
   );
-  assert.deepEqual(erreursGraphe, [
-    "tranche:1 : attestation.publiee doit être exactement [release, r2] — publiée avec la release ET dans le stockage R2 prévu",
-    "tranche:1 : recu.publication doit être exactement [release, r2] — les Reçus sont publiés avec la release ET dans le stockage R2 prévu",
-  ]);
+  assert.deepEqual(finale.attestation.publiee, ["release", "r2"]);
+  assert.deepEqual(finale.recu.publication, ["release", "r2"]);
+  assert.equal(finale.recu.signatures.length, 2);
+  assert.equal(
+    finale.recu.contenu["attestation-sha256"],
+    canonicalSha256(finale.attestation),
+  );
+  const clesParId = new Map(
+    APPROBATION.approbateurs.map((approbateur) => [
+      approbateur.id,
+      approbateur["cle-publique-spki"],
+    ]),
+  );
+  for (const signature of finale.recu.signatures) {
+    assert.equal(
+      verifierSignatureRecu(
+        finale.recu.contenu,
+        signature,
+        clesParId.get(signature.approbateur),
+      ),
+      true,
+      `la signature ${signature.approbateur} doit sceller les octets canoniques du Reçu final`,
+    );
+  }
 });
 
 test("aucune attestation sans autorisation réelle des deux gates", () => {

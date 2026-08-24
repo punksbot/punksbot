@@ -1,36 +1,160 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import {
+  createHash,
+  generateKeyPairSync,
+  sign as signerEd25519,
+} from "node:crypto";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { parse as parseYaml } from "yaml";
+import {
+  BASELINE_BUZZ,
+  CHECKPOINT_RECUPERATION,
+  canonicalJson,
+  canonicalSha256,
+} from "./migration-manifest-lib.mjs";
 import { executerCliPublication } from "./promotion-publish.mjs";
-import { publierPromotion } from "./promotion-publish-lib.mjs";
+import {
+  finaliserPromotion,
+  publierPromotion,
+} from "./promotion-publish-lib.mjs";
+import {
+  NOMS_REGISTRES_ATTESTATION,
+  PLATEFORMES,
+  PREUVES_OBLIGATOIRES,
+} from "./release-graph-lib.mjs";
 
 const SHA_CANDIDAT = "0123456789abcdef0123456789abcdef01234567";
 const TAG_CANDIDAT = `punks-staging-${SHA_CANDIDAT}`;
-const HASH_CANONIQUE_ATTESTATION =
-  "9776eb405bd5e722cfac1f2dc51575c92efec40d2e89bbc852e1750fc22ebb0e";
-
 const ATTESTATION = {
   sha: SHA_CANDIDAT,
   dossier: { sha256: "a".repeat(64) },
-  staging: { environnement: "staging", deploiement: "deploy-1" },
+  "checkpoint-baseline": BASELINE_BUZZ,
+  registres: NOMS_REGISTRES_ATTESTATION.map((nom, index) => ({
+    nom,
+    version: index + 1,
+    sha256: (index + 1).toString(16).padStart(2, "0").repeat(32),
+  })),
+  staging: {
+    environnement: "staging",
+    compte: "1a".repeat(16),
+    zone: "2b".repeat(16),
+    deploiement: "deploy-1",
+  },
+  gates: PREUVES_OBLIGATOIRES.map((gate) => ({
+    gate,
+    resultat: "vert",
+    sha: SHA_CANDIDAT,
+  })),
+  artefacts: PLATEFORMES.map((plateforme, index) => ({
+    plateforme,
+    sha256: (index + 10).toString(16).padStart(2, "0").repeat(32),
+  })),
+  "digests-production": {
+    bundle: "ba".repeat(32),
+    manifeste: "ca".repeat(32),
+  },
 };
-const RECU = {
-  id: `recu-promotion-1-${SHA_CANDIDAT.slice(0, 12)}`,
-  sha256: HASH_CANONIQUE_ATTESTATION,
+
+function recuPour(attestation) {
+  const id = `recu-promotion-1-${attestation.sha}`;
+  const contenu = {
+    schema: "punks.release-receipt.v1",
+    id,
+    type: "promotion",
+    "attestation-sha256": canonicalSha256(attestation),
+  };
+  return { id, contenu, sha256: canonicalSha256(contenu) };
+}
+
+const RECU = recuPour(ATTESTATION);
+const CONTENU_ATTESTATION_LOCAL = `${JSON.stringify(ATTESTATION, null, 2)}\n`;
+const CONTENU_RECU_LOCAL = `${JSON.stringify(RECU, null, 2)}\n`;
+
+const CLES_APPROBATION = new Map(
+  ["ops:alice", "ops:bob"].map((id) => {
+    const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+    return [
+      id,
+      {
+        privateKey,
+        publique: publicKey
+          .export({ format: "der", type: "spki" })
+          .toString("base64"),
+      },
+    ];
+  }),
+);
+const APPROBATION = {
+  approbateurs: [...CLES_APPROBATION].map(([id, cle]) => ({
+    id,
+    "cle-publique-spki": cle.publique,
+  })),
+  async signerRecu({ contenu, approbateurs }) {
+    return approbateurs.map((approbateur) => {
+      const cle = CLES_APPROBATION.get(approbateur);
+      return {
+        approbateur,
+        algorithme: "ed25519",
+        "cle-publique-spki": cle.publique,
+        valeur: signerEd25519(
+          null,
+          Buffer.from(canonicalJson(contenu), "utf8"),
+          cle.privateKey,
+        ).toString("hex"),
+      };
+    });
+  },
 };
-const CONTENU_ATTESTATION = `${JSON.stringify(ATTESTATION, null, 2)}\n`;
-const CONTENU_RECU = `${JSON.stringify(RECU, null, 2)}\n`;
+const CONFIANCE = {
+  registreApprobateursRelease: APPROBATION.approbateurs.map((entree) => ({
+    ...entree,
+  })),
+  ancrageApprobateursRelease: canonicalSha256(APPROBATION.approbateurs),
+};
+const PROMOTION_FINALE = await finaliserPromotion(
+  { attestation: ATTESTATION, recu: RECU, bootstrapR2: true },
+  APPROBATION,
+  CONFIANCE,
+);
+const CONTENU_ATTESTATION_FINAL = PROMOTION_FINALE.octets.attestation;
+const CONTENU_RECU_FINAL = PROMOTION_FINALE.octets.recu;
+const SHA_ATTESTATION_FINALE = canonicalSha256(PROMOTION_FINALE.attestation);
+const SHA_RECU_FINAL = PROMOTION_FINALE.recu.sha256;
+const NOM_ATTESTATION = `attestation-${SHA_ATTESTATION_FINALE}.json`;
+const NOM_RECU = `recu-${SHA_RECU_FINAL}.json`;
+const CLE_ATTESTATION = `releases/punks-desktop/tranche:1/attestations/${SHA_ATTESTATION_FINALE}.json`;
+const CLE_RECU = `releases/punks-desktop/tranche:1/recus/${SHA_RECU_FINAL}.json`;
 
 const DESTINATIONS_R2 = [
-  { role: "primaire", compte: "compte-r2-a", bucket: "punks-promotion-a" },
+  { role: "primaire", compte: "11".repeat(16), bucket: "punks-promotion-a" },
   {
     role: "secondaire",
-    compte: "compte-r2-b",
+    compte: "22".repeat(16),
     bucket: "punks-promotion-b",
   },
 ];
+CONFIANCE.ancrageDestinationsR2 = canonicalSha256(DESTINATIONS_R2);
+const GRAPHE_PUBLICATION = parseYaml(
+  readFileSync(
+    new URL("../docs/migration/release-graph.yaml", import.meta.url),
+    "utf8",
+  ),
+);
+GRAPHE_PUBLICATION["approbateurs-release"] = APPROBATION.approbateurs.map(
+  (entree) => ({ ...entree }),
+);
+GRAPHE_PUBLICATION.publication.r2.destinations = DESTINATIONS_R2.map(
+  (destination) => ({
+    ...destination,
+    "verrouillage-objet": "compliance",
+  }),
+);
+const CONTENU_GRAPHE_PUBLICATION = Buffer.from(
+  `${canonicalJson(GRAPHE_PUBLICATION)}\n`,
+);
 
 function erreurObjetExistant(message) {
   const erreur = new Error(message);
@@ -38,7 +162,7 @@ function erreurObjetExistant(message) {
   return erreur;
 }
 
-function creerFrontieres({ release = {}, verrous = {} } = {}) {
+function creerFrontieres({ release = {}, verrous = {}, journal = null } = {}) {
   const assets = new Map();
   const objets = new Map();
   const cleObjet = ({ compte, bucket, cle }) => `${compte}/${bucket}/${cle}`;
@@ -57,6 +181,7 @@ function creerFrontieres({ release = {}, verrous = {} } = {}) {
       return assets.has(nom) ? Buffer.from(assets.get(nom)) : null;
     },
     async creerAsset({ nom, contenu }) {
+      journal?.push(`github:${nom}`);
       if (assets.has(nom)) {
         throw erreurObjetExistant(`asset ${nom} déjà présent`);
       }
@@ -78,6 +203,7 @@ function creerFrontieres({ release = {}, verrous = {} } = {}) {
       return objets.has(cle) ? Buffer.from(objets.get(cle)) : null;
     },
     async creerObjet(destination) {
+      journal?.push(`r2:${destination.role}:${destination.cle}`);
       const cle = cleObjet(destination);
       if (objets.has(cle)) {
         throw erreurObjetExistant(`objet ${cle} déjà présent`);
@@ -86,17 +212,19 @@ function creerFrontieres({ release = {}, verrous = {} } = {}) {
     },
   };
 
-  return { github, cloudflare };
+  return { github, cloudflare, approbation: APPROBATION, confiance: CONFIANCE };
 }
 
 function optionsPublication(surcharge = {}) {
   return {
-    attestation: Buffer.from(CONTENU_ATTESTATION),
-    recu: Buffer.from(CONTENU_RECU),
+    graphe: CONTENU_GRAPHE_PUBLICATION,
+    attestation: Buffer.from(CONTENU_ATTESTATION_LOCAL),
+    recu: Buffer.from(CONTENU_RECU_LOCAL),
     depot: "mabzadev/punksbot",
     tag: TAG_CANDIDAT,
     canal: "punks-desktop",
     r2: DESTINATIONS_R2.map((destination) => ({ ...destination })),
+    bootstrapR2: true,
     ...surcharge,
   };
 }
@@ -116,59 +244,344 @@ test("publie l'attestation et le Reçu sur la draft exacte et deux comptes R2 co
   assert.deepEqual(resultat.objets, [
     {
       sorte: "attestation",
-      sha256:
-        "8849eeb01801be60c9ab403ae2779f5bd119eab9ec246de8341666d58f5e35e1",
-      assetGithub: "attestation-tranche-1.json",
-      cleR2: "releases/punks-desktop/tranche:1/attestation.json",
+      sha256: createHash("sha256")
+        .update(CONTENU_ATTESTATION_FINAL)
+        .digest("hex"),
+      assetGithub: NOM_ATTESTATION,
+      cleR2: CLE_ATTESTATION,
     },
     {
       sorte: "recu",
-      sha256:
-        "2c7bc3a1a2c433f135f004cf39b20841288da5feac004d080f79cff4d48ec068",
-      assetGithub: "recu-promotion-1.json",
-      cleR2: `releases/punks-desktop/tranche:1/recus/${RECU.id}.json`,
+      sha256: createHash("sha256").update(CONTENU_RECU_FINAL).digest("hex"),
+      assetGithub: NOM_RECU,
+      cleR2: CLE_RECU,
     },
   ]);
   assert.deepEqual(resultat.crees, [
+    "github:attestation",
+    "github:recu",
     "r2:primaire:attestation",
     "r2:primaire:recu",
     "r2:secondaire:attestation",
     "r2:secondaire:recu",
-    "github:attestation",
-    "github:recu",
   ]);
 
   assert.deepEqual(
     await frontieres.github.lireAsset({
       releaseId: 58,
-      nom: "attestation-tranche-1.json",
+      nom: NOM_ATTESTATION,
     }),
-    Buffer.from(CONTENU_ATTESTATION),
+    CONTENU_ATTESTATION_FINAL,
   );
   assert.deepEqual(
     await frontieres.github.lireAsset({
       releaseId: 58,
-      nom: "recu-promotion-1.json",
+      nom: NOM_RECU,
     }),
-    Buffer.from(CONTENU_RECU),
+    CONTENU_RECU_FINAL,
   );
 
   for (const destination of DESTINATIONS_R2) {
     assert.deepEqual(
       await frontieres.cloudflare.lireObjet({
         ...destination,
-        cle: "releases/punks-desktop/tranche:1/attestation.json",
+        cle: CLE_ATTESTATION,
       }),
-      Buffer.from(CONTENU_ATTESTATION),
+      CONTENU_ATTESTATION_FINAL,
     );
     assert.deepEqual(
       await frontieres.cloudflare.lireObjet({
         ...destination,
-        cle: `releases/punks-desktop/tranche:1/recus/${RECU.id}.json`,
+        cle: CLE_RECU,
       }),
-      Buffer.from(CONTENU_RECU),
+      CONTENU_RECU_FINAL,
     );
   }
+});
+
+test("la première activation R2 est bootstrapée depuis les assets GitHub immuables", async () => {
+  const journal = [];
+  const frontieres = creerFrontieres({ journal });
+  const resultat = await publierPromotion(
+    optionsPublication({ bootstrapR2: true }),
+    frontieres,
+  );
+
+  assert.equal(resultat.statut, "publiee");
+  assert.equal(journal[0].startsWith("github:"), true);
+  assert.equal(journal[1].startsWith("github:"), true);
+  assert.equal(
+    journal.slice(2).every((operation) => operation.startsWith("r2:")),
+    true,
+  );
+  const objetRecu = resultat.objets.find((objet) => objet.sorte === "recu");
+  const octetsRecu = await frontieres.github.lireAsset({
+    releaseId: 58,
+    nom: objetRecu.assetGithub,
+  });
+  const recu = JSON.parse(octetsRecu.toString("utf8"));
+  assert.equal(
+    recu.contenu["bootstrap-github-attestation-sha256"],
+    canonicalSha256({ ...ATTESTATION, publiee: ["release", "r2"] }),
+  );
+});
+
+test("la première tranche refuse tout contournement du bootstrap avant une frontière distante", async () => {
+  const journal = [];
+  const frontieres = creerFrontieres({ journal });
+  await assert.rejects(
+    publierPromotion(optionsPublication({ bootstrapR2: false }), frontieres),
+    /première tranche impose le bootstrap GitHub puis R2/,
+  );
+  assert.deepEqual(journal, []);
+});
+
+test("la publication initiale refuse un graphe intégralement invalide avant signature ou frontière distante", async () => {
+  const journal = [];
+  const frontieres = creerFrontieres({ journal });
+  frontieres.approbation = {
+    ...frontieres.approbation,
+    async signerRecu() {
+      journal.push("signature");
+      return [];
+    },
+  };
+  const grapheInvalide = structuredClone(GRAPHE_PUBLICATION);
+  grapheInvalide.recuperations = [
+    {
+      type: "retour-buzz",
+      cible: "buzz",
+    },
+  ];
+  await assert.rejects(
+    publierPromotion(
+      optionsPublication({
+        graphe: Buffer.from(`${canonicalJson(grapheInvalide)}\n`),
+      }),
+      frontieres,
+    ),
+    /graphe de release est invalide.*retour-buzz/s,
+  );
+  assert.deepEqual(journal, []);
+});
+
+test("deux promotions au même préfixe SHA gardent des identités et clés distinctes", async () => {
+  const frontieres = creerFrontieres();
+  const shaSuivant = `${SHA_CANDIDAT.slice(0, 12)}${"f".repeat(28)}`;
+  frontieres.github.lireDraft = async ({ tag }) => ({
+    id: tag === TAG_CANDIDAT ? 58 : 59,
+    tag,
+    sha: tag.slice("punks-staging-".length),
+    draft: true,
+  });
+
+  const attestationSuivante = structuredClone(ATTESTATION);
+  attestationSuivante.sha = shaSuivant;
+  for (const gate of attestationSuivante.gates) gate.sha = shaSuivant;
+  const recuSuivant = recuPour(attestationSuivante);
+  assert.notEqual(recuSuivant.id, RECU.id);
+  assert.equal(
+    attestationSuivante.sha.slice(0, 12),
+    ATTESTATION.sha.slice(0, 12),
+    "le cas adverse conserve volontairement le même préfixe 48 bits",
+  );
+
+  const premier = await publierPromotion(optionsPublication(), frontieres);
+  const suivant = await publierPromotion(
+    optionsPublication({
+      attestation: Buffer.from(
+        `${JSON.stringify(attestationSuivante, null, 2)}\n`,
+      ),
+      recu: Buffer.from(`${JSON.stringify(recuSuivant, null, 2)}\n`),
+      tag: `punks-staging-${shaSuivant}`,
+    }),
+    frontieres,
+  );
+
+  assert.equal(premier.statut, "publiee");
+  assert.equal(suivant.statut, "publiee");
+  assert.notEqual(
+    premier.objets.find((objet) => objet.sorte === "attestation").cleR2,
+    suivant.objets.find((objet) => objet.sorte === "attestation").cleR2,
+  );
+  assert.notEqual(
+    premier.objets.find((objet) => objet.sorte === "recu").cleR2,
+    suivant.objets.find((objet) => objet.sorte === "recu").cleR2,
+  );
+});
+
+test("la finalisation ordonne les signatures et reproduit exactement les mêmes octets", async () => {
+  const inversee = await finaliserPromotion(
+    { attestation: ATTESTATION, recu: RECU, bootstrapR2: true },
+    {
+      ...APPROBATION,
+      async signerRecu(argumentsSignature) {
+        return (await APPROBATION.signerRecu(argumentsSignature)).reverse();
+      },
+    },
+    CONFIANCE,
+  );
+  assert.deepEqual(
+    inversee.octets.attestation,
+    PROMOTION_FINALE.octets.attestation,
+  );
+  assert.deepEqual(inversee.octets.recu, PROMOTION_FINALE.octets.recu);
+});
+
+test("la première publication refuse tout champ local implicite avant signature", async () => {
+  const recuImplicite = structuredClone(RECU);
+  recuImplicite.contenu["backend-implicite"] = "buzz";
+  recuImplicite.sha256 = canonicalSha256(recuImplicite.contenu);
+  await assert.rejects(
+    finaliserPromotion(
+      { attestation: ATTESTATION, recu: recuImplicite, bootstrapR2: true },
+      APPROBATION,
+      CONFIANCE,
+    ),
+    /Reçu local à schéma fermé/,
+  );
+
+  const attestationImplicite = structuredClone(ATTESTATION);
+  attestationImplicite["backend-implicite"] = "buzz";
+  await assert.rejects(
+    finaliserPromotion(
+      {
+        attestation: attestationImplicite,
+        recu: recuPour(attestationImplicite),
+        bootstrapR2: true,
+      },
+      APPROBATION,
+      CONFIANCE,
+    ),
+    /attestation locale .*schéma fermé/,
+  );
+});
+
+test("la première publication refuse les champs implicites d'une signature", async () => {
+  await assert.rejects(
+    finaliserPromotion(
+      { attestation: ATTESTATION, recu: RECU, bootstrapR2: true },
+      {
+        ...APPROBATION,
+        async signerRecu(argumentsSignature) {
+          const signatures = await APPROBATION.signerRecu(argumentsSignature);
+          signatures[0]["autorite-implicite"] = "buzz";
+          return signatures;
+        },
+      },
+      CONFIANCE,
+    ),
+    /signature du Reçu à schéma fermé/,
+  );
+});
+
+test("la sérialisation finale est canonique malgré un ordre de clés différent", async () => {
+  const reordonner = (valeur) => {
+    if (Array.isArray(valeur)) return valeur.map(reordonner);
+    if (valeur === null || typeof valeur !== "object") return valeur;
+    return Object.fromEntries(
+      Object.entries(valeur)
+        .reverse()
+        .map(([cle, contenu]) => [cle, reordonner(contenu)]),
+    );
+  };
+  const attestation = reordonner(ATTESTATION);
+  const recu = reordonner(recuPour(attestation));
+  const finalisee = await finaliserPromotion(
+    { attestation, recu, bootstrapR2: true },
+    APPROBATION,
+    CONFIANCE,
+  );
+
+  assert.deepEqual(finalisee.octets.attestation, CONTENU_ATTESTATION_FINAL);
+  assert.deepEqual(finalisee.octets.recu, CONTENU_RECU_FINAL);
+});
+
+test("refuse toute attestation locale incomplète avant signature et écriture", async () => {
+  const mutations = [
+    (attestation) => delete attestation.dossier,
+    (attestation) => delete attestation["checkpoint-baseline"],
+    (attestation) => delete attestation.registres,
+    (attestation) => delete attestation.staging,
+    (attestation) => delete attestation.gates,
+    (attestation) => delete attestation.artefacts,
+    (attestation) => delete attestation["digests-production"],
+  ];
+  for (const muter of mutations) {
+    const attestation = structuredClone(ATTESTATION);
+    muter(attestation);
+    await assert.rejects(
+      finaliserPromotion(
+        { attestation, recu: recuPour(attestation) },
+        APPROBATION,
+        CONFIANCE,
+      ),
+      /attestation locale complète/s,
+    );
+  }
+});
+
+test("refuse deux encodages DER de la même clé comme deux approbateurs", async () => {
+  const [id, cle] = CLES_APPROBATION.entries().next().value;
+  const derAvecSuffixe = Buffer.concat([
+    Buffer.from(cle.publique, "base64"),
+    Buffer.from([0]),
+  ]).toString("base64");
+  let signatureDemandee = false;
+  const approbation = {
+    approbateurs: [
+      { id, "cle-publique-spki": cle.publique },
+      { id: "ops:alias", "cle-publique-spki": derAvecSuffixe },
+    ],
+    async signerRecu() {
+      signatureDemandee = true;
+      return [];
+    },
+  };
+  const confianceAlias = {
+    registreApprobateursRelease: approbation.approbateurs.map((entree) => ({
+      ...entree,
+    })),
+    ancrageApprobateursRelease: canonicalSha256(approbation.approbateurs),
+  };
+
+  await assert.rejects(
+    finaliserPromotion(
+      { attestation: ATTESTATION, recu: RECU },
+      approbation,
+      confianceAlias,
+    ),
+    /registre d'approbateurs Ed25519 invalide ou dupliqué/s,
+  );
+  assert.equal(signatureDemandee, false);
+});
+
+test("refuse deux vraies clés non membres de l'ancrage opérateur", async () => {
+  const approbateurs = ["attaquant:1", "attaquant:2"].map((id) => {
+    const { publicKey } = generateKeyPairSync("ed25519");
+    return {
+      id,
+      "cle-publique-spki": publicKey
+        .export({ format: "der", type: "spki" })
+        .toString("base64"),
+    };
+  });
+  let signatureDemandee = false;
+  await assert.rejects(
+    finaliserPromotion(
+      { attestation: ATTESTATION, recu: RECU },
+      {
+        approbateurs,
+        async signerRecu() {
+          signatureDemandee = true;
+          return [];
+        },
+      },
+      CONFIANCE,
+    ),
+    /appartenir exactement au registre complet ancré/s,
+  );
+  assert.equal(signatureDemandee, false);
 });
 
 test("refuse deux destinations dans le même compte R2 avant toute écriture", async () => {
@@ -184,14 +597,14 @@ test("refuse deux destinations dans le même compte R2 avant toute écriture", a
   assert.equal(
     await frontieres.cloudflare.lireObjet({
       ...r2[0],
-      cle: "releases/punks-desktop/tranche:1/attestation.json",
+      cle: CLE_ATTESTATION,
     }),
     null,
   );
   assert.equal(
     await frontieres.github.lireAsset({
       releaseId: 58,
-      nom: "attestation-tranche-1.json",
+      nom: NOM_ATTESTATION,
     }),
     null,
   );
@@ -210,7 +623,7 @@ test("refuse le même bucket logique dans les deux comptes avant toute écriture
   assert.equal(
     await frontieres.cloudflare.lireObjet({
       ...r2[0],
-      cle: "releases/punks-desktop/tranche:1/attestation.json",
+      cle: CLE_ATTESTATION,
     }),
     null,
   );
@@ -229,7 +642,7 @@ test("refuse une identité R2 non canonique avant toute frontière externe", asy
   assert.equal(
     await frontieres.cloudflare.lireObjet({
       ...DESTINATIONS_R2[0],
-      cle: "releases/punks-desktop/tranche:1/attestation.json",
+      cle: CLE_ATTESTATION,
     }),
     null,
   );
@@ -254,7 +667,7 @@ test("refuse un bucket sans verrouillage compliance avant toute écriture", asyn
   assert.equal(
     await frontieres.cloudflare.lireObjet({
       ...DESTINATIONS_R2[0],
-      cle: "releases/punks-desktop/tranche:1/attestation.json",
+      cle: CLE_ATTESTATION,
     }),
     null,
     "le préflight doit valider les deux buckets avant la première écriture",
@@ -275,30 +688,45 @@ test("refuse un tag demandé qui ne dérive pas du SHA de l'attestation", async 
   assert.equal(
     await frontieres.github.lireAsset({
       releaseId: 58,
-      nom: "attestation-tranche-1.json",
+      nom: NOM_ATTESTATION,
     }),
     null,
   );
 });
 
-test("refuse un canal non canonique avant de construire les clés R2", async () => {
-  const frontieres = creerFrontieres();
+test("refuse les checkpoints Buzz avant signature et publication", async () => {
+  for (const sha of [BASELINE_BUZZ, CHECKPOINT_RECUPERATION]) {
+    const attestation = { ...ATTESTATION, sha };
+    const id = `recu-promotion-1-${sha}`;
+    const contenu = {
+      schema: "punks.release-receipt.v1",
+      id,
+      type: "promotion",
+      "attestation-sha256": canonicalSha256(attestation),
+    };
+    const recu = { id, contenu, sha256: canonicalSha256(contenu) };
+    await assert.rejects(
+      finaliserPromotion({ attestation, recu }, APPROBATION, CONFIANCE),
+      /distinct des checkpoints Buzz interdits/s,
+    );
+  }
+});
 
-  await assert.rejects(
-    publierPromotion(
-      optionsPublication({ canal: "../autre-canal" }),
-      frontieres,
-    ),
-    /canal de publication canonique/s,
-  );
-
-  assert.equal(
-    await frontieres.cloudflare.lireObjet({
-      ...DESTINATIONS_R2[0],
-      cle: "releases/punks-desktop/tranche:1/attestation.json",
-    }),
-    null,
-  );
+test("refuse tout canal différent du canal fermé avant de construire les clés R2", async () => {
+  for (const canal of ["../autre-canal", "autre-canal"]) {
+    const frontieres = creerFrontieres();
+    await assert.rejects(
+      publierPromotion(optionsPublication({ canal }), frontieres),
+      /canal de publication doit être exactement punks-desktop/s,
+    );
+    assert.equal(
+      await frontieres.cloudflare.lireObjet({
+        ...DESTINATIONS_R2[0],
+        cle: CLE_ATTESTATION,
+      }),
+      null,
+    );
+  }
 });
 
 test("refuse une release GitHub dont le tag observé diverge", async () => {
@@ -314,7 +742,7 @@ test("refuse une release GitHub dont le tag observé diverge", async () => {
   assert.equal(
     await frontieres.cloudflare.lireObjet({
       ...DESTINATIONS_R2[0],
-      cle: "releases/punks-desktop/tranche:1/attestation.json",
+      cle: CLE_ATTESTATION,
     }),
     null,
   );
@@ -331,7 +759,7 @@ test("refuse une release GitHub dont le SHA cible diverge", async () => {
   assert.equal(
     await frontieres.cloudflare.lireObjet({
       ...DESTINATIONS_R2[0],
-      cle: "releases/punks-desktop/tranche:1/attestation.json",
+      cle: CLE_ATTESTATION,
     }),
     null,
   );
@@ -348,7 +776,7 @@ test("refuse une release GitHub qui n'est plus une draft", async () => {
   assert.equal(
     await frontieres.cloudflare.lireObjet({
       ...DESTINATIONS_R2[0],
-      cle: "releases/punks-desktop/tranche:1/attestation.json",
+      cle: CLE_ATTESTATION,
     }),
     null,
   );
@@ -359,7 +787,7 @@ test("refuse un objet R2 existant au hash divergent avant toute nouvelle publica
   const secondaire = DESTINATIONS_R2[1];
   await frontieres.cloudflare.creerObjet({
     ...secondaire,
-    cle: "releases/punks-desktop/tranche:1/attestation.json",
+    cle: CLE_ATTESTATION,
     contenu: Buffer.from("contenu-divergent\n"),
   });
 
@@ -373,7 +801,7 @@ test("refuse un objet R2 existant au hash divergent avant toute nouvelle publica
   assert.equal(
     await frontieres.cloudflare.lireObjet({
       ...DESTINATIONS_R2[0],
-      cle: "releases/punks-desktop/tranche:1/attestation.json",
+      cle: CLE_ATTESTATION,
     }),
     null,
     "aucune destination saine ne doit être écrite avant la fin du préflight",
@@ -381,7 +809,7 @@ test("refuse un objet R2 existant au hash divergent avant toute nouvelle publica
   assert.equal(
     await frontieres.github.lireAsset({
       releaseId: 58,
-      nom: "attestation-tranche-1.json",
+      nom: NOM_ATTESTATION,
     }),
     null,
   );
@@ -391,7 +819,7 @@ test("refuse un asset GitHub existant au hash divergent avant toute écriture R2
   const frontieres = creerFrontieres();
   await frontieres.github.creerAsset({
     releaseId: 58,
-    nom: "recu-promotion-1.json",
+    nom: NOM_RECU,
     contenu: Buffer.from("recu-divergent\n"),
   });
 
@@ -405,7 +833,7 @@ test("refuse un asset GitHub existant au hash divergent avant toute écriture R2
   assert.equal(
     await frontieres.cloudflare.lireObjet({
       ...DESTINATIONS_R2[0],
-      cle: "releases/punks-desktop/tranche:1/attestation.json",
+      cle: CLE_ATTESTATION,
     }),
     null,
   );
@@ -415,8 +843,8 @@ test("reprend idempotemment une publication partielle dont l'objet existant est 
   const frontieres = creerFrontieres();
   await frontieres.cloudflare.creerObjet({
     ...DESTINATIONS_R2[0],
-    cle: "releases/punks-desktop/tranche:1/attestation.json",
-    contenu: Buffer.from(CONTENU_ATTESTATION),
+    cle: CLE_ATTESTATION,
+    contenu: CONTENU_ATTESTATION_FINAL,
   });
 
   const resultat = await publierPromotion(optionsPublication(), frontieres);
@@ -424,18 +852,18 @@ test("reprend idempotemment une publication partielle dont l'objet existant est 
   assert.equal(resultat.statut, "reprise");
   assert.deepEqual(resultat.dejaPresents, ["r2:primaire:attestation"]);
   assert.deepEqual(resultat.crees, [
+    "github:attestation",
+    "github:recu",
     "r2:primaire:recu",
     "r2:secondaire:attestation",
     "r2:secondaire:recu",
-    "github:attestation",
-    "github:recu",
   ]);
   assert.deepEqual(
     await frontieres.cloudflare.lireObjet({
       ...DESTINATIONS_R2[0],
-      cle: "releases/punks-desktop/tranche:1/attestation.json",
+      cle: CLE_ATTESTATION,
     }),
-    Buffer.from(CONTENU_ATTESTATION),
+    CONTENU_ATTESTATION_FINAL,
   );
 });
 
@@ -444,15 +872,15 @@ test("retourne un succès sans réécriture lorsque les six objets exacts existe
   const objets = [
     {
       sorte: "attestation",
-      nom: "attestation-tranche-1.json",
-      cle: "releases/punks-desktop/tranche:1/attestation.json",
-      contenu: Buffer.from(CONTENU_ATTESTATION),
+      nom: NOM_ATTESTATION,
+      cle: CLE_ATTESTATION,
+      contenu: CONTENU_ATTESTATION_FINAL,
     },
     {
       sorte: "recu",
-      nom: "recu-promotion-1.json",
-      cle: `releases/punks-desktop/tranche:1/recus/${RECU.id}.json`,
-      contenu: Buffer.from(CONTENU_RECU),
+      nom: NOM_RECU,
+      cle: CLE_RECU,
+      contenu: CONTENU_RECU_FINAL,
     },
   ];
   for (const destination of DESTINATIONS_R2) {
@@ -496,7 +924,7 @@ test("reprend une course create-only si l'objet concurrent porte exactement le h
     if (
       !courseInjectee &&
       destination.role === "primaire" &&
-      destination.cle.endsWith("/attestation.json")
+      destination.cle.includes("/attestations/")
     ) {
       courseInjectee = true;
       await creerObjet(destination);
@@ -513,9 +941,9 @@ test("reprend une course create-only si l'objet concurrent porte exactement le h
   assert.deepEqual(
     await frontieres.cloudflare.lireObjet({
       ...DESTINATIONS_R2[0],
-      cle: "releases/punks-desktop/tranche:1/attestation.json",
+      cle: CLE_ATTESTATION,
     }),
-    Buffer.from(CONTENU_ATTESTATION),
+    CONTENU_ATTESTATION_FINAL,
   );
 });
 
@@ -542,8 +970,8 @@ test("reprend idempotemment au second passage une publication interrompue", asyn
     (erreur) =>
       erreur.code === "PUBLICATION_PARTIELLE" &&
       erreur.details?.reprenable === true &&
-      erreur.details?.publies?.length === 3 &&
-      erreur.details?.restants?.length === 3,
+      erreur.details?.publies?.length === 5 &&
+      erreur.details?.restants?.length === 1,
   );
 
   const resultat = await publierPromotion(optionsPublication(), frontieres);
@@ -553,19 +981,17 @@ test("reprend idempotemment au second passage une publication interrompue", asyn
     "r2:primaire:attestation",
     "r2:primaire:recu",
     "r2:secondaire:attestation",
-  ]);
-  assert.deepEqual(resultat.crees, [
-    "r2:secondaire:recu",
     "github:attestation",
     "github:recu",
   ]);
+  assert.deepEqual(resultat.crees, ["r2:secondaire:recu"]);
 });
 
 test("refuse un Reçu dont l'identifiant ne cite pas le SHA de l'attestation", async () => {
   const frontieres = creerFrontieres();
   const recu = {
     ...RECU,
-    id: `recu-promotion-1-${"f".repeat(12)}`,
+    id: `recu-promotion-1-${"f".repeat(40)}`,
   };
 
   await assert.rejects(
@@ -581,7 +1007,7 @@ test("refuse un Reçu dont l'identifiant ne cite pas le SHA de l'attestation", a
   assert.equal(
     await frontieres.github.lireAsset({
       releaseId: 58,
-      nom: "attestation-tranche-1.json",
+      nom: NOM_ATTESTATION,
     }),
     null,
   );
@@ -598,13 +1024,76 @@ test("refuse un Reçu dont le hash canonique diverge de l'attestation", async ()
       }),
       frontieres,
     ),
-    /hash du Reçu diverge de l'attestation/s,
+    /Reçu local doit lier exactement son contenu canonique/s,
   );
 
   assert.equal(
     await frontieres.github.lireAsset({
       releaseId: 58,
-      nom: "attestation-tranche-1.json",
+      nom: NOM_ATTESTATION,
+    }),
+    null,
+  );
+});
+
+test("refuse une frontière d'approbation absente, falsifiée ou non approuvée avant toute écriture", async () => {
+  const absente = creerFrontieres();
+  absente.approbation = null;
+  await assert.rejects(
+    publierPromotion(optionsPublication(), absente),
+    /deux approbateurs Ed25519 approuvés/s,
+  );
+
+  const falsifiee = creerFrontieres();
+  falsifiee.approbation = {
+    ...APPROBATION,
+    async signerRecu({ contenu, approbateurs }) {
+      const signatures = await APPROBATION.signerRecu({
+        contenu,
+        approbateurs,
+      });
+      signatures[0].valeur = "00".repeat(64);
+      return signatures;
+    },
+  };
+  await assert.rejects(
+    publierPromotion(optionsPublication(), falsifiee),
+    /signature du Reçu invalide/s,
+  );
+
+  const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+  const etrangere = creerFrontieres();
+  etrangere.approbation = {
+    ...APPROBATION,
+    async signerRecu({ contenu, approbateurs }) {
+      const signatures = await APPROBATION.signerRecu({
+        contenu,
+        approbateurs,
+      });
+      signatures[0] = {
+        approbateur: approbateurs[0],
+        algorithme: "ed25519",
+        "cle-publique-spki": publicKey
+          .export({ format: "der", type: "spki" })
+          .toString("base64"),
+        valeur: signerEd25519(
+          null,
+          Buffer.from(canonicalJson(contenu), "utf8"),
+          privateKey,
+        ).toString("hex"),
+      };
+      return signatures;
+    },
+  };
+  await assert.rejects(
+    publierPromotion(optionsPublication(), etrangere),
+    /étrangère au registre approuvé/s,
+  );
+
+  assert.equal(
+    await falsifiee.github.lireAsset({
+      releaseId: 58,
+      nom: NOM_ATTESTATION,
     }),
     null,
   );
@@ -627,14 +1116,19 @@ test("refuse le succès si la draft diverge pendant la publication puis reprend 
   await assert.rejects(
     publierPromotion(optionsPublication(), frontieres),
     (erreur) =>
-      erreur.code === "VALIDATION_POST_PUBLICATION" &&
-      /draft exacte/s.test(erreur.message),
+      erreur.code === "PUBLICATION_PARTIELLE" &&
+      /draft exacte/s.test(erreur.cause?.message ?? ""),
   );
 
   stable = true;
   const resultat = await publierPromotion(optionsPublication(), frontieres);
-  assert.equal(resultat.statut, "deja-publiee");
-  assert.deepEqual(resultat.crees, []);
+  assert.equal(resultat.statut, "reprise");
+  assert.deepEqual(resultat.crees, [
+    "r2:primaire:attestation",
+    "r2:primaire:recu",
+    "r2:secondaire:attestation",
+    "r2:secondaire:recu",
+  ]);
 });
 
 test("refuse le succès si la draft candidate est remplacée sous le même tag et SHA", async () => {
@@ -653,8 +1147,8 @@ test("refuse le succès si la draft candidate est remplacée sous le même tag e
   await assert.rejects(
     publierPromotion(optionsPublication(), frontieres),
     (erreur) =>
-      erreur.code === "VALIDATION_POST_PUBLICATION" &&
-      /identifiant de draft divergent/s.test(erreur.message),
+      erreur.code === "PUBLICATION_PARTIELLE" &&
+      /identifiant de draft divergent/s.test(erreur.cause?.message ?? ""),
   );
 });
 
@@ -693,7 +1187,7 @@ test("refuse le succès si une frontière annonce une création sans objet véri
   const creerAsset = frontieres.github.creerAsset.bind(frontieres.github);
   let perteArmee = true;
   frontieres.github.creerAsset = async (asset) => {
-    if (perteArmee && asset.nom === "recu-promotion-1.json") {
+    if (perteArmee && asset.nom === NOM_RECU) {
       perteArmee = false;
       return;
     }
@@ -703,26 +1197,36 @@ test("refuse le succès si une frontière annonce une création sans objet véri
   await assert.rejects(
     publierPromotion(optionsPublication(), frontieres),
     (erreur) =>
-      erreur.code === "VALIDATION_POST_PUBLICATION" &&
-      /asset GitHub.*recu.*manquant/s.test(erreur.message),
+      erreur.code === "PUBLICATION_PARTIELLE" &&
+      /bootstrap GitHub recu manquant/s.test(erreur.cause?.message ?? ""),
   );
 
   const resultat = await publierPromotion(optionsPublication(), frontieres);
   assert.equal(resultat.statut, "reprise");
-  assert.deepEqual(resultat.crees, ["github:recu"]);
+  assert.deepEqual(resultat.crees, [
+    "github:recu",
+    "r2:primaire:attestation",
+    "r2:primaire:recu",
+    "r2:secondaire:attestation",
+    "r2:secondaire:recu",
+  ]);
 });
 
 test("le CLI publie les deux fichiers locaux via les seules frontières injectées", async () => {
   const temp = mkdtempSync(join(tmpdir(), "punks-promotion-publish-cli-"));
+  const cheminGraphe = join(temp, "release-graph.json");
   const cheminAttestation = join(temp, "attestation-tranche-1.json");
   const cheminRecu = join(temp, "recu-promotion-1.json");
-  writeFileSync(cheminAttestation, CONTENU_ATTESTATION, { flag: "wx" });
-  writeFileSync(cheminRecu, CONTENU_RECU, { flag: "wx" });
+  writeFileSync(cheminGraphe, CONTENU_GRAPHE_PUBLICATION, { flag: "wx" });
+  writeFileSync(cheminAttestation, CONTENU_ATTESTATION_LOCAL, { flag: "wx" });
+  writeFileSync(cheminRecu, CONTENU_RECU_LOCAL, { flag: "wx" });
   const sorties = [];
   const erreurs = [];
 
   const code = await executerCliPublication(
     [
+      "--graphe",
+      cheminGraphe,
       "--attestation",
       cheminAttestation,
       "--recu",
@@ -733,10 +1237,11 @@ test("le CLI publie les deux fichiers locaux via les seules frontières injecté
       TAG_CANDIDAT,
       "--canal",
       "punks-desktop",
+      "--bootstrap-r2",
       "--r2-primaire",
-      "compte-r2-a/punks-promotion-a",
+      `${DESTINATIONS_R2[0].compte}/${DESTINATIONS_R2[0].bucket}`,
       "--r2-secondaire",
-      "compte-r2-b/punks-promotion-b",
+      `${DESTINATIONS_R2[1].compte}/${DESTINATIONS_R2[1].bucket}`,
     ],
     {
       frontieres: creerFrontieres(),

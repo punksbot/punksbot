@@ -23,12 +23,17 @@ import { createHash } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parse } from "yaml";
 import {
   canonicalSha256,
   loadYamlDocument,
 } from "./migration-manifest-lib.mjs";
 import { repoRoot } from "./render-withdrawal-inventory.mjs";
-import { validateReleaseGraph } from "./release-graph-lib.mjs";
+import { validateParityReceiptIndex } from "./promotion-publish-lib.mjs";
+import {
+  validateReleaseGraph,
+  validateReleaseGraphEvolution,
+} from "./release-graph-lib.mjs";
 
 export const graphPath = join(repoRoot, "docs/migration/release-graph.yaml");
 const manifestPath = join(repoRoot, "docs/migration/withdrawal-inventory.yaml");
@@ -42,6 +47,8 @@ const profilePath = join(
   "cloudflare/packages/contracts/profiles/desktop-social-loop@1.json",
 );
 const stagingPath = join(repoRoot, "cloudflare/staging.resources.json");
+const parityPath = join(repoRoot, "cloudflare/PARITY.md");
+const graphRepoPath = relative(repoRoot, graphPath);
 
 const CONTRACT_ROOTS = [
   "cloudflare/packages/contracts/schemas",
@@ -120,6 +127,65 @@ export function computeLiveHashes(files) {
   };
 }
 
+function refDepuisEvenementGithub() {
+  const eventPath = process.env.GITHUB_EVENT_PATH;
+  if (!eventPath) return null;
+  try {
+    const evenement = JSON.parse(readFileSync(eventPath, "utf8"));
+    for (const candidat of [
+      evenement?.before,
+      evenement?.pull_request?.base?.sha,
+    ]) {
+      if (/^[0-9a-f]{40}$/.test(candidat ?? "") && !/^0+$/.test(candidat)) {
+        return candidat;
+      }
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function grapheModifieDepuisHead() {
+  try {
+    execFileSync("git", ["diff", "--quiet", "HEAD", "--", graphRepoPath], {
+      cwd: repoRoot,
+      stdio: "ignore",
+    });
+    return false;
+  } catch (erreur) {
+    if (erreur?.status === 1) return true;
+    throw erreur;
+  }
+}
+
+/** Résout la tête Git de référence utilisée pour le contrôle append-only. */
+export function resolveEvolutionBaseRef() {
+  const explicite = process.env.RELEASE_GRAPH_BASE_SHA;
+  if (explicite) return explicite;
+  const github = refDepuisEvenementGithub();
+  if (github) return github;
+  return grapheModifieDepuisHead() ? "HEAD" : "HEAD^";
+}
+
+function chargerGraphePrecedent() {
+  const ref = resolveEvolutionBaseRef();
+  try {
+    const source = execFileSync("git", ["show", `${ref}:${graphRepoPath}`], {
+      cwd: repoRoot,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    return { graph: parse(source), ref };
+  } catch (erreur) {
+    return {
+      graph: null,
+      ref,
+      erreur: `impossible de charger ${ref}:${graphRepoPath} (${String(erreur?.message ?? erreur)})`,
+    };
+  }
+}
+
 export function runValidation() {
   const graph = loadYamlDocument(graphPath);
   const manifest = loadYamlDocument(manifestPath);
@@ -142,6 +208,19 @@ export function runValidation() {
     trackedFiles: files,
     fileExists: repoFileExists,
   });
+  erreurs.push(
+    ...validateParityReceiptIndex(graph, readFileSync(parityPath, "utf8")),
+  );
+  const precedent = chargerGraphePrecedent();
+  if (precedent.graph === null) {
+    erreurs.push(`[évolution] ${precedent.erreur}`);
+  } else {
+    erreurs.push(
+      ...validateReleaseGraphEvolution(precedent.graph, graph).map(
+        (erreur) => `[${precedent.ref}] ${erreur}`,
+      ),
+    );
+  }
 
   // Le profil cité par le candidat en preparation doit exister dans le registre.
   const preparation = (

@@ -7,9 +7,17 @@
 # Baseline Buzz gelée : da818eddc2f470c006a1073c8c5452f8a989f272.
 #
 # Règles :
-#   - Une release par tranche, cycle de vie fermé
-#     preparation → expansion → active → contraction → contractee, journalisé
-#     en append-only (ni saut, ni régression).
+#   - Un nœud logique par tranche, cycle de vie fermé
+#     preparation → expansion → active → contraction → contractee. Expansion,
+#     activation et contraction restent des releases distinctes : chaque entrée
+#     du journal append-only porte un instant exact, un release-id, un
+#     déploiement, un instantané complet content-addressé du candidat et une
+#     attestation uniques, ainsi que son Reçu signé. Le Reçu contient le digest
+#     du graphe et l'état opérationnel minimal fermé de la décision #16.
+#     `contractee` est l'état terminal de la contraction, pas une quatrième
+#     release.
+#     Les nœuds tranche:1…N restent contigus et ordonnés ; aucun historique ne
+#     peut être omis ni rester en préparation lorsque le graphe avance.
 #   - Un candidat ne quitte « preparation » que si les preuves obligatoires ET
 #     le retrait associé (lignes du registre des goldens + verdicts exécutés du
 #     manifeste de retrait) sont rattachés au MÊME SHA : l’activation est
@@ -17,12 +25,22 @@
 #   - N et N−1 restent supportés au moins 90 jours après l’activation de N ;
 #     la contraction de N−1 exige ensuite moins de 1 % d’usage pendant 14 jours
 #     consécutifs.
-#   - Le roll-forward est la récupération normale ; un retour à une version
-#     Punks antérieure exige un certificat de compatibilité exact ; aucun
-#     retour vers Buzz n’existe dans le vocabulaire fermé.
+#   - Deux releases actives sont admises uniquement pour N/N−1 consécutifs.
+#     Les profils desktop ont une chronologie d'acceptation indépendante de
+#     l'éligibilité backend ; une contraction ne ferme jamais un profil et
+#     chaque activation historique reste couverte par un intervalle.
+#   - Le roll-forward corrige la tranche logique courante sans consommer la
+#     tranche fonctionnelle suivante : nouveau SHA, nouveau release-id,
+#     instantanés complets distincts et redémarrage E0. Il ne peut réutiliser ni
+#     un checkpoint Buzz ni un SHA Punks historique. Un retour à une version
+#     Punks antérieure exige les treize contrôles recalculés à l'instant UTC
+#     exact, une cible déjà activée et un nouveau Reçu signé ; aucun retour vers
+#     Buzz n’existe.
 #   - Attestations et Reçus sont immuables : écriture create-only,
 #     verrouillage d’objet, deux comptes R2, publication avec la release ET
-#     dans le stockage R2 prévu.
+#     dans le stockage R2 prévu. Les signatures Ed25519 sont vérifiées contre
+#     le registre de clés approuvées et un Reçu de promotion lie toujours le
+#     hash canonique de l'attestation finale.
 #   - Le candidat en preparation porte les hashes vivants recalculés par le
 #     gate (`node scripts/check-release-graph.mjs`) ; une release scellée fige
 #     les siens. Hash canonique du document : `--hashes`.
@@ -54,6 +72,9 @@ politique:
     retour-buzz: interdit
   rpo-logique-nul: true
   immuabilite:
+    bootstrap-r2:
+      premiere-activation: github-puis-r2
+      reference: bootstrap-github-attestation-sha256
     attestations:
       publication: [release, r2]
       ecriture: create-only
@@ -85,13 +106,47 @@ preuves-obligatoires:
   - goldens-verdict
   - scans-negatifs
 
+# Vocabulaire fermé des treize contrôles de l'issue #16. Chaque entrée d'un
+# certificat de retour Punks embarque sa preuve verte et son sha256 canonique.
+# Le Reçu signe le noyau du certificat et les douze premières preuves ; le
+# treizième contrôle est lié au sha256 du nouveau Reçu d'éligibilité.
+controles-certificat-retour-punks:
+  - bundle-manifeste-originaux
+  - attestation-valide-non-revoquee
+  - securite-isolation-effacement-sans-buzz
+  - profils-desktop-actifs
+  - versions-etat-durable-objects
+  - migrations-durable-objects-franchissables
+  - migrations-d1-expand-compatibles
+  - formats-r2-tombstones-generations
+  - topologie-cloudflare
+  - generations-secrets-attestation-sessions
+  - workflows-compatibles-ou-neutralises
+  - smoke-handshake-probes
+  - recu-cloudflare-digests-approbateurs
+
 plateformes: [macos-arm64, macos-x64, linux-x64, windows-x64]
 
 publication:
   r2:
+    # À remplir avec deux comptes Cloudflare distincts avant le premier
+    # scellement. Le gate refuse toute release scellée tant que cette liste est
+    # vide, et le publisher compare ensuite les destinations octet pour octet.
+    destinations: []
     layout:
-      attestations: releases/{canal}/{id}/attestation.json
-      recus: releases/{canal}/{id}/recus/{recu}.json
+      attestations: releases/{canal}/{id}/attestations/{attestation-sha256}.json
+      recus: releases/{canal}/{id}/recus/{recu-sha256}.json
+
+# Registre append-only des identités autorisées à approuver les Reçus. Une
+# release scellée exige deux signatures Ed25519 valides dont les clés SPKI
+# correspondent exactement à deux entrées distinctes de ce registre.
+# Vide tant que le graphe ne contient qu'un candidat en préparation.
+approbateurs-release: []
+
+# Journal append-only des attestations supersédées ou révoquées. Chaque entrée
+# lie l'attestation originale, son éventuelle remplaçante et un Reçu signé ;
+# une révocation critique lie aussi le blocage de profil et le fencing.
+invalidations-attestations: []
 
 # Le candidat de la première tranche est relié aux matériaux réels du dépôt.
 # Il ne porte ni SHA, ni déploiement de staging, ni artefact, ni preuve :
@@ -121,7 +176,7 @@ releases:
         sha256: e317ab42ffa0c0aaea7bc7b6ebe5d8ede446a4f0cc9738ed750c96f73d75e483
       manifeste-retrait:
         version: 1
-        sha256: 32386d67a64363b68173ed7e1d0e39a3fb3c7b20f208cd41d96059366878d653
+        sha256: ce9211017048d14a25278849830c0ab5a06ca58792dac9f10d9e8776abe73443
     staging:
       environnement: staging
       compte: 3a391620584c792dbbd8cfa148d7634a
@@ -130,12 +185,30 @@ releases:
       materiau-sha256: 990c4ed698a9322de6fdefdc1870a3c0d67889abb86a1504eb85d51c55fb7f20
       deploiement: null
     artefacts: []
+    digests-production: null
+    dossier-preuve-sha256: null
     preuves: {}
     retrait: null
     attestation: null
+    attestation-sha256: null
     recus: []
     journal: []
 
-# Récupérations journalisées (roll-forward ou retour Punks certifié).
+# Tentatives promotionnelles scellées avant E0 et leurs événements signés.
+# Une cadence complète rejoint le journal de la release ; les préfixes, pauses,
+# échecs et quarantaines restent ici de façon append-only et récupérable.
+executions: []
+
+# Chronologie client indépendante. Chaque intervalle scellé contient id,
+# version, sha256, accepte-depuis et accepte-jusqua (instant UTC ou null).
+# Vide tant qu'aucune release backend n'est active.
+profils-supportes: []
+
+# Récupérations journalisées. Un roll-forward cite `depuis` et `cible` sur la
+# même tranche logique, deux snapshots `{contenu, sha256}`, un nouveau
+# release-id, un nouveau SHA candidat, son Reçu signé et `redemarrage: E0`.
+# Un retour Punks cite un `instant` UTC canonique, un certificat recalculé à ce
+# même instant, les treize preuves embarquées/content-addressées et son nouveau
+# Reçu content-addressé signé par deux approbateurs approuvés.
 # Vide tant qu’aucune release n’est scellée : il n’existe rien à récupérer.
 recuperations: []

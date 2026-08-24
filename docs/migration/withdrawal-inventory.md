@@ -3,7 +3,7 @@
 > Vue dérivée de [`withdrawal-inventory.yaml`](./withdrawal-inventory.yaml), qui est canonique.
 > Régénérée par `scripts/render-withdrawal-inventory.mjs` (`pnpm migration:render`) — ne pas éditer.
 > Décisions : issues [#13](https://github.com/punksbot/punksbot/issues/13), [#14](https://github.com/punksbot/punksbot/issues/14) et [#17](https://github.com/punksbot/punksbot/issues/17).
-> Checkpoint de récupération : `50e16de180dda4365f8001a8a73503f16977a175` — baseline Buzz gelée : `da818eddc2f470c006a1073c8c5452f8a989f272` — version 1 — sha256 canonique `32386d67a64363b68173ed7e1d0e39a3fb3c7b20f208cd41d96059366878d653`.
+> Checkpoint de récupération : `50e16de180dda4365f8001a8a73503f16977a175` — baseline Buzz gelée : `da818eddc2f470c006a1073c8c5452f8a989f272` — version 1 — sha256 canonique `ce9211017048d14a25278849830c0ab5a06ca58792dac9f10d9e8776abe73443`.
 
 Chaque actif reçoit exactement un verdict. Un module partagé appartient à la tranche de
 son **dernier** consommateur ; ses parties antérieures disparaissent plus tôt (champ
@@ -158,7 +158,7 @@ L’entrée « Retrait global du serveur historique » s’ouvre uniquement lors
 - `desktop/{tailwind.punks.config.js,tsconfig.punks.json}` — configurations de build fermées de la surface Punks
 - `scripts/{check-migration-manifests.mjs,check-migration-manifests.test.mjs,migration-manifest-lib.mjs,render-withdrawal-inventory.mjs}` — gate et générateur des manifestes de migration (issue #49)
 - `scripts/{release-graph-lib.mjs,check-release-graph.mjs,check-release-graph.test.mjs}` — gate du graphe de release et du modèle d'attestation (issue #51)
-- `scripts/{promotion-dossier-lib.mjs,check-promotion-dossier.mjs,check-promotion-dossier.test.mjs,promotion-publish-lib.mjs,promotion-publish.mjs,promotion-publish.test.mjs,punks-desktop-candidate-workflow.test.mjs,punks-desktop-promotion-workflow.test.mjs,check-punks-rust.mjs,punks-native-artifact.mjs,punks-native-artifact.test.mjs,windows-artifact-sign.ps1,windows-artifact-sign.test.ps1}` — harnais d'acceptation d'une promotion : dossier de preuve, gates d'autorisation, chaîne de candidat Tauri signé et émission create-only de l'attestation (issues #52 et #58)
+- `scripts/{promotion-dossier-lib.mjs,check-promotion-dossier.mjs,check-promotion-dossier.test.mjs,promotion-publish-lib.mjs,promotion-publish.mjs,promotion-publish.test.mjs,promotion-frontiers.mjs,promotion-frontiers.test.mjs,receipt-publish.mjs,punks-desktop-candidate-workflow.test.mjs,punks-desktop-promotion-workflow.test.mjs,check-punks-rust.mjs,punks-native-artifact.mjs,punks-native-artifact.test.mjs,windows-artifact-sign.ps1,windows-artifact-sign.test.ps1}` — harnais d'acceptation d'une promotion : dossier de preuve, gates d'autorisation, chaîne de candidat Tauri signé et émission create-only de l'attestation (issues #52 et #58)
 - `scripts/candidate/` — collecte fermée, preuves natives et agrégation attestée des quatre plateformes du candidat Punks
 - `package.json` — workspace punksbot — gates Punks (cloudflare:check, punks:check, migration:check)
 - `docs/{adr,agents,spec,research}/`

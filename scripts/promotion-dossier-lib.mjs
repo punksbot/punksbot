@@ -11,7 +11,8 @@
  * Ce socle matérialise le dossier attendu et ses règles de refus :
  *
  *   - la liaison relie sans ambiguïté le SHA du candidat, l'identité des
- *     artefacts Tauri signés et les identifiants du déploiement Workers testé ;
+ *     artefacts Tauri signés, les digests du bundle et du manifeste production,
+ *     et les identifiants du déploiement Workers testé ;
  *   - le parcours distribué passe par l'interface, l'IPC Rust et les contrats
  *     publics, sans serveur Vite ni façade de test ;
  *   - macOS arm64, macOS x64, Linux x64 et Windows x64 vérifient signature,
@@ -149,6 +150,13 @@ export function validerDossier(dossier, contexte = {}) {
     !SHA1_RE.test(candidat.sha)
   ) {
     push("candidat : SHA exact (40 hexadécimaux) manquant");
+  } else if (
+    candidat.sha === BASELINE_BUZZ ||
+    candidat.sha === CHECKPOINT_RECUPERATION
+  ) {
+    push(
+      "candidat : un SHA Punks doit être distinct des checkpoints Buzz interdits",
+    );
   }
   if (!Number.isInteger(candidat?.tranche) || candidat?.tranche < 1) {
     push("candidat : tranche entière ≥ 1 attendue");
@@ -209,6 +217,13 @@ function preuvesAttendues(dossier, ledgerRetraits) {
     "staging/materiau",
     dossier.liaison?.staging?.["materiau-sha256"],
   );
+  for (const nom of ["bundle", "manifeste"]) {
+    ajouterPreuveAttendue(
+      attendues,
+      `production/${nom}`,
+      dossier.liaison?.["digests-production"]?.[nom],
+    );
+  }
   const recits = Array.isArray(dossier.parcours?.recits)
     ? dossier.parcours.recits.filter(
         (recit) => typeof recit === "string" && recit.trim() !== "",
@@ -410,9 +425,7 @@ function validerPreuves(dossier, contexte, ledgerRetraits, push) {
       preuve.subjectSha256 !== undefined &&
       !estSha256(preuve.subjectSha256)
     ) {
-      push(
-        `preuves : preuve « ${identifiant} » — subjectSha256 invalide`,
-      );
+      push(`preuves : preuve « ${identifiant} » — subjectSha256 invalide`);
     }
     const shaSujet = preuve.subjectSha256 ?? preuve.sha256;
     if (estSha256(shaAttendu) && shaSujet !== shaAttendu) {
@@ -519,6 +532,17 @@ function validerLiaison(liaison, stagingIds, push) {
       push(
         "liaison : identifiants de staging divergents du matériau réel du dépôt",
       );
+    }
+  }
+
+  const digestsProduction = liaison["digests-production"];
+  if (!digestsProduction || typeof digestsProduction !== "object") {
+    push("liaison : digests du bundle et du manifeste production manquants");
+  } else {
+    for (const nom of ["bundle", "manifeste"]) {
+      if (!estSha256(digestsProduction[nom])) {
+        push(`liaison : digest production « ${nom} » invalide`);
+      }
     }
   }
 
@@ -914,10 +938,19 @@ export function construireAttestation(dossier, contexte = {}) {
       plateforme: a.plateforme,
       sha256: a.sha256,
     })),
+    "digests-production": { ...liaison["digests-production"] },
+  };
+  const recuId = `recu-promotion-${dossier.candidat.tranche}-${dossier.candidat.sha}`;
+  const contenuRecu = {
+    schema: "punks.release-receipt.v1",
+    id: recuId,
+    type: "promotion",
+    "attestation-sha256": canonicalSha256(attestation),
   };
   const recu = {
-    id: `recu-promotion-${dossier.candidat.tranche}-${dossier.candidat.sha.slice(0, 12)}`,
-    sha256: canonicalSha256(attestation),
+    id: recuId,
+    contenu: contenuRecu,
+    sha256: canonicalSha256(contenuRecu),
   };
   return { attestation, recu };
 }

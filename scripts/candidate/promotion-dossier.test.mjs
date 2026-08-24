@@ -18,6 +18,10 @@ import { assemblerDossierPromotion } from "./promotion-dossier.mjs";
 
 const SHA_CANDIDAT = "a".repeat(40);
 const DEPLOIEMENT = `sha256:${"b".repeat(64)}`;
+const DIGESTS_PRODUCTION = {
+  bundle: "c".repeat(64),
+  manifeste: "d".repeat(64),
+};
 const PLATEFORMES = ["macos-arm64", "macos-x64", "linux-x64", "windows-x64"];
 const VERIFICATIONS = [
   "signature",
@@ -101,6 +105,12 @@ function creerJeuDePreuves() {
     deploiement: DEPLOIEMENT,
     materiau: "cloudflare/staging.resources.json",
     subjectSha256: "5".repeat(64),
+  });
+  ajouter("production/bundle", {
+    subjectSha256: DIGESTS_PRODUCTION.bundle,
+  });
+  ajouter("production/manifeste", {
+    subjectSha256: DIGESTS_PRODUCTION.manifeste,
   });
 
   const bundles = new Map();
@@ -231,6 +241,7 @@ test("assemble un dossier complet uniquement depuis les preuves réelles", (t) =
 
   assert.equal(dossier.candidat.sha, SHA_CANDIDAT);
   assert.equal(dossier.liaison.staging.deploiement, DEPLOIEMENT);
+  assert.deepEqual(dossier.liaison["digests-production"], DIGESTS_PRODUCTION);
   assert.deepEqual(
     dossier.liaison.artefacts.map(({ plateforme }) => plateforme),
     PLATEFORMES,

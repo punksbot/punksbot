@@ -7,8 +7,10 @@
     "punks:check": "pnpm migration:check && pnpm cloudflare:check && pnpm --filter buzz check && pnpm --dir desktop check:punks-candidate && pnpm --dir desktop check:punks-product && node scripts/check-punks-rust.mjs",
     "migration:check": "node scripts/check-migration-manifests.mjs && node scripts/check-release-graph.mjs",
     "migration:render": "node scripts/render-withdrawal-inventory.mjs",
-    "migration:test": "node --test scripts/check-migration-manifests.test.mjs scripts/check-release-graph.test.mjs scripts/check-promotion-dossier.test.mjs scripts/punks-desktop-candidate-workflow.test.mjs scripts/candidate/t1-withdrawal.test.mjs scripts/punks-native-artifact.test.mjs desktop/scripts/check-punks-candidate.test.mjs desktop/scripts/check-punks-frontend-product.test.mjs desktop/scripts/punks-product-entry.test.mjs",
+    "migration:test": "node --test scripts/check-migration-manifests.test.mjs scripts/check-release-graph.test.mjs scripts/check-promotion-dossier.test.mjs scripts/promotion-publish.test.mjs scripts/promotion-frontiers.test.mjs scripts/candidate/promotion-dossier.test.mjs scripts/punks-desktop-candidate-workflow.test.mjs scripts/candidate/t1-withdrawal.test.mjs scripts/punks-native-artifact.test.mjs desktop/scripts/check-punks-candidate.test.mjs desktop/scripts/check-punks-frontend-product.test.mjs desktop/scripts/punks-product-entry.test.mjs",
     "promotion:valider": "node scripts/check-promotion-dossier.mjs",
+    "promotion:publier": "node scripts/promotion-publish.mjs",
+    "promotion:publier-recu": "node scripts/receipt-publish.mjs",
     "punks:dev": "node cloudflare/scripts/dev-app.mjs",
     "cloudflare:check": "node cloudflare/scripts/cloudflare-gate.mjs",
     "cloudflare:check-tooling": "node --test cloudflare/scripts/*.test.mjs",
@@ -32,6 +34,7 @@
     "contracts:generate": "pnpm --filter @punks/contracts generate"
   },
   "devDependencies": {
+    "@aws-sdk/client-s3": "3.1112.0",
     "@biomejs/biome": "^2.4.6",
     "yaml": "2.9.0"
   },

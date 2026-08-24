@@ -3,60 +3,61 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { publierPromotion } from "./promotion-publish-lib.mjs";
+import { publierRecuOperationnel } from "./promotion-publish-lib.mjs";
 
 const OPTIONS_VALEUR = new Set([
   "--graphe",
-  "--attestation",
   "--recu",
+  "--parity",
+  "--attestation",
   "--depot",
   "--tag",
+  "--sha",
+  "--release-id",
+  "--etat-release",
   "--canal",
   "--r2-primaire",
   "--r2-secondaire",
+  "--bootstrap-r2",
   "--frontieres",
 ]);
-const OPTIONS_DRAPEAU = new Set(["--bootstrap-r2"]);
 
 const OPTIONS_REQUISES = [
   "--graphe",
-  "--attestation",
   "--recu",
+  "--parity",
   "--depot",
   "--tag",
+  "--sha",
+  "--release-id",
+  "--etat-release",
   "--r2-primaire",
   "--r2-secondaire",
 ];
 
-export const USAGE_PUBLICATION = [
-  "usage : node scripts/promotion-publish.mjs",
+export const USAGE_PUBLICATION_RECU = [
+  "usage : node scripts/receipt-publish.mjs",
   "  --graphe <release-graph.yaml|json>",
-  "  --attestation <attestation-tranche-N.json>",
-  "  --recu <recu-promotion-N.json>",
+  "  --recu <recu-signe.json>",
+  "  --parity <cloudflare/PARITY.md>",
+  "  [--attestation <attestation-transition.json>]",
   "  --depot <owner/repo>",
   "  --tag <punks-staging-SHA>",
+  "  --sha <SHA-Punks-40-hex>",
+  "  --release-id <id-canonique>",
+  "  --etat-release <draft|published>",
   "  [--canal <punks-desktop>]",
   "  --r2-primaire <compte/bucket>",
   "  --r2-secondaire <compte/bucket>",
-  "  [--bootstrap-r2]",
+  "  [--bootstrap-r2 <true|false>]",
   "  --frontieres <module.mjs>",
 ].join(" ");
 
 function lireArguments(argv) {
-  if (argv.includes("--aide") || argv.includes("--help")) {
-    return { aide: true };
-  }
+  if (argv.includes("--aide") || argv.includes("--help")) return { aide: true };
   const valeurs = new Map();
-  const drapeaux = new Set();
-  for (let index = 0; index < argv.length; index += 1) {
+  for (let index = 0; index < argv.length; index += 2) {
     const option = argv[index];
-    if (OPTIONS_DRAPEAU.has(option)) {
-      if (drapeaux.has(option)) {
-        throw new Error(`option dupliquée : ${option}`);
-      }
-      drapeaux.add(option);
-      continue;
-    }
     const valeur = argv[index + 1];
     if (!OPTIONS_VALEUR.has(option)) {
       throw new Error(`option inconnue : ${String(option)}`);
@@ -64,28 +65,37 @@ function lireArguments(argv) {
     if (valeur === undefined || valeur.startsWith("--")) {
       throw new Error(`valeur manquante pour ${option}`);
     }
-    if (valeurs.has(option)) {
-      throw new Error(`option dupliquée : ${option}`);
-    }
+    if (valeurs.has(option)) throw new Error(`option dupliquée : ${option}`);
     valeurs.set(option, valeur);
-    index += 1;
   }
   for (const option of OPTIONS_REQUISES) {
     if (!valeurs.has(option)) {
       throw new Error(`option requise manquante : ${option}`);
     }
   }
+  const etatRelease = valeurs.get("--etat-release");
+  if (!new Set(["draft", "published"]).has(etatRelease)) {
+    throw new Error("--etat-release doit valoir draft ou published");
+  }
+  const bootstrap = valeurs.get("--bootstrap-r2") ?? "false";
+  if (!new Set(["true", "false"]).has(bootstrap)) {
+    throw new Error("--bootstrap-r2 doit valoir true ou false");
+  }
   return {
     aide: false,
     graphe: valeurs.get("--graphe"),
-    attestation: valeurs.get("--attestation"),
     recu: valeurs.get("--recu"),
+    parity: valeurs.get("--parity"),
+    attestation: valeurs.get("--attestation") ?? null,
     depot: valeurs.get("--depot"),
     tag: valeurs.get("--tag"),
+    sha: valeurs.get("--sha"),
+    releaseId: valeurs.get("--release-id"),
+    draft: etatRelease === "draft",
     canal: valeurs.get("--canal") ?? "punks-desktop",
     primaire: valeurs.get("--r2-primaire"),
     secondaire: valeurs.get("--r2-secondaire"),
-    bootstrapR2: drapeaux.has("--bootstrap-r2"),
+    bootstrapR2: bootstrap === "true",
     moduleFrontieres: valeurs.get("--frontieres") ?? null,
   };
 }
@@ -94,9 +104,7 @@ function lireDestinationR2(role, valeur) {
   const segments = valeur.split("/");
   if (
     segments.length !== 2 ||
-    segments[0].trim() !== segments[0] ||
-    segments[1].trim() !== segments[1] ||
-    segments.some((segment) => segment.length === 0)
+    segments.some((segment) => segment === "" || segment.trim() !== segment)
   ) {
     throw new Error(
       `${role} doit respecter le format canonique <compte>/<bucket>`,
@@ -122,20 +130,17 @@ async function chargerFrontieres(moduleFrontieres, configuration) {
   if (
     !frontieres?.github ||
     !frontieres?.cloudflare ||
-    !frontieres?.approbation
+    !frontieres?.confiance
   ) {
     throw new Error(
-      "le module de frontières doit retourner { github, cloudflare, approbation }",
+      "le module de frontières doit retourner { github, cloudflare, confiance }",
     );
   }
   return frontieres;
 }
 
-/**
- * Point d'entrée CLI injectable. Retourne un code de sortie et n'appelle
- * `process.exit` ni aucune frontière distante directement.
- */
-export async function executerCliPublication(
+/** Exécute le CLI de publication d'un Reçu et retourne son code de sortie. */
+export async function executerCliPublicationRecu(
   argv = process.argv.slice(2),
   {
     frontieres: frontieresInjectees = null,
@@ -146,7 +151,7 @@ export async function executerCliPublication(
   try {
     const argumentsCli = lireArguments(argv);
     if (argumentsCli.aide) {
-      ecrireSortie(USAGE_PUBLICATION);
+      ecrireSortie(USAGE_PUBLICATION_RECU);
       return 0;
     }
     const r2 = [
@@ -156,20 +161,27 @@ export async function executerCliPublication(
     const configuration = {
       depot: argumentsCli.depot,
       tag: argumentsCli.tag,
+      sha: argumentsCli.sha,
+      releaseId: argumentsCli.releaseId,
+      draft: argumentsCli.draft,
       canal: argumentsCli.canal,
-      r2,
       bootstrapR2: argumentsCli.bootstrapR2,
+      r2,
     };
     const frontieres =
       frontieresInjectees ??
       (await chargerFrontieres(argumentsCli.moduleFrontieres, configuration));
-    const [graphe, attestation, recu] = await Promise.all([
+    const lectures = [
       readFile(resolve(argumentsCli.graphe)),
-      readFile(resolve(argumentsCli.attestation)),
       readFile(resolve(argumentsCli.recu)),
-    ]);
-    const resultat = await publierPromotion(
-      { ...configuration, graphe, attestation, recu },
+      readFile(resolve(argumentsCli.parity)),
+      argumentsCli.attestation === null
+        ? Promise.resolve(undefined)
+        : readFile(resolve(argumentsCli.attestation)),
+    ];
+    const [graphe, recu, parity, attestation] = await Promise.all(lectures);
+    const resultat = await publierRecuOperationnel(
+      { ...configuration, graphe, recu, parity, attestation },
       frontieres,
     );
     ecrireSortie(JSON.stringify(resultat));
@@ -191,5 +203,5 @@ if (
   process.argv[1] &&
   resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
-  process.exitCode = await executerCliPublication();
+  process.exitCode = await executerCliPublicationRecu();
 }

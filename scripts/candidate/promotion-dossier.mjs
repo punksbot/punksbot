@@ -300,6 +300,17 @@ function construireDossier({ chargees, deploiementId }) {
     refuser("matériau staging lié au mauvais déploiement");
   }
 
+  const digestsProduction = {};
+  for (const nom of ["bundle", "manifeste"]) {
+    const id = `production/${nom}`;
+    const entree = citer(id);
+    const digest = entree.preuve.data.subjectSha256;
+    if (!SHA256_RE.test(digest ?? "")) {
+      refuser(`${id}.data.subjectSha256 doit lier le contenu exact`);
+    }
+    digestsProduction[nom] = digest;
+  }
+
   const artefacts = [];
   const bundles = new Map();
   for (const plateforme of PLATEFORMES) {
@@ -319,7 +330,9 @@ function construireDossier({ chargees, deploiementId }) {
     exigerChaine(bundle.preuve.data.nom, `${bundleId}.data.nom`);
     exigerChaine(bundle.preuve.data.bundleId, `${bundleId}.data.bundleId`);
     if (!SHA256_RE.test(bundle.preuve.data.subjectSha256 ?? "")) {
-      refuser(`${bundleId}.data.subjectSha256 doit lier l'artefact signé exact`);
+      refuser(
+        `${bundleId}.data.subjectSha256 doit lier l'artefact signé exact`,
+      );
     }
     if (!SHA256_RE.test(signature.preuve.data.subjectSha256 ?? "")) {
       refuser(
@@ -494,6 +507,7 @@ function construireDossier({ chargees, deploiementId }) {
         materiau: staging.materiau,
         "materiau-sha256": stagingEntree.preuve.data.subjectSha256,
       },
+      "digests-production": digestsProduction,
       registres,
     },
     parcours: {

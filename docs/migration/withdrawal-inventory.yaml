@@ -712,7 +712,7 @@ actifs:
     verdict: conserve
     conservation: actif-punks
     note: "gate du graphe de release et du modèle d'attestation (issue #51)"
-  - chemin: scripts/{promotion-dossier-lib.mjs,check-promotion-dossier.mjs,check-promotion-dossier.test.mjs,promotion-publish-lib.mjs,promotion-publish.mjs,promotion-publish.test.mjs,punks-desktop-candidate-workflow.test.mjs,punks-desktop-promotion-workflow.test.mjs,check-punks-rust.mjs,punks-native-artifact.mjs,punks-native-artifact.test.mjs,windows-artifact-sign.ps1,windows-artifact-sign.test.ps1}
+  - chemin: scripts/{promotion-dossier-lib.mjs,check-promotion-dossier.mjs,check-promotion-dossier.test.mjs,promotion-publish-lib.mjs,promotion-publish.mjs,promotion-publish.test.mjs,promotion-frontiers.mjs,promotion-frontiers.test.mjs,receipt-publish.mjs,punks-desktop-candidate-workflow.test.mjs,punks-desktop-promotion-workflow.test.mjs,check-punks-rust.mjs,punks-native-artifact.mjs,punks-native-artifact.test.mjs,windows-artifact-sign.ps1,windows-artifact-sign.test.ps1}
     classe: script
     verdict: conserve
     conservation: actif-punks
