@@ -16,6 +16,13 @@ test("the managed Workers gate runs on both canonical repository branches", () =
   );
 });
 
+test("the managed Workers gate leaves enough time for a cold pinned-toolchain bootstrap", () => {
+  assert.ok(
+    workflow.jobs?.["managed-workers"]?.["timeout-minutes"] >= 30,
+    "a cold Dart bootstrap, the full gate, and post-action cleanup need at least 30 minutes",
+  );
+});
+
 test("active operator guidance targets the transferred repository identity", () => {
   const files = [
     "AGENTS.md",
