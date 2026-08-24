@@ -2,7 +2,7 @@
 
 > Vue dérivée de [`withdrawal-inventory.yaml`](./withdrawal-inventory.yaml), qui est canonique.
 > Régénérée par `scripts/render-withdrawal-inventory.mjs` (`pnpm migration:render`) — ne pas éditer.
-> Décisions : issues [#13](https://github.com/mabzadev/punksbot/issues/13), [#14](https://github.com/mabzadev/punksbot/issues/14) et [#17](https://github.com/mabzadev/punksbot/issues/17).
+> Décisions : issues [#13](https://github.com/punksbot/punksbot/issues/13), [#14](https://github.com/punksbot/punksbot/issues/14) et [#17](https://github.com/punksbot/punksbot/issues/17).
 > Checkpoint de récupération : `50e16de180dda4365f8001a8a73503f16977a175` — baseline Buzz gelée : `da818eddc2f470c006a1073c8c5452f8a989f272` — version 1 — sha256 canonique `48c5eaff76918bbaa3bdc8ffdc202fae22ee3dfee4c6fd769d1f2b7fb7343f65`.
 
 Chaque actif reçoit exactement un verdict. Un module partagé appartient à la tranche de

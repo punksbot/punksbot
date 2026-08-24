@@ -62,7 +62,7 @@ export function renderMarkdown(manifest) {
     "> Régénérée par `scripts/render-withdrawal-inventory.mjs` (`pnpm migration:render`) — ne pas éditer.",
   );
   lignes.push(
-    `> Décisions : issues [#13](https://github.com/mabzadev/punksbot/issues/13), [#14](https://github.com/mabzadev/punksbot/issues/14) et [#17](https://github.com/mabzadev/punksbot/issues/17).`,
+    `> Décisions : issues [#13](https://github.com/punksbot/punksbot/issues/13), [#14](https://github.com/punksbot/punksbot/issues/14) et [#17](https://github.com/punksbot/punksbot/issues/17).`,
   );
   lignes.push(
     `> Checkpoint de récupération : \`${manifest["checkpoint-recuperation"]}\` — baseline Buzz gelée : \`${manifest["baseline-buzz"]}\` — version ${manifest.version} — sha256 canonique \`${canonicalSha256(manifest)}\`.`,

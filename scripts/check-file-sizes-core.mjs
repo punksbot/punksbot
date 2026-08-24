@@ -52,14 +52,14 @@ export function resolveBaseRef(repoRoot, env = process.env) {
 
   try {
     const mergeBase = git(
-      ["merge-base", "origin/main", "HEAD"],
+      ["merge-base", "origin/prod", "HEAD"],
       repoRoot,
     ).trim();
     const head = git(["rev-parse", "HEAD"], repoRoot).trim();
     return mergeBase === head ? "HEAD" : mergeBase;
   } catch (error) {
     throw new Error(
-      "Could not resolve the file-size base from origin/main. Fetch origin/main or set CHECK_FILE_SIZES_BASE to an explicit commit.",
+      "Could not resolve the file-size base from origin/prod. Fetch origin/prod or set CHECK_FILE_SIZES_BASE to an explicit commit.",
       { cause: error },
     );
   }

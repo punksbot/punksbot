@@ -26,24 +26,24 @@ function git(repo, ...args) {
   }).trim();
 }
 
-test("local base resolution uses the branch merge-base and fails without origin/main", () => {
+test("local base resolution uses the branch merge-base and fails without origin/prod", () => {
   const repo = mkdtempSync(path.join(tmpdir(), "file-size-base-"));
-  git(repo, "init", "-b", "main");
+  git(repo, "init", "-b", "prod");
   git(repo, "config", "user.name", "Test");
   git(repo, "config", "user.email", "test@example.com");
   git(repo, "commit", "--allow-empty", "-m", "base");
   git(repo, "remote", "add", "origin", repo);
-  git(repo, "fetch", "origin", "main:refs/remotes/origin/main");
+  git(repo, "fetch", "origin", "prod:refs/remotes/origin/prod");
   const base = git(repo, "rev-parse", "HEAD");
   git(repo, "switch", "-c", "feature");
   git(repo, "commit", "--allow-empty", "-m", "first branch commit");
   git(repo, "commit", "--allow-empty", "-m", "second branch commit");
 
   assert.equal(resolveBaseRef(repo, {}), base);
-  git(repo, "update-ref", "-d", "refs/remotes/origin/main");
+  git(repo, "update-ref", "-d", "refs/remotes/origin/prod");
   assert.throws(
     () => resolveBaseRef(repo, {}),
-    /Fetch origin\/main or set CHECK_FILE_SIZES_BASE/,
+    /Fetch origin\/prod or set CHECK_FILE_SIZES_BASE/,
   );
 });
 

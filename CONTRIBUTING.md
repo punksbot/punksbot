@@ -54,7 +54,7 @@ Every commit needs a Developer Certificate of Origin (DCO) sign-off. The `-s` fl
 #### Fix unsigned commits already pushed
 
 ```bash
-git rebase --signoff main
+git rebase --signoff prod
 git push --force-with-lease
 ```
 

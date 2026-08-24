@@ -7,16 +7,16 @@ and tranche receipt all exist for the same source SHA.
 The workflow has two explicit dispatch scopes:
 
 - `apple-only` builds, notarizes, staples and attests only `macos-arm64` and
-  `macos-x64`. It is the default validation scope while Windows Artifact
-  Signing remains deferred. It never aggregates, drafts or publishes a
-  four-platform candidate.
+  `macos-x64`. It is a diagnostic scope only. It never aggregates, drafts,
+  publishes or unblocks a four-platform candidate.
 - `full-candidate` retains the closed four-platform contract and is the only
   scope allowed to aggregate and stage a candidate release.
 
-The maintainer decision of 2026-08-24 permits Apple-only evidence to unblock
-the current ticket sequence. This exception must be recorded as an explicit
-Windows deferral; an Apple-only run is never evidence that Windows signing or a
-complete four-platform candidate passed.
+Only one green `full-candidate` run that exercises every installed artifact,
+assembles and validates the complete dossier, publishes every immutable proof
+and activates the exact verified draft can unblock the ticket sequence. An
+Apple-only run is never evidence that Windows signing or a complete
+four-platform candidate passed.
 
 Never paste a private key, certificate password or API token into an issue,
 commit, workflow input or terminal transcript. Feed values directly to
@@ -46,18 +46,18 @@ Install them without printing their contents:
 ```sh
 base64 < DeveloperIDApplication.p12 | tr -d '\n' \
   | gh secret set PUNKS_APPLE_CERTIFICATE \
-      --repo mabzadev/punksbot --env punks-staging-promotion
+      --repo punksbot/punksbot --env punks-staging-promotion
 printf '%s' "$APPLE_P12_PASSWORD" \
   | gh secret set PUNKS_APPLE_CERTIFICATE_PASSWORD \
-      --repo mabzadev/punksbot --env punks-staging-promotion
+      --repo punksbot/punksbot --env punks-staging-promotion
 printf '%s' "$APPLE_API_ISSUER" \
   | gh secret set PUNKS_APPLE_API_ISSUER \
-      --repo mabzadev/punksbot --env punks-staging-promotion
+      --repo punksbot/punksbot --env punks-staging-promotion
 printf '%s' "$APPLE_API_KEY_ID" \
   | gh secret set PUNKS_APPLE_API_KEY \
-      --repo mabzadev/punksbot --env punks-staging-promotion
+      --repo punksbot/punksbot --env punks-staging-promotion
 gh secret set PUNKS_APPLE_API_PRIVATE_KEY \
-  --repo mabzadev/punksbot --env punks-staging-promotion \
+  --repo punksbot/punksbot --env punks-staging-promotion \
   < AuthKey_${APPLE_API_KEY_ID}.p8
 ```
 
@@ -121,21 +121,20 @@ Provision the service:
    leaf signing certificate daily, so its subject, public key and thumbprint are
    not durable values to pin.
 
-After the final GitHub owner/repository name is known, bind the Entra
-application to the exact environment subject
-`repo:<owner>/<repo>:environment:punks-staging-promotion`. Install the three
+Bind the Entra application to the exact environment subject
+`repo:punksbot/punksbot:environment:punks-staging-promotion`. Install the three
 non-secret Azure identifiers as protected environment secrets:
 
 ```sh
 printf '%s' "$AZURE_TENANT_ID" \
   | gh secret set PUNKS_AZURE_TENANT_ID \
-      --repo mabzadev/punksbot --env punks-staging-promotion
+      --repo punksbot/punksbot --env punks-staging-promotion
 printf '%s' "$AZURE_CLIENT_ID" \
   | gh secret set PUNKS_AZURE_CLIENT_ID \
-      --repo mabzadev/punksbot --env punks-staging-promotion
+      --repo punksbot/punksbot --env punks-staging-promotion
 printf '%s' "$AZURE_SUBSCRIPTION_ID" \
   | gh secret set PUNKS_AZURE_SUBSCRIPTION_ID \
-      --repo mabzadev/punksbot --env punks-staging-promotion
+      --repo punksbot/punksbot --env punks-staging-promotion
 ```
 
 Install the four non-secret resource coordinates as protected environment
@@ -144,16 +143,16 @@ variables:
 ```sh
 gh variable set PUNKS_AZURE_ARTIFACT_SIGNING_ENDPOINT \
   --body "$AZURE_ARTIFACT_SIGNING_ENDPOINT" \
-  --repo mabzadev/punksbot --env punks-staging-promotion
+  --repo punksbot/punksbot --env punks-staging-promotion
 gh variable set PUNKS_AZURE_ARTIFACT_SIGNING_ACCOUNT \
   --body "$AZURE_ARTIFACT_SIGNING_ACCOUNT" \
-  --repo mabzadev/punksbot --env punks-staging-promotion
+  --repo punksbot/punksbot --env punks-staging-promotion
 gh variable set PUNKS_AZURE_ARTIFACT_SIGNING_PROFILE \
   --body "$AZURE_ARTIFACT_SIGNING_PROFILE" \
-  --repo mabzadev/punksbot --env punks-staging-promotion
+  --repo punksbot/punksbot --env punks-staging-promotion
 gh variable set PUNKS_AZURE_ARTIFACT_SIGNING_IDENTITY_EKU \
   --body "$AZURE_ARTIFACT_SIGNING_IDENTITY_EKU" \
-  --repo mabzadev/punksbot --env punks-staging-promotion
+  --repo punksbot/punksbot --env punks-staging-promotion
 ```
 
 The workflow builds the native executable without bundling and signs that
@@ -209,9 +208,9 @@ After every value is installed, list names and timestamps without reading any
 secret value:
 
 ```sh
-gh secret list --repo mabzadev/punksbot
-gh secret list --repo mabzadev/punksbot --env punks-staging-promotion
-gh variable list --repo mabzadev/punksbot --env punks-staging-promotion
+gh secret list --repo punksbot/punksbot
+gh secret list --repo punksbot/punksbot --env punks-staging-promotion
+gh variable list --repo punksbot/punksbot --env punks-staging-promotion
 ```
 
 At this handoff, the Tauri updater and Linux GPG secrets already exist at
