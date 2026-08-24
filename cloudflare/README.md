@@ -32,7 +32,9 @@ PostgreSQL, Redis, MinIO, Helm, or Kubernetes service.
 Every tranche proof dossier must record a complete green
 `pnpm cloudflare:check` result for the exact candidate SHA. A focused package
 check, a missing result, a timeout, or a result from another SHA cannot satisfy
-that backend prerequisite.
+that backend prerequisite. A flaky run with a failed, skipped, or cancelled
+test remains invalid even when a later rerun is green; the dossier must retain
+that failure instead of presenting the rerun as the candidate's proof.
 
 ## Layout
 

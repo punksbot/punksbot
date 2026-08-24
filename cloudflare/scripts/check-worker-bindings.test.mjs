@@ -1,9 +1,8 @@
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import test from "node:test";
-import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { validateWorkerBindings } from "./check-worker-bindings.mjs";
@@ -23,8 +22,10 @@ async function writeWorker(root, directory, config, source) {
   await writeFile(join(workerRoot, "src/index.ts"), source);
 }
 
-test("rejects a service binding whose public RPC entrypoint is absent", async () => {
-  const root = await mkdtemp(join(tmpdir(), "punks-worker-bindings-"));
+async function writeRpcEntrypointFixture(
+  root,
+  { entrypoint, projectorSource, supportingSources = [] },
+) {
   await writeWorker(
     root,
     "projector",
@@ -33,8 +34,14 @@ test("rejects a service binding whose public RPC entrypoint is absent", async ()
       main: "src/index.ts",
       env: { staging: { name: "punks-projector-staging" } },
     },
-    "export class ProjectionDirectoryService {}\nexport default {};\n",
+    projectorSource,
   );
+  for (const [filename, source] of supportingSources) {
+    await writeFile(
+      join(root, "cloudflare/workers/projector/src", filename),
+      source,
+    );
+  }
   await writeWorker(
     root,
     "api",
@@ -45,7 +52,7 @@ test("rejects a service binding whose public RPC entrypoint is absent", async ()
         {
           binding: "PROJECTION_DIRECTORY",
           service: "punks-projector",
-          entrypoint: "MissingDirectoryService",
+          entrypoint,
         },
       ],
       env: {
@@ -55,7 +62,7 @@ test("rejects a service binding whose public RPC entrypoint is absent", async ()
             {
               binding: "PROJECTION_DIRECTORY",
               service: "punks-projector-staging",
-              entrypoint: "MissingDirectoryService",
+              entrypoint,
             },
           ],
         },
@@ -63,6 +70,15 @@ test("rejects a service binding whose public RPC entrypoint is absent", async ()
     },
     "export default {};\n",
   );
+}
+
+test("rejects a service binding whose public RPC entrypoint is absent", async () => {
+  const root = await mkdtemp(join(tmpdir(), "punks-worker-bindings-"));
+  await writeRpcEntrypointFixture(root, {
+    entrypoint: "MissingDirectoryService",
+    projectorSource:
+      "export class ProjectionDirectoryService {}\nexport default {};\n",
+  });
 
   await assert.rejects(
     validateWorkerBindings(root),
@@ -72,44 +88,11 @@ test("rejects a service binding whose public RPC entrypoint is absent", async ()
 
 test("does not accept a public RPC entrypoint mentioned only in a comment", async () => {
   const root = await mkdtemp(join(tmpdir(), "punks-worker-bindings-"));
-  await writeWorker(
-    root,
-    "projector",
-    {
-      name: "punks-projector",
-      main: "src/index.ts",
-      env: { staging: { name: "punks-projector-staging" } },
-    },
-    "// export class MissingDirectoryService {}\nexport default {};\n",
-  );
-  await writeWorker(
-    root,
-    "api",
-    {
-      name: "punks-api",
-      main: "src/index.ts",
-      services: [
-        {
-          binding: "PROJECTION_DIRECTORY",
-          service: "punks-projector",
-          entrypoint: "MissingDirectoryService",
-        },
-      ],
-      env: {
-        staging: {
-          name: "punks-api-staging",
-          services: [
-            {
-              binding: "PROJECTION_DIRECTORY",
-              service: "punks-projector-staging",
-              entrypoint: "MissingDirectoryService",
-            },
-          ],
-        },
-      },
-    },
-    "export default {};\n",
-  );
+  await writeRpcEntrypointFixture(root, {
+    entrypoint: "MissingDirectoryService",
+    projectorSource:
+      "// export class MissingDirectoryService {}\nexport default {};\n",
+  });
 
   await assert.rejects(
     validateWorkerBindings(root),
@@ -119,48 +102,14 @@ test("does not accept a public RPC entrypoint mentioned only in a comment", asyn
 
 test("does not accept a type-only re-export as a public RPC entrypoint", async () => {
   const root = await mkdtemp(join(tmpdir(), "punks-worker-bindings-"));
-  await writeWorker(
-    root,
-    "projector",
-    {
-      name: "punks-projector",
-      main: "src/index.ts",
-      env: { staging: { name: "punks-projector-staging" } },
-    },
-    'export type { ProjectionDirectoryService } from "./directory-service";\nexport default {};\n',
-  );
-  await writeFile(
-    join(root, "cloudflare/workers/projector/src/directory-service.ts"),
-    "export class ProjectionDirectoryService {}\n",
-  );
-  await writeWorker(
-    root,
-    "api",
-    {
-      name: "punks-api",
-      main: "src/index.ts",
-      services: [
-        {
-          binding: "PROJECTION_DIRECTORY",
-          service: "punks-projector",
-          entrypoint: "ProjectionDirectoryService",
-        },
-      ],
-      env: {
-        staging: {
-          name: "punks-api-staging",
-          services: [
-            {
-              binding: "PROJECTION_DIRECTORY",
-              service: "punks-projector-staging",
-              entrypoint: "ProjectionDirectoryService",
-            },
-          ],
-        },
-      },
-    },
-    "export default {};\n",
-  );
+  await writeRpcEntrypointFixture(root, {
+    entrypoint: "ProjectionDirectoryService",
+    projectorSource:
+      'export type { ProjectionDirectoryService } from "./directory-service";\nexport default {};\n',
+    supportingSources: [
+      ["directory-service.ts", "export class ProjectionDirectoryService {}\n"],
+    ],
+  });
 
   await assert.rejects(
     validateWorkerBindings(root),
@@ -170,48 +119,14 @@ test("does not accept a type-only re-export as a public RPC entrypoint", async (
 
 test("does not accept a type-only star re-export as a public RPC entrypoint", async () => {
   const root = await mkdtemp(join(tmpdir(), "punks-worker-bindings-"));
-  await writeWorker(
-    root,
-    "projector",
-    {
-      name: "punks-projector",
-      main: "src/index.ts",
-      env: { staging: { name: "punks-projector-staging" } },
-    },
-    'export type * from "./directory-service";\nexport default {};\n',
-  );
-  await writeFile(
-    join(root, "cloudflare/workers/projector/src/directory-service.ts"),
-    "export class ProjectionDirectoryService {}\n",
-  );
-  await writeWorker(
-    root,
-    "api",
-    {
-      name: "punks-api",
-      main: "src/index.ts",
-      services: [
-        {
-          binding: "PROJECTION_DIRECTORY",
-          service: "punks-projector",
-          entrypoint: "ProjectionDirectoryService",
-        },
-      ],
-      env: {
-        staging: {
-          name: "punks-api-staging",
-          services: [
-            {
-              binding: "PROJECTION_DIRECTORY",
-              service: "punks-projector-staging",
-              entrypoint: "ProjectionDirectoryService",
-            },
-          ],
-        },
-      },
-    },
-    "export default {};\n",
-  );
+  await writeRpcEntrypointFixture(root, {
+    entrypoint: "ProjectionDirectoryService",
+    projectorSource:
+      'export type * from "./directory-service";\nexport default {};\n',
+    supportingSources: [
+      ["directory-service.ts", "export class ProjectionDirectoryService {}\n"],
+    ],
+  });
 
   await assert.rejects(
     validateWorkerBindings(root),
@@ -221,52 +136,15 @@ test("does not accept a type-only star re-export as a public RPC entrypoint", as
 
 test("does not let a runtime star mask a separate type-only RPC export", async () => {
   const root = await mkdtemp(join(tmpdir(), "punks-worker-bindings-"));
-  await writeWorker(
-    root,
-    "projector",
-    {
-      name: "punks-projector",
-      main: "src/index.ts",
-      env: { staging: { name: "punks-projector-staging" } },
-    },
-    'export * from "./runtime-service";\nexport type { ProjectionDirectoryService } from "./type-only-service";\nexport default {};\n',
-  );
-  await writeFile(
-    join(root, "cloudflare/workers/projector/src/runtime-service.ts"),
-    "export class UnrelatedRuntimeService {}\n",
-  );
-  await writeFile(
-    join(root, "cloudflare/workers/projector/src/type-only-service.ts"),
-    "export class ProjectionDirectoryService {}\n",
-  );
-  await writeWorker(
-    root,
-    "api",
-    {
-      name: "punks-api",
-      main: "src/index.ts",
-      services: [
-        {
-          binding: "PROJECTION_DIRECTORY",
-          service: "punks-projector",
-          entrypoint: "ProjectionDirectoryService",
-        },
-      ],
-      env: {
-        staging: {
-          name: "punks-api-staging",
-          services: [
-            {
-              binding: "PROJECTION_DIRECTORY",
-              service: "punks-projector-staging",
-              entrypoint: "ProjectionDirectoryService",
-            },
-          ],
-        },
-      },
-    },
-    "export default {};\n",
-  );
+  await writeRpcEntrypointFixture(root, {
+    entrypoint: "ProjectionDirectoryService",
+    projectorSource:
+      'export * from "./runtime-service";\nexport type { ProjectionDirectoryService } from "./type-only-service";\nexport default {};\n',
+    supportingSources: [
+      ["runtime-service.ts", "export class UnrelatedRuntimeService {}\n"],
+      ["type-only-service.ts", "export class ProjectionDirectoryService {}\n"],
+    ],
+  });
 
   await assert.rejects(
     validateWorkerBindings(root),

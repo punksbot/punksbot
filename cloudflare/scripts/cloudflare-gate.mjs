@@ -111,8 +111,8 @@ export async function createCloudflareGatePlan(repositoryRoot) {
       ],
       timeoutMilliseconds: 60_000,
     },
-    ...PACKAGE_ORDER.flatMap(([target, label]) => {
-      const packageStep = {
+    ...PACKAGE_ORDER.map(([target, label]) => {
+      return {
         kind: "package",
         id: target.slice("@punks/".length),
         label,
@@ -124,27 +124,6 @@ export async function createCloudflareGatePlan(repositoryRoot) {
             ? 360_000
             : 180_000,
       };
-      if (target !== "@punks/client") {
-        return [packageStep];
-      }
-      return [
-        packageStep,
-        {
-          kind: "conformance",
-          id: "rust-client-conformance",
-          label: "Rust semantic client conformance",
-          target: "punks-account-client",
-          command: join(repositoryRoot, "bin", "cargo"),
-          args: [
-            "test",
-            "--manifest-path",
-            "desktop/src-tauri/Cargo.toml",
-            "--package",
-            "punks-account-client",
-          ],
-          timeoutMilliseconds: 240_000,
-        },
-      ];
     }),
   ];
 }

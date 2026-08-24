@@ -130,22 +130,18 @@ test("runs the managed-only boundary before tooling or Worker checks", async () 
   assert.equal(plan[0]?.id, "managed-boundary");
 });
 
-test("gates the Rust client on the common conformance corpus", async () => {
+test("keeps the backend gate inside the Cloudflare workspace", async () => {
   const plan = await createCloudflareGatePlan(repositoryRoot);
-  const rustStep = plan.find((step) => step.id === "rust-client-conformance");
 
-  assert.equal(rustStep?.kind, "conformance");
-  assert.equal(rustStep?.command, join(repositoryRoot, "bin", "cargo"));
-  assert.deepEqual(rustStep?.args, [
-    "test",
-    "--manifest-path",
-    "desktop/src-tauri/Cargo.toml",
-    "--package",
-    "punks-account-client",
-  ]);
-  assert.ok(
-    plan.findIndex((step) => step.id === "rust-client-conformance") <
-      plan.findIndex((step) => step.id === "api-worker"),
+  assert.equal(
+    plan.some((step) => step.kind === "conformance"),
+    false,
+  );
+  assert.equal(
+    plan.some((step) =>
+      step.args.some((argument) => argument.includes("desktop/")),
+    ),
+    false,
   );
 });
 
@@ -191,6 +187,21 @@ test("routes the public backend command through the deterministic gate", async (
     rootPackage.scripts["cloudflare:check-bindings"],
     "node cloudflare/scripts/check-worker-bindings.mjs",
   );
+});
+
+test("documents that a flaky run cannot satisfy a tranche proof", async () => {
+  const proofDocuments = await Promise.all([
+    readFile(join(repositoryRoot, "cloudflare/README.md"), "utf8"),
+    readFile(
+      join(repositoryRoot, "docs/migration/tranche-01-preparation.md"),
+      "utf8",
+    ),
+  ]);
+
+  for (const document of proofDocuments) {
+    assert.match(document, /flaky/i);
+    assert.match(document, /rerun|relance/i);
+  }
 });
 
 test("isolates API workerd files while keeping their execution serial", async () => {

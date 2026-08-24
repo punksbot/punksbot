@@ -44,6 +44,9 @@ Tout dossier de preuve de tranche doit enregistrer le résultat complet et vert
 de `pnpm cloudflare:check` pour le SHA exact du candidat. Un contrôle ciblé, un
 résultat absent, un timeout ou un résultat produit depuis un autre SHA ne
 satisfait pas ce prérequis backend et interdit le scellement de la tranche.
+Un run flaky comportant un test échoué, sauté ou annulé reste invalide même si
+une relance ultérieure est verte ; le dossier doit conserver cet échec et ne
+peut pas présenter la relance comme preuve du candidat.
 
 ## Éléments manquants avant toute activation
 
