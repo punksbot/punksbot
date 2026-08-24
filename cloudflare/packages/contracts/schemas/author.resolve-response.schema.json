@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/author.resolve-response@1",
+  "title": "ResolveAuthorsResponse",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "workspaceId", "authors"],
+  "properties": {
+    "contract": { "const": "author.resolve-response@1" },
+    "workspaceId": { "type": "string", "format": "uuid" },
+    "authors": {
+      "type": "array",
+      "maxItems": 100,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/authorSummary" }
+    }
+  },
+  "$defs": {
+    "authorSummary": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "punkId", "displayName", "avatarUrl"],
+          "properties": {
+            "kind": { "const": "punk" },
+            "punkId": { "type": "string", "format": "uuid" },
+            "displayName": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            },
+            "avatarUrl": {
+              "oneOf": [
+                { "type": "string", "format": "uri", "maxLength": 2048 },
+                { "type": "null" }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "installationId", "displayName", "avatarUrl"],
+          "properties": {
+            "kind": { "const": "bot" },
+            "installationId": { "type": "string", "format": "uuid" },
+            "displayName": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            },
+            "avatarUrl": {
+              "oneOf": [
+                { "type": "string", "format": "uri", "maxLength": 2048 },
+                { "type": "null" }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

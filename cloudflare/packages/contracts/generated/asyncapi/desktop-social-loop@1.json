@@ -1,0 +1,838 @@
+{
+  "asyncapi": "2.6.0",
+  "channels": {
+    "workspaces/{workspaceId}/conversations/{conversationId}/follow": {
+      "description": "Miroir de la route GET /api/v1/workspaces/{workspaceId}/conversations/{conversationId}/follow du API Worker.",
+      "parameters": {
+        "conversationId": {
+          "description": "UUID de la Conversation suivie.",
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "workspaceId": {
+          "description": "UUID du Workspace autorisé.",
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        }
+      },
+      "publish": {
+        "message": {
+          "oneOf": [
+            {
+              "$ref": "#/components/messages/ConversationFollowClientFrame"
+            }
+          ]
+        },
+        "operationId": "confirmFollowBatch"
+      },
+      "subscribe": {
+        "message": {
+          "oneOf": [
+            {
+              "$ref": "#/components/messages/ConversationFollowServerFrame"
+            }
+          ]
+        },
+        "operationId": "followConversation"
+      }
+    }
+  },
+  "components": {
+    "messages": {
+      "ConversationFollowClientFrame": {
+        "payload": {
+          "$ref": "#/components/schemas/ConversationFollowClientFrame"
+        }
+      },
+      "ConversationFollowServerFrame": {
+        "payload": {
+          "$ref": "#/components/schemas/ConversationFollowServerFrame"
+        }
+      }
+    },
+    "schemas": {
+      "ConversationFollowClientFrame": {
+        "additionalProperties": false,
+        "properties": {
+          "schemaVersion": {
+            "const": 1
+          },
+          "throughCursor": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": {
+            "const": "ack"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "type",
+          "throughCursor"
+        ],
+        "title": "ConversationFollowClientFrame",
+        "type": "object"
+      },
+      "ConversationFollowServerFrame": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ConversationFollowServerFrameAccepted"
+          },
+          {
+            "$ref": "#/components/schemas/ConversationFollowServerFrameChanges"
+          },
+          {
+            "$ref": "#/components/schemas/ConversationFollowServerFrameReady"
+          },
+          {
+            "$ref": "#/components/schemas/ConversationFollowServerFrameResyncRequired"
+          },
+          {
+            "$ref": "#/components/schemas/ConversationFollowServerFrameConversationUnavailable"
+          }
+        ],
+        "title": "ConversationFollowServerFrame"
+      },
+      "ConversationFollowServerFrameAccepted": {
+        "additionalProperties": false,
+        "properties": {
+          "resumeAfterCursor": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "schemaVersion": {
+            "const": 1
+          },
+          "targetHighWaterCursor": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": {
+            "const": "accepted"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "type",
+          "resumeAfterCursor",
+          "targetHighWaterCursor"
+        ],
+        "type": "object"
+      },
+      "ConversationFollowServerFrameCanonicalReaction": {
+        "oneOf": [
+          {
+            "maxLength": 64,
+            "minLength": 1,
+            "not": {
+              "anyOf": [
+                {
+                  "pattern": "^:"
+                },
+                {
+                  "pattern": ":$"
+                },
+                {
+                  "pattern": "[\\r\\n\\u2028\\u2029]"
+                }
+              ]
+            },
+            "pattern": "^(?!\\s)(?!.*\\s$).+$",
+            "type": "string"
+          },
+          {
+            "maxLength": 66,
+            "pattern": "^:[a-z0-9_-]{1,64}:$",
+            "type": "string"
+          }
+        ]
+      },
+      "ConversationFollowServerFrameChanges": {
+        "additionalProperties": false,
+        "properties": {
+          "fromExclusiveCursor": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/MessageView"
+            },
+            "maxItems": 100,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "reactionCollectionPatches": {
+            "items": {
+              "$ref": "#/components/schemas/ConversationFollowServerFrameReactionCollectionPatch"
+            },
+            "maxItems": 100,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "reactionPatches": {
+            "items": {
+              "$ref": "#/components/schemas/ConversationFollowServerFrameReactionPatch"
+            },
+            "maxItems": 100,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "schemaVersion": {
+            "const": 1
+          },
+          "threadPatches": {
+            "items": {
+              "$ref": "#/components/schemas/ConversationFollowServerFrameThreadPatch"
+            },
+            "maxItems": 100,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "throughCursor": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "type": {
+            "const": "changes"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "type",
+          "fromExclusiveCursor",
+          "throughCursor",
+          "messages",
+          "threadPatches",
+          "reactionPatches",
+          "reactionCollectionPatches"
+        ],
+        "type": "object"
+      },
+      "ConversationFollowServerFrameConversationUnavailable": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "reason": {
+            "const": "archived"
+          },
+          "schemaVersion": {
+            "const": 1
+          },
+          "type": {
+            "const": "conversation-unavailable"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "type",
+          "reason",
+          "cursor"
+        ],
+        "type": "object"
+      },
+      "ConversationFollowServerFrameReactionCollectionPatch": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "messageId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "refreshRequired": {
+            "type": "boolean"
+          },
+          "visibility": {
+            "enum": [
+              "visible",
+              "temporarily-hidden",
+              "permanently-hidden"
+            ]
+          }
+        },
+        "required": [
+          "messageId",
+          "visibility",
+          "cursor",
+          "refreshRequired"
+        ],
+        "type": "object"
+      },
+      "ConversationFollowServerFrameReactionPatch": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "cursor": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "messageId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "reactedByPunk": {
+            "type": "boolean"
+          },
+          "reaction": {
+            "$ref": "#/components/schemas/ConversationFollowServerFrameCanonicalReaction"
+          }
+        },
+        "required": [
+          "messageId",
+          "reaction",
+          "count",
+          "reactedByPunk",
+          "cursor"
+        ],
+        "type": "object"
+      },
+      "ConversationFollowServerFrameReady": {
+        "additionalProperties": false,
+        "properties": {
+          "highWaterCursor": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "schemaVersion": {
+            "const": 1
+          },
+          "type": {
+            "const": "ready"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "type",
+          "highWaterCursor"
+        ],
+        "type": "object"
+      },
+      "ConversationFollowServerFrameResyncRequired": {
+        "additionalProperties": false,
+        "properties": {
+          "afterCursor": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "highWaterCursor": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "reason": {
+            "enum": [
+              "history_required",
+              "slow_consumer"
+            ]
+          },
+          "schemaVersion": {
+            "const": 1
+          },
+          "type": {
+            "const": "resync-required"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "type",
+          "reason",
+          "afterCursor",
+          "highWaterCursor"
+        ],
+        "type": "object"
+      },
+      "ConversationFollowServerFrameThreadPatch": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "descendantCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "lastReplyAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "messageId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "replyCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "revision": {
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "messageId",
+          "replyCount",
+          "descendantCount",
+          "lastReplyAt",
+          "revision",
+          "cursor"
+        ],
+        "type": "object"
+      },
+      "MessageView": {
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "active"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "content": {
+                  "maxLength": 65536,
+                  "type": "string"
+                },
+                "currentVersion": {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "eraseAfter": {
+                  "type": "null"
+                },
+                "erasedAt": {
+                  "type": "null"
+                },
+                "publicReason": {
+                  "type": "null"
+                },
+                "retractedAt": {
+                  "type": "null"
+                },
+                "retractionKind": {
+                  "type": "null"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "retracted"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "content": {
+                  "type": "null"
+                },
+                "currentVersion": {
+                  "type": "null"
+                },
+                "eraseAfter": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "erasedAt": {
+                  "type": "null"
+                },
+                "mediaIds": {
+                  "maxItems": 0,
+                  "type": "array"
+                },
+                "retractedAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "retractionKind": {
+                  "enum": [
+                    "author",
+                    "moderation"
+                  ]
+                },
+                "topic": {
+                  "type": "null"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "erased"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "content": {
+                  "type": "null"
+                },
+                "currentVersion": {
+                  "type": "null"
+                },
+                "eraseAfter": {
+                  "type": "null"
+                },
+                "erasedAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "mediaIds": {
+                  "maxItems": 0,
+                  "type": "array"
+                },
+                "publicReason": {
+                  "type": "null"
+                },
+                "retractedAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "retractionKind": {
+                  "enum": [
+                    "author",
+                    "moderation"
+                  ]
+                },
+                "topic": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        ],
+        "properties": {
+          "author": {
+            "$ref": "#/components/schemas/MessageViewActor"
+          },
+          "broadcast": {
+            "type": "boolean"
+          },
+          "content": {
+            "anyOf": [
+              {
+                "maxLength": 65536,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "conversationId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "createdCursor": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "currentVersion": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cursor": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "descendantCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "editedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "eraseAfter": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "erasedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "lastReplyAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mediaIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "mentionedPunkIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "messageType": {
+            "enum": [
+              "stream-message",
+              "forum-post",
+              "forum-comment"
+            ]
+          },
+          "parentMessageId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "publicReason": {
+            "anyOf": [
+              {
+                "maxLength": 280,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "replyCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "retractedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "retractionKind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "author",
+                  "moderation"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "revision": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "retracted",
+              "erased"
+            ]
+          },
+          "threadDepth": {
+            "maximum": 100,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "threadRootMessageId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "topic": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "workspaceId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "workspaceId",
+          "conversationId",
+          "author",
+          "messageType",
+          "status",
+          "content",
+          "topic",
+          "mentionedPunkIds",
+          "mediaIds",
+          "parentMessageId",
+          "threadRootMessageId",
+          "threadDepth",
+          "broadcast",
+          "replyCount",
+          "descendantCount",
+          "lastReplyAt",
+          "currentVersion",
+          "retractionKind",
+          "retractedAt",
+          "eraseAfter",
+          "publicReason",
+          "erasedAt",
+          "revision",
+          "createdCursor",
+          "cursor",
+          "createdAt",
+          "updatedAt",
+          "editedAt"
+        ],
+        "title": "MessageView",
+        "type": "object"
+      },
+      "MessageViewActor": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "punk"
+              },
+              "punkId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "punkId"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "installationId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "kind": {
+                "const": "bot"
+              }
+            },
+            "required": [
+              "kind",
+              "installationId"
+            ],
+            "type": "object"
+          }
+        ]
+      }
+    }
+  },
+  "info": {
+    "description": "Canal WebSocket FOLLOW du profil `desktop-social-loop@1`, généré depuis le registre commun. Le serveur publie les trames `conversation.follow-server-frame@1` (accepted → changes* → ready → live, puis trames live ou terminal) ; le client n'émet que des accusés `conversation.follow-client-frame@1` après application atomique d'un lot.",
+    "title": "Punks desktop-social-loop@1 — canal FOLLOW",
+    "version": "1.0.0"
+  },
+  "servers": {
+    "punks": {
+      "protocol": "websocket",
+      "url": "{origin}/api/v1",
+      "variables": {
+        "origin": {
+          "default": "punks.bot",
+          "description": "Origine Punks de la distribution."
+        }
+      }
+    }
+  }
+}

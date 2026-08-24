@@ -1,0 +1,162 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/bot-wake.receipt-archive@1",
+  "title": "BotWakeTerminalReceiptArchive",
+  "$comment": "Canonical, self-contained terminal Wake receipt suitable for cold-first create-only storage. It contains no Message or model plaintext.",
+  "type": "object",
+  "additionalProperties": false,
+  "minProperties": 6,
+  "maxProperties": 6,
+  "required": [
+    "schemaVersion",
+    "offer",
+    "turnId",
+    "claimedAt",
+    "completedAt",
+    "terminal"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "offer": { "$ref": "#/$defs/offer" },
+    "turnId": { "$ref": "#/$defs/opaqueUuid" },
+    "claimedAt": { "$ref": "#/$defs/timestamp" },
+    "completedAt": { "$ref": "#/$defs/timestamp" },
+    "terminal": { "$ref": "#/$defs/terminal" }
+  },
+  "$defs": {
+    "opaqueUuid": {
+      "type": "string",
+      "minLength": 36,
+      "maxLength": 36,
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "positiveCursor": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "hexDigest": {
+      "type": "string",
+      "minLength": 64,
+      "maxLength": 64,
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "timestamp": {
+      "type": "string",
+      "minLength": 24,
+      "maxLength": 24,
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$",
+      "format": "date-time"
+    },
+    "runtimeRelease": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 2,
+      "maxProperties": 2,
+      "required": ["releaseId", "releaseDigest"],
+      "properties": {
+        "releaseId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+        },
+        "releaseDigest": { "$ref": "#/$defs/hexDigest" }
+      }
+    },
+    "offer": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 13,
+      "maxProperties": 13,
+      "required": [
+        "contract",
+        "wakeId",
+        "workspaceId",
+        "installationId",
+        "botId",
+        "conversationId",
+        "messageId",
+        "messageCursor",
+        "subscriptionEpoch",
+        "runtimeRelease",
+        "sourceEventId",
+        "sourceEventDigest",
+        "createdAt"
+      ],
+      "properties": {
+        "contract": { "const": "bot-wake.offer@1" },
+        "wakeId": { "$ref": "#/$defs/opaqueUuid" },
+        "workspaceId": { "$ref": "#/$defs/opaqueUuid" },
+        "installationId": { "$ref": "#/$defs/opaqueUuid" },
+        "botId": { "$ref": "#/$defs/opaqueUuid" },
+        "conversationId": { "$ref": "#/$defs/opaqueUuid" },
+        "messageId": { "$ref": "#/$defs/opaqueUuid" },
+        "messageCursor": { "$ref": "#/$defs/positiveCursor" },
+        "subscriptionEpoch": { "$ref": "#/$defs/positiveCursor" },
+        "runtimeRelease": { "$ref": "#/$defs/runtimeRelease" },
+        "sourceEventId": { "$ref": "#/$defs/hexDigest" },
+        "sourceEventDigest": { "$ref": "#/$defs/hexDigest" },
+        "createdAt": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "terminal": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 3,
+          "maxProperties": 3,
+          "required": ["outcome", "decision", "reason"],
+          "properties": {
+            "outcome": { "const": "succeeded" },
+            "decision": { "const": "skip" },
+            "reason": { "enum": ["model_selected_skip"] }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 5,
+          "maxProperties": 5,
+          "required": [
+            "outcome",
+            "decision",
+            "actionId",
+            "admissionId",
+            "actionDigest"
+          ],
+          "properties": {
+            "outcome": { "const": "succeeded" },
+            "decision": { "const": "react" },
+            "actionId": { "$ref": "#/$defs/opaqueUuid" },
+            "admissionId": { "$ref": "#/$defs/opaqueUuid" },
+            "actionDigest": { "$ref": "#/$defs/hexDigest" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 2,
+          "maxProperties": 2,
+          "required": ["outcome", "code"],
+          "properties": {
+            "outcome": { "const": "failed" },
+            "code": {
+              "enum": [
+                "revoked",
+                "not_found",
+                "content_unavailable",
+                "model_timeout",
+                "model_invalid",
+                "action_failed",
+                "budget_exhausted",
+                "internal"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

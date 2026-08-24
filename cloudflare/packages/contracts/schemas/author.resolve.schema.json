@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/author.resolve@1",
+  "title": "ResolveAuthorsQuery",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "workspaceId", "authors"],
+  "properties": {
+    "contract": { "const": "author.resolve@1" },
+    "workspaceId": { "type": "string", "format": "uuid" },
+    "authors": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/actor" }
+    }
+  },
+  "$defs": {
+    "actor": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "punkId"],
+          "properties": {
+            "kind": { "const": "punk" },
+            "punkId": { "type": "string", "format": "uuid" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "installationId"],
+          "properties": {
+            "kind": { "const": "bot" },
+            "installationId": { "type": "string", "format": "uuid" }
+          }
+        }
+      ]
+    }
+  }
+}

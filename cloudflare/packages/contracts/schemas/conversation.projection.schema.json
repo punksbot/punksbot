@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/conversation.projection@1",
+  "title": "ConversationProjectionMessage",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "workspaceId", "conversationId", "cursor", "event", "state"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "workspaceId": { "type": "string", "format": "uuid" },
+    "conversationId": { "type": "string", "format": "uuid" },
+    "cursor": { "type": "integer", "minimum": 1 },
+    "event": { "$ref": "schemas/nostr.signed-event.schema.json" },
+    "state": { "$ref": "schemas/conversation.schema.json" }
+  }
+}

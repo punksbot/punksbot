@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/conversation.projection@2",
+  "title": "ConversationProjectionMessageV2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "workspaceId",
+    "conversationId",
+    "cursor",
+    "chunkIndex",
+    "chunkCount",
+    "chunkDigest",
+    "memberDeltas",
+    "event"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 2 },
+    "workspaceId": { "type": "string", "format": "uuid" },
+    "conversationId": { "type": "string", "format": "uuid" },
+    "cursor": { "type": "integer", "minimum": 1 },
+    "chunkIndex": { "type": "integer", "minimum": 0, "maximum": 63 },
+    "chunkCount": { "type": "integer", "minimum": 1, "maximum": 64 },
+    "chunkDigest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "memberDeltas": {
+      "type": "array",
+      "maxItems": 100,
+      "items": { "$ref": "#/$defs/memberDelta" }
+    },
+    "event": { "$ref": "schemas/nostr.signed-event.schema.json" }
+  },
+  "$defs": {
+    "memberDelta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "punkId",
+        "present",
+        "access",
+        "joinedAt",
+        "invitedByPunkId"
+      ],
+      "properties": {
+        "punkId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "present": { "type": "boolean" },
+        "access": { "enum": ["owner", "manager", "member", "guest"] },
+        "joinedAt": { "type": "string", "format": "date-time" },
+        "invitedByPunkId": {
+          "oneOf": [
+            { "type": "string", "minLength": 1, "maxLength": 128 },
+            { "type": "null" }
+          ]
+        }
+      }
+    }
+  }
+}

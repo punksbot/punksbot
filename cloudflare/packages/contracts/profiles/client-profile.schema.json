@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://profiles/client-profile@1",
+  "title": "PunksClientProfile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "id",
+    "registryVersion",
+    "corpusVersion",
+    "capabilities",
+    "unavailableCapabilities",
+    "failureKinds",
+    "operations"
+  ],
+  "properties": {
+    "$schema": { "const": "./client-profile.schema.json" },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*@[1-9][0-9]*$"
+    },
+    "registryVersion": { "type": "integer", "minimum": 1 },
+    "corpusVersion": { "type": "integer", "minimum": 1 },
+    "capabilities": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/capability" }
+    },
+    "unavailableCapabilities": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/capability" }
+    },
+    "failureKinds": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "problem",
+          "transport",
+          "contract_violation",
+          "cancelled",
+          "stale_workspace",
+          "session_expired",
+          "ambiguous"
+        ]
+      }
+    },
+    "operations": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/operation" }
+    }
+  },
+  "$defs": {
+    "capability": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "maxLength": 64
+    },
+    "operation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "owner",
+        "kind",
+        "command",
+        "retry",
+        "cancellablePhases"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][A-Za-z0-9]*$",
+          "maxLength": 64
+        },
+        "owner": { "enum": ["account", "workspace"] },
+        "kind": {
+          "enum": ["read", "mutation", "follow", "local-orchestration"]
+        },
+        "command": { "type": "boolean" },
+        "retry": {
+          "enum": [
+            "safe_read",
+            "human_intent_required",
+            "renderer_confirmation",
+            "never"
+          ]
+        },
+        "cancellablePhases": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "before_emit",
+              "in_flight",
+              "delivery",
+              "renderer_confirmation"
+            ]
+          }
+        },
+        "requestContract": {
+          "type": "string",
+          "pattern": "^[a-z0-9.-]+@[1-9][0-9]*$"
+        },
+        "responseContract": {
+          "type": "string",
+          "pattern": "^[a-z0-9.-]+@[1-9][0-9]*$"
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "command": { "const": true } } },
+          "then": {
+            "properties": { "retry": { "const": "human_intent_required" } }
+          }
+        }
+      ]
+    }
+  }
+}

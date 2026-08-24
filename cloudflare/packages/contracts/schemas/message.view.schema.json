@@ -1,0 +1,184 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/message.view@1",
+  "title": "MessageView",
+  "$comment": "Ephemeral authorized response only. It must never be written to the journal, Queue, D1 projection, logs, or durable caches.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "workspaceId",
+    "conversationId",
+    "author",
+    "messageType",
+    "status",
+    "content",
+    "topic",
+    "mentionedPunkIds",
+    "mediaIds",
+    "parentMessageId",
+    "threadRootMessageId",
+    "threadDepth",
+    "broadcast",
+    "replyCount",
+    "descendantCount",
+    "lastReplyAt",
+    "currentVersion",
+    "retractionKind",
+    "retractedAt",
+    "eraseAfter",
+    "publicReason",
+    "erasedAt",
+    "revision",
+    "createdCursor",
+    "cursor",
+    "createdAt",
+    "updatedAt",
+    "editedAt"
+  ],
+  "properties": {
+    "id": { "type": "string", "format": "uuid" },
+    "workspaceId": { "type": "string", "format": "uuid" },
+    "conversationId": { "type": "string", "format": "uuid" },
+    "author": { "$ref": "#/$defs/actor" },
+    "messageType": {
+      "enum": ["stream-message", "forum-post", "forum-comment"]
+    },
+    "status": { "enum": ["active", "retracted", "erased"] },
+    "content": {
+      "anyOf": [{ "type": "string", "maxLength": 65536 }, { "type": "null" }]
+    },
+    "topic": {
+      "anyOf": [
+        { "type": "string", "minLength": 1, "maxLength": 255 },
+        { "type": "null" }
+      ]
+    },
+    "mentionedPunkIds": {
+      "type": "array",
+      "maxItems": 50,
+      "uniqueItems": true,
+      "items": { "type": "string", "format": "uuid" }
+    },
+    "mediaIds": {
+      "type": "array",
+      "maxItems": 50,
+      "uniqueItems": true,
+      "items": { "type": "string", "format": "uuid" }
+    },
+    "parentMessageId": {
+      "anyOf": [{ "type": "string", "format": "uuid" }, { "type": "null" }]
+    },
+    "threadRootMessageId": { "type": "string", "format": "uuid" },
+    "threadDepth": { "type": "integer", "minimum": 0, "maximum": 100 },
+    "broadcast": { "type": "boolean" },
+    "replyCount": { "type": "integer", "minimum": 0 },
+    "descendantCount": { "type": "integer", "minimum": 0 },
+    "lastReplyAt": {
+      "anyOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }]
+    },
+    "currentVersion": {
+      "anyOf": [{ "type": "integer", "minimum": 1 }, { "type": "null" }]
+    },
+    "retractionKind": {
+      "anyOf": [
+        { "enum": ["author", "moderation"] },
+        { "type": "null" }
+      ]
+    },
+    "retractedAt": {
+      "anyOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }]
+    },
+    "eraseAfter": {
+      "anyOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }]
+    },
+    "publicReason": {
+      "anyOf": [
+        { "type": "string", "minLength": 1, "maxLength": 280 },
+        { "type": "null" }
+      ]
+    },
+    "erasedAt": {
+      "anyOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }]
+    },
+    "revision": { "type": "integer", "minimum": 1 },
+    "createdCursor": { "type": "integer", "minimum": 1 },
+    "cursor": { "type": "integer", "minimum": 1 },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "editedAt": {
+      "anyOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }]
+    }
+  },
+  "$defs": {
+    "actor": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "punkId"],
+          "properties": {
+            "kind": { "const": "punk" },
+            "punkId": { "type": "string", "format": "uuid" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "installationId"],
+          "properties": {
+            "kind": { "const": "bot" },
+            "installationId": { "type": "string", "format": "uuid" }
+          }
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "active" } } },
+      "then": {
+        "properties": {
+          "content": { "type": "string", "maxLength": 65536 },
+          "currentVersion": { "type": "integer", "minimum": 1 },
+          "retractionKind": { "type": "null" },
+          "retractedAt": { "type": "null" },
+          "eraseAfter": { "type": "null" },
+          "publicReason": { "type": "null" },
+          "erasedAt": { "type": "null" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "status": { "const": "retracted" } } },
+      "then": {
+        "properties": {
+          "content": { "type": "null" },
+          "topic": { "type": "null" },
+          "currentVersion": { "type": "null" },
+          "mediaIds": { "type": "array", "maxItems": 0 },
+          "retractionKind": { "enum": ["author", "moderation"] },
+          "retractedAt": { "type": "string", "format": "date-time" },
+          "eraseAfter": { "type": "string", "format": "date-time" },
+          "erasedAt": { "type": "null" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "status": { "const": "erased" } } },
+      "then": {
+        "properties": {
+          "content": { "type": "null" },
+          "topic": { "type": "null" },
+          "currentVersion": { "type": "null" },
+          "mediaIds": { "type": "array", "maxItems": 0 },
+          "retractionKind": { "enum": ["author", "moderation"] },
+          "retractedAt": { "type": "string", "format": "date-time" },
+          "eraseAfter": { "type": "null" },
+          "publicReason": { "type": "null" },
+          "erasedAt": { "type": "string", "format": "date-time" }
+        }
+      }
+    }
+  ]
+}

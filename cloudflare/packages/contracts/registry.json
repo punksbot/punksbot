@@ -1,0 +1,596 @@
+{
+  "$schema": "./schemas/contract-registry.schema.json",
+  "name": "punks-contracts",
+  "version": 1,
+  "contracts": [
+    {
+      "id": "punks://contracts/problem@1",
+      "file": "schemas/problem.schema.json",
+      "kind": "response"
+    },
+    {
+      "id": "punks://contracts/punk@1",
+      "file": "schemas/punk.schema.json",
+      "kind": "state"
+    },
+    {
+      "id": "punks://contracts/bot@1",
+      "file": "schemas/bot.schema.json",
+      "kind": "state"
+    },
+    {
+      "id": "punks://contracts/bot.publish@1",
+      "file": "schemas/bot.publish.schema.json",
+      "kind": "command"
+    },
+    {
+      "id": "punks://contracts/bot.update@1",
+      "file": "schemas/bot.update.schema.json",
+      "kind": "command"
+    },
+    {
+      "id": "punks://contracts/bot.get@1",
+      "file": "schemas/bot.get.schema.json",
+      "kind": "query"
+    },
+    {
+      "id": "punks://contracts/bot.projection@1",
+      "file": "schemas/bot.projection.schema.json",
+      "kind": "projection"
+    },
+    {
+      "id": "punks://contracts/bot.journal-segment@1",
+      "file": "schemas/bot.journal-segment.schema.json",
+      "kind": "archive"
+    },
+    {
+      "id": "punks://contracts/bot.command-receipt-archive@1",
+      "file": "schemas/bot.command-receipt-archive.schema.json",
+      "kind": "archive"
+    },
+    {
+      "id": "punks://contracts/bot.config.empty@1",
+      "file": "schemas/bot.config.empty.schema.json",
+      "kind": "service"
+    },
+    {
+      "id": "punks://contracts/bot-installation@1",
+      "file": "schemas/bot-installation.schema.json",
+      "kind": "state"
+    },
+    {
+      "id": "punks://contracts/bot-installation.install@1",
+      "file": "schemas/bot-installation.install.schema.json",
+      "kind": "command"
+    },
+    {
+      "id": "punks://contracts/bot-installation.configure@1",
+      "file": "schemas/bot-installation.configure.schema.json",
+      "kind": "command"
+    },
+    {
+      "id": "punks://contracts/bot-installation.revoke@1",
+      "file": "schemas/bot-installation.revoke.schema.json",
+      "kind": "command"
+    },
+    {
+      "id": "punks://contracts/bot-installation.get@1",
+      "file": "schemas/bot-installation.get.schema.json",
+      "kind": "query"
+    },
+    {
+      "id": "punks://contracts/bot-installation.command-receipt-archive@1",
+      "file": "schemas/bot-installation.command-receipt-archive.schema.json",
+      "kind": "archive"
+    },
+    {
+      "id": "punks://contracts/bot-installation.projection@1",
+      "file": "schemas/bot-installation.projection.schema.json",
+      "kind": "projection"
+    },
+    {
+      "id": "punks://contracts/bot-installation.journal-segment@1",
+      "file": "schemas/bot-installation.journal-segment.schema.json",
+      "kind": "archive"
+    },
+    {
+      "id": "punks://contracts/bot-wake.offer@1",
+      "file": "schemas/bot-wake.offer.schema.json",
+      "kind": "state"
+    },
+    {
+      "id": "punks://contracts/bot-wake.queue@1",
+      "file": "schemas/bot-wake.queue.schema.json",
+      "kind": "service"
+    },
+    {
+      "id": "punks://contracts/bot-wake.claim@1",
+      "file": "schemas/bot-wake.claim.schema.json",
+      "kind": "service"
+    },
+    {
+      "id": "punks://contracts/bot-wake.claim-result@1",
+      "file": "schemas/bot-wake.claim-result.schema.json",
+      "kind": "response"
+    },
+    {
+      "id": "punks://contracts/bot-wake.complete@1",
+      "file": "schemas/bot-wake.complete.schema.json",
+      "kind": "service"
+    },
+    {
+      "id": "punks://contracts/bot-wake.receipt-archive@1",
+      "file": "schemas/bot-wake.receipt-archive.schema.json",
+      "kind": "archive"
+    },
+    {
+      "id": "punks://contracts/bot-action.admission@1",
+      "file": "schemas/bot-action.admission.schema.json",
+      "kind": "state"
+    },
+    {
+      "id": "punks://contracts/bot-action.admit@1",
+      "file": "schemas/bot-action.admit.schema.json",
+      "kind": "command"
+    },
+    {
+      "id": "punks://contracts/bot-action.replay@1",
+      "file": "schemas/bot-action.replay.schema.json",
+      "kind": "command"
+    },
+    {
+      "id": "punks://contracts/bot-action.complete@1",
+      "file": "schemas/bot-action.complete.schema.json",
+      "kind": "command"
+    },
+    {
+      "id": "punks://contracts/bot-action.execute@1",
+      "file": "schemas/bot-action.execute.schema.json",
+      "kind": "service"
+    },
+    {
+      "id": "punks://contracts/bot-action.execute-result@1",
+      "file": "schemas/bot-action.execute-result.schema.json",
+      "kind": "response"
+    },
+    {
+      "id": "punks://contracts/bot-action.delivery@1",
+      "file": "schemas/bot-action.delivery.schema.json",
+      "kind": "service"
+    },
+    {
+      "id": "punks://contracts/bot-action.delivery-result@1",
+      "file": "schemas/bot-action.delivery-result.schema.json",
+      "kind": "response"
+    },
+    {
+      "id": "punks://contracts/bot-action.receipt-archive@1",
+      "file": "schemas/bot-action.receipt-archive.schema.json",
+      "kind": "archive"
+    },
+    {
+      "id": "punks://contracts/bot-invocation.claims@1",
+      "file": "schemas/bot-invocation.claims.schema.json",
+      "kind": "service"
+    },
+    {
+      "id": "punks://contracts/bot-invocation.mint@1",
+      "file": "schemas/bot-invocation.mint.schema.json",
+      "kind": "service"
+    },
+    {
+      "id": "punks://contracts/bot-invocation.mint-result@1",
+      "file": "schemas/bot-invocation.mint-result.schema.json",
+      "kind": "service"
+    },
+    {
+      "id": "punks://contracts/bot-invocation.verify@1",
+      "file": "schemas/bot-invocation.verify.schema.json",
+      "kind": "service"
+    },
+    {
+      "id": "punks://contracts/bot-invocation.verify-result@1",
+      "file": "schemas/bot-invocation.verify-result.schema.json",
+      "kind": "service"
+    },
+    {
+      "id": "punks://contracts/bot-runtime.reaction-invoke@1",
+      "file": "schemas/bot-runtime.reaction-invoke.schema.json",
+      "kind": "service"
+    },
+    {
+      "id": "punks://contracts/bot-runtime.reaction-result@1",
+      "file": "schemas/bot-runtime.reaction-result.schema.json",
+      "kind": "response"
+    },
+    {
+      "id": "punks://contracts/auth.start@1",
+      "file": "schemas/auth.start.schema.json",
+      "kind": "command"
+    },
+    {
+      "id": "punks://contracts/auth.start-response@1",
+      "file": "schemas/auth.start-response.schema.json",
+      "kind": "response"
+    },
+    {
+      "id": "punks://contracts/auth.desktop-start@1",
+      "file": "schemas/auth.desktop-start.schema.json",
+      "kind": "command"
+    },
+    {
+      "id": "punks://contracts/auth.desktop-start-response@1",
+      "file": "schemas/auth.desktop-start-response.schema.json",
+      "kind": "response"
+    },
+    {
+      "id": "punks://contracts/auth.desktop-delivery@1",
+      "file": "schemas/auth.desktop-delivery.schema.json",
+      "kind": "command"
+    },
+    {
+      "id": "punks://contracts/auth.desktop-session-response@1",
+      "file": "schemas/auth.desktop-session-response.schema.json",
+      "kind": "response"
+    },
+    {
+      "id": "punks://contracts/auth.provider-profile@1",
+      "file": "schemas/auth.provider-profile.schema.json",
+      "kind": "service"
+    },
+    {
+      "id": "punks://contracts/auth.session@1",
+      "file": "schemas/auth.session.schema.json",
+      "kind": "response"
+    },
+    {
+      "id": "punks://contracts/auth.passkey-options@1",
+      "file": "schemas/auth.passkey-options.schema.json",
+      "kind": "response"
+    },
+    {
+      "id": "punks://contracts/auth.passkey-finish@1",
+      "file": "schemas/auth.passkey-finish.schema.json",
+      "kind": "command"
+    },
+    {
+      "id": "punks://contracts/account-merge.fresh-proof@1",
+      "file": "schemas/account-merge.fresh-proof.schema.json",
+      "kind": "state",
+      "generationTargets": ["typescript", "rust", "dart", "openapi"]
+    },
+    {
+      "id": "punks://contracts/account-merge.plan-create@1",
+      "file": "schemas/account-merge.plan-create.schema.json",
+      "kind": "command",
+      "generationTargets": ["typescript", "rust", "dart", "openapi"]
+    },
+    {
+      "id": "punks://contracts/account-merge.plan@1",
+      "file": "schemas/account-merge.plan.schema.json",
+      "kind": "state",
+      "generationTargets": ["typescript", "rust", "dart", "openapi"]
+    },
+    {
+      "id": "punks://contracts/account-merge.plan-response@1",
+      "file": "schemas/account-merge.plan-response.schema.json",
+      "kind": "response",
+      "generationTargets": ["typescript", "rust", "dart", "openapi"]
+    },
+    {
+      "id": "punks://contracts/desktop.compatibility@1",
+      "file": "schemas/desktop.compatibility.schema.json",
+      "kind": "query"
+    },
+    {
+      "id": "punks://contracts/desktop.compatibility-response@1",
+      "file": "schemas/desktop.compatibility-response.schema.json",
+      "kind": "response"
+    },
+    {
+      "id": "punks://contracts/workspace@1",
+      "file": "schemas/workspace.schema.json",
+      "kind": "state"
+    },
+    {
+      "id": "punks://contracts/workspace.create@1",
+      "file": "schemas/workspace.create.schema.json",
+      "kind": "command"
+    },
+    {
+      "id": "punks://contracts/workspace.rename@1",
+      "file": "schemas/workspace.rename.schema.json",
+      "kind": "command"
+    },
+    {
+      "id": "punks://contracts/workspace.member-set-role@1",
+      "file": "schemas/workspace.member-set-role.schema.json",
+      "kind": "command"
+    },
+    {
+      "id": "punks://contracts/workspace.member-remove@1",
+      "file": "schemas/workspace.member-remove.schema.json",
+      "kind": "command"
+    },
+    {
+      "id": "punks://contracts/workspace.get@1",
+      "file": "schemas/workspace.get.schema.json",
+      "kind": "query"
+    },
+    {
+      "id": "punks://contracts/workspace.list@1",
+      "file": "schemas/workspace.list.schema.json",
+      "kind": "query"
+    },
+    {
+      "id": "punks://contracts/workspace.list-response@1",
+      "file": "schemas/workspace.list-response.schema.json",
+      "kind": "response"
+    },
+    {
+      "id": "punks://contracts/workspace.public-view@1",
+      "file": "schemas/workspace.public-view.schema.json",
+      "kind": "response"
+    },
+    {
+      "id": "punks://contracts/workspace.punks-view@1",
+      "file": "schemas/workspace.punks-view.schema.json",
+      "kind": "response"
+    },
+    {
+      "id": "punks://contracts/conversation@1",
+      "file": "schemas/conversation.schema.json",
+      "kind": "state"
+    },
+    {
+      "id": "punks://contracts/conversation.create@1",
+      "file": "schemas/conversation.create.schema.json",
+      "kind": "command"
+    },
+    {
+      "id": "punks://contracts/conversation.follow@1",
+      "file": "schemas/conversation.follow.schema.json",
+      "kind": "query"
+    },
+    {
+      "id": "punks://contracts/conversation.follow-client-frame@1",
+      "file": "schemas/conversation.follow-client-frame.schema.json",
+      "kind": "event"
+    },
+    {
+      "id": "punks://contracts/conversation.follow-server-frame@1",
+      "file": "schemas/conversation.follow-server-frame.schema.json",
+      "kind": "event"
+    },
+    {
+      "id": "punks://contracts/conversation.get@1",
+      "file": "schemas/conversation.get.schema.json",
+      "kind": "query"
+    },
+    {
+      "id": "punks://contracts/conversation.list@1",
+      "file": "schemas/conversation.list.schema.json",
+      "kind": "query"
+    },
+    {
+      "id": "punks://contracts/conversation.list-response@1",
+      "file": "schemas/conversation.list-response.schema.json",
+      "kind": "response"
+    },
+    {
+      "id": "punks://contracts/conversation.join@1",
+      "file": "schemas/conversation.join.schema.json",
+      "kind": "command"
+    },
+    {
+      "id": "punks://contracts/conversation.update@1",
+      "file": "schemas/conversation.update.schema.json",
+      "kind": "command"
+    },
+    {
+      "id": "punks://contracts/conversation.archive@1",
+      "file": "schemas/conversation.archive.schema.json",
+      "kind": "command"
+    },
+    {
+      "id": "punks://contracts/conversation.restore@1",
+      "file": "schemas/conversation.restore.schema.json",
+      "kind": "command"
+    },
+    {
+      "id": "punks://contracts/conversation.member-set-access@1",
+      "file": "schemas/conversation.member-set-access.schema.json",
+      "kind": "command"
+    },
+    {
+      "id": "punks://contracts/conversation.member-remove@1",
+      "file": "schemas/conversation.member-remove.schema.json",
+      "kind": "command"
+    },
+    {
+      "id": "punks://contracts/conversation.view@1",
+      "file": "schemas/conversation.view.schema.json",
+      "kind": "response"
+    },
+    {
+      "id": "punks://contracts/author.resolve@1",
+      "file": "schemas/author.resolve.schema.json",
+      "kind": "query"
+    },
+    {
+      "id": "punks://contracts/author.resolve-response@1",
+      "file": "schemas/author.resolve-response.schema.json",
+      "kind": "response"
+    },
+    {
+      "id": "punks://contracts/conversation.projection@1",
+      "file": "schemas/conversation.projection.schema.json",
+      "kind": "projection"
+    },
+    {
+      "id": "punks://contracts/conversation.event@2",
+      "file": "schemas/conversation.event-v2.schema.json",
+      "kind": "event"
+    },
+    {
+      "id": "punks://contracts/conversation.projection@2",
+      "file": "schemas/conversation.projection-v2.schema.json",
+      "kind": "projection"
+    },
+    {
+      "id": "punks://contracts/conversation.journal-segment@1",
+      "file": "schemas/conversation.journal-segment.schema.json",
+      "kind": "archive"
+    },
+    {
+      "id": "punks://contracts/conversation.journal-segment@2",
+      "file": "schemas/conversation.journal-segment-v2.schema.json",
+      "kind": "archive"
+    },
+    {
+      "id": "punks://contracts/message@1",
+      "file": "schemas/message.schema.json",
+      "kind": "state"
+    },
+    {
+      "id": "punks://contracts/message-reaction@1",
+      "file": "schemas/message-reaction.schema.json",
+      "kind": "state"
+    },
+    {
+      "id": "punks://contracts/message.view@1",
+      "file": "schemas/message.view.schema.json",
+      "kind": "response"
+    },
+    {
+      "id": "punks://contracts/message.history@1",
+      "file": "schemas/message.history.schema.json",
+      "kind": "query"
+    },
+    {
+      "id": "punks://contracts/message.history-response@1",
+      "file": "schemas/message.history-response.schema.json",
+      "kind": "response"
+    },
+    {
+      "id": "punks://contracts/message.search@1",
+      "file": "schemas/message.search.schema.json",
+      "kind": "query"
+    },
+    {
+      "id": "punks://contracts/message.search-response@1",
+      "file": "schemas/message.search-response.schema.json",
+      "kind": "response"
+    },
+    {
+      "id": "punks://contracts/message.post@1",
+      "file": "schemas/message.post.schema.json",
+      "kind": "command"
+    },
+    {
+      "id": "punks://contracts/message.post-response@1",
+      "file": "schemas/message.post-response.schema.json",
+      "kind": "response"
+    },
+    {
+      "id": "punks://contracts/message.mutation-response@1",
+      "file": "schemas/message.mutation-response.schema.json",
+      "kind": "response"
+    },
+    {
+      "id": "punks://contracts/message.edit@1",
+      "file": "schemas/message.edit.schema.json",
+      "kind": "command"
+    },
+    {
+      "id": "punks://contracts/message.retract@1",
+      "file": "schemas/message.retract.schema.json",
+      "kind": "command"
+    },
+    {
+      "id": "punks://contracts/message.restore@1",
+      "file": "schemas/message.restore.schema.json",
+      "kind": "command"
+    },
+    {
+      "id": "punks://contracts/message.finalize-erasure@1",
+      "file": "schemas/message.finalize-erasure.schema.json",
+      "kind": "service"
+    },
+    {
+      "id": "punks://contracts/message.reaction-add@1",
+      "file": "schemas/message.reaction-add.schema.json",
+      "kind": "command"
+    },
+    {
+      "id": "punks://contracts/message.reaction-remove@1",
+      "file": "schemas/message.reaction-remove.schema.json",
+      "kind": "command"
+    },
+    {
+      "id": "punks://contracts/message.reaction-toggle@1",
+      "file": "schemas/message.reaction-toggle.schema.json",
+      "kind": "command"
+    },
+    {
+      "id": "punks://contracts/message.reaction-mutation-response@1",
+      "file": "schemas/message.reaction-mutation-response.schema.json",
+      "kind": "response"
+    },
+    {
+      "id": "punks://contracts/message.projection@1",
+      "file": "schemas/message.projection.schema.json",
+      "kind": "projection"
+    },
+    {
+      "id": "punks://contracts/message-reaction.projection@1",
+      "file": "schemas/message-reaction.projection.schema.json",
+      "kind": "projection"
+    },
+    {
+      "id": "punks://contracts/nostr.unsigned-event@1",
+      "file": "schemas/nostr.unsigned-event.schema.json",
+      "kind": "event"
+    },
+    {
+      "id": "punks://contracts/nostr.signed-event@1",
+      "file": "schemas/nostr.signed-event.schema.json",
+      "kind": "event"
+    },
+    {
+      "id": "punks://contracts/attestation.request@1",
+      "file": "schemas/attestation.request.schema.json",
+      "kind": "service"
+    },
+    {
+      "id": "punks://contracts/attestation.response@1",
+      "file": "schemas/attestation.response.schema.json",
+      "kind": "service"
+    },
+    {
+      "id": "punks://contracts/workspace.projection@1",
+      "file": "schemas/workspace.projection.schema.json",
+      "kind": "projection"
+    },
+    {
+      "id": "punks://contracts/workspace.event@2",
+      "file": "schemas/workspace.event-v2.schema.json",
+      "kind": "event"
+    },
+    {
+      "id": "punks://contracts/workspace.projection@2",
+      "file": "schemas/workspace.projection-v2.schema.json",
+      "kind": "projection"
+    },
+    {
+      "id": "punks://contracts/journal.segment@1",
+      "file": "schemas/journal.segment.schema.json",
+      "kind": "archive"
+    },
+    {
+      "id": "punks://contracts/journal.segment@2",
+      "file": "schemas/journal.segment-v2.schema.json",
+      "kind": "archive"
+    }
+  ]
+}

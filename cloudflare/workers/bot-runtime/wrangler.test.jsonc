@@ -1,0 +1,17 @@
+{
+  "$schema": "../../../../node_modules/wrangler/config-schema.json",
+  "name": "punks-bot-runtime-test",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-21",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "ENVIRONMENT": "local"
+  },
+  "workflows": [
+    {
+      "binding": "BOT_WAKE_WORKFLOW",
+      "name": "punks-bot-wake-local-test",
+      "class_name": "BotWakeWorkflow"
+    }
+  ]
+}

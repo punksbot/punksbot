@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/bot.projection@1",
+  "title": "BotProjectionEnvelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "botId", "cursor", "event", "state"],
+  "properties": {
+    "contract": { "const": "bot.projection@1" },
+    "botId": { "type": "string", "format": "uuid" },
+    "cursor": { "type": "integer", "minimum": 1 },
+    "event": { "$ref": "schemas/nostr.signed-event.schema.json" },
+    "state": { "$ref": "schemas/bot.schema.json" }
+  }
+}

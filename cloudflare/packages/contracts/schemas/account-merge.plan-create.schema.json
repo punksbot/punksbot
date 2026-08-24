@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/account-merge.plan-create@1",
+  "title": "CreateAccountMergePlanCommand",
+  "$comment": "Planning is side-effect free for account authority. It references two bounded non-secret proof descriptors; no credential or token is accepted.",
+  "type": "object",
+  "additionalProperties": false,
+  "minProperties": 7,
+  "maxProperties": 7,
+  "required": [
+    "contract",
+    "commandId",
+    "intentId",
+    "survivorPunkId",
+    "absorbedPunkId",
+    "holderBindingHash",
+    "proofs"
+  ],
+  "properties": {
+    "contract": { "const": "account-merge.plan-create@1" },
+    "commandId": { "type": "string", "format": "uuid" },
+    "intentId": { "type": "string", "format": "uuid" },
+    "survivorPunkId": { "type": "string", "format": "uuid" },
+    "absorbedPunkId": { "type": "string", "format": "uuid" },
+    "holderBindingHash": {
+      "type": "string",
+      "minLength": 64,
+      "maxLength": 64,
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "proofs": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "schemas/account-merge.fresh-proof.schema.json"
+      },
+      "allOf": [
+        {
+          "contains": {
+            "type": "object",
+            "required": ["accountRole"],
+            "properties": { "accountRole": { "const": "survivor" } }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": ["accountRole"],
+            "properties": { "accountRole": { "const": "absorbed" } }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        }
+      ]
+    }
+  }
+}

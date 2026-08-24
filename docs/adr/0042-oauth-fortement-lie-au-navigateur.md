@@ -1,0 +1,3 @@
+# Lier fortement OAuth au navigateur et limiter GitHub à l’identité
+
+Chaque transaction OAuth est un agrégat Durable Object à usage unique, expire après dix minutes, emploie PKCE S256 et compare un `state` aléatoire à un cookie `HttpOnly`, `Secure`, `SameSite=Lax` propre à la transaction. Une collision d’e-mail vérifié demande une liaison ou une fusion explicite et ne crée aucune session implicite. L’application OAuth GitHub dédiée à la connexion ne demande que `read:user user:email`, rejette toute portée inattendue — notamment `repo` — et ne conserve jamais son jeton. L’accès aux Repositories relève d’une capacité distincte et ne peut jamais être élargi par Punks Bot.

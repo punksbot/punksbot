@@ -1,0 +1,33 @@
+{
+  "$schema": "../../../../node_modules/wrangler/config-schema.json",
+  "account_id": "3a391620584c792dbbd8cfa148d7634a",
+  "name": "punks-attestation",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-20",
+  "workers_dev": false,
+  "preview_urls": false,
+  "vars": {
+    "ENVIRONMENT": "local",
+    "ATTESTATION_KEY_VERSION": "local-v1"
+  },
+  "secrets": {
+    "required": ["ATTESTATION_PRIVATE_KEY"]
+  },
+  "observability": {
+    "enabled": true
+  },
+  "env": {
+    "staging": {
+      "name": "punks-attestation-staging",
+      "workers_dev": false,
+      "preview_urls": false,
+      "vars": {
+        "ENVIRONMENT": "staging",
+        "ATTESTATION_KEY_VERSION": "staging-v1"
+      },
+      "secrets": {
+        "required": ["ATTESTATION_PRIVATE_KEY"]
+      }
+    }
+  }
+}

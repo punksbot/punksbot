@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/workspace.list-response@1",
+  "title": "ListWorkspacesResponse",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "items", "nextCursor"],
+  "properties": {
+    "contract": { "const": "workspace.list-response@1" },
+    "items": {
+      "type": "array",
+      "maxItems": 100,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/workspaceSummary" }
+    },
+    "nextCursor": {
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._~-]{1,1024}$"
+        },
+        { "type": "null" }
+      ]
+    }
+  },
+  "$defs": {
+    "workspaceSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "slug", "name", "visibility", "role", "revision"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "slug": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+          "minLength": 1,
+          "maxLength": 63
+        },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "visibility": { "enum": ["private", "punks", "public"] },
+        "role": { "enum": ["owner", "moderator", "member", "guest"] },
+        "revision": { "type": "integer", "minimum": 1 }
+      }
+    }
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/attestation.request@1",
+  "title": "AttestationRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["purpose", "event"],
+  "properties": {
+    "purpose": {
+      "enum": [
+        "workspace-journal",
+        "workspace-journal-segment",
+        "conversation-journal",
+        "conversation-journal-segment",
+        "message-journal",
+        "bot-journal",
+        "bot-journal-segment",
+        "bot-installation-journal",
+        "bot-installation-journal-segment"
+      ]
+    },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["created_at", "kind", "tags", "content"],
+      "properties": {
+        "created_at": { "type": "integer", "minimum": 0 },
+        "kind": { "type": "integer", "minimum": 50000, "maximum": 59999 },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "maxLength": 2048 }
+          }
+        },
+        "content": { "type": "string", "maxLength": 262144 }
+      }
+    }
+  }
+}

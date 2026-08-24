@@ -1,0 +1,24 @@
+{
+  "name": "@punks/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "check:kinds": "node ./scripts/check-kind-collisions.mjs",
+    "lint": "biome check src test scripts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "check": "pnpm check:kinds && pnpm lint && pnpm typecheck && pnpm test"
+  },
+  "dependencies": {
+    "@punks/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.6",
+    "typescript": "~6.0.0",
+    "vitest": "^4.1.10"
+  }
+}

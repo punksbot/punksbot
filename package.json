@@ -1,0 +1,41 @@
+{
+  "name": "punksbot-workspace",
+  "private": true,
+  "packageManager": "pnpm@11.4.0",
+  "scripts": {
+    "check": "pnpm -r check",
+    "punks:check": "pnpm migration:check && pnpm cloudflare:check && pnpm --filter buzz check && pnpm --dir desktop check:punks-candidate && pnpm --dir desktop check:punks-product && node scripts/check-punks-rust.mjs",
+    "migration:check": "node scripts/check-migration-manifests.mjs && node scripts/check-release-graph.mjs",
+    "migration:render": "node scripts/render-withdrawal-inventory.mjs",
+    "migration:test": "node --test scripts/check-migration-manifests.test.mjs scripts/check-release-graph.test.mjs scripts/check-promotion-dossier.test.mjs scripts/punks-desktop-candidate-workflow.test.mjs scripts/candidate/t1-withdrawal.test.mjs scripts/punks-native-artifact.test.mjs desktop/scripts/check-punks-candidate.test.mjs desktop/scripts/check-punks-frontend-product.test.mjs desktop/scripts/punks-product-entry.test.mjs",
+    "promotion:valider": "node scripts/check-promotion-dossier.mjs",
+    "punks:dev": "node cloudflare/scripts/dev-app.mjs",
+    "cloudflare:check": "node cloudflare/scripts/cloudflare-gate.mjs",
+    "cloudflare:check-tooling": "node --test cloudflare/scripts/*.test.mjs",
+    "cloudflare:check-boundary": "node cloudflare/scripts/check-managed-only-boundary.mjs",
+    "cloudflare:check-bindings": "node cloudflare/scripts/check-worker-bindings.mjs",
+    "cloudflare:local:prepare": "node cloudflare/scripts/dev-local.mjs --prepare-only",
+    "cloudflare:dev": "node cloudflare/scripts/dev-local.mjs",
+    "cloudflare:smoke:local": "node cloudflare/scripts/smoke-local.mjs",
+    "cloudflare:staging:material": "node cloudflare/scripts/staging-material.mjs",
+    "cloudflare:staging:provision": "node cloudflare/scripts/staging-operations.mjs provision",
+    "cloudflare:staging:secrets": "node cloudflare/scripts/staging-operations.mjs secrets",
+    "cloudflare:staging:dry-run": "node cloudflare/scripts/staging-operations.mjs dry-run",
+    "cloudflare:staging:deployment-proof": "node cloudflare/scripts/staging-deployment-proof.mjs",
+    "cloudflare:staging:deploy": "node cloudflare/scripts/staging-operations.mjs deploy",
+    "cloudflare:staging:status": "node cloudflare/scripts/staging-operations.mjs status",
+    "cloudflare:smoke:staging": "node cloudflare/scripts/smoke-staging.mjs",
+    "cloudflare:test": "pnpm --filter './cloudflare/**' -r test",
+    "cloudflare:types": "pnpm cloudflare:runtime-types && pnpm --filter './cloudflare/workers/*' -r types",
+    "cloudflare:runtime-types": "pnpm --filter @punks/api-worker exec wrangler types ../../worker-runtime.d.ts --include-env false",
+    "cloudflare:check-runtime-types": "pnpm --filter @punks/api-worker exec wrangler types ../../worker-runtime.d.ts --include-env false --check",
+    "contracts:generate": "pnpm --filter @punks/contracts generate"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.6",
+    "yaml": "2.9.0"
+  },
+  "dependencies": {
+    "@tailwindcss/typography": "^0.5.19"
+  }
+}

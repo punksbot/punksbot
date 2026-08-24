@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/message.edit@1",
+  "title": "EditMessageCommand",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "commandId", "workspaceId", "conversationId", "messageId", "actor", "payload"],
+  "properties": {
+    "contract": { "const": "message.edit@1" },
+    "commandId": { "type": "string", "format": "uuid" },
+    "workspaceId": { "type": "string", "format": "uuid" },
+    "conversationId": { "type": "string", "format": "uuid" },
+    "messageId": { "type": "string", "format": "uuid" },
+    "actor": { "$ref": "#/$defs/actor" },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["content", "topic", "mentionedPunkIds", "mediaIds"],
+      "properties": {
+        "content": { "type": "string", "maxLength": 65536 },
+        "topic": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255,
+              "pattern": "\\S"
+            },
+            { "type": "null" }
+          ]
+        },
+        "mentionedPunkIds": {
+          "type": "array",
+          "maxItems": 50,
+          "uniqueItems": true,
+          "items": { "type": "string", "format": "uuid" }
+        },
+        "mediaIds": {
+          "type": "array",
+          "maxItems": 50,
+          "uniqueItems": true,
+          "items": { "type": "string", "format": "uuid" }
+        }
+      },
+      "not": {
+        "required": ["content", "mediaIds"],
+        "properties": {
+          "content": { "maxLength": 0 },
+          "mediaIds": { "maxItems": 0 }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "actor": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "punkId"],
+          "properties": {
+            "kind": { "const": "punk" },
+            "punkId": { "type": "string", "format": "uuid" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "installationId"],
+          "properties": {
+            "kind": { "const": "bot" },
+            "installationId": { "type": "string", "format": "uuid" }
+          }
+        }
+      ]
+    }
+  }
+}

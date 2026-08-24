@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/message.reaction-mutation-response@1",
+  "title": "MessageReactionMutationResponse",
+  "$comment": "Authorized ephemeral response. effect describes the recorded command while reaction is the current authorized view and may differ after later transitions. It contains no Message plaintext, ciphertext/key metadata, command ledger, or raw internal journal event.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["reaction", "effect", "replayed"],
+  "properties": {
+    "reaction": {
+      "anyOf": [{ "$ref": "#/$defs/view" }, { "type": "null" }]
+    },
+    "effect": { "enum": ["added", "removed", "unchanged"] },
+    "replayed": { "type": "boolean" }
+  },
+  "$defs": {
+    "actor": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "punkId"],
+          "properties": {
+            "kind": { "const": "punk" },
+            "punkId": { "type": "string", "format": "uuid" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "installationId"],
+          "properties": {
+            "kind": { "const": "bot" },
+            "installationId": { "type": "string", "format": "uuid" }
+          }
+        }
+      ]
+    },
+    "canonicalReaction": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^(?!\\s)(?!.*\\s$).+$",
+          "not": {
+            "anyOf": [{ "pattern": "^:" }, { "pattern": ":$" }]
+          }
+        },
+        {
+          "type": "string",
+          "maxLength": 66,
+          "pattern": "^:[a-z0-9_-]{1,64}:$"
+        }
+      ]
+    },
+    "view": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "workspaceId",
+        "conversationId",
+        "messageId",
+        "actor",
+        "reaction",
+        "reactedAt"
+      ],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "workspaceId": { "type": "string", "format": "uuid" },
+        "conversationId": { "type": "string", "format": "uuid" },
+        "messageId": { "type": "string", "format": "uuid" },
+        "actor": { "$ref": "#/$defs/actor" },
+        "reaction": { "$ref": "#/$defs/canonicalReaction" },
+        "reactedAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}

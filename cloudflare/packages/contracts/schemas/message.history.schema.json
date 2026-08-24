@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/message.history@1",
+  "title": "MessageHistoryQuery",
+  "$comment": "The runtime must cap the UTF-8 serialized response at 1048576 bytes even when limit is 100, stop before exceeding the cap, and return nextCursor for remaining items.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "workspaceId", "conversationId", "cursor", "limit"],
+  "properties": {
+    "contract": { "const": "message.history@1" },
+    "workspaceId": { "type": "string", "format": "uuid" },
+    "conversationId": { "type": "string", "format": "uuid" },
+    "threadRootMessageId": { "type": "string", "format": "uuid" },
+    "cursor": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 512,
+          "pattern": "^mhc1\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]{43}$"
+        },
+        { "type": "null" }
+      ]
+    },
+    "limit": { "type": "integer", "minimum": 1, "maximum": 100 },
+    "direction": { "enum": ["older", "newer"] }
+  },
+  "oneOf": [
+    {
+      "required": ["direction"],
+      "properties": {
+        "cursor": { "type": "null" },
+        "direction": { "enum": ["older", "newer"] }
+      }
+    },
+    {
+      "not": { "required": ["direction"] },
+      "properties": {
+        "cursor": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 512,
+          "pattern": "^mhc1\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]{43}$"
+        }
+      }
+    }
+  ]
+}

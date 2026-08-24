@@ -1,0 +1,3 @@
+# Donner l’autorité à un Durable Object par agrégat
+
+Chaque agrégat coordonné, notamment un Workspace, une conversation, une Installation de Bot, un Repository ou un Huddle, possède son Durable Object autoritaire et son journal local. Pour un Repository, cette autorité couvre seulement l’état d’intégration Punks — connexions, curseurs, projections et actions de Bot — tandis que GitHub reste l’unique autorité des objets et références Git. D1 contient des projections reconstructibles et des vues transversales plutôt que l’ordre canonique, ce qui évite à la fois un point chaud unique par Workspace et une autorité partagée entre D1 et le temps réel.

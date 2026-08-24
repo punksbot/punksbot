@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/bot-installation.revoke@1",
+  "title": "RevokeBotInstallationCommand",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "commandId",
+    "workspaceId",
+    "installationId",
+    "actor",
+    "payload"
+  ],
+  "properties": {
+    "contract": { "const": "bot-installation.revoke@1" },
+    "commandId": { "type": "string", "format": "uuid" },
+    "workspaceId": { "type": "string", "format": "uuid" },
+    "installationId": { "type": "string", "format": "uuid" },
+    "actor": { "$ref": "#/$defs/actor" },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cause"],
+      "properties": {
+        "cause": { "type": "string", "minLength": 1, "maxLength": 255 }
+      }
+    }
+  },
+  "$defs": {
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "punkId"],
+      "properties": {
+        "kind": { "const": "punk" },
+        "punkId": { "type": "string", "format": "uuid" }
+      }
+    }
+  }
+}

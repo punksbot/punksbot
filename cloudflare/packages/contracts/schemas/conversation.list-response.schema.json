@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/conversation.list-response@1",
+  "title": "ListConversationsResponse",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "workspaceId", "items", "nextCursor"],
+  "properties": {
+    "contract": { "const": "conversation.list-response@1" },
+    "workspaceId": { "type": "string", "format": "uuid" },
+    "items": {
+      "type": "array",
+      "maxItems": 100,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/conversationSummary" }
+    },
+    "nextCursor": {
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._~-]{1,1024}$"
+        },
+        { "type": "null" }
+      ]
+    }
+  },
+  "$defs": {
+    "conversationSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "workspaceId",
+        "name",
+        "type",
+        "visibility",
+        "description",
+        "topic",
+        "purpose",
+        "topicRequired",
+        "ttlSeconds",
+        "ttlDeadline",
+        "revision",
+        "cursor",
+        "updatedAt"
+      ],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "workspaceId": { "type": "string", "format": "uuid" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "type": { "const": "stream" },
+        "visibility": { "enum": ["open", "private"] },
+        "description": {
+          "oneOf": [{ "type": "string", "maxLength": 2000 }, { "type": "null" }]
+        },
+        "topic": {
+          "oneOf": [{ "type": "string", "maxLength": 160 }, { "type": "null" }]
+        },
+        "purpose": {
+          "oneOf": [{ "type": "string", "maxLength": 2000 }, { "type": "null" }]
+        },
+        "topicRequired": { "type": "boolean" },
+        "ttlSeconds": {
+          "oneOf": [{ "type": "integer", "minimum": 60 }, { "type": "null" }]
+        },
+        "ttlDeadline": {
+          "oneOf": [
+            { "type": "string", "format": "date-time" },
+            { "type": "null" }
+          ]
+        },
+        "revision": { "type": "integer", "minimum": 1 },
+        "cursor": { "type": "integer", "minimum": 1 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}

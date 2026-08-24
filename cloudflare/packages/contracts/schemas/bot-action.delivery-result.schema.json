@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/bot-action.delivery-result@1",
+  "title": "DeliverBotActionResult",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract", "ok", "replayed"],
+      "properties": {
+        "contract": { "const": "bot-action.delivery-result@1" },
+        "ok": { "const": true },
+        "replayed": { "type": "boolean" }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract", "ok", "code"],
+      "properties": {
+        "contract": { "const": "bot-action.delivery-result@1" },
+        "ok": { "const": false },
+        "code": {
+          "enum": [
+            "invalid_request",
+            "not_found",
+            "forbidden",
+            "conflict",
+            "command_in_progress",
+            "attestation_failed",
+            "temporarily_unavailable",
+            "internal"
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/workspace.list@1",
+  "title": "ListWorkspacesQuery",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "limit", "cursor"],
+  "properties": {
+    "contract": { "const": "workspace.list@1" },
+    "limit": { "type": "integer", "minimum": 1, "maximum": 100 },
+    "cursor": {
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._~-]{1,1024}$"
+        },
+        { "type": "null" }
+      ]
+    }
+  }
+}

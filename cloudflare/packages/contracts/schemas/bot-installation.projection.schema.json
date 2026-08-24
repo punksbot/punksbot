@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/bot-installation.projection@1",
+  "title": "BotInstallationProjectionEnvelope",
+  "$comment": "Signed bounded delta. Installation config is represented only by its Punks contract and canonical digest; grants and admissions remain normalized collections.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "workspaceId",
+    "installationId",
+    "cursor",
+    "event",
+    "delta"
+  ],
+  "properties": {
+    "contract": { "const": "bot-installation.projection@1" },
+    "workspaceId": { "type": "string", "format": "uuid" },
+    "installationId": { "type": "string", "format": "uuid" },
+    "cursor": { "type": "integer", "minimum": 1 },
+    "event": { "$ref": "schemas/nostr.signed-event.schema.json" },
+    "delta": {
+      "oneOf": [
+        { "$ref": "#/$defs/upsertInstallation" },
+        { "$ref": "#/$defs/setGrant" },
+        { "$ref": "#/$defs/revokeInstallation" },
+        { "$ref": "#/$defs/admitAction" },
+        { "$ref": "#/$defs/completeAction" }
+      ]
+    }
+  },
+  "$defs": {
+    "installationSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "workspaceId",
+        "botId",
+        "status",
+        "configContractId",
+        "configDigest",
+        "grantCount",
+        "openAdmissionCount",
+        "authorityGeneration",
+        "revision",
+        "cursor",
+        "createdAt",
+        "updatedAt",
+        "revokedAt"
+      ],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "workspaceId": { "type": "string", "format": "uuid" },
+        "botId": { "type": "string", "format": "uuid" },
+        "status": { "enum": ["active", "revoked"] },
+        "runtimeRelease": {
+          "oneOf": [
+            { "$ref": "#/$defs/runtimeReleaseRef" },
+            { "type": "null" }
+          ]
+        },
+        "configContractId": {
+          "const": "punks://contracts/bot.config.empty@1"
+        },
+        "configDigest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "grantCount": { "type": "integer", "minimum": 0 },
+        "openAdmissionCount": { "type": "integer", "minimum": 0 },
+        "authorityGeneration": { "type": "integer", "minimum": 1 },
+        "revision": { "type": "integer", "minimum": 1 },
+        "cursor": { "type": "integer", "minimum": 1 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "revokedAt": {
+          "anyOf": [
+            { "type": "string", "format": "date-time" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "admission": {
+      "$ref": "schemas/bot-action.admission.schema.json"
+    },
+    "upsertInstallation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operation", "installation"],
+      "properties": {
+        "operation": {
+          "enum": ["installed", "reinstalled", "configured"]
+        },
+        "installation": { "$ref": "#/$defs/installationSummary" }
+      }
+    },
+    "setGrant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation",
+        "capability",
+        "resource",
+        "enabled",
+        "authorityGeneration",
+        "revision",
+        "cursor"
+      ],
+      "properties": {
+        "operation": { "const": "set-grant" },
+        "capability": {
+          "enum": ["messages.react", "messages.read-context"]
+        },
+        "resource": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "conversationId"],
+          "properties": {
+            "kind": { "const": "conversation" },
+            "conversationId": { "type": "string", "format": "uuid" }
+          }
+        },
+        "enabled": { "type": "boolean" },
+        "authorityGeneration": { "type": "integer", "minimum": 1 },
+        "revision": { "type": "integer", "minimum": 1 },
+        "cursor": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "revokeInstallation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operation", "installation"],
+      "properties": {
+        "operation": { "const": "revoked" },
+        "installation": { "$ref": "#/$defs/installationSummary" }
+      }
+    },
+    "admitAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operation", "admission"],
+      "properties": {
+        "operation": { "const": "action-admitted" },
+        "admission": { "$ref": "#/$defs/admission" }
+      }
+    },
+    "completeAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operation", "admission"],
+      "properties": {
+        "operation": { "const": "action-completed" },
+        "admission": { "$ref": "#/$defs/admission" }
+      }
+    },
+    "runtimeReleaseRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["releaseId", "releaseDigest"],
+      "properties": {
+        "releaseId": { "const": "punks.reaction-turn.v1" },
+        "releaseDigest": {
+          "const": "fe075600eab020932774516439f643e8b83f62a10245e6388ee25bbf61aa837f"
+        }
+      }
+    }
+  }
+}

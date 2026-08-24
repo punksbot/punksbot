@@ -1,0 +1,165 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/message.projection@1",
+  "title": "MessageProjectionMessage",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "workspaceId", "conversationId", "messageId", "cursor", "event", "state", "versionDelta", "threadDeltas", "search"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "workspaceId": { "type": "string", "format": "uuid" },
+    "conversationId": { "type": "string", "format": "uuid" },
+    "messageId": { "type": "string", "format": "uuid" },
+    "cursor": { "type": "integer", "minimum": 1 },
+    "event": { "$ref": "schemas/nostr.signed-event.schema.json" },
+    "state": { "$ref": "#/$defs/boundedState" },
+    "versionDelta": {
+      "oneOf": [
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["operation", "version"],
+          "properties": {
+            "operation": { "const": "upsert" },
+            "version": { "$ref": "#/$defs/contentVersion" }
+          }
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["operation"],
+          "properties": { "operation": { "const": "retain" } }
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["operation"],
+          "properties": { "operation": { "const": "erase-all" } }
+        }
+      ]
+    },
+    "threadDeltas": {
+      "type": "array", "maxItems": 2,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["messageId", "replyCountDelta", "descendantCountDelta", "lastReplyAt", "revision", "cursor", "updatedAt"],
+        "properties": {
+          "messageId": { "type": "string", "format": "uuid" },
+          "replyCountDelta": { "type": "integer", "minimum": -1, "maximum": 1 },
+          "descendantCountDelta": { "type": "integer", "minimum": -1, "maximum": 1 },
+          "lastReplyAt": { "anyOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }] },
+          "revision": { "type": "integer", "minimum": 1 },
+          "cursor": { "type": "integer", "minimum": 1 },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      }
+    },
+    "search": {
+      "type": "object", "additionalProperties": false,
+      "required": ["algorithm", "tokens"],
+      "properties": {
+        "algorithm": { "const": "hmac-sha256-conversation-v2" },
+        "tokens": {
+          "type": "array", "maxItems": 1024, "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^h2_[A-Za-z0-9_-]{43}$" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "boundedState": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "workspaceId", "conversationId", "author", "messageType", "status", "topicPresent", "mentionedPunkIds", "mediaIds", "parentMessageId", "threadRootMessageId", "threadDepth", "broadcast", "replyCount", "descendantCount", "lastReplyAt", "originalContentCommitment", "currentVersion", "retraction", "erasureMarker", "revision", "createdCursor", "cursor", "createdAt", "updatedAt", "editedAt"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "workspaceId": { "type": "string", "format": "uuid" },
+        "conversationId": { "type": "string", "format": "uuid" },
+        "author": { "$ref": "#/$defs/actor" },
+        "messageType": { "enum": ["stream-message", "forum-post", "forum-comment"] },
+        "status": { "enum": ["active", "retracted", "erased"] },
+        "topicPresent": { "type": "boolean" },
+        "mentionedPunkIds": { "type": "array", "maxItems": 50, "uniqueItems": true, "items": { "type": "string", "format": "uuid" } },
+        "mediaIds": { "type": "array", "maxItems": 50, "uniqueItems": true, "items": { "type": "string", "format": "uuid" } },
+        "parentMessageId": { "anyOf": [{ "type": "string", "format": "uuid" }, { "type": "null" }] },
+        "threadRootMessageId": { "type": "string", "format": "uuid" },
+        "threadDepth": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "broadcast": { "type": "boolean" },
+        "replyCount": { "type": "integer", "minimum": 0 },
+        "descendantCount": { "type": "integer", "minimum": 0 },
+        "lastReplyAt": { "anyOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }] },
+        "originalContentCommitment": { "anyOf": [{ "type": "string", "pattern": "^[0-9a-f]{64}$" }, { "type": "null" }] },
+        "currentVersion": { "anyOf": [{ "type": "integer", "minimum": 1 }, { "type": "null" }] },
+        "retraction": { "anyOf": [{ "$ref": "#/$defs/retraction" }, { "type": "null" }] },
+        "erasureMarker": { "anyOf": [{ "$ref": "#/$defs/erasureMarker" }, { "type": "null" }] },
+        "revision": { "type": "integer", "minimum": 1 },
+        "createdCursor": { "type": "integer", "minimum": 1 },
+        "cursor": { "type": "integer", "minimum": 1 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "editedAt": { "anyOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }] }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "status": { "enum": ["active", "retracted"] } } },
+          "then": { "properties": { "originalContentCommitment": { "type": "string", "pattern": "^[0-9a-f]{64}$" } } }
+        },
+        {
+          "if": { "properties": { "status": { "const": "erased" } } },
+          "then": { "properties": { "originalContentCommitment": { "type": "null" } } }
+        }
+      ]
+    },
+    "actor": {
+      "oneOf": [
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["kind", "punkId"],
+          "properties": {
+            "kind": { "const": "punk" },
+            "punkId": { "type": "string", "format": "uuid" }
+          }
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["kind", "installationId"],
+          "properties": {
+            "kind": { "const": "bot" },
+            "installationId": { "type": "string", "format": "uuid" }
+          }
+        }
+      ]
+    },
+    "contentVersion": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "contentCommitment", "ciphertextRef", "contentKeyId", "topicPresent", "createdAt"],
+      "properties": {
+        "version": { "type": "integer", "minimum": 1 },
+        "contentCommitment": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "ciphertextRef": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "contentKeyId": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "topicPresent": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "retraction": {
+      "type": "object", "additionalProperties": false,
+      "required": ["commandId", "kind", "actor", "requestedAt", "eraseAfter", "reasonCode", "publicReason"],
+      "properties": {
+        "commandId": { "type": "string", "format": "uuid" },
+        "kind": { "enum": ["author", "moderation"] },
+        "actor": { "$ref": "#/$defs/actor" },
+        "requestedAt": { "type": "string", "format": "date-time" },
+        "eraseAfter": { "type": "string", "format": "date-time" },
+        "reasonCode": { "anyOf": [{ "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z0-9-]+$" }, { "type": "null" }] },
+        "publicReason": { "anyOf": [{ "type": "string", "minLength": 1, "maxLength": 280 }, { "type": "null" }] }
+      }
+    },
+    "erasureMarker": {
+      "type": "object", "additionalProperties": false,
+      "required": ["erasedAt", "retractedAt", "retractionKind", "destroyedVersionCount"],
+      "properties": {
+        "erasedAt": { "type": "string", "format": "date-time" },
+        "retractedAt": { "type": "string", "format": "date-time" },
+        "retractionKind": { "enum": ["author", "moderation"] },
+        "destroyedVersionCount": { "type": "integer", "minimum": 1 }
+      }
+    }
+  }
+}

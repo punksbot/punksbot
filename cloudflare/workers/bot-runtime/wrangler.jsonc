@@ -1,0 +1,127 @@
+{
+  "$schema": "../../../../node_modules/wrangler/config-schema.json",
+  "account_id": "3a391620584c792dbbd8cfa148d7634a",
+  "name": "punks-bot-runtime",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-21",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "vars": {
+    "ENVIRONMENT": "local"
+  },
+  "services": [
+    {
+      "binding": "BOT_INVOCATION_ISSUER",
+      "service": "punks-auth",
+      "entrypoint": "BotInvocationIssuer",
+      "props": {
+        "role": "punks-bot-runtime",
+        "environment": "local"
+      }
+    },
+    {
+      "binding": "BOT_ACTION_SERVICE",
+      "service": "punks-api",
+      "entrypoint": "BotActionService",
+      "props": {
+        "role": "punks-bot-runtime",
+        "environment": "local"
+      }
+    },
+    {
+      "binding": "BOT_HARNESS_SERVICE",
+      "service": "punks-api",
+      "entrypoint": "BotHarnessService",
+      "props": {
+        "role": "punks-bot-runtime",
+        "environment": "local"
+      }
+    }
+  ],
+  "workflows": [
+    {
+      "binding": "BOT_WAKE_WORKFLOW",
+      "name": "punks-bot-wake-local",
+      "class_name": "BotWakeWorkflow",
+      "limits": { "steps": 32 }
+    }
+  ],
+  "queues": {
+    "consumers": [
+      {
+        "queue": "punks-bot-wake-local",
+        "max_batch_size": 20,
+        "max_batch_timeout": 2,
+        "max_retries": 5,
+        "dead_letter_queue": "punks-bot-wake-local-dlq"
+      }
+    ]
+  },
+  "observability": {
+    "enabled": true,
+    "logs": { "enabled": true, "invocation_logs": true },
+    "traces": { "enabled": true }
+  },
+  "env": {
+    "staging": {
+      "name": "punks-bot-runtime-staging",
+      "workers_dev": false,
+      "preview_urls": false,
+      "vars": {
+        "ENVIRONMENT": "staging"
+      },
+      "ai": {
+        "binding": "AI"
+      },
+      "services": [
+        {
+          "binding": "BOT_INVOCATION_ISSUER",
+          "service": "punks-auth-staging",
+          "entrypoint": "BotInvocationIssuer",
+          "props": {
+            "role": "punks-bot-runtime",
+            "environment": "staging"
+          }
+        },
+        {
+          "binding": "BOT_ACTION_SERVICE",
+          "service": "punks-api-staging",
+          "entrypoint": "BotActionService",
+          "props": {
+            "role": "punks-bot-runtime",
+            "environment": "staging"
+          }
+        },
+        {
+          "binding": "BOT_HARNESS_SERVICE",
+          "service": "punks-api-staging",
+          "entrypoint": "BotHarnessService",
+          "props": {
+            "role": "punks-bot-runtime",
+            "environment": "staging"
+          }
+        }
+      ],
+      "workflows": [
+        {
+          "binding": "BOT_WAKE_WORKFLOW",
+          "name": "punks-bot-wake-staging",
+          "class_name": "BotWakeWorkflow",
+          "limits": { "steps": 32 }
+        }
+      ],
+      "queues": {
+        "consumers": [
+          {
+            "queue": "punks-bot-wake-staging",
+            "max_batch_size": 20,
+            "max_batch_timeout": 2,
+            "max_retries": 5,
+            "dead_letter_queue": "punks-bot-wake-staging-dlq"
+          }
+        ]
+      }
+    }
+  }
+}

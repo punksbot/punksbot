@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/bot-action.admission@1",
+  "title": "BotActionAdmission",
+  "$comment": "Compact durable receipt or completion tombstone. It intentionally contains neither credentials nor the admitted action payload.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "actionId",
+    "actionDigest",
+    "workspaceId",
+    "installationId",
+    "botId",
+    "actionContract",
+    "capability",
+    "risk",
+    "resource",
+    "status",
+    "outcome",
+    "installationCursor",
+    "authorityGeneration",
+    "admittedCursor",
+    "completedCursor",
+    "admittedAt",
+    "completedAt"
+  ],
+  "properties": {
+    "id": { "type": "string", "format": "uuid" },
+    "actionId": { "type": "string", "format": "uuid" },
+    "actionDigest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "workspaceId": { "type": "string", "format": "uuid" },
+    "installationId": { "type": "string", "format": "uuid" },
+    "botId": { "type": "string", "format": "uuid" },
+    "actionContract": {
+      "enum": [
+        "message.reaction-add@1",
+        "message.reaction-remove@1",
+        "message.reaction-toggle@1"
+      ]
+    },
+    "capability": { "const": "messages.react" },
+    "risk": { "enum": ["routine", "consequential", "critical"] },
+    "resource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "conversationId", "messageId"],
+      "properties": {
+        "kind": { "const": "message" },
+        "conversationId": { "type": "string", "format": "uuid" },
+        "messageId": { "type": "string", "format": "uuid" }
+      }
+    },
+    "status": { "enum": ["admitted", "completed"] },
+    "outcome": {
+      "anyOf": [{ "enum": ["succeeded", "failed"] }, { "type": "null" }]
+    },
+    "installationCursor": { "type": "integer", "minimum": 1 },
+    "authorityGeneration": { "type": "integer", "minimum": 1 },
+    "admittedCursor": { "type": "integer", "minimum": 1 },
+    "completedCursor": {
+      "anyOf": [{ "type": "integer", "minimum": 1 }, { "type": "null" }]
+    },
+    "admittedAt": { "type": "string", "format": "date-time" },
+    "completedAt": {
+      "anyOf": [
+        { "type": "string", "format": "date-time" },
+        { "type": "null" }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "admitted" } } },
+      "then": {
+        "properties": {
+          "outcome": { "type": "null" },
+          "completedCursor": { "type": "null" },
+          "completedAt": { "type": "null" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "status": { "const": "completed" } } },
+      "then": {
+        "properties": {
+          "outcome": { "enum": ["succeeded", "failed"] },
+          "completedCursor": { "type": "integer", "minimum": 1 },
+          "completedAt": { "type": "string", "format": "date-time" }
+        }
+      }
+    }
+  ]
+}

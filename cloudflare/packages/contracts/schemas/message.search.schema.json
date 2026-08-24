@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/message.search@1",
+  "title": "MessageSearchQuery",
+  "$comment": "The first delivery is scoped to one already-authorized Conversation. The authenticated runtime must encrypt and authenticate each continuation cursor and bind it to the Punk, Workspace, Conversation, a domain-separated keyed binding of the normalized query, token algorithm, internal position tuple, limit, and cursor version. A Punk id, Conversation id, Message id, plain query hash, plaintext, or opaque index token must never be visible in the cursor.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "workspaceId",
+    "conversationId",
+    "query",
+    "cursor",
+    "limit"
+  ],
+  "properties": {
+    "contract": { "const": "message.search@1" },
+    "workspaceId": { "type": "string", "format": "uuid" },
+    "conversationId": { "type": "string", "format": "uuid" },
+    "query": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "cursor": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 50,
+          "maxLength": 1024,
+          "pattern": "^msc1\\.[A-Za-z0-9_-]{16}\\.[A-Za-z0-9_-]+$"
+        },
+        { "type": "null" }
+      ]
+    },
+    "limit": { "type": "integer", "minimum": 1, "maximum": 100 }
+  }
+}

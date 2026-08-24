@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/problem@1",
+  "title": "PunksProblem",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["type", "title", "status", "code", "correlationId", "retry"],
+  "properties": {
+    "type": { "type": "string", "pattern": "^https://punks\\.bot/problems/[a-z0-9-]+$" },
+    "title": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "status": { "type": "integer", "minimum": 400, "maximum": 599 },
+    "code": {
+      "enum": [
+        "invalid_input",
+        "payload_too_large",
+        "unauthenticated",
+        "forbidden",
+        "not_found",
+        "slug_claimed",
+        "idempotency_conflict",
+        "identity_conflict",
+        "command_in_progress",
+        "attestation_failed",
+        "temporarily_unavailable",
+        "internal"
+      ]
+    },
+    "detail": { "type": "string", "maxLength": 1024 },
+    "correlationId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "retry": { "enum": ["never", "same_command", "later"] },
+    "retryAfterMs": { "type": "integer", "minimum": 1, "maximum": 3600000 }
+  }
+}

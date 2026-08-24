@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/auth.passkey-options@1",
+  "title": "PasskeyOptionsResponse",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["ceremonyId", "purpose", "expiresAt", "publicKey"],
+  "properties": {
+    "ceremonyId": { "type": "string", "format": "uuid" },
+    "purpose": { "enum": ["registration", "authentication"] },
+    "expiresAt": { "type": "string", "format": "date-time" },
+    "publicKey": { "type": "object" }
+  }
+}

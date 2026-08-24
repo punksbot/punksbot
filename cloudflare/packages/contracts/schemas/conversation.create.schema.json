@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/conversation.create@1",
+  "title": "CreateConversationCommand",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "commandId", "workspaceId", "actor", "payload"],
+  "properties": {
+    "contract": { "const": "conversation.create@1" },
+    "commandId": { "type": "string", "format": "uuid" },
+    "workspaceId": { "type": "string", "format": "uuid" },
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "punkId"],
+      "properties": {
+        "kind": { "const": "punk" },
+        "punkId": { "type": "string", "minLength": 1, "maxLength": 128 }
+      }
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "type", "visibility"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "type": { "enum": ["stream", "forum", "dm", "workflow"] },
+        "visibility": { "enum": ["open", "private"] },
+        "description": { "type": "string", "maxLength": 4000 },
+        "topicRequired": { "type": "boolean" },
+        "maxMembers": { "type": "integer", "minimum": 1, "maximum": 100000 },
+        "ttlSeconds": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+        "participantPunkIds": {
+          "type": "array",
+          "maxItems": 1000,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 128 }
+        }
+      }
+    }
+  }
+}

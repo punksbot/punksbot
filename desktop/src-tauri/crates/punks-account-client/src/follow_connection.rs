@@ -1,0 +1,272 @@
+use futures_util::{SinkExt, StreamExt};
+use reqwest::{
+    cookie::CookieStore,
+    header::{HeaderValue, COOKIE, ORIGIN, SEC_WEBSOCKET_PROTOCOL},
+};
+use serde::Serialize;
+use tokio::net::TcpStream;
+use tokio_tungstenite::{
+    connect_async,
+    tungstenite::{client::IntoClientRequest, Message},
+    MaybeTlsStream, WebSocketStream,
+};
+use tokio_util::sync::CancellationToken;
+
+use crate::{
+    promotion_audit::record_network_request, reduce_follow_frame, validate_uuid, ClientFailure,
+    ClientResyncReason, ConversationUnavailableReason, FailureKind, FollowEffect,
+    FollowServerFrame, FollowState, Transport, WorkspaceSession,
+};
+
+const FOLLOW_PROTOCOL: &str = "punks.follow.v1";
+const MAX_FRAME_BYTES: usize = 262_144;
+
+/// Renderer delivery emitted by one native FOLLOW connection.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase"
+)]
+pub enum FollowDelivery {
+    ApplyBatch {
+        frame: FollowServerFrame,
+    },
+    BecameLive,
+    Resync {
+        reason: ClientResyncReason,
+        after_cursor: u64,
+        high_water_cursor: u64,
+    },
+    Terminal {
+        reason: ConversationUnavailableReason,
+        cursor: u64,
+    },
+}
+
+/// Native WebSocket owned by exactly one generation-bound WorkspaceSession.
+pub struct FollowConnection {
+    session: WorkspaceSession,
+    socket: WebSocketStream<MaybeTlsStream<TcpStream>>,
+    state: FollowState,
+    cancellation: FollowCancellation,
+}
+
+/// Cloneable cancellation handle retained by the owning Tauri generation.
+#[derive(Clone)]
+pub struct FollowCancellation(CancellationToken);
+
+impl FollowCancellation {
+    pub fn cancel(&self) {
+        self.0.cancel();
+    }
+}
+
+impl WorkspaceSession {
+    /// Opens `punks.follow.v1` with the private HTTP cookie jar.
+    pub async fn follow_conversation(
+        &self,
+        conversation_id: &str,
+        after_cursor: u64,
+    ) -> Result<FollowConnection, ClientFailure> {
+        validate_uuid(conversation_id, "conversationId")?;
+        self.assert_current().await?;
+        #[cfg(not(test))]
+        let Transport::Http(transport) = &self.inner.transport;
+        #[cfg(test)]
+        let transport = match &self.inner.transport {
+            Transport::Http(transport) => transport,
+            Transport::Test(_) => {
+                return Err(ClientFailure::new(
+                    FailureKind::ContractViolation,
+                    "Test transport does not implement FOLLOW",
+                ))
+            }
+        };
+        let mut websocket_url = transport.origin.clone();
+        websocket_url
+            .set_scheme(if transport.origin.scheme() == "https" {
+                "wss"
+            } else {
+                "ws"
+            })
+            .map_err(|_| {
+                ClientFailure::new(
+                    FailureKind::ContractViolation,
+                    "Punks FOLLOW origin is invalid",
+                )
+            })?;
+        websocket_url.set_path(&format!(
+            "/api/v1/workspaces/{}/conversations/{conversation_id}/follow",
+            self.lease.workspace_id
+        ));
+        websocket_url
+            .query_pairs_mut()
+            .append_pair("afterCursor", &after_cursor.to_string());
+        let mut request = websocket_url.as_str().into_client_request().map_err(|_| {
+            ClientFailure::new(
+                FailureKind::ContractViolation,
+                "Punks FOLLOW request is invalid",
+            )
+        })?;
+        request.headers_mut().insert(
+            ORIGIN,
+            HeaderValue::from_str(&self.lease.origin).map_err(|_| {
+                ClientFailure::new(
+                    FailureKind::ContractViolation,
+                    "Punks FOLLOW origin header is invalid",
+                )
+            })?,
+        );
+        request.headers_mut().insert(
+            SEC_WEBSOCKET_PROTOCOL,
+            HeaderValue::from_static(FOLLOW_PROTOCOL),
+        );
+        if let Some(cookie) = transport.jar.cookies(&transport.origin) {
+            request.headers_mut().insert(COOKIE, cookie);
+        }
+        let (socket, response) = connect_async(request).await.map_err(|_| {
+            ClientFailure::new(
+                FailureKind::Transport,
+                "Punks FOLLOW connection could not be opened",
+            )
+        })?;
+        record_network_request("FOLLOW", &websocket_url, response.status().as_u16());
+        if response
+            .headers()
+            .get(SEC_WEBSOCKET_PROTOCOL)
+            .and_then(|value| value.to_str().ok())
+            != Some(FOLLOW_PROTOCOL)
+        {
+            return Err(ClientFailure::new(
+                FailureKind::ContractViolation,
+                "Punks FOLLOW selected an unexpected subprotocol",
+            ));
+        }
+        self.assert_current().await?;
+        Ok(FollowConnection {
+            session: self.clone(),
+            socket,
+            state: FollowState::new(after_cursor),
+            cancellation: FollowCancellation(CancellationToken::new()),
+        })
+    }
+}
+
+impl FollowConnection {
+    pub fn cancellation(&self) -> FollowCancellation {
+        self.cancellation.clone()
+    }
+
+    /// Waits for the next indivisible renderer delivery.
+    pub async fn next_delivery(&mut self) -> Result<FollowDelivery, ClientFailure> {
+        loop {
+            self.session.assert_current().await?;
+            let cancellation = self.cancellation.0.clone();
+            let next = tokio::select! {
+                _ = cancellation.cancelled() => {
+                    return Err(ClientFailure::new(
+                        FailureKind::Cancelled,
+                        "Punks FOLLOW was cancelled",
+                    ));
+                }
+                next = self.socket.next() => next,
+            };
+            let message = next.ok_or_else(|| {
+                ClientFailure::new(FailureKind::Transport, "Punks FOLLOW connection ended")
+            })?;
+            let message = message.map_err(|_| {
+                ClientFailure::new(FailureKind::Transport, "Punks FOLLOW read failed")
+            })?;
+            let text = match message {
+                Message::Text(text) if text.len() <= MAX_FRAME_BYTES => text,
+                Message::Ping(payload) => {
+                    self.socket
+                        .send(Message::Pong(payload))
+                        .await
+                        .map_err(|_| {
+                            ClientFailure::new(
+                                FailureKind::Transport,
+                                "Punks FOLLOW heartbeat failed",
+                            )
+                        })?;
+                    continue;
+                }
+                Message::Close(_) => {
+                    return Err(ClientFailure::new(
+                        FailureKind::Transport,
+                        "Punks FOLLOW connection ended",
+                    ))
+                }
+                _ => {
+                    return Err(ClientFailure::new(
+                        FailureKind::ContractViolation,
+                        "Punks FOLLOW frame is invalid",
+                    ))
+                }
+            };
+            let frame = serde_json::from_str::<FollowServerFrame>(&text).map_err(|_| {
+                ClientFailure::new(
+                    FailureKind::ContractViolation,
+                    "Punks FOLLOW frame violated its contract",
+                )
+            })?;
+            let reduction = reduce_follow_frame(&self.state, frame);
+            self.state = reduction.state;
+            self.session.assert_current().await?;
+            match reduction.effect {
+                FollowEffect::None => continue,
+                FollowEffect::ApplyBatch(frame) => return Ok(FollowDelivery::ApplyBatch { frame }),
+                FollowEffect::BecameLive => return Ok(FollowDelivery::BecameLive),
+                FollowEffect::Resync {
+                    reason,
+                    after_cursor,
+                    high_water_cursor,
+                } => {
+                    return Ok(FollowDelivery::Resync {
+                        reason,
+                        after_cursor,
+                        high_water_cursor,
+                    })
+                }
+                FollowEffect::Terminal { reason, cursor } => {
+                    return Ok(FollowDelivery::Terminal { reason, cursor })
+                }
+            }
+        }
+    }
+
+    /// Sends ACK only after the renderer confirms the exact delivered cursor.
+    pub async fn confirm_batch(&mut self, through_cursor: u64) -> Result<(), ClientFailure> {
+        self.session.assert_current().await?;
+        let confirmation = crate::confirm_follow_batch(&self.state, through_cursor);
+        let ack = confirmation.ack.ok_or_else(|| {
+            ClientFailure::new(
+                FailureKind::ContractViolation,
+                "Punks FOLLOW confirmation does not match the pending batch",
+            )
+        })?;
+        let text = serde_json::to_string(&ack).map_err(|_| {
+            ClientFailure::new(
+                FailureKind::ContractViolation,
+                "Punks FOLLOW ACK could not be encoded",
+            )
+        })?;
+        self.socket
+            .send(Message::Text(text.into()))
+            .await
+            .map_err(|_| ClientFailure::new(FailureKind::Transport, "Punks FOLLOW ACK failed"))?;
+        self.session.assert_current().await?;
+        self.state = confirmation.state;
+        Ok(())
+    }
+
+    /// Closes the native socket for this Workspace generation.
+    pub async fn close(&mut self) -> Result<(), ClientFailure> {
+        self.cancellation.cancel();
+        self.socket
+            .close(None)
+            .await
+            .map_err(|_| ClientFailure::new(FailureKind::Transport, "Punks FOLLOW close failed"))
+    }
+}

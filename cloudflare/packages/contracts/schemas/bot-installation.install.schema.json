@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/bot-installation.install@1",
+  "title": "InstallBotCommand",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "commandId",
+    "workspaceId",
+    "botId",
+    "actor",
+    "payload"
+  ],
+  "properties": {
+    "contract": { "const": "bot-installation.install@1" },
+    "commandId": { "type": "string", "format": "uuid" },
+    "workspaceId": { "type": "string", "format": "uuid" },
+    "botId": { "type": "string", "format": "uuid" },
+    "actor": { "$ref": "#/$defs/actor" },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["config"],
+      "properties": { "config": { "$ref": "#/$defs/config" } }
+    }
+  },
+  "$defs": {
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "punkId"],
+      "properties": {
+        "kind": { "const": "punk" },
+        "punkId": { "type": "string", "format": "uuid" }
+      }
+    },
+    "config": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contractId", "value"],
+      "properties": {
+        "contractId": {
+          "const": "punks://contracts/bot.config.empty@1"
+        },
+        "value": { "type": "object", "additionalProperties": false }
+      }
+    }
+  }
+}

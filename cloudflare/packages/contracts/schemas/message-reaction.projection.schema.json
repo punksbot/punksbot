@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/message-reaction.projection@1",
+  "title": "MessageReactionProjectionEnvelope",
+  "$comment": "Signed, idempotent Reaction presence delta. Message lifecycle visibility is derived exclusively from message.projection@1, so neither envelope carries an unbounded Reaction roster.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "workspaceId",
+    "conversationId",
+    "messageId",
+    "cursor",
+    "event",
+    "delta"
+  ],
+  "properties": {
+    "contract": { "const": "message-reaction.projection@1" },
+    "workspaceId": { "type": "string", "format": "uuid" },
+    "conversationId": { "type": "string", "format": "uuid" },
+    "messageId": { "type": "string", "format": "uuid" },
+    "cursor": { "type": "integer", "minimum": 1 },
+    "event": { "$ref": "schemas/nostr.signed-event.schema.json" },
+    "delta": {
+      "oneOf": [
+        { "$ref": "#/$defs/upsert" },
+        { "$ref": "#/$defs/remove" }
+      ]
+    }
+  },
+  "$defs": {
+    "actor": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "punkId"],
+          "properties": {
+            "kind": { "const": "punk" },
+            "punkId": { "type": "string", "format": "uuid" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "installationId"],
+          "properties": {
+            "kind": { "const": "bot" },
+            "installationId": { "type": "string", "format": "uuid" }
+          }
+        }
+      ]
+    },
+    "canonicalReaction": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^(?!\\s)(?!.*\\s$).+$",
+          "not": {
+            "anyOf": [
+              { "pattern": "^:" },
+              { "pattern": ":$" },
+              { "pattern": "[\\r\\n\\u2028\\u2029]" }
+            ]
+          }
+        },
+        {
+          "type": "string",
+          "maxLength": 66,
+          "pattern": "^:[a-z0-9_-]{1,64}:$"
+        }
+      ]
+    },
+    "upsert": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operation", "reaction"],
+      "properties": {
+        "operation": { "const": "upsert" },
+        "reaction": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "messageId", "actor", "reaction", "reactedAt"],
+          "properties": {
+            "id": { "type": "string", "format": "uuid" },
+            "messageId": { "type": "string", "format": "uuid" },
+            "actor": { "$ref": "#/$defs/actor" },
+            "reaction": { "$ref": "#/$defs/canonicalReaction" },
+            "reactedAt": { "type": "string", "format": "date-time" }
+          }
+        }
+      }
+    },
+    "remove": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operation", "reactionId", "messageId", "actor", "reaction"],
+      "properties": {
+        "operation": { "const": "remove" },
+        "reactionId": { "type": "string", "format": "uuid" },
+        "messageId": { "type": "string", "format": "uuid" },
+        "actor": { "$ref": "#/$defs/actor" },
+        "reaction": { "$ref": "#/$defs/canonicalReaction" }
+      }
+    }
+  }
+}

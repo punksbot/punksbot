@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/auth.desktop-session-response@1",
+  "title": "DesktopSessionResponse",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "session"
+  ],
+  "$defs": {
+    "session": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sessionId",
+        "punkId",
+        "authenticatedAt",
+        "expiresAt",
+        "recentReauthUntil",
+        "punk"
+      ],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "punkId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "authenticatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "recentReauthUntil": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "punk": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "displayName",
+            "avatarUrl"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "displayName": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80
+            },
+            "avatarUrl": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uri",
+                  "maxLength": 2048
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  },
+  "properties": {
+    "session": {
+      "$ref": "#/$defs/session"
+    }
+  }
+}

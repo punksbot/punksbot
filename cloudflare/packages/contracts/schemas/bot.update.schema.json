@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/bot.update@1",
+  "title": "UpdateBotCommand",
+  "$comment": "Each operator command carries one explicit bounded delta. A withdrawn Bot is terminal in the domain module.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "commandId", "botId", "actor", "payload"],
+  "properties": {
+    "contract": { "const": "bot.update@1" },
+    "commandId": { "type": "string", "format": "uuid" },
+    "botId": { "type": "string", "format": "uuid" },
+    "actor": { "$ref": "#/$defs/actor" },
+    "payload": {
+      "oneOf": [
+        { "$ref": "#/$defs/setSlug" },
+        { "$ref": "#/$defs/setMetadata" },
+        { "$ref": "#/$defs/setStatus" },
+        { "$ref": "#/$defs/setActions" },
+        { "$ref": "#/$defs/setRuntimeRelease" }
+      ]
+    }
+  },
+  "$defs": {
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "punkId"],
+      "properties": {
+        "kind": { "const": "punk" },
+        "punkId": { "type": "string", "format": "uuid" }
+      }
+    },
+    "setSlug": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operation", "slug"],
+      "properties": {
+        "operation": { "const": "set-slug" },
+        "slug": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 48,
+          "pattern": "^[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])$"
+        }
+      }
+    },
+    "setMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operation"],
+      "properties": {
+        "operation": { "const": "set-metadata" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "description": { "type": "string", "maxLength": 4000 }
+      },
+      "anyOf": [{ "required": ["name"] }, { "required": ["description"] }]
+    },
+    "setStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operation", "status"],
+      "properties": {
+        "operation": { "const": "set-status" },
+        "status": { "enum": ["published", "suspended", "withdrawn"] }
+      }
+    },
+    "setActions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operation", "supportedActionContracts"],
+      "properties": {
+        "operation": { "const": "set-actions" },
+        "supportedActionContracts": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "message.reaction-add@1",
+              "message.reaction-remove@1",
+              "message.reaction-toggle@1"
+            ]
+          }
+        }
+      }
+    },
+    "setRuntimeRelease": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operation", "runtimeRelease"],
+      "properties": {
+        "operation": { "const": "set-runtime-release" },
+        "runtimeRelease": { "$ref": "#/$defs/runtimeReleaseRef" }
+      }
+    },
+    "runtimeReleaseRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["releaseId", "releaseDigest"],
+      "properties": {
+        "releaseId": { "const": "punks.reaction-turn.v1" },
+        "releaseDigest": {
+          "const": "fe075600eab020932774516439f643e8b83f62a10245e6388ee25bbf61aa837f"
+        }
+      }
+    }
+  }
+}

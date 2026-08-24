@@ -1,0 +1,110 @@
+{
+  "$schema": "../../../../node_modules/wrangler/config-schema.json",
+  "account_id": "3a391620584c792dbbd8cfa148d7634a",
+  "name": "punks-projector",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-20",
+  "workers_dev": false,
+  "preview_urls": false,
+  // ATTESTATION_PUBLIC_KEYS_JSON is a required out-of-band binding. It is
+  // deliberately absent here: no staging attestation key is committed.
+  "vars": {
+    "ENVIRONMENT": "local",
+    "D1_SHARD_COUNT": "4"
+  },
+  "secrets": {
+    "required": ["ATTESTATION_PUBLIC_KEYS_JSON"]
+  },
+  "d1_databases": [
+    {
+      "binding": "PROJECTION_DB_0",
+      "database_name": "punks-projection-local",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    },
+    {
+      "binding": "PROJECTION_DB_1",
+      "database_name": "punks-projection-local-1",
+      "database_id": "00000000-0000-0000-0000-000000000001",
+      "migrations_dir": "migrations"
+    },
+    {
+      "binding": "PROJECTION_DB_2",
+      "database_name": "punks-projection-local-2",
+      "database_id": "00000000-0000-0000-0000-000000000002",
+      "migrations_dir": "migrations"
+    },
+    {
+      "binding": "PROJECTION_DB_3",
+      "database_name": "punks-projection-local-3",
+      "database_id": "00000000-0000-0000-0000-000000000003",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "queues": {
+    "consumers": [
+      {
+        "queue": "punks-projection-local",
+        "max_batch_size": 20,
+        "max_batch_timeout": 2,
+        "max_retries": 5,
+        "dead_letter_queue": "punks-projection-local-dlq"
+      }
+    ]
+  },
+  "observability": {
+    "enabled": true
+  },
+  "env": {
+    "staging": {
+      "name": "punks-projector-staging",
+      "workers_dev": false,
+      "preview_urls": false,
+      // Provision ATTESTATION_PUBLIC_KEYS_JSON before deploying staging.
+      "vars": {
+        "ENVIRONMENT": "staging",
+        "D1_SHARD_COUNT": "4"
+      },
+      "secrets": {
+        "required": ["ATTESTATION_PUBLIC_KEYS_JSON"]
+      },
+      "d1_databases": [
+        {
+          "binding": "PROJECTION_DB_0",
+          "database_name": "punks-projection-staging",
+          "database_id": "4a5b6514-bb4f-40e9-86f9-8e8ccc671222",
+          "migrations_dir": "migrations"
+        },
+        {
+          "binding": "PROJECTION_DB_1",
+          "database_name": "punks-projection-staging-1",
+          "database_id": "d433f118-83a3-4b84-b9c5-8777ccbaeae6",
+          "migrations_dir": "migrations"
+        },
+        {
+          "binding": "PROJECTION_DB_2",
+          "database_name": "punks-projection-staging-2",
+          "database_id": "078668b5-8571-46ad-b5f6-c393ffd3cf01",
+          "migrations_dir": "migrations"
+        },
+        {
+          "binding": "PROJECTION_DB_3",
+          "database_name": "punks-projection-staging-3",
+          "database_id": "d8264607-e63c-47f8-b725-48ea2462875e",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "queues": {
+        "consumers": [
+          {
+            "queue": "punks-projection-staging",
+            "max_batch_size": 20,
+            "max_batch_timeout": 2,
+            "max_retries": 5,
+            "dead_letter_queue": "punks-projection-staging-dlq"
+          }
+        ]
+      }
+    }
+  }
+}

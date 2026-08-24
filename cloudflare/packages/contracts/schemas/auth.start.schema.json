@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/auth.start@1",
+  "title": "StartAuthCommand",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "provider", "intent", "returnTo"],
+  "properties": {
+    "contract": { "const": "auth.start@1" },
+    "provider": { "enum": ["google", "github"] },
+    "intent": { "enum": ["sign_in", "reauthenticate", "link"] },
+    "returnTo": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "pattern": "^/(?![/\\\\])"
+    }
+  }
+}

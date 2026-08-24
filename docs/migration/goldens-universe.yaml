@@ -1,0 +1,68 @@
+# Univers indépendant des sources comportementales de la baseline Buzz.
+#
+# Ce fichier est volontairement séparé de goldens-ledger.yaml : le registre
+# attribue un verdict aux sources, mais ne définit jamais lui-même l'ensemble
+# qu'il doit couvrir. L'univers a été figé depuis le commit baseline en prenant
+# les foyers `fixture`, `fixtures`, `golden`, les corpus normatifs et l'artefact
+# BASELINE. Le gate recalcule cette sélection depuis le commit `baseline-buzz`
+# (noms contenant fixture/golden/corpus/baseline, plus les deux sources
+# associées explicites) : modifier ce fichier ne peut pas réduire seul
+# l'obligation. Chaque chemin est exact afin qu'un ajout ou retrait soit visible.
+
+version: 1
+checkpoint-recuperation: 50e16de180dda4365f8001a8a73503f16977a175
+baseline-buzz: da818eddc2f470c006a1073c8c5452f8a989f272
+
+sources:
+  - cloudflare/BASELINE.json
+  - crates/buzz-agent/tests/golden_transcripts.rs
+  - crates/buzz-backend-kubernetes/tests/fixtures/provider-wire/README.md
+  - crates/buzz-backend-kubernetes/tests/fixtures/provider-wire/deploy-full-launch.request.json
+  - crates/buzz-backend-kubernetes/tests/fixtures/provider-wire/deploy-no-owner.request.json
+  - crates/buzz-backend-kubernetes/tests/fixtures/provider-wire/deploy-no-owner.response.json
+  - crates/buzz-backend-kubernetes/tests/fixtures/provider-wire/deploy-relay-mesh-padded.request.json
+  - crates/buzz-backend-kubernetes/tests/fixtures/provider-wire/deploy-relay-mesh-padded.response.json
+  - crates/buzz-backend-kubernetes/tests/fixtures/provider-wire/deploy-relay-mesh.request.json
+  - crates/buzz-backend-kubernetes/tests/fixtures/provider-wire/deploy-relay-mesh.response.json
+  - crates/buzz-backend-kubernetes/tests/fixtures/provider-wire/deploy-tag-image.request.json
+  - crates/buzz-backend-kubernetes/tests/fixtures/provider-wire/deploy-tag-image.response.json
+  - crates/buzz-backend-kubernetes/tests/fixtures/provider-wire/info.request.json
+  - crates/buzz-backend-kubernetes/tests/wire_fixtures.rs
+  - crates/buzz-conformance/tests/fixtures/bad_coverage_breach.jsonl
+  - crates/buzz-conformance/tests/fixtures/bad_foreign_row_leak.jsonl
+  - crates/buzz-conformance/tests/fixtures/bad_host_channel_mismatch.jsonl
+  - crates/buzz-conformance/tests/fixtures/good.jsonl
+  - crates/buzz-conformance/tests/replay_fixtures.rs
+  - crates/buzz-media/tests/fixtures/android/README.md
+  - crates/buzz-media/tests/fixtures/android/bitmap-display-p3.jpg
+  - crates/buzz-media/tests/fixtures/android/bitmap-display-p3.png
+  - crates/buzz-media/tests/fixtures/android/bitmap-srgb.jpg
+  - crates/buzz-media/tests/fixtures/android/bitmap-srgb.png
+  - crates/buzz-media/tests/fixtures/android/sanitized/bitmap-display-p3-sanitized.jpg
+  - crates/buzz-media/tests/fixtures/android/sanitized/bitmap-display-p3-sanitized.png
+  - crates/buzz-media/tests/fixtures/android/sanitized/bitmap-srgb-sanitized.jpg
+  - crates/buzz-media/tests/fixtures/android/sanitized/bitmap-srgb-sanitized.png
+  - crates/buzz-media/tests/fixtures/ios/README.md
+  - crates/buzz-media/tests/fixtures/ios/uikit-encoded.jpg
+  - crates/buzz-media/tests/fixtures/ios/uikit-encoded.png
+  - crates/buzz-media/tests/fixtures/ios/uikit-sanitized.jpg
+  - crates/buzz-media/tests/fixtures/ios/uikit-sanitized.png
+  - deploy/charts/buzz/tests/fixtures/ha-values.yaml
+  - deploy/charts/buzz/tests/fixtures/production-existing-secret-values.yaml
+  - desktop/src-tauri/src/managed_agents/runtime/test_fixtures.rs
+  - desktop/src/features/agents/ui/modelCapabilitiesCorpus.test.mjs
+  - desktop/tests/e2e/fixtures/fake-acp-agent.mjs
+  - desktop/tests/fixtures/github-pr-5629-og.png
+  - docs/nips/NIP-MP.fixtures.json
+  - docs/nips/NIP-MP.fold-fixtures.json
+  - mobile/android/app/src/androidTest/resources/fixtures/android/bitmap-display-p3.png
+  - mobile/android/app/src/androidTest/resources/fixtures/android/bitmap-srgb.png
+  - mobile/android/app/src/test/resources/fixtures/android/bitmap-display-p3.jpg
+  - mobile/android/app/src/test/resources/fixtures/android/bitmap-display-p3.png
+  - mobile/android/app/src/test/resources/fixtures/android/bitmap-srgb.jpg
+  - mobile/android/app/src/test/resources/fixtures/android/bitmap-srgb.png
+  - mobile/ios/RunnerTests/Fixtures/UIKitEncoded.jpg
+  - mobile/ios/RunnerTests/Fixtures/UIKitEncoded.png
+  - scripts/model-capabilities.json
+  - scripts/normative-corpus.json
+  - test-fixtures/entity-links.json

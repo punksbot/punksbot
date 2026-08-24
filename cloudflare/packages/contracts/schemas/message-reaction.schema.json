@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/message-reaction@1",
+  "title": "MessageReaction",
+  "$comment": "Authoritative Conversation-owned presence entity. Message lifecycle visibility is an independent per-message overlay, never copied into every Reaction.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "workspaceId",
+    "conversationId",
+    "messageId",
+    "actor",
+    "reaction",
+    "status",
+    "revision",
+    "createdCursor",
+    "cursor",
+    "createdAt",
+    "reactedAt",
+    "updatedAt",
+    "removedAt"
+  ],
+  "properties": {
+    "id": { "type": "string", "format": "uuid" },
+    "workspaceId": { "type": "string", "format": "uuid" },
+    "conversationId": { "type": "string", "format": "uuid" },
+    "messageId": { "type": "string", "format": "uuid" },
+    "actor": { "$ref": "#/$defs/actor" },
+    "reaction": { "$ref": "#/$defs/canonicalReaction" },
+    "status": { "enum": ["active", "removed"] },
+    "revision": { "type": "integer", "minimum": 1 },
+    "createdCursor": { "type": "integer", "minimum": 1 },
+    "cursor": { "type": "integer", "minimum": 1 },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "reactedAt": {
+      "anyOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }]
+    },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "removedAt": {
+      "anyOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }]
+    }
+  },
+  "$defs": {
+    "actor": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "punkId"],
+          "properties": {
+            "kind": { "const": "punk" },
+            "punkId": { "type": "string", "format": "uuid" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "installationId"],
+          "properties": {
+            "kind": { "const": "bot" },
+            "installationId": { "type": "string", "format": "uuid" }
+          }
+        }
+      ]
+    },
+    "canonicalReaction": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^(?!\\s)(?!.*\\s$).+$",
+          "not": {
+            "anyOf": [
+              { "pattern": "^:" },
+              { "pattern": ":$" },
+              { "pattern": "[\\r\\n\\u2028\\u2029]" }
+            ]
+          }
+        },
+        {
+          "type": "string",
+          "maxLength": 66,
+          "pattern": "^:[a-z0-9_-]{1,64}:$"
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "active" } } },
+      "then": {
+        "properties": {
+          "reactedAt": { "type": "string", "format": "date-time" },
+          "removedAt": { "type": "null" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "status": { "const": "removed" } } },
+      "then": {
+        "properties": {
+          "reactedAt": { "type": "null" },
+          "removedAt": { "type": "string", "format": "date-time" }
+        }
+      }
+    }
+  ]
+}

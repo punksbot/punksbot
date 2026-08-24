@@ -1,0 +1,209 @@
+{
+  "profile": "desktop-social-loop@1",
+  "operation": "contract-validation",
+  "cases": [
+    {
+      "operation": "checkCompatibility",
+      "name": "payload-valide",
+      "kind": "valid_payload",
+      "contract": "punks://contracts/desktop.compatibility@1",
+      "payload": {
+        "contract": "desktop.compatibility@1",
+        "profile": "desktop-social-loop@1",
+        "clientVersion": "1.2.3",
+        "distribution": "development",
+        "platform": "macos-arm64"
+      },
+      "expect": {
+        "outcome": "ok"
+      }
+    },
+    {
+      "operation": "checkCompatibility",
+      "name": "champ-inconnu-rejete",
+      "kind": "unknown_field",
+      "contract": "punks://contracts/desktop.compatibility@1",
+      "payload": {
+        "contract": "desktop.compatibility@1",
+        "profile": "desktop-social-loop@1",
+        "clientVersion": "1.2.3",
+        "distribution": "development",
+        "platform": "macos-arm64",
+        "sessionCredential": "sekret-8f31c0a6-ne-doit-jamais-apparaitre"
+      },
+      "forbiddenMarker": "sekret-8f31c0a6-ne-doit-jamais-apparaitre",
+      "expect": {
+        "outcome": "reject",
+        "failureKind": "contract_violation"
+      }
+    },
+    {
+      "operation": "checkCompatibility",
+      "name": "version-incompatible-rejetee",
+      "kind": "version_incompatibility",
+      "contract": "punks://contracts/desktop.compatibility@1",
+      "payload": {
+        "contract": "desktop.compatibility@2",
+        "profile": "desktop-social-loop@1",
+        "clientVersion": "1.2.3",
+        "distribution": "development",
+        "platform": "macos-arm64"
+      },
+      "expect": {
+        "outcome": "reject",
+        "failureKind": "contract_violation"
+      }
+    },
+    {
+      "operation": "checkCompatibility",
+      "name": "reponse-mal-formee-rejetee",
+      "kind": "malformed_response",
+      "contract": "punks://contracts/desktop.compatibility-response@1",
+      "payload": {
+        "pas": "un contrat"
+      },
+      "expect": {
+        "outcome": "reject",
+        "failureKind": "contract_violation"
+      }
+    },
+    {
+      "operation": "listWorkspaces",
+      "name": "curseur-nul-valide",
+      "kind": "valid_payload",
+      "contract": "punks://contracts/workspace.list@1",
+      "payload": {
+        "contract": "workspace.list@1",
+        "limit": 100,
+        "cursor": null
+      },
+      "expect": {
+        "outcome": "ok"
+      }
+    },
+    {
+      "operation": "getStream",
+      "name": "payload-valide",
+      "kind": "valid_payload",
+      "contract": "punks://contracts/conversation.get@1",
+      "payload": {
+        "contract": "conversation.get@1",
+        "workspaceId": "0f0e7d8a-1111-4000-8000-000000000001",
+        "conversationId": "0f0e7d8a-1111-4000-8000-000000000002"
+      },
+      "expect": {
+        "outcome": "ok"
+      }
+    },
+    {
+      "operation": "getStream",
+      "name": "champ-inconnu-rejete",
+      "kind": "unknown_field",
+      "contract": "punks://contracts/conversation.get@1",
+      "payload": {
+        "contract": "conversation.get@1",
+        "workspaceId": "0f0e7d8a-1111-4000-8000-000000000001",
+        "conversationId": "0f0e7d8a-1111-4000-8000-000000000002",
+        "bearerSecret": "sekret-8f31c0a6-ne-doit-jamais-apparaitre"
+      },
+      "forbiddenMarker": "sekret-8f31c0a6-ne-doit-jamais-apparaitre",
+      "expect": {
+        "outcome": "reject",
+        "failureKind": "contract_violation"
+      }
+    },
+    {
+      "operation": "postMessage",
+      "name": "erreur-fermee-ambigue",
+      "kind": "closed_error",
+      "problem": {
+        "type": "https://punks.bot/problems/conflict",
+        "title": "Conflict",
+        "status": 409,
+        "code": "idempotency_conflict",
+        "detail": "Bearer sekret-8f31c0a6-ne-doit-jamais-apparaitre",
+        "correlationId": "0f0e7d8a-1111-4000-8000-000000000003",
+        "retry": "same_command"
+      },
+      "forbiddenMarker": "sekret-8f31c0a6-ne-doit-jamais-apparaitre",
+      "expect": {
+        "outcome": "reject",
+        "failureKind": "ambiguous"
+      }
+    },
+    {
+      "operation": "postMessage",
+      "name": "erreur-fermee-session-expiree-meme-rejouable",
+      "kind": "closed_error",
+      "problem": {
+        "type": "https://punks.bot/problems/unauthenticated",
+        "title": "Unauthenticated",
+        "status": 401,
+        "code": "unauthenticated",
+        "detail": "Session expired",
+        "correlationId": "0f0e7d8a-1111-4000-8000-000000000004",
+        "retry": "same_command"
+      },
+      "expect": {
+        "outcome": "reject",
+        "failureKind": "session_expired"
+      }
+    },
+    {
+      "operation": "postMessage",
+      "name": "erreur-fermee-probleme",
+      "kind": "closed_error",
+      "problem": {
+        "type": "https://punks.bot/problems/forbidden",
+        "title": "Forbidden",
+        "status": 403,
+        "code": "forbidden",
+        "detail": "Not allowed",
+        "correlationId": "0f0e7d8a-1111-4000-8000-000000000005",
+        "retry": "never"
+      },
+      "expect": {
+        "outcome": "reject",
+        "failureKind": "problem"
+      }
+    },
+    {
+      "operation": "getTimeline",
+      "name": "curseur-histoire-valide",
+      "kind": "cursor",
+      "cursor": "mhc1.cGF5bG9hZA.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "expect": {
+        "outcome": "ok"
+      }
+    },
+    {
+      "operation": "getTimeline",
+      "name": "curseur-histoire-contrefait",
+      "kind": "cursor",
+      "cursor": "mhc1.payload.trop-court",
+      "expect": {
+        "outcome": "reject",
+        "failureKind": "contract_violation"
+      }
+    },
+    {
+      "operation": "listWorkspaces",
+      "name": "curseur-repertoire-valide",
+      "kind": "cursor",
+      "cursor": "YWJjZGVm._~-01",
+      "expect": {
+        "outcome": "ok"
+      }
+    },
+    {
+      "operation": "listWorkspaces",
+      "name": "curseur-repertoire-contrefait",
+      "kind": "cursor",
+      "cursor": "abc def/g",
+      "expect": {
+        "outcome": "reject",
+        "failureKind": "contract_violation"
+      }
+    }
+  ]
+}

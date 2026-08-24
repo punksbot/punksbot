@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/account-merge.fresh-proof@1",
+  "title": "AccountMergeFreshProof",
+  "$comment": "Public non-secret descriptor of one server-held, single-use reauthentication proof. Raw credentials, provider tokens, session tokens and passkey assertions are deliberately absent.",
+  "type": "object",
+  "additionalProperties": false,
+  "minProperties": 12,
+  "maxProperties": 12,
+  "required": [
+    "contract",
+    "proofId",
+    "intentId",
+    "accountRole",
+    "punkId",
+    "accountRevision",
+    "holderBindingHash",
+    "authenticationMethod",
+    "providerSubjectBindingHash",
+    "authenticatedAt",
+    "expiresAt",
+    "validForSeconds"
+  ],
+  "properties": {
+    "contract": { "const": "account-merge.fresh-proof@1" },
+    "proofId": { "$ref": "#/$defs/uuid" },
+    "intentId": { "$ref": "#/$defs/uuid" },
+    "accountRole": { "enum": ["survivor", "absorbed"] },
+    "punkId": { "$ref": "#/$defs/uuid" },
+    "accountRevision": { "$ref": "#/$defs/revision" },
+    "holderBindingHash": { "$ref": "#/$defs/hexDigest" },
+    "authenticationMethod": { "enum": ["google", "github", "passkey"] },
+    "providerSubjectBindingHash": { "$ref": "#/$defs/hexDigest" },
+    "authenticatedAt": { "$ref": "#/$defs/timestamp" },
+    "expiresAt": { "$ref": "#/$defs/timestamp" },
+    "validForSeconds": { "const": 300 }
+  },
+  "$defs": {
+    "uuid": { "type": "string", "format": "uuid" },
+    "revision": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "hexDigest": {
+      "type": "string",
+      "minLength": 64,
+      "maxLength": 64,
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "timestamp": {
+      "type": "string",
+      "minLength": 24,
+      "maxLength": 24,
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$",
+      "format": "date-time"
+    }
+  }
+}

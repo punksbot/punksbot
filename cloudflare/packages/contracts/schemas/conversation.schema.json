@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/conversation@1",
+  "title": "Conversation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "workspaceId",
+    "name",
+    "type",
+    "visibility",
+    "description",
+    "topic",
+    "purpose",
+    "topicRequired",
+    "maxMembers",
+    "ttlSeconds",
+    "ttlDeadline",
+    "ownerPunkId",
+    "members",
+    "status",
+    "revision",
+    "cursor",
+    "createdAt",
+    "updatedAt",
+    "archivedAt"
+  ],
+  "properties": {
+    "id": { "type": "string", "format": "uuid" },
+    "workspaceId": { "type": "string", "format": "uuid" },
+    "name": { "type": "string", "minLength": 1, "maxLength": 255 },
+    "type": { "enum": ["stream", "forum", "dm", "workflow"] },
+    "visibility": { "enum": ["open", "private"] },
+    "description": {
+      "anyOf": [
+        { "type": "string", "maxLength": 4000 },
+        { "type": "null" }
+      ]
+    },
+    "topic": {
+      "anyOf": [
+        { "type": "string", "maxLength": 255 },
+        { "type": "null" }
+      ]
+    },
+    "purpose": {
+      "anyOf": [
+        { "type": "string", "maxLength": 4000 },
+        { "type": "null" }
+      ]
+    },
+    "topicRequired": { "type": "boolean" },
+    "maxMembers": {
+      "anyOf": [
+        { "type": "integer", "minimum": 1, "maximum": 100000 },
+        { "type": "null" }
+      ]
+    },
+    "ttlSeconds": {
+      "anyOf": [
+        { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+        { "type": "null" }
+      ]
+    },
+    "ttlDeadline": {
+      "anyOf": [
+        { "type": "string", "format": "date-time" },
+        { "type": "null" }
+      ]
+    },
+    "ownerPunkId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "members": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["punkId", "access", "joinedAt", "invitedByPunkId"],
+        "properties": {
+          "punkId": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "access": { "enum": ["owner", "manager", "member", "guest"] },
+          "joinedAt": { "type": "string", "format": "date-time" },
+          "invitedByPunkId": {
+            "anyOf": [
+              { "type": "string", "minLength": 1, "maxLength": 128 },
+              { "type": "null" }
+            ]
+          }
+        }
+      }
+    },
+    "status": { "enum": ["active", "archived", "deleting", "deleted"] },
+    "revision": { "type": "integer", "minimum": 1 },
+    "cursor": { "type": "integer", "minimum": 1 },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "archivedAt": {
+      "anyOf": [
+        { "type": "string", "format": "date-time" },
+        { "type": "null" }
+      ]
+    }
+  }
+}

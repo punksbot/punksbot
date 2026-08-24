@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/conversation.follow@1",
+  "title": "FollowConversationQuery",
+  "$comment": "Public WebSocket upgrade query for subprotocol punks.follow.v1. afterCursor is the last total Conversation cursor durably applied by the client; zero requests the available hot history from the beginning.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "workspaceId", "conversationId", "afterCursor"],
+  "properties": {
+    "contract": { "const": "conversation.follow@1" },
+    "workspaceId": { "type": "string", "format": "uuid" },
+    "conversationId": { "type": "string", "format": "uuid" },
+    "afterCursor": { "type": "integer", "minimum": 0 }
+  }
+}

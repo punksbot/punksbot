@@ -1,0 +1,11 @@
+# Finaliser le contenu Message par saga fencée
+
+Le commit autoritaire d’un Message dans son `ConversationDO` et la finalisation de son contenu dans son `MessageContentDO` ne peuvent pas appartenir à une transaction Cloudflare unique. Punks Bot traite cette couture comme une saga durable et n’utilise pas le replay du client comme mécanisme de réparation.
+
+Avant chaque attestation Message, puis immédiatement avant la dernière réautorisation et le commit, le `ConversationDO` réclame le contenu par `claimForCommit`. Cette transition vérifie le scope et la clé exacts et pose une fence durable `commit_claimed`. Un contenu fencé est inéligible au garbage collection, sans délai d’expiration : aucun timeout ne peut prouver que le commit Conversation n’a pas eu lieu. Si l’autorisation est refusée avant le commit, le `ConversationDO` libère explicitement la fence ; si cette RPC échoue, il conserve la commande pending et son alarme pour retenter la libération.
+
+La transaction qui crée le Message écrit simultanément le journal attesté, le résultat idempotent, l’outbox de projection et un ledger `content_finalization`. Tant que ce ledger existe, l’événement correspondant et tous les curseurs suivants restent bloqués dans l’outbox. L’alarme du `ConversationDO` réclame de nouveau le contenu, appelle `finalize`, supprime le ledger uniquement après succès, puis délivre la projection. Les échecs utilisent un backoff exponentiel plafonné à soixante secondes, sans limite de tentatives.
+
+`finalize` retire la fence et rend la version lisible. `releaseCommitClaim` ne peut retirer la fence que pour le scope, l’opération et la clé exacts d’une préparation non finalisée. Le constructeur du `ConversationDO` réarme une alarme depuis les tables durables lorsqu’il retrouve une commande pending, une finalisation, une outbox, une archive ou une échéance TTL après reconstruction.
+
+Cette décision préfère une rétention chiffrée potentiellement longue à la perte irréversible d’un contenu déjà committé. Elle ne rend pas les deux Durable Objects atomiques : la sûreté vient de la fence conservatrice, du ledger idempotent et de leur réconciliation. Les RPC Cloudflare n’ont pas encore de timeout applicatif explicite ; leurs pannes restent fail-closed et sont reprises par alarme.

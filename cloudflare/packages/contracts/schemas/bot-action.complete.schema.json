@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/bot-action.complete@1",
+  "title": "CompleteBotActionCommand",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "commandId",
+    "admissionId",
+    "actionId",
+    "actionDigest",
+    "workspaceId",
+    "installationId",
+    "actor",
+    "outcome"
+  ],
+  "properties": {
+    "contract": { "const": "bot-action.complete@1" },
+    "commandId": { "type": "string", "format": "uuid" },
+    "admissionId": { "type": "string", "format": "uuid" },
+    "actionId": { "type": "string", "format": "uuid" },
+    "actionDigest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "workspaceId": { "type": "string", "format": "uuid" },
+    "installationId": { "type": "string", "format": "uuid" },
+    "actor": { "$ref": "#/$defs/actor" },
+    "outcome": { "enum": ["succeeded", "failed"] }
+  },
+  "$defs": {
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "installationId"],
+      "properties": {
+        "kind": { "const": "bot" },
+        "installationId": { "type": "string", "format": "uuid" }
+      }
+    }
+  }
+}

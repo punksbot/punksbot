@@ -1,0 +1,239 @@
+{
+  "$schema": "./client-profile.schema.json",
+  "id": "desktop-social-loop@1",
+  "registryVersion": 1,
+  "corpusVersion": 1,
+  "capabilities": [
+    "compatibility",
+    "account-session",
+    "authentication",
+    "workspace-selection",
+    "stream-list",
+    "message-history",
+    "threads",
+    "bounded-authors",
+    "conversation-follow",
+    "message-post",
+    "unicode-reactions"
+  ],
+  "unavailableCapabilities": [
+    "message-lifecycle",
+    "account-merge",
+    "identity-governance",
+    "workspace-lifecycle",
+    "conversation-management",
+    "attention",
+    "presence",
+    "search",
+    "moderation",
+    "forum",
+    "direct-conversations",
+    "command-palette",
+    "bots",
+    "references-broadcasts",
+    "pins-bookmarks",
+    "home",
+    "attachments",
+    "visual-identities",
+    "canvas",
+    "repositories",
+    "local-bot-body",
+    "workflows",
+    "forge",
+    "huddles",
+    "advanced-agents",
+    "external-workflows",
+    "templates",
+    "voice-extensions",
+    "pulse",
+    "shared-compute"
+  ],
+  "failureKinds": [
+    "problem",
+    "transport",
+    "contract_violation",
+    "cancelled",
+    "stale_workspace",
+    "session_expired",
+    "ambiguous"
+  ],
+  "operations": [
+    {
+      "name": "checkCompatibility",
+      "owner": "account",
+      "kind": "read",
+      "command": false,
+      "retry": "safe_read",
+      "cancellablePhases": ["before_emit", "in_flight"],
+      "requestContract": "desktop.compatibility@1",
+      "responseContract": "desktop.compatibility-response@1"
+    },
+    {
+      "name": "getSession",
+      "owner": "account",
+      "kind": "read",
+      "command": false,
+      "retry": "safe_read",
+      "cancellablePhases": ["before_emit", "in_flight"],
+      "responseContract": "auth.session@1"
+    },
+    {
+      "name": "startAuthentication",
+      "owner": "account",
+      "kind": "mutation",
+      "command": true,
+      "retry": "human_intent_required",
+      "cancellablePhases": ["before_emit", "in_flight"],
+      "requestContract": "auth.start@1",
+      "responseContract": "auth.start-response@1"
+    },
+    {
+      "name": "logout",
+      "owner": "account",
+      "kind": "mutation",
+      "command": true,
+      "retry": "human_intent_required",
+      "cancellablePhases": ["before_emit", "in_flight"]
+    },
+    {
+      "name": "listWorkspaces",
+      "owner": "account",
+      "kind": "read",
+      "command": false,
+      "retry": "safe_read",
+      "cancellablePhases": ["before_emit", "in_flight"],
+      "requestContract": "workspace.list@1",
+      "responseContract": "workspace.list-response@1"
+    },
+    {
+      "name": "resolveWorkspace",
+      "owner": "account",
+      "kind": "read",
+      "command": false,
+      "retry": "safe_read",
+      "cancellablePhases": ["before_emit", "in_flight"],
+      "requestContract": "workspace.get@1",
+      "responseContract": "workspace@1"
+    },
+    {
+      "name": "openWorkspace",
+      "owner": "account",
+      "kind": "local-orchestration",
+      "command": false,
+      "retry": "never",
+      "cancellablePhases": ["before_emit"]
+    },
+    {
+      "name": "closeWorkspace",
+      "owner": "workspace",
+      "kind": "local-orchestration",
+      "command": false,
+      "retry": "never",
+      "cancellablePhases": ["before_emit"]
+    },
+    {
+      "name": "listStreams",
+      "owner": "workspace",
+      "kind": "read",
+      "command": false,
+      "retry": "safe_read",
+      "cancellablePhases": ["before_emit", "in_flight"],
+      "requestContract": "conversation.list@1",
+      "responseContract": "conversation.list-response@1"
+    },
+    {
+      "name": "getStream",
+      "owner": "workspace",
+      "kind": "read",
+      "command": false,
+      "retry": "safe_read",
+      "cancellablePhases": ["before_emit", "in_flight"],
+      "requestContract": "conversation.get@1",
+      "responseContract": "conversation.view@1"
+    },
+    {
+      "name": "getTimeline",
+      "owner": "workspace",
+      "kind": "read",
+      "command": false,
+      "retry": "safe_read",
+      "cancellablePhases": ["before_emit", "in_flight"],
+      "requestContract": "message.history@1",
+      "responseContract": "message.history-response@1"
+    },
+    {
+      "name": "getThread",
+      "owner": "workspace",
+      "kind": "read",
+      "command": false,
+      "retry": "safe_read",
+      "cancellablePhases": ["before_emit", "in_flight"],
+      "requestContract": "message.history@1",
+      "responseContract": "message.history-response@1"
+    },
+    {
+      "name": "resolveAuthors",
+      "owner": "workspace",
+      "kind": "read",
+      "command": false,
+      "retry": "safe_read",
+      "cancellablePhases": ["before_emit", "in_flight"],
+      "requestContract": "author.resolve@1",
+      "responseContract": "author.resolve-response@1"
+    },
+    {
+      "name": "followConversation",
+      "owner": "workspace",
+      "kind": "follow",
+      "command": false,
+      "retry": "safe_read",
+      "cancellablePhases": [
+        "before_emit",
+        "in_flight",
+        "delivery",
+        "renderer_confirmation"
+      ],
+      "requestContract": "conversation.follow@1",
+      "responseContract": "conversation.follow-server-frame@1"
+    },
+    {
+      "name": "confirmFollowBatch",
+      "owner": "workspace",
+      "kind": "local-orchestration",
+      "command": false,
+      "retry": "renderer_confirmation",
+      "cancellablePhases": ["renderer_confirmation"],
+      "requestContract": "conversation.follow-client-frame@1"
+    },
+    {
+      "name": "postMessage",
+      "owner": "workspace",
+      "kind": "mutation",
+      "command": true,
+      "retry": "human_intent_required",
+      "cancellablePhases": ["before_emit", "in_flight"],
+      "requestContract": "message.post@1",
+      "responseContract": "message.post-response@1"
+    },
+    {
+      "name": "addReaction",
+      "owner": "workspace",
+      "kind": "mutation",
+      "command": true,
+      "retry": "human_intent_required",
+      "cancellablePhases": ["before_emit", "in_flight"],
+      "requestContract": "message.reaction-add@1",
+      "responseContract": "message.reaction-mutation-response@1"
+    },
+    {
+      "name": "removeReaction",
+      "owner": "workspace",
+      "kind": "mutation",
+      "command": true,
+      "retry": "human_intent_required",
+      "cancellablePhases": ["before_emit", "in_flight"],
+      "requestContract": "message.reaction-remove@1",
+      "responseContract": "message.reaction-mutation-response@1"
+    }
+  ]
+}

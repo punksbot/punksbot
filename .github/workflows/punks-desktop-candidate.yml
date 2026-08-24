@@ -1,0 +1,1321 @@
+name: Punks Desktop Signed Candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact immutable 40-character source SHA to build
+        required: true
+        type: string
+      staging_deployment_id:
+        description: sha256 identifier from the seven-Worker staging deployment proof
+        required: true
+        type: string
+      validation_scope:
+        description: Build only the two Apple legs, or the complete four-platform candidate
+        required: true
+        default: apple-only
+        type: choice
+        options:
+          - apple-only
+          - full-candidate
+
+permissions:
+  contents: read
+
+concurrency:
+  group: punks-desktop-candidate-${{ inputs.source_sha }}
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: Bind protected source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      STAGING_DEPLOYMENT_ID: ${{ inputs.staging_deployment_id }}
+      REF_PROTECTED: ${{ github.ref_protected }}
+    steps:
+      - name: Validate immutable dispatch inputs
+        id: validate_inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$STAGING_DEPLOYMENT_ID" =~ ^sha256:[0-9a-f]{64}$ ]]
+          test "$SOURCE_SHA" = "$GITHUB_SHA"
+          test "$REF_PROTECTED" = "true"
+
+      - name: Checkout the workflow source
+        id: checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Require a completely clean source checkout
+        id: clean_source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git diff --exit-code
+          git diff --cached --exit-code
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+  gates:
+    name: Secretless candidate gates
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      STAGING_DEPLOYMENT_ID: ${{ inputs.staging_deployment_id }}
+      PUNKS_ORIGIN: https://staging.punks.bot
+      PUNKS_DISTRIBUTION: staging
+      VITE_PUNKS_DISTRIBUTION: punks
+    steps:
+      - name: Checkout the validated source
+        id: checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Require clean source before dependency installation
+        id: clean_source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$SOURCE_SHA" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git diff --exit-code
+          git diff --cached --exit-code
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Set up pnpm
+        id: setup_pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        with:
+          version: 11.4.0
+
+      - name: Set up Node
+        id: setup_node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24.14.1
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Set up the exact Dart SDK
+        id: setup_dart
+        uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1.7.2
+        with:
+          sdk: 3.10.8
+
+      - name: Install Linux native check dependencies
+        id: linux_dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential libasound2-dev libayatana-appindicator3-dev \
+            libgtk-3-dev librsvg2-dev libssl-dev \
+            libwebkit2gtk-4.1-dev libxdo-dev pkg-config
+
+      - name: Install immutable dependencies without lifecycle scripts
+        id: install
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Execute every secretless Punks candidate gate
+        id: run_gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test \
+            scripts/punks-desktop-candidate-workflow.test.mjs \
+            scripts/candidate/*.test.mjs
+          pnpm migration:check
+          pnpm cloudflare:check
+          pnpm --filter buzz check
+          pnpm --dir desktop check:punks-candidate
+          pnpm --dir desktop check:punks-product
+          node scripts/check-punks-rust.mjs
+          tauri_config="$(jq -c . desktop/src-tauri/tauri.punks.conf.json)"
+          export TAURI_CONFIG="$tauri_config"
+          node -e 'const c=JSON.parse(process.env.TAURI_CONFIG); if (!Array.isArray(c.bundle?.externalBin) || c.bundle.externalBin.length !== 0) process.exit(1)'
+          cargo check \
+            --locked \
+            --manifest-path desktop/src-tauri/Cargo.toml \
+            --package desktop-shell \
+            --no-default-features \
+            --features punks-desktop-social-loop
+
+  verify_staging:
+    name: Bind the exact remote staging deployment
+    needs: gates
+    environment: punks-staging-promotion
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      STAGING_DEPLOYMENT_ID: ${{ inputs.staging_deployment_id }}
+    steps:
+      - name: Checkout the validated source
+        id: checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Reobserve all seven Workers through the Cloudflare API
+        id: observe_staging
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.PUNKS_CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test "$SOURCE_SHA" = "$GITHUB_SHA"
+          node cloudflare/scripts/staging-deployment-proof.mjs \
+            --account-id 3a391620584c792dbbd8cfa148d7634a \
+            --environment staging \
+            --source-sha "$SOURCE_SHA" \
+            > staging-deployment-proof.json
+          node --input-type=module - "$SOURCE_SHA" "$STAGING_DEPLOYMENT_ID" <<'NODE'
+          import { readFileSync } from "node:fs";
+          import {
+            CANONICAL_STAGING_ACCOUNT_ID,
+            validateStagingDeploymentProof,
+          } from "./cloudflare/scripts/staging-deployment-proof.mjs";
+          const sourceSha = process.argv[2];
+          const expectedDeploymentId = process.argv[3];
+          const proof = validateStagingDeploymentProof(
+            JSON.parse(readFileSync("staging-deployment-proof.json", "utf8")),
+            {
+              accountId: CANONICAL_STAGING_ACCOUNT_ID,
+              environment: "staging",
+              sourceSha,
+            },
+          );
+          if (proof.deploymentId !== expectedDeploymentId) {
+            throw new Error("remote staging deployment ID does not match dispatch input");
+          }
+          NODE
+
+      - name: Upload the exact remote staging proof
+        id: upload_staging_proof
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: punks-staging-deployment-proof-${{ inputs.source_sha }}
+          path: staging-deployment-proof.json
+          if-no-files-found: error
+          retention-days: 1
+
+  build:
+    name: Signed platform leg (${{ matrix.platform }})
+    needs: verify_staging
+    environment: punks-staging-promotion
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(inputs.validation_scope == 'apple-only' && '[{"platform":"macos-arm64","runner":"macos-15","target":"aarch64-apple-darwin","bundles":"app,dmg"},{"platform":"macos-x64","runner":"macos-15-intel","target":"x86_64-apple-darwin","bundles":"app,dmg"}]' || '[{"platform":"macos-arm64","runner":"macos-15","target":"aarch64-apple-darwin","bundles":"app,dmg"},{"platform":"macos-x64","runner":"macos-15-intel","target":"x86_64-apple-darwin","bundles":"app,dmg"},{"platform":"linux-x64","runner":"ubuntu-24.04","target":"x86_64-unknown-linux-gnu","bundles":"appimage,deb"},{"platform":"windows-x64","runner":"windows-2025","target":"x86_64-pc-windows-msvc","bundles":"nsis,msi"}]') }}
+    env:
+      PLATFORM: ${{ matrix.platform }}
+      TARGET: ${{ matrix.target }}
+      BUNDLES: ${{ matrix.bundles }}
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      STAGING_DEPLOYMENT_ID: ${{ inputs.staging_deployment_id }}
+      PUNKS_ORIGIN: https://staging.punks.bot
+      PUNKS_DISTRIBUTION: staging
+      VITE_PUNKS_DISTRIBUTION: punks
+      PUNKS_LINUX_GPG_KEY_ID: ${{ vars.PUNKS_LINUX_GPG_KEY_ID }}
+    steps:
+      - name: Checkout the validated source
+        id: checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Require clean source before dependency installation
+        id: clean_source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$SOURCE_SHA" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git diff --exit-code
+          git diff --cached --exit-code
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Set up pnpm
+        id: setup_pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        with:
+          version: 11.4.0
+
+      - name: Set up Node
+        id: setup_node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24.14.1
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install Linux native build dependencies
+        id: linux_dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential curl desktop-file-utils file gnupg \
+            libasound2-dev libayatana-appindicator3-dev libgtk-3-dev \
+            librsvg2-dev libssl-dev libwebkit2gtk-4.1-dev libxdo-dev \
+            minisign patchelf pkg-config squashfs-tools xdg-utils
+          validator="$RUNNER_TEMP/validate-x86_64.AppImage"
+          curl --fail --location --proto '=https' --tlsv1.2 \
+            --output "$validator" \
+            https://github.com/AppImageCommunity/AppImageUpdate/releases/download/2.0.0-alpha-1-20251018/validate-x86_64.AppImage
+          printf '%s  %s\n' \
+            b10c8d39a0a917432af185afc92f1cd54b7f68aa70deda927acacf38ded84990 \
+            "$validator" | sha256sum --check --strict
+          chmod 0755 "$validator"
+          echo "validator=$validator" >> "$GITHUB_OUTPUT"
+
+      - name: Install macOS signature verifier
+        id: macos_dependencies
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install minisign
+          minisign -v
+
+      - name: Install Windows signature verifier
+        id: windows_dependencies
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          choco install minisign --yes --no-progress
+          minisign -v
+
+      - name: Install immutable dependencies without lifecycle scripts
+        id: install
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Install the exact Rust target
+        id: rust_target
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup show active-toolchain
+          rustup target add "$TARGET"
+
+      - name: Recheck the Punks-only Tauri flavor
+        id: verify_flavor
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm --dir desktop check:punks-candidate
+          pnpm --dir desktop check:punks-product
+          node scripts/check-punks-rust.mjs
+
+      - name: Prepare strict Cargo runner on Unix
+        id: prepare_cargo_runner_unix
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          runner="$RUNNER_TEMP/punks-cargo-runner"
+          umask 077
+          printf '%s\n' \
+            '#!/usr/bin/env bash' \
+            'set -euo pipefail' \
+            'exec cargo "$@" --locked --no-default-features' \
+            > "$runner"
+          chmod 0700 "$runner"
+          echo "path=$runner" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare strict Cargo runner on Windows
+        id: prepare_cargo_runner_windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $runner = Join-Path $env:RUNNER_TEMP "punks-cargo-runner.cmd"
+          @(
+            "@echo off",
+            "cargo %* --locked --no-default-features",
+            "exit /b %ERRORLEVEL%"
+          ) | Set-Content -Encoding ascii $runner
+          "path=$runner" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Import Apple Developer ID certificate
+        id: import_apple
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.PUNKS_APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.PUNKS_APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$APPLE_CERTIFICATE"
+          test -n "$APPLE_CERTIFICATE_PASSWORD"
+          certificate_path="$RUNNER_TEMP/punks-certificate.p12"
+          keychain_path="$RUNNER_TEMP/punks-signing.keychain-db"
+          keychain_password="$(openssl rand -hex 32)"
+          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$certificate_path"
+          security create-keychain -p "$keychain_password" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$keychain_password" "$keychain_path"
+          security import "$certificate_path" -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain_path"
+          security list-keychain -d user -s "$keychain_path"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain_path"
+          signing_identity="$(security find-identity -v -p codesigning "$keychain_path" | awk -F '"' '$2 ~ /^Developer ID Application:/ { print $2; exit }')"
+          if [[ ! "$signing_identity" =~ ^Developer\ ID\ Application:.*\ \([A-Z0-9]{10}\)$ ]]; then
+            echo "::error::The Apple PKCS#12 secret does not contain one valid Developer ID Application identity. Export the certificate and its private key together from Keychain Access > My Certificates."
+            exit 1
+          fi
+          team_id="$(printf '%s' "$signing_identity" | sed -E 's/^.*\(([A-Z0-9]{10})\)$/\1/')"
+          [[ "$team_id" =~ ^[A-Z0-9]{10}$ ]]
+          echo "signing_identity=$signing_identity" >> "$GITHUB_OUTPUT"
+          echo "team_id=$team_id" >> "$GITHUB_OUTPUT"
+
+      - name: Import Linux AppImage signing key
+        id: import_linux
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          LINUX_GPG_PRIVATE_KEY: ${{ secrets.PUNKS_LINUX_GPG_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$LINUX_GPG_PRIVATE_KEY"
+          printf '%s' "$LINUX_GPG_PRIVATE_KEY" | gpg --batch --import
+          gpg --batch --list-secret-keys "$PUNKS_LINUX_GPG_KEY_ID"
+
+      - name: Build signed macOS Punks leg
+        id: build_macos
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.PUNKS_TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.PUNKS_TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_API_ISSUER: ${{ secrets.PUNKS_APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.PUNKS_APPLE_API_KEY }}
+          APPLE_API_PRIVATE_KEY: ${{ secrets.PUNKS_APPLE_API_PRIVATE_KEY }}
+          APPLE_SIGNING_IDENTITY: ${{ steps.import_apple.outputs.signing_identity }}
+          CARGO_RUNNER: ${{ steps.prepare_cargo_runner_unix.outputs.path }}
+        run: |
+          set -euo pipefail
+          test -n "$TAURI_SIGNING_PRIVATE_KEY"
+          test -n "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
+          test -n "$APPLE_API_ISSUER"
+          test -n "$APPLE_API_KEY"
+          test -n "$APPLE_API_PRIVATE_KEY"
+          api_key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY}.p8"
+          trap 'rm -f "$api_key_path"' EXIT
+          printf '%s' "$APPLE_API_PRIVATE_KEY" > "$api_key_path"
+          export APPLE_API_KEY_PATH="$api_key_path"
+          pnpm --dir desktop tauri build \
+            --runner "$CARGO_RUNNER" \
+            --ci --features punks-desktop-social-loop \
+            --target "$TARGET" --bundles "$BUNDLES" \
+            --config src-tauri/tauri.punks.conf.json
+          bundle="desktop/src-tauri/target/${TARGET}/release/bundle"
+          test "$(find "$bundle/dmg" -maxdepth 1 -name '*.dmg' -type f | wc -l | tr -d ' ')" = "1"
+          dmg="$(find "$bundle/dmg" -maxdepth 1 -name '*.dmg' -type f)"
+          notarization_json="$(
+            xcrun notarytool submit "$dmg" \
+              --key "$api_key_path" \
+              --key-id "$APPLE_API_KEY" \
+              --issuer "$APPLE_API_ISSUER" \
+              --wait --output-format json
+          )"
+          test "$(printf '%s' "$notarization_json" | jq -er '.status')" = "Accepted"
+          xcrun stapler staple "$dmg"
+
+      - name: Build signed Linux Punks leg
+        id: build_linux
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.PUNKS_TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.PUNKS_TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPIMAGETOOL_SIGN_PASSPHRASE: ${{ secrets.PUNKS_LINUX_GPG_PASSPHRASE }}
+          SIGN: "1"
+          SIGN_KEY: ${{ vars.PUNKS_LINUX_GPG_KEY_ID }}
+          APPIMAGETOOL_FORCE_SIGN: "1"
+          CARGO_RUNNER: ${{ steps.prepare_cargo_runner_unix.outputs.path }}
+        run: |
+          set -euo pipefail
+          test -n "$TAURI_SIGNING_PRIVATE_KEY"
+          test -n "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
+          test -n "$APPIMAGETOOL_SIGN_PASSPHRASE"
+          [[ "$SIGN_KEY" =~ ^[0-9A-F]{16,40}$ ]]
+          pnpm --dir desktop tauri build \
+            --runner "$CARGO_RUNNER" \
+            --ci --features punks-desktop-social-loop \
+            --target "$TARGET" --bundles "$BUNDLES" \
+            --config src-tauri/tauri.punks.conf.json
+
+      - name: Build the Windows Punks executable before HSM signing
+        id: build_windows
+        if: runner.os == 'Windows'
+        shell: bash
+        env:
+          CARGO_RUNNER: ${{ steps.prepare_cargo_runner_windows.outputs.path }}
+        run: |
+          set -euo pipefail
+          pnpm --dir desktop tauri build \
+            --runner "$CARGO_RUNNER" \
+            --ci --features punks-desktop-social-loop \
+            --target "$TARGET" --no-bundle \
+            --config src-tauri/tauri.punks.conf.json
+
+      - name: Exercise the Windows signer fail-closed contract
+        id: test_windows_signer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          & scripts/windows-artifact-sign.test.ps1
+          if ($LASTEXITCODE -ne 0) {
+            throw "Windows Artifact Signing behavioral contract failed"
+          }
+
+      - name: Authenticate Windows signing through GitHub OIDC
+        id: azure_login
+        if: runner.os == 'Windows'
+        uses: azure/login@f5d393ae46f8fde4be8b75f32e3fc50e654ad0ca # v3
+        with:
+          client-id: ${{ secrets.PUNKS_AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.PUNKS_AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.PUNKS_AZURE_SUBSCRIPTION_ID }}
+
+      - name: Sign the Windows executable with Azure Artifact Signing
+        id: sign_windows_binary
+        if: runner.os == 'Windows'
+        uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
+        with:
+          endpoint: ${{ vars.PUNKS_AZURE_ARTIFACT_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.PUNKS_AZURE_ARTIFACT_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.PUNKS_AZURE_ARTIFACT_SIGNING_PROFILE }}
+          files: ${{ github.workspace }}\desktop\src-tauri\target\${{ matrix.target }}\release\punks-bot-staging.exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          exclude-environment-credential: true
+          exclude-workload-identity-credential: true
+          exclude-managed-identity-credential: true
+          exclude-shared-token-cache-credential: true
+          exclude-visual-studio-credential: true
+          exclude-visual-studio-code-credential: true
+          exclude-azure-cli-credential: false
+          exclude-azure-powershell-credential: true
+          exclude-azure-developer-cli-credential: true
+          exclude-interactive-browser-credential: true
+
+      - name: Bundle the signed Windows executable
+        id: bundle_windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          PUNKS_AZURE_ARTIFACT_SIGNING_ENDPOINT: ${{ vars.PUNKS_AZURE_ARTIFACT_SIGNING_ENDPOINT }}
+          PUNKS_AZURE_ARTIFACT_SIGNING_ACCOUNT: ${{ vars.PUNKS_AZURE_ARTIFACT_SIGNING_ACCOUNT }}
+          PUNKS_AZURE_ARTIFACT_SIGNING_PROFILE: ${{ vars.PUNKS_AZURE_ARTIFACT_SIGNING_PROFILE }}
+          PUNKS_AZURE_ARTIFACT_SIGNING_IDENTITY_EKU: ${{ vars.PUNKS_AZURE_ARTIFACT_SIGNING_IDENTITY_EKU }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          [void](Resolve-Path "scripts/windows-artifact-sign.ps1")
+          [void](Resolve-Path "desktop/src-tauri/tauri.punks.windows-signing.conf.json")
+          $releaseRoot = (Resolve-Path "desktop/src-tauri/target/$env:TARGET/release").Path
+          $mainBinary = (Resolve-Path "$releaseRoot/punks-bot-staging.exe").Path
+          $standaloneDigestBeforeBundle = (Get-FileHash -LiteralPath $mainBinary -Algorithm SHA256).Hash.ToLowerInvariant()
+          $ledgerPath = Join-Path $env:RUNNER_TEMP "punks-windows-signing-ledger.jsonl"
+          if (Test-Path -LiteralPath $ledgerPath) {
+            throw "Windows signing ledger already exists"
+          }
+          New-Item -ItemType File -Path $ledgerPath | Out-Null
+          $nsisTemp = Join-Path $env:RUNNER_TEMP "punks-nsis-temp"
+          if (Test-Path -LiteralPath $nsisTemp) {
+            throw "Dedicated NSIS temporary directory already exists"
+          }
+          New-Item -ItemType Directory -Path $nsisTemp | Out-Null
+          $env:PUNKS_WINDOWS_MAIN_BINARY = $mainBinary
+          $env:PUNKS_WINDOWS_RELEASE_ROOT = $releaseRoot
+          $env:PUNKS_WINDOWS_SIGNING_LEDGER = $ledgerPath
+          $env:PUNKS_WINDOWS_NSIS_TEMP = $nsisTemp
+          $env:TEMP = $nsisTemp
+          $env:TMP = $nsisTemp
+          pnpm --dir desktop tauri bundle --ci --features punks-desktop-social-loop --target $env:TARGET --bundles $env:BUNDLES --config src-tauri/tauri.punks.conf.json --config src-tauri/tauri.punks.windows-signing.conf.json
+          if ($LASTEXITCODE -ne 0) {
+            throw "Tauri Windows bundling with post-patch HSM signing failed"
+          }
+          $standaloneDigestAfterBundle = (Get-FileHash -LiteralPath $mainBinary -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($standaloneDigestAfterBundle -ne $standaloneDigestBeforeBundle) {
+            throw "Tauri did not restore the standalone HSM-signed Windows executable"
+          }
+          $entries = @(
+            Get-Content -LiteralPath $ledgerPath |
+              Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+              ForEach-Object { $_ | ConvertFrom-Json }
+          )
+          if ($entries.Count -ne 12) {
+            throw "Expected exactly twelve closed-role Windows signing operations"
+          }
+          $roleCounts = @{
+            "patched-main" = 2
+            "nsis-plugin" = 5
+            "wix-extension" = 2
+            "nsis-uninstaller" = 1
+            "nsis-installer" = 1
+            "msi-installer" = 1
+          }
+          foreach ($expected in $roleCounts.GetEnumerator()) {
+            $actual = @($entries | Where-Object { $_.role -eq $expected.Key })
+            if ($actual.Count -ne $expected.Value) {
+              throw "Unexpected Windows signing operation count for $($expected.Key)"
+            }
+          }
+          foreach ($entry in $entries) {
+            $properties = @($entry.PSObject.Properties.Name | Sort-Object)
+            if (($properties -join ",") -ne "path,role,sha256") {
+              throw "Windows signing ledger entry has an unknown shape"
+            }
+            if ($entry.sha256 -notmatch "^[0-9a-f]{64}$") {
+              throw "Windows signing ledger entry has an invalid digest"
+            }
+          }
+          function Normalize-LedgerPath {
+            param([Parameter(Mandatory = $true)][string]$Value)
+            return [IO.Path]::GetFullPath($Value).ToLowerInvariant()
+          }
+          function Assert-ExactRolePaths {
+            param(
+              [Parameter(Mandatory = $true)][string]$Role,
+              [Parameter(Mandatory = $true)][string[]]$ExpectedPaths
+            )
+            $actualPaths = @(
+              $entries |
+                Where-Object { $_.role -eq $Role } |
+                ForEach-Object { Normalize-LedgerPath $_.path } |
+                Sort-Object
+            )
+            $normalizedExpected = @(
+              $ExpectedPaths |
+                ForEach-Object { Normalize-LedgerPath $_ } |
+                Sort-Object
+            )
+            $differences = @(
+              Compare-Object -ReferenceObject $normalizedExpected -DifferenceObject $actualPaths
+            )
+            if (
+              $actualPaths.Count -ne $normalizedExpected.Count -or
+              $differences.Count -ne 0
+            ) {
+              throw "Windows signing ledger paths changed for role $Role"
+            }
+          }
+          $expectedNsisPlugins = @(
+            "$releaseRoot/nsis/x64/Plugins/x86-unicode/NSISdl.dll",
+            "$releaseRoot/nsis/x64/Plugins/x86-unicode/StartMenu.dll",
+            "$releaseRoot/nsis/x64/Plugins/x86-unicode/System.dll",
+            "$releaseRoot/nsis/x64/Plugins/x86-unicode/nsDialogs.dll",
+            "$releaseRoot/nsis/x64/Plugins/x86-unicode/additional/nsis_tauri_utils.dll"
+          )
+          $expectedWixExtensions = @(
+            "$releaseRoot/wix/x64/wix/WixUIExtension.dll",
+            "$releaseRoot/wix/x64/wix/WixUtilExtension.dll"
+          )
+          $nsis = @(Get-ChildItem "$releaseRoot/bundle/nsis" -File -Filter "*-setup.exe")
+          $msi = @(Get-ChildItem "$releaseRoot/bundle/msi" -File -Filter "*.msi")
+          if ($nsis.Count -ne 1 -or $msi.Count -ne 1) {
+            throw "Expected one NSIS and one MSI installer for ledger validation"
+          }
+          Assert-ExactRolePaths "patched-main" @($mainBinary, $mainBinary)
+          Assert-ExactRolePaths "nsis-plugin" $expectedNsisPlugins
+          Assert-ExactRolePaths "wix-extension" $expectedWixExtensions
+          Assert-ExactRolePaths "nsis-installer" @($nsis[0].FullName)
+          Assert-ExactRolePaths "msi-installer" @($msi[0].FullName)
+          $uninstallerEntries = @(
+            $entries | Where-Object { $_.role -eq "nsis-uninstaller" }
+          )
+          $uninstallerPath = [IO.Path]::GetFullPath($uninstallerEntries[0].path)
+          if (
+            -not [IO.Path]::GetDirectoryName($uninstallerPath).Equals(
+              $nsisTemp,
+              [StringComparison]::OrdinalIgnoreCase
+            ) -or
+            [IO.Path]::GetFileName($uninstallerPath) -notmatch "^nst[0-9A-F]{4}\.tmp$"
+          ) {
+            throw "NSIS uninstaller ledger path escaped its exact temporary contract"
+          }
+          foreach ($entry in @(
+            $entries |
+              Where-Object {
+                $_.role -in @(
+                  "nsis-plugin",
+                  "wix-extension",
+                  "nsis-installer",
+                  "msi-installer"
+                )
+              }
+          )) {
+            $item = Get-Item -LiteralPath $entry.path
+            if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+              throw "A stable signed Windows artifact became a reparse point"
+            }
+            $actualDigest = (Get-FileHash -LiteralPath $item.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actualDigest -ne $entry.sha256) {
+              throw "A stable signed Windows artifact changed after HSM signing"
+            }
+          }
+
+      - name: Resolve the exact Windows installer allowlist
+        id: prepare_windows_installers
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $bundle = "desktop/src-tauri/target/$env:TARGET/release/bundle"
+          $allInstallers = @(
+            Get-ChildItem $bundle -Recurse -File |
+              Where-Object {
+                $_.Name -like "*-setup.exe" -or $_.Extension -ieq ".msi"
+              }
+          )
+          $nsis = @(Get-ChildItem "$bundle/nsis" -File -Filter "*-setup.exe")
+          $msi = @(Get-ChildItem "$bundle/msi" -File -Filter "*.msi")
+          if ($nsis.Count -ne 1 -or $msi.Count -ne 1) {
+            throw "Expected exactly one NSIS and one MSI installer before signing"
+          }
+          $unexpectedLinks = @(
+            $allInstallers |
+              Where-Object {
+                $_.Attributes -band [IO.FileAttributes]::ReparsePoint
+              }
+          )
+          if ($unexpectedLinks.Count -ne 0) {
+            throw "Windows installer allowlist contains a reparse point"
+          }
+          $expectedPaths = @($nsis[0].FullName, $msi[0].FullName)
+          $actualPaths = @($allInstallers | ForEach-Object { $_.FullName })
+          $differences = @(
+            Compare-Object -ReferenceObject $expectedPaths -DifferenceObject $actualPaths
+          )
+          if ($allInstallers.Count -ne 2 -or $differences.Count -ne 0) {
+            throw "Unexpected Windows installer outside the exact signing allowlist"
+          }
+
+      - name: Refresh Tauri updater signatures over signed Windows installers
+        id: refresh_windows_updater
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.PUNKS_TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.PUNKS_TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY)) {
+            throw "The Tauri updater private key is required"
+          }
+          if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD)) {
+            throw "The Tauri updater private key password is required"
+          }
+          $bundle = "desktop/src-tauri/target/$env:TARGET/release/bundle"
+          $nsis = @(Get-ChildItem "$bundle/nsis" -File -Filter "*-setup.exe")
+          $msi = @(Get-ChildItem "$bundle/msi" -File -Filter "*.msi")
+          if ($nsis.Count -ne 1 -or $msi.Count -ne 1) {
+            throw "Expected exactly one NSIS and one MSI installer"
+          }
+          foreach ($artifact in @($nsis[0], $msi[0])) {
+            $signaturePath = "$($artifact.FullName).sig"
+            Remove-Item -Force -ErrorAction SilentlyContinue $signaturePath
+            pnpm --dir desktop tauri signer sign $artifact.FullName
+            if ($LASTEXITCODE -ne 0 -or -not (Test-Path $signaturePath)) {
+              throw "Tauri updater signature refresh failed: $($artifact.FullName)"
+            }
+          }
+
+      - name: Prove the exact isolated frontend distribution
+        id: verify_product_dist
+        shell: bash
+        run: pnpm --dir desktop check:punks-product-dist
+
+      - name: Prove the exact isolated native executable
+        id: verify_native_artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          binary="desktop/src-tauri/target/${TARGET}/release/punks-bot-staging"
+          if [[ "$RUNNER_OS" = "Windows" ]]; then
+            binary="${binary}.exe"
+          fi
+          test -f "$binary"
+          node scripts/check-punks-rust.mjs --binary "$binary"
+
+      - name: Verify exact macOS identity, timestamp and notarization
+        id: verify_macos
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          EXPECTED_IDENTITY: ${{ steps.import_apple.outputs.signing_identity }}
+          EXPECTED_TEAM_ID: ${{ steps.import_apple.outputs.team_id }}
+        run: |
+          set -euo pipefail
+          bundle="desktop/src-tauri/target/${TARGET}/release/bundle"
+          test "$(find "$bundle/macos" -maxdepth 1 -name '*.app' -type d | wc -l | tr -d ' ')" = "1"
+          test "$(find "$bundle/macos" -maxdepth 1 -name '*.app.tar.gz' -type f | wc -l | tr -d ' ')" = "1"
+          test "$(find "$bundle/macos" -maxdepth 1 -name '*.app.tar.gz.sig' -type f | wc -l | tr -d ' ')" = "1"
+          test "$(find "$bundle/dmg" -maxdepth 1 -name '*.dmg' -type f | wc -l | tr -d ' ')" = "1"
+          app="$(find "$bundle/macos" -maxdepth 1 -name '*.app' -type d)"
+          dmg="$(find "$bundle/dmg" -maxdepth 1 -name '*.dmg' -type f)"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          codesign --verify --strict --verbose=2 "$dmg"
+          app_details="$(codesign -dv --verbose=4 "$app" 2>&1)"
+          dmg_details="$(codesign -dv --verbose=4 "$dmg" 2>&1)"
+          grep -Fx "Authority=$EXPECTED_IDENTITY" <<< "$app_details"
+          grep -Fx "Authority=$EXPECTED_IDENTITY" <<< "$dmg_details"
+          grep -Fx "TeamIdentifier=$EXPECTED_TEAM_ID" <<< "$app_details"
+          grep -Fx "TeamIdentifier=$EXPECTED_TEAM_ID" <<< "$dmg_details"
+          grep -E '^Timestamp=.+' <<< "$app_details"
+          grep -E '^Timestamp=.+' <<< "$dmg_details"
+          spctl --assess --type execute --verbose=2 "$app"
+          spctl --assess --type open --context context:primary-signature --verbose=2 "$dmg"
+          xcrun stapler validate "$app"
+          xcrun stapler validate "$dmg"
+          node scripts/candidate/native-proof.mjs \
+            --platform "$PLATFORM" \
+            --identity "$EXPECTED_IDENTITY" \
+            --team-id "$EXPECTED_TEAM_ID" \
+            --timestamped true \
+            --notarized true \
+            --output "$RUNNER_TEMP/native-proof.json"
+
+      - name: Verify exact Linux signatures
+        id: verify_linux
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          LINUX_GPG_PASSPHRASE: ${{ secrets.PUNKS_LINUX_GPG_PASSPHRASE }}
+          APPIMAGE_VALIDATOR: ${{ steps.linux_dependencies.outputs.validator }}
+        run: |
+          set -euo pipefail
+          bundle="desktop/src-tauri/target/${TARGET}/release/bundle"
+          test "$(find "$bundle/appimage" -maxdepth 1 -name '*.AppImage' -type f | wc -l | tr -d ' ')" = "1"
+          test "$(find "$bundle/appimage" -maxdepth 1 -name '*.AppImage.sig' -type f | wc -l | tr -d ' ')" = "1"
+          test "$(find "$bundle/deb" -maxdepth 1 -name '*.deb' -type f | wc -l | tr -d ' ')" = "1"
+          appimage="$(find "$bundle/appimage" -maxdepth 1 -name '*.AppImage' -type f)"
+          deb="$(find "$bundle/deb" -maxdepth 1 -name '*.deb' -type f)"
+          set +e
+          validation_output="$(APPIMAGE_EXTRACT_AND_RUN=1 "$APPIMAGE_VALIDATOR" "$appimage" 2>&1)"
+          validator_status=$?
+          set -e
+          printf '%s\n' "$validation_output"
+          grep -Fx "Validation result: validation successful" <<< "$validation_output"
+          grep -F "Signatures found with key fingerprints: $PUNKS_LINUX_GPG_KEY_ID" <<< "$validation_output"
+          if (( validator_status != 0 && validator_status != 1 )); then
+            echo "::error::AppImage validator failed with unexpected status $validator_status"
+            exit "$validator_status"
+          fi
+          gpg --batch --yes --pinentry-mode loopback \
+            --passphrase "$LINUX_GPG_PASSPHRASE" \
+            --local-user "$PUNKS_LINUX_GPG_KEY_ID" \
+            --armor --detach-sign "$deb"
+          verification_home="$RUNNER_TEMP/punks-linux-verification"
+          mkdir -m 700 "$verification_home"
+          gpg --homedir "$verification_home" --batch --import \
+            desktop/src-tauri/signing/punks-linux-release.asc
+          gpg --homedir "$verification_home" --batch --verify "${deb}.asc" "$deb"
+          node scripts/candidate/native-proof.mjs \
+            --platform "$PLATFORM" \
+            --identity "$PUNKS_LINUX_GPG_KEY_ID" \
+            --timestamped false \
+            --embedded-appimage-signature true \
+            --detached-deb-signature true \
+            --output "$RUNNER_TEMP/native-proof.json"
+
+      - name: Verify exact Windows identity and timestamp
+        id: verify_windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          EXPECTED_IDENTITY_EKU: ${{ vars.PUNKS_AZURE_ARTIFACT_SIGNING_IDENTITY_EKU }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $expectedIdentityEku = $env:EXPECTED_IDENTITY_EKU
+          if (
+            [string]::IsNullOrWhiteSpace($expectedIdentityEku) -or
+            $expectedIdentityEku -notmatch "^1\.3\.6\.1\.4\.1\.311\.97\." -or
+            $expectedIdentityEku -eq "1.3.6.1.4.1.311.97.1.0"
+          ) {
+            throw "The exact Artifact Signing durable identity EKU is required"
+          }
+          $release = "desktop/src-tauri/target/$env:TARGET/release"
+          $bundle = "desktop/src-tauri/target/$env:TARGET/release/bundle"
+          $native = @(Get-ChildItem $release -File -Filter "punks-bot-staging.exe")
+          $nsis = @(Get-ChildItem "$bundle/nsis" -File -Filter "*-setup.exe")
+          $nsisSignatures = @(Get-ChildItem "$bundle/nsis" -File -Filter "*.exe.sig")
+          $msi = @(Get-ChildItem "$bundle/msi" -File -Filter "*.msi")
+          $msiSignatures = @(Get-ChildItem "$bundle/msi" -File -Filter "*.msi.sig")
+          if ($native.Count -ne 1) {
+            throw "Expected exactly one native Windows executable"
+          }
+          if ($nsis.Count -ne 1 -or $nsisSignatures.Count -ne 1) {
+            throw "Expected exactly one signed NSIS installer and updater signature"
+          }
+          if ($msi.Count -ne 1 -or $msiSignatures.Count -ne 1) {
+            throw "Expected exactly one signed MSI installer and updater signature"
+          }
+          $nsisInstall = Join-Path $env:RUNNER_TEMP "punks-nsis-install"
+          $msiInstall = Join-Path $env:RUNNER_TEMP "punks-msi-install"
+          New-Item -ItemType Directory -Path $nsisInstall, $msiInstall | Out-Null
+          $nsisProcess = Start-Process -FilePath $nsis[0].FullName -ArgumentList @(
+            "/S",
+            "/D=$nsisInstall"
+          ) -Wait -PassThru
+          if ($nsisProcess.ExitCode -ne 0) {
+            throw "NSIS installed-artifact verification setup failed"
+          }
+          $nsisInstalled = @(
+            Get-ChildItem $nsisInstall -Recurse -File -Filter "punks-bot-staging.exe"
+          )
+          $nsisUninstallers = @(
+            Get-ChildItem $nsisInstall -Recurse -File -Filter "uninstall.exe"
+          )
+          if ($nsisInstalled.Count -ne 1 -or $nsisUninstallers.Count -ne 1) {
+            throw "Expected one NSIS-installed executable and uninstaller"
+          }
+          $msiArguments = "/a `"$($msi[0].FullName)`" /qn TARGETDIR=`"$msiInstall`""
+          $msiProcess = Start-Process -FilePath msiexec.exe -ArgumentList $msiArguments -Wait -PassThru
+          if ($msiProcess.ExitCode -ne 0) {
+            throw "MSI installed-artifact verification setup failed"
+          }
+          $msiInstalled = @(
+            Get-ChildItem $msiInstall -Recurse -File -Filter "punks-bot-staging.exe"
+          )
+          if ($msiInstalled.Count -ne 1) {
+            throw "Expected one MSI-installed executable"
+          }
+          $ledgerPath = Join-Path $env:RUNNER_TEMP "punks-windows-signing-ledger.jsonl"
+          $patchedDigests = @(
+            Get-Content -LiteralPath $ledgerPath |
+              Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+              ForEach-Object { $_ | ConvertFrom-Json } |
+              Where-Object { $_.role -eq "patched-main" } |
+              ForEach-Object { $_.sha256 } |
+              Sort-Object
+          )
+          $installedDigests = @(
+            @($nsisInstalled[0], $msiInstalled[0]) |
+              ForEach-Object {
+                (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+              } |
+              Sort-Object
+          )
+          if (
+            $patchedDigests.Count -ne 2 -or
+            $installedDigests.Count -ne 2 -or
+            ($patchedDigests -join ",") -ne ($installedDigests -join ",")
+          ) {
+            throw "Installed NSIS/MSI executables do not match the two HSM-signed patched variants"
+          }
+          $toolDllPaths = @(
+            "$release/nsis/x64/Plugins/x86-unicode/NSISdl.dll",
+            "$release/nsis/x64/Plugins/x86-unicode/StartMenu.dll",
+            "$release/nsis/x64/Plugins/x86-unicode/System.dll",
+            "$release/nsis/x64/Plugins/x86-unicode/nsDialogs.dll",
+            "$release/nsis/x64/Plugins/x86-unicode/additional/nsis_tauri_utils.dll",
+            "$release/wix/x64/wix/WixUIExtension.dll",
+            "$release/wix/x64/wix/WixUtilExtension.dll"
+          )
+          $toolDlls = @(
+            $toolDllPaths | ForEach-Object { Get-Item -LiteralPath $_ }
+          )
+          if ($toolDlls.Count -ne 7) {
+            throw "Expected exactly seven Tauri tool DLLs in the signing proof"
+          }
+          $nativeThumbprint = $null
+          $signedArtifacts = @(
+            $native[0],
+            $nsis[0],
+            $msi[0],
+            $nsisInstalled[0],
+            $nsisUninstallers[0],
+            $msiInstalled[0]
+          ) + $toolDlls
+          if ($signedArtifacts.Count -ne 13) {
+            throw "Expected exactly thirteen Windows Authenticode proof targets"
+          }
+          foreach ($artifact in $signedArtifacts) {
+            $signature = Get-AuthenticodeSignature $artifact.FullName
+            if ($signature.Status -ne "Valid") {
+              throw "Invalid Authenticode signature: $($artifact.FullName)"
+            }
+            $ekuExtensions = @(
+              $signature.SignerCertificate.Extensions |
+                Where-Object { $_.Oid.Value -eq "2.5.29.37" }
+            )
+            if ($ekuExtensions.Count -ne 1) {
+              throw "Signer has no unique extended key usage extension: $($artifact.FullName)"
+            }
+            $eku = [System.Security.Cryptography.X509Certificates.X509EnhancedKeyUsageExtension]$ekuExtensions[0]
+            $ekuOids = @($eku.EnhancedKeyUsages | ForEach-Object { $_.Value })
+            foreach ($requiredEku in @(
+              "1.3.6.1.5.5.7.3.3",
+              "1.3.6.1.4.1.311.97.1.0",
+              $expectedIdentityEku
+            )) {
+              if ($ekuOids -notcontains $requiredEku) {
+                throw "Signer lacks required EKU $requiredEku`: $($artifact.FullName)"
+              }
+            }
+            if ($null -eq $signature.TimeStamperCertificate) {
+              throw "Missing Authenticode timestamp: $($artifact.FullName)"
+            }
+            if ($artifact.FullName -eq $native[0].FullName) {
+              $nativeThumbprint = $signature.SignerCertificate.Thumbprint.ToUpperInvariant()
+            }
+          }
+          node scripts/candidate/native-proof.mjs --platform "$env:PLATFORM" --identity "$expectedIdentityEku" --thumbprint "$nativeThumbprint" --timestamped true --output (Join-Path $env:RUNNER_TEMP "native-proof.json")
+          if ($LASTEXITCODE -ne 0) { throw "Native proof generation failed" }
+
+      - name: Verify every Tauri updater signature
+        id: verify_updater
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle="desktop/src-tauri/target/${TARGET}/release/bundle"
+          encoded_key="$(node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            const config = JSON.parse(readFileSync("desktop/src-tauri/tauri.punks.conf.json", "utf8"));
+            process.stdout.write(config.plugins.updater.pubkey);
+          ')"
+          public_key="$(printf '%s' "$encoded_key" | base64 --decode | tail -n 1)"
+          case "$PLATFORM" in
+            macos-*)
+              updater="$(find "$bundle/macos" -maxdepth 1 -name '*.app.tar.gz' -type f)"
+              minisign -Vm "$updater" -x "${updater}.sig" -P "$public_key"
+              ;;
+            linux-x64)
+              updater="$(find "$bundle/appimage" -maxdepth 1 -name '*.AppImage' -type f)"
+              minisign -Vm "$updater" -x "${updater}.sig" -P "$public_key"
+              ;;
+            windows-x64)
+              nsis="$(find "$bundle/nsis" -maxdepth 1 -name '*.exe' -type f)"
+              msi="$(find "$bundle/msi" -maxdepth 1 -name '*.msi' -type f)"
+              minisign -Vm "$nsis" -x "${nsis}.sig" -P "$public_key"
+              minisign -Vm "$msi" -x "${msi}.sig" -P "$public_key"
+              ;;
+            *)
+              echo "Unsupported platform: $PLATFORM" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Stage one closed platform leg
+        id: stage_leg
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/candidate/artifacts.mjs collect \
+            --platform "$PLATFORM" \
+            --target "$TARGET" \
+            --source-sha "$SOURCE_SHA" \
+            --staging-deployment-id "$STAGING_DEPLOYMENT_ID" \
+            --bundle "desktop/src-tauri/target/${TARGET}/release/bundle" \
+            --native-proof "$RUNNER_TEMP/native-proof.json" \
+            --output candidate-leg
+
+      - name: Upload intermediate platform leg
+        id: upload_leg
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: punks-candidate-leg-${{ matrix.platform }}-${{ inputs.source_sha }}
+          path: candidate-leg
+          if-no-files-found: error
+          retention-days: 1
+
+  attest_legs:
+    name: Attest and verify platform leg (${{ matrix.platform }})
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      artifact-metadata: write
+      contents: read
+      attestations: write
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: ${{ fromJSON(inputs.validation_scope == 'apple-only' && '["macos-arm64","macos-x64"]' || '["macos-arm64","macos-x64","linux-x64","windows-x64"]') }}
+    env:
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      PLATFORM: ${{ matrix.platform }}
+    steps:
+      - name: Download exact intermediate platform leg
+        id: download_leg
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: punks-candidate-leg-${{ matrix.platform }}-${{ inputs.source_sha }}
+          path: candidate-leg
+
+      - name: Attest platform leg provenance
+        id: attest_leg
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: candidate-leg/**/*
+
+      - name: Verify the platform attestation and source identity
+        id: verify_leg_attestation
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ATTESTATION_BUNDLE: ${{ steps.attest_leg.outputs.bundle-path }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/leg-verification"
+          while IFS= read -r -d '' artifact; do
+            output="$RUNNER_TEMP/leg-verification/$(printf '%s' "$artifact" | sha256sum | cut -d ' ' -f 1).json"
+            gh attestation verify "$artifact" \
+              --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "github.com/$GITHUB_REPOSITORY/.github/workflows/punks-desktop-candidate.yml" \
+              --source-digest "$SOURCE_SHA" \
+              --source-ref "$GITHUB_REF" \
+              --deny-self-hosted-runners \
+              --bundle "$ATTESTATION_BUNDLE" \
+              --format json > "$output"
+            test -s "$output"
+          done < <(find candidate-leg -type f -print0 | sort -z)
+          cp "$ATTESTATION_BUNDLE" "candidate-leg/${PLATFORM}/provenance.sigstore.json"
+
+      - name: Upload verified attested platform leg
+        id: upload_attested_leg
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: punks-attested-leg-${{ matrix.platform }}-${{ inputs.source_sha }}
+          path: candidate-leg
+          if-no-files-found: error
+          retention-days: 1
+
+  aggregate:
+    name: Aggregate four verified legs
+    needs: attest_legs
+    if: inputs.validation_scope == 'full-candidate'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      STAGING_DEPLOYMENT_ID: ${{ inputs.staging_deployment_id }}
+    steps:
+      - name: Checkout candidate aggregation code
+        id: checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Download all four attested platform legs
+        id: download_attested_legs
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: punks-attested-leg-*-${{ inputs.source_sha }}
+          path: candidate-input/legs
+          merge-multiple: true
+
+      - name: Download the protected remote staging proof
+        id: download_staging_proof
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: punks-staging-deployment-proof-${{ inputs.source_sha }}
+          path: candidate-input/staging
+
+      - name: Build closed aggregate and immutable staging latest.json
+        id: aggregate_candidate
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          node scripts/candidate/artifacts.mjs aggregate \
+            --input candidate-input/legs \
+            --output candidate \
+            --staging-proof candidate-input/staging/staging-deployment-proof.json \
+            --source-sha "$SOURCE_SHA" \
+            --staging-deployment-id "$STAGING_DEPLOYMENT_ID" \
+            --repository "$GITHUB_REPOSITORY" \
+            --release-tag "punks-staging-${SOURCE_SHA}" \
+            --source-ref "$GITHUB_REF" \
+            --signer-workflow "github.com/$GITHUB_REPOSITORY/.github/workflows/punks-desktop-candidate.yml"
+
+      - name: Upload unattested aggregate for final attestation
+        id: upload_aggregate
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: punks-candidate-aggregate-unattested-${{ inputs.source_sha }}
+          path: candidate
+          if-no-files-found: error
+          retention-days: 1
+
+  attest_candidate:
+    name: Attest, verify and stage one atomic candidate
+    needs: aggregate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      artifact-metadata: write
+      contents: write
+      attestations: write
+      id-token: write
+    env:
+      SOURCE_SHA: ${{ inputs.source_sha }}
+    steps:
+      - name: Download the exact four-leg aggregate
+        id: download_aggregate
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: punks-candidate-aggregate-unattested-${{ inputs.source_sha }}
+          path: candidate
+
+      - name: Attest aggregate candidate provenance
+        id: attest_candidate
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: candidate/**/*
+
+      - name: Verify aggregate attestation and source identity
+        id: verify_candidate_attestation
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ATTESTATION_BUNDLE: ${{ steps.attest_candidate.outputs.bundle-path }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/candidate-verification"
+          while IFS= read -r -d '' artifact; do
+            output="$RUNNER_TEMP/candidate-verification/$(printf '%s' "$artifact" | sha256sum | cut -d ' ' -f 1).json"
+            gh attestation verify "$artifact" \
+              --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "github.com/$GITHUB_REPOSITORY/.github/workflows/punks-desktop-candidate.yml" \
+              --source-digest "$SOURCE_SHA" \
+              --source-ref "$GITHUB_REF" \
+              --deny-self-hosted-runners \
+              --bundle "$ATTESTATION_BUNDLE" \
+              --format json > "$output"
+            test -s "$output"
+          done < <(find candidate -type f -print0 | sort -z)
+          cp "$ATTESTATION_BUNDLE" candidate/punks-candidate-aggregate.sigstore.json
+          printf '%s\n' "${{ steps.attest_candidate.outputs.attestation-url }}" > candidate/punks-candidate-attestation-url.txt
+
+      - name: Stage or repair the immutable draft after attestation
+        id: stage_immutable_draft
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          RELEASE_TAG="punks-staging-${SOURCE_SHA}"
+          release_json="$RUNNER_TEMP/existing-release.json"
+          if gh release view "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json isDraft,isPrerelease,tagName,targetCommitish,assets \
+            > "$release_json" 2>/dev/null; then
+            jq -e --arg tag "$RELEASE_TAG" --arg sha "$SOURCE_SHA" '
+              .isDraft == true and
+              .isPrerelease == false and
+              .tagName == $tag and
+              .targetCommitish == $sha
+            ' "$release_json" >/dev/null
+          else
+            tag_error="$RUNNER_TEMP/tag-error.txt"
+            if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" >/dev/null 2>"$tag_error"; then
+              echo "Git tag already exists without a repairable draft: $RELEASE_TAG" >&2
+              exit 1
+            fi
+            grep -F "HTTP 404" "$tag_error" >/dev/null
+            gh release create "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$SOURCE_SHA" \
+              --title "Punks staging candidate ${SOURCE_SHA}" \
+              --notes "Signed and attested Punks staging candidate bound to source ${SOURCE_SHA}. It remains a draft until the complete promotion dossier and tranche receipt are published." \
+              --draft
+          fi
+          shopt -s nullglob
+          release_assets=(
+            candidate/release-assets/*
+            candidate/aggregate-manifest.json
+            candidate/staging-deployment-proof.json
+            candidate/punks-candidate-aggregate.sigstore.json
+            candidate/punks-candidate-attestation-url.txt
+          )
+          test "${#release_assets[@]}" -gt 5
+          gh release upload "$RELEASE_TAG" "${release_assets[@]}" \
+            --clobber \
+            --repo "$GITHUB_REPOSITORY"
+
+      - name: Verify the repairable draft and exact asset set
+        id: verify_staged_draft
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          RELEASE_TAG="punks-staging-${SOURCE_SHA}"
+          release_json="$RUNNER_TEMP/release.json"
+          gh release view "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json isDraft,isPrerelease,tagName,targetCommitish,assets \
+            > "$release_json"
+          jq -e --arg tag "$RELEASE_TAG" --arg sha "$SOURCE_SHA" '
+            .isDraft == true and
+            .isPrerelease == false and
+            .tagName == $tag and
+            .targetCommitish == $sha
+          ' "$release_json" >/dev/null
+          expected_assets="$RUNNER_TEMP/expected-assets.txt"
+          actual_assets="$RUNNER_TEMP/actual-assets.txt"
+          find candidate/release-assets -maxdepth 1 -type f -exec basename {} \; \
+            | LC_ALL=C sort > "$expected_assets"
+          printf '%s\n' \
+            punks-candidate-aggregate.sigstore.json \
+            punks-candidate-attestation-url.txt \
+            aggregate-manifest.json \
+            staging-deployment-proof.json \
+            >> "$expected_assets"
+          LC_ALL=C sort -o "$expected_assets" "$expected_assets"
+          jq -r '.assets[].name' "$release_json" | LC_ALL=C sort > "$actual_assets"
+          diff -u "$expected_assets" "$actual_assets"
+
+      - name: Upload the only final candidate
+        id: upload_final_candidate
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: punks-desktop-candidate-${{ inputs.source_sha }}
+          path: candidate
+          if-no-files-found: error
+          retention-days: 30

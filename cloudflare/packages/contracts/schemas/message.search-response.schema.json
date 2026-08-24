@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/message.search-response@1",
+  "title": "MessageSearchResponse",
+  "$comment": "Runtime invariants: serialized UTF-8 is at most 1048576 bytes; every item is an authorized active MessageView in this Workspace and Conversation and still matches the current decrypted version; items follow createdCursor DESC, conversationId ASC, messageId ASC so createdCursor is non-increasing; nextCursor is emitted whenever more projected candidates remain.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "workspaceId",
+    "conversationId",
+    "order",
+    "items",
+    "nextCursor"
+  ],
+  "properties": {
+    "workspaceId": { "type": "string", "format": "uuid" },
+    "conversationId": { "type": "string", "format": "uuid" },
+    "order": { "const": "createdCursor-descending" },
+    "items": {
+      "type": "array",
+      "maxItems": 100,
+      "uniqueItems": true,
+      "items": {
+        "allOf": [
+          { "$ref": "schemas/message.view.schema.json" },
+          {
+            "required": ["status"],
+            "properties": { "status": { "const": "active" } }
+          }
+        ]
+      }
+    },
+    "nextCursor": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 50,
+          "maxLength": 1024,
+          "pattern": "^msc1\\.[A-Za-z0-9_-]{16}\\.[A-Za-z0-9_-]+$"
+        },
+        { "type": "null" }
+      ]
+    }
+  }
+}

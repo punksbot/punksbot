@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/bot-installation.configure@1",
+  "title": "ConfigureBotInstallationCommand",
+  "$comment": "Each command carries one bounded configuration or grant delta, never a grant snapshot.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "commandId",
+    "workspaceId",
+    "installationId",
+    "actor",
+    "payload"
+  ],
+  "properties": {
+    "contract": { "const": "bot-installation.configure@1" },
+    "commandId": { "type": "string", "format": "uuid" },
+    "workspaceId": { "type": "string", "format": "uuid" },
+    "installationId": { "type": "string", "format": "uuid" },
+    "actor": { "$ref": "#/$defs/actor" },
+    "payload": {
+      "oneOf": [
+        { "$ref": "#/$defs/replaceConfig" },
+        { "$ref": "#/$defs/setGrant" },
+        { "$ref": "#/$defs/pinRuntimeRelease" }
+      ]
+    }
+  },
+  "$defs": {
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "punkId"],
+      "properties": {
+        "kind": { "const": "punk" },
+        "punkId": { "type": "string", "format": "uuid" }
+      }
+    },
+    "config": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contractId", "value"],
+      "properties": {
+        "contractId": {
+          "const": "punks://contracts/bot.config.empty@1"
+        },
+        "value": { "type": "object", "additionalProperties": false }
+      }
+    },
+    "replaceConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operation", "config"],
+      "properties": {
+        "operation": { "const": "replace-config" },
+        "config": { "$ref": "#/$defs/config" }
+      }
+    },
+    "setGrant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operation", "grant"],
+      "properties": {
+        "operation": { "const": "set-grant" },
+        "grant": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["capability", "resource", "enabled"],
+          "properties": {
+            "capability": {
+              "enum": ["messages.react", "messages.read-context"]
+            },
+            "resource": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind", "conversationId"],
+              "properties": {
+                "kind": { "const": "conversation" },
+                "conversationId": { "type": "string", "format": "uuid" }
+              }
+            },
+            "enabled": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "pinRuntimeRelease": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operation"],
+      "properties": {
+        "operation": { "const": "pin-runtime-release" }
+      }
+    }
+  }
+}

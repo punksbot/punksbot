@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/conversation.member-remove@1",
+  "title": "RemoveConversationMemberCommand",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "commandId", "workspaceId", "conversationId", "actor", "payload"],
+  "properties": {
+    "contract": { "const": "conversation.member-remove@1" },
+    "commandId": { "type": "string", "format": "uuid" },
+    "workspaceId": { "type": "string", "format": "uuid" },
+    "conversationId": { "type": "string", "format": "uuid" },
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "punkId"],
+      "properties": {
+        "kind": { "const": "punk" },
+        "punkId": { "type": "string", "minLength": 1, "maxLength": 128 }
+      }
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["targetPunkId"],
+      "properties": {
+        "targetPunkId": { "type": "string", "minLength": 1, "maxLength": 128 }
+      }
+    }
+  }
+}

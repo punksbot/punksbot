@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/bot-wake.queue@1",
+  "title": "BotWakeQueueBody",
+  "$comment": "Opaque Cloudflare Queue body. The contract id is selected outside the body so the body remains exactly two identifiers.",
+  "type": "object",
+  "additionalProperties": false,
+  "minProperties": 2,
+  "maxProperties": 2,
+  "required": ["installationId", "wakeId"],
+  "properties": {
+    "installationId": { "$ref": "#/$defs/opaqueUuid" },
+    "wakeId": { "$ref": "#/$defs/opaqueUuid" }
+  },
+  "$defs": {
+    "opaqueUuid": {
+      "type": "string",
+      "minLength": 36,
+      "maxLength": 36,
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    }
+  }
+}

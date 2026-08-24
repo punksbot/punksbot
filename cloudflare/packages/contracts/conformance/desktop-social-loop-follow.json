@@ -1,0 +1,820 @@
+{
+  "profile": "desktop-social-loop@1",
+  "operation": "followConversation",
+  "traces": [
+    {
+      "name": "catch-up-confirm-ready",
+      "initialPaginationHighWater": 4,
+      "steps": [
+        {
+          "operation": "frame",
+          "frame": {
+            "schemaVersion": 1,
+            "type": "accepted",
+            "resumeAfterCursor": 4,
+            "targetHighWaterCursor": 6
+          },
+          "expected": {
+            "phase": "catching_up",
+            "effect": "none",
+            "appliedCursor": 4,
+            "followCheckpoint": 4,
+            "pendingConfirmationCursor": null
+          }
+        },
+        {
+          "operation": "frame",
+          "frame": {
+            "schemaVersion": 1,
+            "type": "changes",
+            "fromExclusiveCursor": 4,
+            "throughCursor": 6,
+            "messages": [],
+            "threadPatches": [],
+            "reactionPatches": [],
+            "reactionCollectionPatches": []
+          },
+          "expected": {
+            "phase": "catching_up",
+            "effect": "apply_batch",
+            "appliedCursor": 6,
+            "followCheckpoint": 4,
+            "pendingConfirmationCursor": 6
+          }
+        },
+        {
+          "operation": "confirm",
+          "throughCursor": 6,
+          "expected": {
+            "phase": "catching_up",
+            "effect": "ack",
+            "appliedCursor": 6,
+            "followCheckpoint": 6,
+            "pendingConfirmationCursor": null
+          }
+        },
+        {
+          "operation": "frame",
+          "frame": {
+            "schemaVersion": 1,
+            "type": "ready",
+            "highWaterCursor": 6
+          },
+          "expected": {
+            "phase": "live",
+            "effect": "became_live",
+            "appliedCursor": 6,
+            "followCheckpoint": 6,
+            "pendingConfirmationCursor": null
+          }
+        }
+      ]
+    },
+    {
+      "name": "exact-duplicate-is-not-reapplied",
+      "initialPaginationHighWater": 4,
+      "steps": [
+        {
+          "operation": "frame",
+          "frame": {
+            "schemaVersion": 1,
+            "type": "accepted",
+            "resumeAfterCursor": 4,
+            "targetHighWaterCursor": 6
+          },
+          "expected": {
+            "phase": "catching_up",
+            "effect": "none",
+            "appliedCursor": 4,
+            "followCheckpoint": 4,
+            "pendingConfirmationCursor": null
+          }
+        },
+        {
+          "operation": "frame",
+          "frame": {
+            "schemaVersion": 1,
+            "type": "changes",
+            "fromExclusiveCursor": 4,
+            "throughCursor": 6,
+            "messages": [],
+            "threadPatches": [],
+            "reactionPatches": [],
+            "reactionCollectionPatches": []
+          },
+          "expected": {
+            "phase": "catching_up",
+            "effect": "apply_batch",
+            "appliedCursor": 6,
+            "followCheckpoint": 4,
+            "pendingConfirmationCursor": 6
+          }
+        },
+        {
+          "operation": "frame",
+          "frame": {
+            "schemaVersion": 1,
+            "type": "changes",
+            "fromExclusiveCursor": 4,
+            "throughCursor": 6,
+            "messages": [],
+            "threadPatches": [],
+            "reactionPatches": [],
+            "reactionCollectionPatches": []
+          },
+          "expected": {
+            "phase": "catching_up",
+            "effect": "none",
+            "appliedCursor": 6,
+            "followCheckpoint": 4,
+            "pendingConfirmationCursor": 6
+          }
+        },
+        {
+          "operation": "confirm",
+          "throughCursor": 6,
+          "expected": {
+            "phase": "catching_up",
+            "effect": "ack",
+            "appliedCursor": 6,
+            "followCheckpoint": 6,
+            "pendingConfirmationCursor": null
+          }
+        }
+      ]
+    },
+    {
+      "name": "cursor-gap-requires-resync",
+      "initialPaginationHighWater": 4,
+      "steps": [
+        {
+          "operation": "frame",
+          "frame": {
+            "schemaVersion": 1,
+            "type": "accepted",
+            "resumeAfterCursor": 4,
+            "targetHighWaterCursor": 6
+          },
+          "expected": {
+            "phase": "catching_up",
+            "effect": "none",
+            "appliedCursor": 4,
+            "followCheckpoint": 4,
+            "pendingConfirmationCursor": null
+          }
+        },
+        {
+          "operation": "frame",
+          "frame": {
+            "schemaVersion": 1,
+            "type": "changes",
+            "fromExclusiveCursor": 5,
+            "throughCursor": 6,
+            "messages": [],
+            "threadPatches": [],
+            "reactionPatches": [],
+            "reactionCollectionPatches": []
+          },
+          "expected": {
+            "phase": "resync_required",
+            "effect": "resync:cursor_gap",
+            "appliedCursor": 4,
+            "followCheckpoint": 4,
+            "pendingConfirmationCursor": null
+          }
+        },
+        {
+          "operation": "frame",
+          "frame": {
+            "schemaVersion": 1,
+            "type": "ready",
+            "highWaterCursor": 6
+          },
+          "expected": {
+            "phase": "resync_required",
+            "effect": "none",
+            "appliedCursor": 4,
+            "followCheckpoint": 4,
+            "pendingConfirmationCursor": null
+          }
+        }
+      ]
+    },
+    {
+      "name": "wrong-accepted-resume-is-protocol-violation",
+      "initialPaginationHighWater": 4,
+      "steps": [
+        {
+          "operation": "frame",
+          "frame": {
+            "schemaVersion": 1,
+            "type": "accepted",
+            "resumeAfterCursor": 5,
+            "targetHighWaterCursor": 6
+          },
+          "expected": {
+            "phase": "resync_required",
+            "effect": "resync:protocol_violation",
+            "appliedCursor": 4,
+            "followCheckpoint": 4,
+            "pendingConfirmationCursor": null
+          }
+        },
+        {
+          "operation": "frame",
+          "frame": {
+            "schemaVersion": 1,
+            "type": "accepted",
+            "resumeAfterCursor": 4,
+            "targetHighWaterCursor": 6
+          },
+          "expected": {
+            "phase": "resync_required",
+            "effect": "none",
+            "appliedCursor": 4,
+            "followCheckpoint": 4,
+            "pendingConfirmationCursor": null
+          }
+        }
+      ]
+    },
+    {
+      "name": "cursor-divergence-requires-resync",
+      "initialPaginationHighWater": 4,
+      "steps": [
+        {
+          "operation": "frame",
+          "frame": {
+            "schemaVersion": 1,
+            "type": "accepted",
+            "resumeAfterCursor": 4,
+            "targetHighWaterCursor": 6
+          },
+          "expected": {
+            "phase": "catching_up",
+            "effect": "none",
+            "appliedCursor": 4,
+            "followCheckpoint": 4,
+            "pendingConfirmationCursor": null
+          }
+        },
+        {
+          "operation": "frame",
+          "frame": {
+            "schemaVersion": 1,
+            "type": "changes",
+            "fromExclusiveCursor": 3,
+            "throughCursor": 6,
+            "messages": [],
+            "threadPatches": [],
+            "reactionPatches": [],
+            "reactionCollectionPatches": []
+          },
+          "expected": {
+            "phase": "resync_required",
+            "effect": "resync:cursor_divergence",
+            "appliedCursor": 4,
+            "followCheckpoint": 4,
+            "pendingConfirmationCursor": null
+          }
+        }
+      ]
+    },
+    {
+      "name": "batch-while-pending-requires-resync",
+      "initialPaginationHighWater": 4,
+      "steps": [
+        {
+          "operation": "frame",
+          "frame": {
+            "schemaVersion": 1,
+            "type": "accepted",
+            "resumeAfterCursor": 4,
+            "targetHighWaterCursor": 6
+          },
+          "expected": {
+            "phase": "catching_up",
+            "effect": "none",
+            "appliedCursor": 4,
+            "followCheckpoint": 4,
+            "pendingConfirmationCursor": null
+          }
+        },
+        {
+          "operation": "frame",
+          "frame": {
+            "schemaVersion": 1,
+            "type": "changes",
+            "fromExclusiveCursor": 4,
+            "throughCursor": 6,
+            "messages": [],
+            "threadPatches": [],
+            "reactionPatches": [],
+            "reactionCollectionPatches": []
+          },
+          "expected": {
+            "phase": "catching_up",
+            "effect": "apply_batch",
+            "appliedCursor": 6,
+            "followCheckpoint": 4,
+            "pendingConfirmationCursor": 6
+          }
+        },
+        {
+          "operation": "frame",
+          "frame": {
+            "schemaVersion": 1,
+            "type": "changes",
+            "fromExclusiveCursor": 6,
+            "throughCursor": 7,
+            "messages": [],
+            "threadPatches": [],
+            "reactionPatches": [],
+            "reactionCollectionPatches": []
+          },
+          "expected": {
+            "phase": "resync_required",
+            "effect": "resync:cursor_divergence",
+            "appliedCursor": 6,
+            "followCheckpoint": 4,
+            "pendingConfirmationCursor": 6
+          }
+        }
+      ]
+    },
+    {
+      "name": "ready-before-confirmation-is-protocol-violation",
+      "initialPaginationHighWater": 4,
+      "steps": [
+        {
+          "operation": "frame",
+          "frame": {
+            "schemaVersion": 1,
+            "type": "accepted",
+            "resumeAfterCursor": 4,
+            "targetHighWaterCursor": 6
+          },
+          "expected": {
+            "phase": "catching_up",
+            "effect": "none",
+            "appliedCursor": 4,
+            "followCheckpoint": 4,
+            "pendingConfirmationCursor": null
+          }
+        },
+        {
+          "operation": "frame",
+          "frame": {
+            "schemaVersion": 1,
+            "type": "changes",
+            "fromExclusiveCursor": 4,
+            "throughCursor": 6,
+            "messages": [],
+            "threadPatches": [],
+            "reactionPatches": [],
+            "reactionCollectionPatches": []
+          },
+          "expected": {
+            "phase": "catching_up",
+            "effect": "apply_batch",
+            "appliedCursor": 6,
+            "followCheckpoint": 4,
+            "pendingConfirmationCursor": 6
+          }
+        },
+        {
+          "operation": "frame",
+          "frame": {
+            "schemaVersion": 1,
+            "type": "ready",
+            "highWaterCursor": 6
+          },
+          "expected": {
+            "phase": "resync_required",
+            "effect": "resync:protocol_violation",
+            "appliedCursor": 6,
+            "followCheckpoint": 4,
+            "pendingConfirmationCursor": 6
+          }
+        }
+      ]
+    },
+    {
+      "name": "confirm-mismatch-requires-resync",
+      "initialPaginationHighWater": 4,
+      "steps": [
+        {
+          "operation": "frame",
+          "frame": {
+            "schemaVersion": 1,
+            "type": "accepted",
+            "resumeAfterCursor": 4,
+            "targetHighWaterCursor": 6
+          },
+          "expected": {
+            "phase": "catching_up",
+            "effect": "none",
+            "appliedCursor": 4,
+            "followCheckpoint": 4,
+            "pendingConfirmationCursor": null
+          }
+        },
+        {
+          "operation": "frame",
+          "frame": {
+            "schemaVersion": 1,
+            "type": "changes",
+            "fromExclusiveCursor": 4,
+            "throughCursor": 6,
+            "messages": [],
+            "threadPatches": [],
+            "reactionPatches": [],
+            "reactionCollectionPatches": []
+          },
+          "expected": {
+            "phase": "catching_up",
+            "effect": "apply_batch",
+            "appliedCursor": 6,
+            "followCheckpoint": 4,
+            "pendingConfirmationCursor": 6
+          }
+        },
+        {
+          "operation": "confirm",
+          "throughCursor": 5,
+          "expected": {
+            "phase": "resync_required",
+            "effect": "none",
+            "appliedCursor": 6,
+            "followCheckpoint": 4,
+            "pendingConfirmationCursor": 6
+          }
+        }
+      ]
+    },
+    {
+      "name": "changes-before-accepted-is-protocol-violation",
+      "initialPaginationHighWater": 4,
+      "steps": [
+        {
+          "operation": "frame",
+          "frame": {
+            "schemaVersion": 1,
+            "type": "changes",
+            "fromExclusiveCursor": 4,
+            "throughCursor": 6,
+            "messages": [],
+            "threadPatches": [],
+            "reactionPatches": [],
+            "reactionCollectionPatches": []
+          },
+          "expected": {
+            "phase": "resync_required",
+            "effect": "resync:protocol_violation",
+            "appliedCursor": 4,
+            "followCheckpoint": 4,
+            "pendingConfirmationCursor": null
+          }
+        }
+      ]
+    },
+    {
+      "name": "through-before-from-is-protocol-violation",
+      "initialPaginationHighWater": 4,
+      "steps": [
+        {
+          "operation": "frame",
+          "frame": {
+            "schemaVersion": 1,
+            "type": "accepted",
+            "resumeAfterCursor": 4,
+            "targetHighWaterCursor": 6
+          },
+          "expected": {
+            "phase": "catching_up",
+            "effect": "none",
+            "appliedCursor": 4,
+            "followCheckpoint": 4,
+            "pendingConfirmationCursor": null
+          }
+        },
+        {
+          "operation": "frame",
+          "frame": {
+            "schemaVersion": 1,
+            "type": "changes",
+            "fromExclusiveCursor": 4,
+            "throughCursor": 4,
+            "messages": [],
+            "threadPatches": [],
+            "reactionPatches": [],
+            "reactionCollectionPatches": []
+          },
+          "expected": {
+            "phase": "resync_required",
+            "effect": "resync:protocol_violation",
+            "appliedCursor": 4,
+            "followCheckpoint": 4,
+            "pendingConfirmationCursor": null
+          }
+        }
+      ]
+    },
+    {
+      "name": "duplicate-and-live-batches-converge",
+      "initialPaginationHighWater": 4,
+      "steps": [
+        {
+          "operation": "frame",
+          "frame": {
+            "schemaVersion": 1,
+            "type": "accepted",
+            "resumeAfterCursor": 4,
+            "targetHighWaterCursor": 6
+          },
+          "expected": {
+            "phase": "catching_up",
+            "effect": "none",
+            "appliedCursor": 4,
+            "followCheckpoint": 4,
+            "pendingConfirmationCursor": null
+          }
+        },
+        {
+          "operation": "frame",
+          "frame": {
+            "schemaVersion": 1,
+            "type": "changes",
+            "fromExclusiveCursor": 4,
+            "throughCursor": 6,
+            "messages": [],
+            "threadPatches": [],
+            "reactionPatches": [],
+            "reactionCollectionPatches": []
+          },
+          "expected": {
+            "phase": "catching_up",
+            "effect": "apply_batch",
+            "appliedCursor": 6,
+            "followCheckpoint": 4,
+            "pendingConfirmationCursor": 6
+          }
+        },
+        {
+          "operation": "confirm",
+          "throughCursor": 6,
+          "expected": {
+            "phase": "catching_up",
+            "effect": "ack",
+            "appliedCursor": 6,
+            "followCheckpoint": 6,
+            "pendingConfirmationCursor": null
+          }
+        },
+        {
+          "operation": "frame",
+          "frame": {
+            "schemaVersion": 1,
+            "type": "ready",
+            "highWaterCursor": 6
+          },
+          "expected": {
+            "phase": "live",
+            "effect": "became_live",
+            "appliedCursor": 6,
+            "followCheckpoint": 6,
+            "pendingConfirmationCursor": null
+          }
+        },
+        {
+          "operation": "frame",
+          "frame": {
+            "schemaVersion": 1,
+            "type": "changes",
+            "fromExclusiveCursor": 4,
+            "throughCursor": 6,
+            "messages": [],
+            "threadPatches": [],
+            "reactionPatches": [],
+            "reactionCollectionPatches": []
+          },
+          "expected": {
+            "phase": "live",
+            "effect": "none",
+            "appliedCursor": 6,
+            "followCheckpoint": 6,
+            "pendingConfirmationCursor": null
+          }
+        },
+        {
+          "operation": "frame",
+          "frame": {
+            "schemaVersion": 1,
+            "type": "changes",
+            "fromExclusiveCursor": 6,
+            "throughCursor": 7,
+            "messages": [],
+            "threadPatches": [],
+            "reactionPatches": [],
+            "reactionCollectionPatches": []
+          },
+          "expected": {
+            "phase": "live",
+            "effect": "apply_batch",
+            "appliedCursor": 7,
+            "followCheckpoint": 6,
+            "pendingConfirmationCursor": 7
+          }
+        },
+        {
+          "operation": "confirm",
+          "throughCursor": 7,
+          "expected": {
+            "phase": "live",
+            "effect": "ack",
+            "appliedCursor": 7,
+            "followCheckpoint": 7,
+            "pendingConfirmationCursor": null
+          }
+        }
+      ]
+    },
+    {
+      "name": "resync-frame-in-live-requires-resync",
+      "initialPaginationHighWater": 4,
+      "steps": [
+        {
+          "operation": "frame",
+          "frame": {
+            "schemaVersion": 1,
+            "type": "accepted",
+            "resumeAfterCursor": 4,
+            "targetHighWaterCursor": 6
+          },
+          "expected": {
+            "phase": "catching_up",
+            "effect": "none",
+            "appliedCursor": 4,
+            "followCheckpoint": 4,
+            "pendingConfirmationCursor": null
+          }
+        },
+        {
+          "operation": "frame",
+          "frame": {
+            "schemaVersion": 1,
+            "type": "changes",
+            "fromExclusiveCursor": 4,
+            "throughCursor": 6,
+            "messages": [],
+            "threadPatches": [],
+            "reactionPatches": [],
+            "reactionCollectionPatches": []
+          },
+          "expected": {
+            "phase": "catching_up",
+            "effect": "apply_batch",
+            "appliedCursor": 6,
+            "followCheckpoint": 4,
+            "pendingConfirmationCursor": 6
+          }
+        },
+        {
+          "operation": "confirm",
+          "throughCursor": 6,
+          "expected": {
+            "phase": "catching_up",
+            "effect": "ack",
+            "appliedCursor": 6,
+            "followCheckpoint": 6,
+            "pendingConfirmationCursor": null
+          }
+        },
+        {
+          "operation": "frame",
+          "frame": {
+            "schemaVersion": 1,
+            "type": "ready",
+            "highWaterCursor": 6
+          },
+          "expected": {
+            "phase": "live",
+            "effect": "became_live",
+            "appliedCursor": 6,
+            "followCheckpoint": 6,
+            "pendingConfirmationCursor": null
+          }
+        },
+        {
+          "operation": "frame",
+          "frame": {
+            "schemaVersion": 1,
+            "type": "resync-required",
+            "reason": "slow_consumer",
+            "highWaterCursor": 20,
+            "afterCursor": 6
+          },
+          "expected": {
+            "phase": "resync_required",
+            "effect": "resync:slow_consumer",
+            "appliedCursor": 6,
+            "followCheckpoint": 6,
+            "pendingConfirmationCursor": null
+          }
+        }
+      ]
+    },
+    {
+      "name": "resync-history-required-in-catching-up",
+      "initialPaginationHighWater": 4,
+      "steps": [
+        {
+          "operation": "frame",
+          "frame": {
+            "schemaVersion": 1,
+            "type": "accepted",
+            "resumeAfterCursor": 4,
+            "targetHighWaterCursor": 6
+          },
+          "expected": {
+            "phase": "catching_up",
+            "effect": "none",
+            "appliedCursor": 4,
+            "followCheckpoint": 4,
+            "pendingConfirmationCursor": null
+          }
+        },
+        {
+          "operation": "frame",
+          "frame": {
+            "schemaVersion": 1,
+            "type": "resync-required",
+            "reason": "history_required",
+            "highWaterCursor": 8,
+            "afterCursor": 4
+          },
+          "expected": {
+            "phase": "resync_required",
+            "effect": "resync:history_required",
+            "appliedCursor": 4,
+            "followCheckpoint": 4,
+            "pendingConfirmationCursor": null
+          }
+        }
+      ]
+    },
+    {
+      "name": "terminal-archive-purges-follow",
+      "initialPaginationHighWater": 4,
+      "steps": [
+        {
+          "operation": "frame",
+          "frame": {
+            "schemaVersion": 1,
+            "type": "accepted",
+            "resumeAfterCursor": 4,
+            "targetHighWaterCursor": 6
+          },
+          "expected": {
+            "phase": "catching_up",
+            "effect": "none",
+            "appliedCursor": 4,
+            "followCheckpoint": 4,
+            "pendingConfirmationCursor": null
+          }
+        },
+        {
+          "operation": "frame",
+          "frame": {
+            "schemaVersion": 1,
+            "type": "conversation-unavailable",
+            "reason": "archived",
+            "cursor": 9
+          },
+          "expected": {
+            "phase": "terminal",
+            "effect": "terminal",
+            "appliedCursor": 4,
+            "followCheckpoint": 4,
+            "pendingConfirmationCursor": null
+          }
+        },
+        {
+          "operation": "frame",
+          "frame": {
+            "schemaVersion": 1,
+            "type": "ready",
+            "highWaterCursor": 6
+          },
+          "expected": {
+            "phase": "terminal",
+            "effect": "none",
+            "appliedCursor": 4,
+            "followCheckpoint": 4,
+            "pendingConfirmationCursor": null
+          }
+        }
+      ]
+    }
+  ]
+}

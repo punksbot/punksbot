@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/conversation.follow-client-frame@1",
+  "title": "ConversationFollowClientFrame",
+  "$comment": "The follow socket is read-only. A client may send only UTF-8 JSON acknowledgements no larger than 2048 bytes; heartbeat uses the separate literal ping/pong auto-response.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "type", "throughCursor"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "type": { "const": "ack" },
+    "throughCursor": { "type": "integer", "minimum": 0 }
+  }
+}

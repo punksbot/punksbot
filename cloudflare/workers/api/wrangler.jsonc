@@ -1,0 +1,211 @@
+{
+  "$schema": "../../../../node_modules/wrangler/config-schema.json",
+  "account_id": "3a391620584c792dbbd8cfa148d7634a",
+  "name": "punks-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-20",
+  "workers_dev": false,
+  "preview_urls": false,
+  "vars": {
+    "DESKTOP_SOCIAL_LOOP_ENABLED": "false",
+    "ENVIRONMENT": "local",
+    "JOURNAL_HOT_EVENTS": "1000",
+    "JOURNAL_SEGMENT_EVENTS": "250"
+  },
+  "secrets": {
+    "required": [
+      "OPERATOR_PROVISIONING_TOKEN",
+      "ATTESTATION_PUBLIC_KEYS_JSON",
+      "MESSAGE_SEARCH_MASTER_KEY",
+      "MESSAGE_SEARCH_CURSOR_KEY",
+      "MESSAGE_HISTORY_CURSOR_KEY",
+      "DIRECTORY_CURSOR_KEY"
+    ]
+  },
+  "r2_buckets": [
+    {
+      "binding": "JOURNAL_ARCHIVE_BUCKET",
+      "bucket_name": "punks-journal-local"
+    },
+    { "binding": "CONTENT_BUCKET", "bucket_name": "punks-media-local" }
+  ],
+  "durable_objects": {
+    "bindings": [
+      { "name": "WORKSPACES", "class_name": "WorkspaceDO" },
+      { "name": "WORKSPACE_SLUGS", "class_name": "WorkspaceSlugDO" },
+      { "name": "BOTS", "class_name": "BotDO" },
+      { "name": "BOT_SLUGS", "class_name": "BotSlugDO" },
+      { "name": "BOT_INSTALLATIONS", "class_name": "BotInstallationDO" },
+      { "name": "CONVERSATIONS", "class_name": "ConversationDO" },
+      {
+        "name": "CONVERSATION_IDENTITIES",
+        "class_name": "ConversationIdentityDO"
+      },
+      { "name": "MESSAGE_CONTENT", "class_name": "MessageContentDO" }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["WorkspaceDO", "WorkspaceSlugDO"]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": ["ConversationDO"]
+    },
+    {
+      "tag": "v3",
+      "new_sqlite_classes": ["ConversationIdentityDO"]
+    },
+    {
+      "tag": "v4",
+      "new_sqlite_classes": ["MessageContentDO"]
+    },
+    {
+      "tag": "v5",
+      "new_sqlite_classes": ["BotDO", "BotSlugDO", "BotInstallationDO"]
+    }
+  ],
+  "services": [
+    { "binding": "ATTESTATION", "service": "punks-attestation" },
+    {
+      "binding": "AUTH_SERVICE",
+      "service": "punks-auth",
+      "entrypoint": "PunkSessionService"
+    },
+    {
+      "binding": "ACCOUNT_MERGE_AUTHORITY",
+      "service": "punks-auth",
+      "entrypoint": "AccountMergePlanningService",
+      "props": {
+        "role": "punks-account-merge-planner",
+        "environment": "local"
+      }
+    },
+    {
+      "binding": "ACCOUNT_MERGE_RIGHTS_INDEX",
+      "service": "punks-auth",
+      "entrypoint": "AccountMergeRightsIndexService",
+      "props": {
+        "role": "punks-account-merge-rights-index-writer",
+        "environment": "local"
+      }
+    },
+    {
+      "binding": "BOT_INVOCATION_VERIFIER",
+      "service": "punks-auth",
+      "entrypoint": "BotInvocationVerifier"
+    },
+    { "binding": "ERASURE_REGISTRY", "service": "punks-erasure" },
+    { "binding": "MESSAGE_SEARCH", "service": "punks-search" },
+    {
+      "binding": "PROJECTION_DIRECTORY",
+      "service": "punks-projector",
+      "entrypoint": "ProjectionDirectoryService"
+    }
+  ],
+  "queues": {
+    "producers": [
+      { "binding": "PROJECTION_QUEUE", "queue": "punks-projection-local" },
+      { "binding": "BOT_WAKE_QUEUE", "queue": "punks-bot-wake-local" }
+    ]
+  },
+  "observability": {
+    "enabled": true
+  },
+  "env": {
+    "staging": {
+      "name": "punks-api-staging",
+      "workers_dev": false,
+      "preview_urls": false,
+      "routes": [
+        { "pattern": "staging.punks.bot/api/*", "zone_name": "punks.bot" }
+      ],
+      "vars": {
+        "DESKTOP_SOCIAL_LOOP_ENABLED": "true",
+        "ENVIRONMENT": "staging",
+        "JOURNAL_HOT_EVENTS": "1000",
+        "JOURNAL_SEGMENT_EVENTS": "250"
+      },
+      "secrets": {
+        "required": [
+          "OPERATOR_PROVISIONING_TOKEN",
+          "ATTESTATION_PUBLIC_KEYS_JSON",
+          "MESSAGE_SEARCH_MASTER_KEY",
+          "MESSAGE_SEARCH_CURSOR_KEY",
+          "MESSAGE_HISTORY_CURSOR_KEY",
+          "DIRECTORY_CURSOR_KEY"
+        ]
+      },
+      "r2_buckets": [
+        {
+          "binding": "JOURNAL_ARCHIVE_BUCKET",
+          "bucket_name": "punks-journal-staging"
+        },
+        { "binding": "CONTENT_BUCKET", "bucket_name": "punks-media-staging" }
+      ],
+      "durable_objects": {
+        "bindings": [
+          { "name": "WORKSPACES", "class_name": "WorkspaceDO" },
+          { "name": "WORKSPACE_SLUGS", "class_name": "WorkspaceSlugDO" },
+          { "name": "BOTS", "class_name": "BotDO" },
+          { "name": "BOT_SLUGS", "class_name": "BotSlugDO" },
+          { "name": "BOT_INSTALLATIONS", "class_name": "BotInstallationDO" },
+          { "name": "CONVERSATIONS", "class_name": "ConversationDO" },
+          {
+            "name": "CONVERSATION_IDENTITIES",
+            "class_name": "ConversationIdentityDO"
+          },
+          { "name": "MESSAGE_CONTENT", "class_name": "MessageContentDO" }
+        ]
+      },
+      "services": [
+        { "binding": "ATTESTATION", "service": "punks-attestation-staging" },
+        {
+          "binding": "AUTH_SERVICE",
+          "service": "punks-auth-staging",
+          "entrypoint": "PunkSessionService"
+        },
+        {
+          "binding": "ACCOUNT_MERGE_AUTHORITY",
+          "service": "punks-auth-staging",
+          "entrypoint": "AccountMergePlanningService",
+          "props": {
+            "role": "punks-account-merge-planner",
+            "environment": "staging"
+          }
+        },
+        {
+          "binding": "ACCOUNT_MERGE_RIGHTS_INDEX",
+          "service": "punks-auth-staging",
+          "entrypoint": "AccountMergeRightsIndexService",
+          "props": {
+            "role": "punks-account-merge-rights-index-writer",
+            "environment": "staging"
+          }
+        },
+        {
+          "binding": "BOT_INVOCATION_VERIFIER",
+          "service": "punks-auth-staging",
+          "entrypoint": "BotInvocationVerifier"
+        },
+        { "binding": "ERASURE_REGISTRY", "service": "punks-erasure-staging" },
+        { "binding": "MESSAGE_SEARCH", "service": "punks-search-staging" },
+        {
+          "binding": "PROJECTION_DIRECTORY",
+          "service": "punks-projector-staging",
+          "entrypoint": "ProjectionDirectoryService"
+        }
+      ],
+      "queues": {
+        "producers": [
+          {
+            "binding": "PROJECTION_QUEUE",
+            "queue": "punks-projection-staging"
+          },
+          { "binding": "BOT_WAKE_QUEUE", "queue": "punks-bot-wake-staging" }
+        ]
+      }
+    }
+  }
+}

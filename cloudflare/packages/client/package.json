@@ -1,0 +1,24 @@
+{
+  "name": "@punks/client",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./follow-reducer": "./src/follow-reducer.ts"
+  },
+  "scripts": {
+    "lint": "biome check src test",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "check": "pnpm lint && pnpm typecheck && pnpm test"
+  },
+  "dependencies": {
+    "@punks/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.6",
+    "typescript": "~6.0.0",
+    "vitest": "^4.1.10"
+  }
+}

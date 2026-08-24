@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/auth.passkey-finish@1",
+  "title": "FinishPasskeyCommand",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "ceremonyId", "response"],
+  "properties": {
+    "contract": { "const": "auth.passkey.finish@1" },
+    "ceremonyId": { "type": "string", "format": "uuid" },
+    "response": {
+      "type": "object",
+      "required": ["id", "rawId", "response", "clientExtensionResults", "type"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "rawId": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "response": { "type": "object" },
+        "clientExtensionResults": { "type": "object" },
+        "type": { "const": "public-key" }
+      }
+    }
+  }
+}

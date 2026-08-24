@@ -1,0 +1,299 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/account-merge.plan@1",
+  "title": "AccountMergePlan",
+  "$comment": "Immutable readable preview only. It carries opaque hashes and bounded effects, never raw credentials, provider tokens, session tokens, passkey assertions, cookies or encryption keys. Historical attribution always preserves the originating Punk ID.",
+  "type": "object",
+  "additionalProperties": false,
+  "minProperties": 20,
+  "maxProperties": 20,
+  "required": [
+    "contract",
+    "schemaVersion",
+    "planId",
+    "intentId",
+    "planDigest",
+    "status",
+    "generatedAt",
+    "expiresAt",
+    "validForSeconds",
+    "holderBindingHash",
+    "strategy",
+    "survivorPunkId",
+    "absorbedPunkId",
+    "accountRevisions",
+    "proofBindings",
+    "claims",
+    "rights",
+    "sessions",
+    "handoffs",
+    "conflicts"
+  ],
+  "properties": {
+    "contract": { "const": "account-merge.plan@1" },
+    "schemaVersion": { "const": 1 },
+    "planId": { "$ref": "#/$defs/uuid" },
+    "intentId": { "$ref": "#/$defs/uuid" },
+    "planDigest": { "$ref": "#/$defs/hexDigest" },
+    "status": { "const": "planned" },
+    "generatedAt": { "$ref": "#/$defs/timestamp" },
+    "expiresAt": { "$ref": "#/$defs/timestamp" },
+    "validForSeconds": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 300
+    },
+    "holderBindingHash": { "$ref": "#/$defs/hexDigest" },
+    "strategy": { "const": "preserve-origin" },
+    "survivorPunkId": { "$ref": "#/$defs/uuid" },
+    "absorbedPunkId": { "$ref": "#/$defs/uuid" },
+    "accountRevisions": { "$ref": "#/$defs/accountRevisions" },
+    "proofBindings": { "$ref": "#/$defs/proofBindings" },
+    "claims": {
+      "type": "array",
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/claimEffect" }
+    },
+    "rights": {
+      "type": "array",
+      "maxItems": 512,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/rightEffect" }
+    },
+    "sessions": {
+      "type": "array",
+      "maxItems": 128,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/sessionEffect" }
+    },
+    "handoffs": {
+      "type": "array",
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/handoffEffect" }
+    },
+    "conflicts": {
+      "type": "array",
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/conflict" }
+    }
+  },
+  "$defs": {
+    "uuid": { "type": "string", "format": "uuid" },
+    "revision": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "hexDigest": {
+      "type": "string",
+      "minLength": 64,
+      "maxLength": 64,
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "timestamp": {
+      "type": "string",
+      "minLength": 24,
+      "maxLength": 24,
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$",
+      "format": "date-time"
+    },
+    "origin": { "enum": ["survivor", "absorbed"] },
+    "accountRevisions": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 2,
+      "maxProperties": 2,
+      "required": ["survivor", "absorbed"],
+      "properties": {
+        "survivor": { "$ref": "#/$defs/revision" },
+        "absorbed": { "$ref": "#/$defs/revision" }
+      }
+    },
+    "proofBindings": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 2,
+      "maxProperties": 2,
+      "required": ["survivorProofId", "absorbedProofId"],
+      "properties": {
+        "survivorProofId": { "$ref": "#/$defs/uuid" },
+        "absorbedProofId": { "$ref": "#/$defs/uuid" }
+      }
+    },
+    "claimEffect": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 7,
+      "maxProperties": 7,
+      "required": [
+        "claimBindingHash",
+        "kind",
+        "provider",
+        "origin",
+        "disposition",
+        "duplicateOfBindingHash",
+        "expectedRevision"
+      ],
+      "properties": {
+        "claimBindingHash": { "$ref": "#/$defs/hexDigest" },
+        "kind": {
+          "enum": ["provider-subject", "verified-email", "passkey-credential"]
+        },
+        "provider": { "enum": ["google", "github", "passkey"] },
+        "origin": { "$ref": "#/$defs/origin" },
+        "disposition": { "enum": ["preserve", "transfer", "deduplicate"] },
+        "duplicateOfBindingHash": {
+          "anyOf": [{ "$ref": "#/$defs/hexDigest" }, { "type": "null" }]
+        },
+        "expectedRevision": { "$ref": "#/$defs/revision" }
+      }
+    },
+    "rightEffect": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 9,
+      "maxProperties": 9,
+      "required": [
+        "rightBindingHash",
+        "kind",
+        "authorityBindingHash",
+        "origin",
+        "originPunkId",
+        "disposition",
+        "role",
+        "resultingRole",
+        "expectedRevision"
+      ],
+      "properties": {
+        "rightBindingHash": { "$ref": "#/$defs/hexDigest" },
+        "kind": {
+          "enum": [
+            "workspace-membership",
+            "workspace-invitation",
+            "account-owned-resource",
+            "local-resource-binding",
+            "local-tool-authorization",
+            "repository-access-proof"
+          ]
+        },
+        "authorityBindingHash": { "$ref": "#/$defs/hexDigest" },
+        "origin": { "$ref": "#/$defs/origin" },
+        "originPunkId": { "$ref": "#/$defs/uuid" },
+        "disposition": {
+          "enum": ["preserve", "transfer", "deduplicate", "retarget", "invalidate"]
+        },
+        "role": {
+          "anyOf": [
+            { "enum": ["owner", "moderator", "member", "guest"] },
+            { "type": "null" }
+          ]
+        },
+        "resultingRole": {
+          "anyOf": [
+            { "enum": ["owner", "moderator", "member", "guest"] },
+            { "type": "null" }
+          ]
+        },
+        "expectedRevision": { "$ref": "#/$defs/revision" }
+      }
+    },
+    "sessionEffect": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 6,
+      "maxProperties": 6,
+      "required": [
+        "sessionBindingHash",
+        "origin",
+        "clientKind",
+        "action",
+        "authenticatedAt",
+        "expiresAt"
+      ],
+      "properties": {
+        "sessionBindingHash": { "$ref": "#/$defs/hexDigest" },
+        "origin": { "$ref": "#/$defs/origin" },
+        "clientKind": { "enum": ["browser", "desktop", "mobile", "api"] },
+        "action": { "const": "revoke" },
+        "authenticatedAt": { "$ref": "#/$defs/timestamp" },
+        "expiresAt": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "handoffEffect": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 6,
+      "maxProperties": 6,
+      "required": [
+        "handoffBindingHash",
+        "origin",
+        "kind",
+        "state",
+        "action",
+        "expiresAt"
+      ],
+      "properties": {
+        "handoffBindingHash": { "$ref": "#/$defs/hexDigest" },
+        "origin": { "$ref": "#/$defs/origin" },
+        "kind": {
+          "enum": [
+            "desktop-auth-flow",
+            "oauth-transaction",
+            "passkey-ceremony",
+            "reauth-authorization",
+            "session-renewal",
+            "account-link"
+          ]
+        },
+        "state": { "enum": ["pending", "prepared", "deliverable"] },
+        "action": { "const": "cancel" },
+        "expiresAt": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "conflict": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 5,
+      "maxProperties": 5,
+      "required": [
+        "conflictBindingHash",
+        "kind",
+        "authorityBindingHash",
+        "resolution",
+        "blocking"
+      ],
+      "properties": {
+        "conflictBindingHash": { "$ref": "#/$defs/hexDigest" },
+        "kind": {
+          "enum": [
+            "identical-claim",
+            "workspace-role",
+            "workspace-owner",
+            "duplicate-invitation",
+            "account-owned-resource",
+            "in-flight-sensitive-action",
+            "missing-strategy",
+            "alias-cycle",
+            "authority-unavailable"
+          ]
+        },
+        "authorityBindingHash": { "$ref": "#/$defs/hexDigest" },
+        "resolution": {
+          "enum": [
+            "deduplicate",
+            "strongest-role",
+            "retarget-invitation",
+            "preserve-workspace-ownership",
+            "await-terminal",
+            "requires-adapter",
+            "reject-plan"
+          ]
+        },
+        "blocking": { "type": "boolean" }
+      }
+    }
+  }
+}

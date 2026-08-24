@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/message.post-response@1",
+  "title": "PostMessageResponse",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["message", "replayed"],
+  "properties": {
+    "message": { "$ref": "schemas/message.view.schema.json" },
+    "replayed": { "type": "boolean" }
+  }
+}

@@ -1,0 +1,141 @@
+# Graphe de release Punks — source canonique
+# Parent : issue #47 (spec de programme) ; création exigée par l’issue #51.
+# Décisions : #13 (preuves/seuils), #14 (ordre des tranches), #16 (promotion/
+# observation/récupération), #17 (inventaire de retrait).
+# ADR : docs/adr/0060-graphe-de-release-expansion-activation-contraction.md
+# Checkpoint de récupération : 50e16de180dda4365f8001a8a73503f16977a175.
+# Baseline Buzz gelée : da818eddc2f470c006a1073c8c5452f8a989f272.
+#
+# Règles :
+#   - Une release par tranche, cycle de vie fermé
+#     preparation → expansion → active → contraction → contractee, journalisé
+#     en append-only (ni saut, ni régression).
+#   - Un candidat ne quitte « preparation » que si les preuves obligatoires ET
+#     le retrait associé (lignes du registre des goldens + verdicts exécutés du
+#     manifeste de retrait) sont rattachés au MÊME SHA : l’activation est
+#     structurellement impossible sans ce dossier indivisible.
+#   - N et N−1 restent supportés au moins 90 jours après l’activation de N ;
+#     la contraction de N−1 exige ensuite moins de 1 % d’usage pendant 14 jours
+#     consécutifs.
+#   - Le roll-forward est la récupération normale ; un retour à une version
+#     Punks antérieure exige un certificat de compatibilité exact ; aucun
+#     retour vers Buzz n’existe dans le vocabulaire fermé.
+#   - Attestations et Reçus sont immuables : écriture create-only,
+#     verrouillage d’objet, deux comptes R2, publication avec la release ET
+#     dans le stockage R2 prévu.
+#   - Le candidat en preparation porte les hashes vivants recalculés par le
+#     gate (`node scripts/check-release-graph.mjs`) ; une release scellée fige
+#     les siens. Hash canonique du document : `--hashes`.
+#   - Les lignes retraits-par-tranche peuvent préparer le candidat source tant
+#     qu'il reste en « preparation » ; elles ne valent ni preuve de retrait ni
+#     scellement. Dès qu'une tranche quitte « preparation », son objet retrait
+#     doit lier ces lignes et le diff au même SHA, et tout actif tranche:N doit
+#     être physiquement absent.
+
+version: 1
+checkpoint-recuperation: 50e16de180dda4365f8001a8a73503f16977a175
+baseline-buzz: da818eddc2f470c006a1073c8c5452f8a989f272
+
+canal: punks-desktop
+
+references:
+  spec: 47
+  decisions: [13, 14, 16, 17]
+  adr:
+    - docs/adr/0060-graphe-de-release-expansion-activation-contraction.md
+
+politique:
+  fenetre-support-jours: 90
+  seuil-usage-contraction: 1
+  fenetre-mesure-contraction-jours: 14
+  recuperation:
+    normale: roll-forward
+    retour-punks-anterieur: certificat-compatibilite-exige
+    retour-buzz: interdit
+  rpo-logique-nul: true
+  immuabilite:
+    attestations:
+      publication: [release, r2]
+      ecriture: create-only
+      verrouillage-objet: compliance
+      comptes-r2: 2
+    recus:
+      publication: [release, r2]
+      ecriture: create-only
+      verrouillage-objet: compliance
+      comptes-r2: 2
+
+etats: [preparation, expansion, active, contraction, contractee]
+
+transitions:
+  - {de: preparation, vers: expansion}
+  - {de: expansion, vers: active}
+  - {de: active, vers: contraction}
+  - {de: contraction, vers: contractee}
+
+preuves-obligatoires:
+  - corpus-conformite
+  - suites-workers
+  - cloudflare-check
+  - playwright-facade
+  - tauri-staging
+  - accessibilite
+  - fautes-injectees
+  - retrait-diff
+  - goldens-verdict
+  - scans-negatifs
+
+plateformes: [macos-arm64, macos-x64, linux-x64, windows-x64]
+
+publication:
+  r2:
+    layout:
+      attestations: releases/{canal}/{id}/attestation.json
+      recus: releases/{canal}/{id}/recus/{recu}.json
+
+# Le candidat de la première tranche est relié aux matériaux réels du dépôt.
+# Il ne porte ni SHA, ni déploiement de staging, ni artefact, ni preuve :
+# aucun dossier de preuve n’est encore exécuté, la tranche reste
+# structurellement non promouvable (voir docs/migration/tranche-01-preparation.md).
+releases:
+  - id: tranche:1
+    tranche: 1
+    etat: preparation
+    sha: null
+    materiaux:
+      registre-contrats:
+        version: 1
+        sha256: 085fe1d6a291ec0c041e1080b5076a31ca31fd095ac954faa031349e67a617ec
+      schemas:
+        version: 1
+        sha256: 43da19a10635f299ddb980bbc8299fd5a1194ca8fc0876b5f13f4e24f09dab17
+      generes:
+        version: 1
+        sha256: 9fed7bd0cddb488b7b6990226c1eda23b00feeb04c241f0da1be485e2629695e
+      profil:
+        id: desktop-social-loop@1
+        version: 1
+        sha256: aac206b4973ae765a979ac4537933c3d645e5314db7d0e4f8d42b25a164a9dff
+      registre-goldens:
+        version: 1
+        sha256: e317ab42ffa0c0aaea7bc7b6ebe5d8ede446a4f0cc9738ed750c96f73d75e483
+      manifeste-retrait:
+        version: 1
+        sha256: 48c5eaff76918bbaa3bdc8ffdc202fae22ee3dfee4c6fd769d1f2b7fb7343f65
+    staging:
+      environnement: staging
+      compte: 3a391620584c792dbbd8cfa148d7634a
+      zone: b91146ce242a275de0b7e6e0cc3804c7
+      materiau: cloudflare/staging.resources.json
+      materiau-sha256: 990c4ed698a9322de6fdefdc1870a3c0d67889abb86a1504eb85d51c55fb7f20
+      deploiement: null
+    artefacts: []
+    preuves: {}
+    retrait: null
+    attestation: null
+    recus: []
+    journal: []
+
+# Récupérations journalisées (roll-forward ou retour Punks certifié).
+# Vide tant qu’aucune release n’est scellée : il n’existe rien à récupérer.
+recuperations: []

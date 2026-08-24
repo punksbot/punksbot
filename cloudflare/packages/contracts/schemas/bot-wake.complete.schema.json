@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/bot-wake.complete@1",
+  "title": "CompleteBotWakeCommand",
+  "$comment": "A caller can report only an opaque Wake/Tour identity and one bounded terminal outcome. Authority timestamps the transition.",
+  "type": "object",
+  "additionalProperties": false,
+  "minProperties": 5,
+  "maxProperties": 5,
+  "required": ["contract", "installationId", "wakeId", "turnId", "terminal"],
+  "properties": {
+    "contract": { "const": "bot-wake.complete@1" },
+    "installationId": { "$ref": "#/$defs/opaqueUuid" },
+    "wakeId": { "$ref": "#/$defs/opaqueUuid" },
+    "turnId": { "$ref": "#/$defs/opaqueUuid" },
+    "terminal": { "$ref": "#/$defs/terminal" }
+  },
+  "$defs": {
+    "opaqueUuid": {
+      "type": "string",
+      "minLength": 36,
+      "maxLength": 36,
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "hexDigest": {
+      "type": "string",
+      "minLength": 64,
+      "maxLength": 64,
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "terminal": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 3,
+          "maxProperties": 3,
+          "required": ["outcome", "decision", "reason"],
+          "properties": {
+            "outcome": { "const": "succeeded" },
+            "decision": { "const": "skip" },
+            "reason": { "enum": ["model_selected_skip"] }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 5,
+          "maxProperties": 5,
+          "required": [
+            "outcome",
+            "decision",
+            "actionId",
+            "admissionId",
+            "actionDigest"
+          ],
+          "properties": {
+            "outcome": { "const": "succeeded" },
+            "decision": { "const": "react" },
+            "actionId": { "$ref": "#/$defs/opaqueUuid" },
+            "admissionId": { "$ref": "#/$defs/opaqueUuid" },
+            "actionDigest": { "$ref": "#/$defs/hexDigest" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 2,
+          "maxProperties": 2,
+          "required": ["outcome", "code"],
+          "properties": {
+            "outcome": { "const": "failed" },
+            "code": {
+              "enum": [
+                "revoked",
+                "not_found",
+                "content_unavailable",
+                "model_timeout",
+                "model_invalid",
+                "action_failed",
+                "budget_exhausted",
+                "internal"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

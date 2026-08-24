@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/bot-action.execute-result@1",
+  "title": "ExecuteBotActionResult",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok", "admissionId", "replayed"],
+      "properties": {
+        "ok": { "const": true },
+        "admissionId": { "$ref": "#/$defs/opaqueUuid" },
+        "replayed": { "type": "boolean" }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok", "code"],
+      "properties": {
+        "ok": { "const": false },
+        "code": {
+          "enum": [
+            "invalid_request",
+            "invalid_credential",
+            "idempotency_conflict",
+            "command_in_progress",
+            "not_found",
+            "forbidden",
+            "invalid_transition",
+            "conflict",
+            "admission_limit",
+            "attestation_failed",
+            "temporarily_unavailable",
+            "internal"
+          ]
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "opaqueUuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    }
+  }
+}

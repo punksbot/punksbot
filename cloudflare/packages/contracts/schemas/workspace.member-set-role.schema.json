@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/workspace.member-set-role@1",
+  "title": "SetWorkspaceMemberRoleCommand",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "commandId", "workspaceId", "actor", "payload"],
+  "properties": {
+    "contract": { "const": "workspace.member-set-role@1" },
+    "commandId": { "type": "string", "format": "uuid" },
+    "workspaceId": { "type": "string", "format": "uuid" },
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "punkId"],
+      "properties": {
+        "kind": { "const": "punk" },
+        "punkId": { "type": "string", "format": "uuid" }
+      }
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["targetPunkId", "role"],
+      "properties": {
+        "targetPunkId": { "type": "string", "format": "uuid" },
+        "role": { "enum": ["owner", "moderator", "member", "guest"] }
+      }
+    }
+  }
+}

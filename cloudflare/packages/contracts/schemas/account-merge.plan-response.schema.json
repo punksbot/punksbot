@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/account-merge.plan-response@1",
+  "title": "AccountMergePlanResponse",
+  "$comment": "Closed planning result. Failure variants remain deliberately content-free so an invalid proof cannot enumerate or disclose the other account.",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 4,
+      "maxProperties": 4,
+      "required": ["contract", "ok", "status", "plan"],
+      "properties": {
+        "contract": { "const": "account-merge.plan-response@1" },
+        "ok": { "const": true },
+        "status": { "const": "planned" },
+        "plan": { "$ref": "schemas/account-merge.plan.schema.json" }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 4,
+      "maxProperties": 4,
+      "required": ["contract", "ok", "code", "correlationId"],
+      "properties": {
+        "contract": { "const": "account-merge.plan-response@1" },
+        "ok": { "const": false },
+        "code": { "const": "plan_unavailable" },
+        "correlationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    }
+  ]
+}

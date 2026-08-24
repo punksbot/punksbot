@@ -1,0 +1,35 @@
+name: Punks Cloudflare CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: punks-cloudflare-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  managed-workers:
+    name: Managed Workers
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        with:
+          version: 11.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24.14.1
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install immutable workspace dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Bootstrap pinned Dart toolchain
+        run: ./bin/dart --version
+      - name: Verify Punks Workers workspace
+        run: pnpm cloudflare:check

@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/bot-action.admit@1",
+  "title": "AdmitBotActionCommand",
+  "$comment": "The exact action contract is the discriminant. Capability, risk, and resource requirement are derived by the Punks registry and cannot be supplied by the caller.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "commandId",
+    "actionId",
+    "workspaceId",
+    "installationId",
+    "actor",
+    "action"
+  ],
+  "properties": {
+    "contract": { "const": "bot-action.admit@1" },
+    "commandId": { "type": "string", "format": "uuid" },
+    "actionId": { "type": "string", "format": "uuid" },
+    "workspaceId": { "type": "string", "format": "uuid" },
+    "installationId": { "type": "string", "format": "uuid" },
+    "actor": { "$ref": "#/$defs/actor" },
+    "action": {
+      "oneOf": [
+        { "$ref": "#/$defs/reactionAdd" },
+        { "$ref": "#/$defs/reactionRemove" },
+        { "$ref": "#/$defs/reactionToggle" }
+      ]
+    }
+  },
+  "$defs": {
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "installationId"],
+      "properties": {
+        "kind": { "const": "bot" },
+        "installationId": { "type": "string", "format": "uuid" }
+      }
+    },
+    "reactionPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reaction"],
+      "properties": {
+        "reaction": {
+          "oneOf": [
+            {
+              "type": "string",
+              "maxLength": 64,
+              "not": {
+                "anyOf": [
+                  { "pattern": "^:" },
+                  { "pattern": ":$" },
+                  { "pattern": "[\\r\\n\\u2028\\u2029]" }
+                ]
+              }
+            },
+            {
+              "type": "string",
+              "maxLength": 66,
+              "pattern": "^:[A-Za-z0-9_-]{1,64}:$"
+            }
+          ]
+        }
+      }
+    },
+    "reactionAdd": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract", "conversationId", "messageId", "payload"],
+      "properties": {
+        "contract": { "const": "message.reaction-add@1" },
+        "conversationId": { "type": "string", "format": "uuid" },
+        "messageId": { "type": "string", "format": "uuid" },
+        "payload": { "$ref": "#/$defs/reactionPayload" }
+      }
+    },
+    "reactionRemove": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract", "conversationId", "messageId", "payload"],
+      "properties": {
+        "contract": { "const": "message.reaction-remove@1" },
+        "conversationId": { "type": "string", "format": "uuid" },
+        "messageId": { "type": "string", "format": "uuid" },
+        "payload": { "$ref": "#/$defs/reactionPayload" }
+      }
+    },
+    "reactionToggle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract", "conversationId", "messageId", "payload"],
+      "properties": {
+        "contract": { "const": "message.reaction-toggle@1" },
+        "conversationId": { "type": "string", "format": "uuid" },
+        "messageId": { "type": "string", "format": "uuid" },
+        "payload": { "$ref": "#/$defs/reactionPayload" }
+      }
+    }
+  }
+}

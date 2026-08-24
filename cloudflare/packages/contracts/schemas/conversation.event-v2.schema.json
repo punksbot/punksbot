@@ -1,0 +1,265 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/conversation.event@2",
+  "title": "ConversationEventContentV2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "conversation",
+    "transition",
+    "membershipCommitment"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 2 },
+    "conversation": { "$ref": "#/$defs/conversationMetadata" },
+    "transition": { "$ref": "#/$defs/transition" },
+    "membershipCommitment": { "$ref": "#/$defs/membershipCommitment" }
+  },
+  "$defs": {
+    "conversationAccess": {
+      "enum": ["owner", "manager", "member", "guest"]
+    },
+    "nullableConversationAccess": {
+      "oneOf": [
+        { "$ref": "#/$defs/conversationAccess" },
+        { "type": "null" }
+      ]
+    },
+    "nullableText4000": {
+      "oneOf": [
+        { "type": "string", "maxLength": 4000 },
+        { "type": "null" }
+      ]
+    },
+    "nullableText255": {
+      "oneOf": [
+        { "type": "string", "maxLength": 255 },
+        { "type": "null" }
+      ]
+    },
+    "nullablePositiveInteger": {
+      "oneOf": [
+        { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+        { "type": "null" }
+      ]
+    },
+    "conversationMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "workspaceId",
+        "name",
+        "type",
+        "visibility",
+        "description",
+        "topic",
+        "purpose",
+        "topicRequired",
+        "maxMembers",
+        "ttlSeconds",
+        "ttlDeadline",
+        "ownerPunkId",
+        "memberCount",
+        "status",
+        "revision",
+        "cursor",
+        "createdAt",
+        "updatedAt",
+        "archivedAt"
+      ],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "workspaceId": { "type": "string", "format": "uuid" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "type": { "enum": ["stream", "forum", "dm", "workflow"] },
+        "visibility": { "enum": ["open", "private"] },
+        "description": { "$ref": "#/$defs/nullableText4000" },
+        "topic": { "$ref": "#/$defs/nullableText255" },
+        "purpose": { "$ref": "#/$defs/nullableText4000" },
+        "topicRequired": { "type": "boolean" },
+        "maxMembers": {
+          "oneOf": [
+            { "type": "integer", "minimum": 1, "maximum": 100000 },
+            { "type": "null" }
+          ]
+        },
+        "ttlSeconds": { "$ref": "#/$defs/nullablePositiveInteger" },
+        "ttlDeadline": {
+          "oneOf": [
+            { "type": "string", "format": "date-time" },
+            { "type": "null" }
+          ]
+        },
+        "ownerPunkId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "memberCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000
+        },
+        "status": { "enum": ["active", "archived", "deleting", "deleted"] },
+        "revision": { "type": "integer", "minimum": 1 },
+        "cursor": { "type": "integer", "minimum": 1 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "archivedAt": {
+          "oneOf": [
+            { "type": "string", "format": "date-time" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "membershipCommitment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "deltaDigest",
+        "deltaCount",
+        "chunkCount",
+        "chunkDigests"
+      ],
+      "properties": {
+        "algorithm": { "const": "sha256-canonical-json" },
+        "deltaDigest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "deltaCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "chunkCount": { "type": "integer", "minimum": 1, "maximum": 64 },
+        "chunkDigests": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+        }
+      }
+    },
+    "transition": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type"],
+          "properties": { "type": { "const": "created" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "targetPunkId", "access"],
+          "properties": {
+            "type": { "const": "member-joined" },
+            "targetPunkId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "access": { "$ref": "#/$defs/conversationAccess" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "targetPunkId",
+            "previousAccess",
+            "access"
+          ],
+          "properties": {
+            "type": { "const": "member-access-set" },
+            "targetPunkId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "previousAccess": {
+              "$ref": "#/$defs/nullableConversationAccess"
+            },
+            "access": { "$ref": "#/$defs/conversationAccess" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "targetPunkId", "previousAccess"],
+          "properties": {
+            "type": { "const": "member-removed" },
+            "targetPunkId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "previousAccess": { "$ref": "#/$defs/conversationAccess" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "changedFields", "previousMetadata"],
+          "properties": {
+            "type": { "const": "metadata-updated" },
+            "changedFields": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "enum": [
+                  "name",
+                  "description",
+                  "visibility",
+                  "topic",
+                  "purpose",
+                  "topicRequired",
+                  "maxMembers",
+                  "ttlSeconds"
+                ]
+              }
+            },
+            "previousMetadata": {
+              "type": "object",
+              "additionalProperties": false,
+              "minProperties": 1,
+              "properties": {
+                "name": { "type": "string", "minLength": 1, "maxLength": 255 },
+                "description": { "$ref": "#/$defs/nullableText4000" },
+                "visibility": { "enum": ["open", "private"] },
+                "topic": { "$ref": "#/$defs/nullableText255" },
+                "purpose": { "$ref": "#/$defs/nullableText4000" },
+                "topicRequired": { "type": "boolean" },
+                "maxMembers": {
+                  "oneOf": [
+                    { "type": "integer", "minimum": 1, "maximum": 100000 },
+                    { "type": "null" }
+                  ]
+                },
+                "ttlSeconds": { "$ref": "#/$defs/nullablePositiveInteger" }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "cause"],
+          "properties": {
+            "type": { "const": "archived" },
+            "cause": { "enum": ["manual", "ttl_expired"] }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type"],
+          "properties": { "type": { "const": "restored" } }
+        }
+      ]
+    }
+  }
+}

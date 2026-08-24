@@ -1,0 +1,116 @@
+{
+  "$schema": "../../../../node_modules/wrangler/config-schema.json",
+  "account_id": "3a391620584c792dbbd8cfa148d7634a",
+  "name": "punks-auth",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-20",
+  "workers_dev": false,
+  "preview_urls": false,
+  "vars": {
+    "ENVIRONMENT": "local",
+    "BOT_INVOCATION_CURRENT_KID": "local-v1",
+    "AUTH_BASE_URL": "http://localhost:1420",
+    "SESSION_TTL_SECONDS": "2592000",
+    "WEBAUTHN_RP_ID": "localhost",
+    "WEBAUTHN_RP_NAME": "Punks Bot",
+    "GOOGLE_AUTHORIZATION_ENDPOINT": "https://accounts.google.com/o/oauth2/v2/auth",
+    "GOOGLE_TOKEN_ENDPOINT": "https://oauth2.googleapis.com/token",
+    "GOOGLE_USERINFO_ENDPOINT": "https://openidconnect.googleapis.com/v1/userinfo",
+    "GITHUB_AUTHORIZATION_ENDPOINT": "https://github.com/login/oauth/authorize",
+    "GITHUB_TOKEN_ENDPOINT": "https://github.com/login/oauth/access_token",
+    "GITHUB_API_BASE_URL": "https://api.github.com"
+  },
+  "secrets": {
+    "required": [
+      "GOOGLE_OAUTH_CLIENT_ID",
+      "GOOGLE_OAUTH_CLIENT_SECRET",
+      "GITHUB_OAUTH_CLIENT_ID",
+      "GITHUB_OAUTH_CLIENT_SECRET",
+      "BOT_INVOCATION_CURRENT_SECRET"
+    ]
+  },
+  "durable_objects": {
+    "bindings": [
+      { "name": "PUNKS", "class_name": "PunkDO" },
+      { "name": "ACCOUNT_MERGE_INTENTS", "class_name": "AccountMergeIntentDO" },
+      { "name": "IDENTITY_CLAIMS", "class_name": "IdentityClaimDO" },
+      { "name": "EMAIL_CLAIMS", "class_name": "EmailClaimDO" },
+      { "name": "AUTH_TRANSACTIONS", "class_name": "AuthTransactionDO" },
+      { "name": "DESKTOP_DELIVERIES", "class_name": "DesktopDeliveryDO" },
+      { "name": "SESSIONS", "class_name": "SessionDO" },
+      { "name": "PASSKEY_CEREMONIES", "class_name": "PasskeyCeremonyDO" },
+      { "name": "PASSKEY_CREDENTIALS", "class_name": "PasskeyCredentialDO" }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "PunkDO",
+        "IdentityClaimDO",
+        "EmailClaimDO",
+        "AuthTransactionDO",
+        "SessionDO"
+      ]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": ["PasskeyCeremonyDO", "PasskeyCredentialDO"]
+    },
+    {
+      "tag": "v3",
+      "new_sqlite_classes": ["DesktopDeliveryDO"]
+    },
+    {
+      "tag": "v4",
+      "new_sqlite_classes": ["AccountMergeIntentDO"]
+    }
+  ],
+  "observability": { "enabled": true },
+  "env": {
+    "staging": {
+      "name": "punks-auth-staging",
+      "workers_dev": false,
+      "preview_urls": false,
+      "routes": [
+        { "pattern": "staging.punks.bot/api/auth/*", "zone_name": "punks.bot" }
+      ],
+      "vars": {
+        "ENVIRONMENT": "staging",
+        "BOT_INVOCATION_CURRENT_KID": "staging-v1",
+        "AUTH_BASE_URL": "https://staging.punks.bot",
+        "SESSION_TTL_SECONDS": "2592000",
+        "WEBAUTHN_RP_ID": "staging.punks.bot",
+        "WEBAUTHN_RP_NAME": "Punks Bot",
+        "GOOGLE_AUTHORIZATION_ENDPOINT": "https://accounts.google.com/o/oauth2/v2/auth",
+        "GOOGLE_TOKEN_ENDPOINT": "https://oauth2.googleapis.com/token",
+        "GOOGLE_USERINFO_ENDPOINT": "https://openidconnect.googleapis.com/v1/userinfo",
+        "GITHUB_AUTHORIZATION_ENDPOINT": "https://github.com/login/oauth/authorize",
+        "GITHUB_TOKEN_ENDPOINT": "https://github.com/login/oauth/access_token",
+        "GITHUB_API_BASE_URL": "https://api.github.com"
+      },
+      "secrets": {
+        "required": [
+          "GOOGLE_OAUTH_CLIENT_ID",
+          "GOOGLE_OAUTH_CLIENT_SECRET",
+          "GITHUB_OAUTH_CLIENT_ID",
+          "GITHUB_OAUTH_CLIENT_SECRET",
+          "BOT_INVOCATION_CURRENT_SECRET"
+        ]
+      },
+      "durable_objects": {
+        "bindings": [
+          { "name": "PUNKS", "class_name": "PunkDO" },
+          { "name": "ACCOUNT_MERGE_INTENTS", "class_name": "AccountMergeIntentDO" },
+          { "name": "IDENTITY_CLAIMS", "class_name": "IdentityClaimDO" },
+          { "name": "EMAIL_CLAIMS", "class_name": "EmailClaimDO" },
+          { "name": "AUTH_TRANSACTIONS", "class_name": "AuthTransactionDO" },
+          { "name": "DESKTOP_DELIVERIES", "class_name": "DesktopDeliveryDO" },
+          { "name": "SESSIONS", "class_name": "SessionDO" },
+          { "name": "PASSKEY_CEREMONIES", "class_name": "PasskeyCeremonyDO" },
+          { "name": "PASSKEY_CREDENTIALS", "class_name": "PasskeyCredentialDO" }
+        ]
+      }
+    }
+  }
+}

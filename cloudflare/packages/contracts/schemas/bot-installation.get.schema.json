@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/bot-installation.get@1",
+  "title": "GetBotInstallationQuery",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "workspaceId", "installationId"],
+  "properties": {
+    "contract": { "const": "bot-installation.get@1" },
+    "workspaceId": { "type": "string", "format": "uuid" },
+    "installationId": { "type": "string", "format": "uuid" }
+  }
+}

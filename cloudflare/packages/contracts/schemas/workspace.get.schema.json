@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/workspace.get@1",
+  "title": "GetWorkspaceQuery",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "workspaceId"],
+  "properties": {
+    "contract": { "const": "workspace.get@1" },
+    "workspaceId": { "type": "string", "format": "uuid" }
+  }
+}

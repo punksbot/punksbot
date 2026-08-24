@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/bot-invocation.mint@1",
+  "title": "MintBotInvocationCredentialCommand",
+  "$comment": "Private service command. It identifies one installation generation but carries no authorization payload.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "invocationId",
+    "workspaceId",
+    "installationId",
+    "botId",
+    "authorityGeneration"
+  ],
+  "properties": {
+    "contract": { "const": "bot-invocation.mint@1" },
+    "invocationId": { "$ref": "#/$defs/opaqueUuid" },
+    "workspaceId": { "$ref": "#/$defs/opaqueUuid" },
+    "installationId": { "$ref": "#/$defs/opaqueUuid" },
+    "botId": { "$ref": "#/$defs/opaqueUuid" },
+    "authorityGeneration": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    }
+  },
+  "$defs": {
+    "opaqueUuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    }
+  }
+}

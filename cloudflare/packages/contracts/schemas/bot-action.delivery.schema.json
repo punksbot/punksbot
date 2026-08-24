@@ -1,0 +1,157 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/bot-action.delivery@1",
+  "title": "DeliverBotActionCommand",
+  "$comment": "Private bounded delivery retained only while its admission is open. Runtime additionally enforces a 16384-byte canonical UTF-8 envelope and verifies every deterministic identifier and the 50320 proof cryptographically.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "workspaceId",
+    "installationId",
+    "botId",
+    "actionId",
+    "admissionId",
+    "actionDigest",
+    "authorityGeneration",
+    "proof",
+    "action",
+    "reactionCommandId",
+    "completionCommandId",
+    "failureCompletionCommandId"
+  ],
+  "properties": {
+    "contract": { "const": "bot-action.delivery@1" },
+    "workspaceId": { "$ref": "#/$defs/opaqueUuid" },
+    "installationId": { "$ref": "#/$defs/opaqueUuid" },
+    "botId": { "$ref": "#/$defs/opaqueUuid" },
+    "actionId": { "$ref": "#/$defs/opaqueUuid" },
+    "admissionId": { "$ref": "#/$defs/opaqueUuid" },
+    "actionDigest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "authorityGeneration": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "proof": {
+      "allOf": [
+        { "$ref": "schemas/nostr.signed-event.schema.json" },
+        {
+          "type": "object",
+          "required": ["kind", "tags", "content"],
+          "properties": {
+            "kind": { "type": "integer", "const": 50320 },
+            "tags": {
+              "type": "array",
+              "maxItems": 32
+            },
+            "content": { "type": "string", "maxLength": 8192 }
+          }
+        }
+      ]
+    },
+    "action": {
+      "oneOf": [
+        { "$ref": "#/$defs/reactionAdd" },
+        { "$ref": "#/$defs/reactionRemove" },
+        { "$ref": "#/$defs/reactionToggle" }
+      ]
+    },
+    "reactionCommandId": { "$ref": "#/$defs/opaqueUuid" },
+    "completionCommandId": { "$ref": "#/$defs/opaqueUuid" },
+    "failureCompletionCommandId": { "$ref": "#/$defs/opaqueUuid" }
+  },
+  "$defs": {
+    "opaqueUuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "reactionAdd": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract", "conversationId", "messageId", "payload"],
+      "properties": {
+        "contract": {
+          "$ref": "schemas/message.reaction-add.schema.json#/properties/contract"
+        },
+        "conversationId": {
+          "allOf": [
+            {
+              "$ref": "schemas/message.reaction-add.schema.json#/properties/conversationId"
+            },
+            { "$ref": "#/$defs/opaqueUuid" }
+          ]
+        },
+        "messageId": {
+          "allOf": [
+            {
+              "$ref": "schemas/message.reaction-add.schema.json#/properties/messageId"
+            },
+            { "$ref": "#/$defs/opaqueUuid" }
+          ]
+        },
+        "payload": {
+          "$ref": "schemas/message.reaction-add.schema.json#/$defs/payload"
+        }
+      }
+    },
+    "reactionRemove": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract", "conversationId", "messageId", "payload"],
+      "properties": {
+        "contract": {
+          "$ref": "schemas/message.reaction-remove.schema.json#/properties/contract"
+        },
+        "conversationId": {
+          "allOf": [
+            {
+              "$ref": "schemas/message.reaction-remove.schema.json#/properties/conversationId"
+            },
+            { "$ref": "#/$defs/opaqueUuid" }
+          ]
+        },
+        "messageId": {
+          "allOf": [
+            {
+              "$ref": "schemas/message.reaction-remove.schema.json#/properties/messageId"
+            },
+            { "$ref": "#/$defs/opaqueUuid" }
+          ]
+        },
+        "payload": {
+          "$ref": "schemas/message.reaction-remove.schema.json#/$defs/payload"
+        }
+      }
+    },
+    "reactionToggle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract", "conversationId", "messageId", "payload"],
+      "properties": {
+        "contract": {
+          "$ref": "schemas/message.reaction-toggle.schema.json#/properties/contract"
+        },
+        "conversationId": {
+          "allOf": [
+            {
+              "$ref": "schemas/message.reaction-toggle.schema.json#/properties/conversationId"
+            },
+            { "$ref": "#/$defs/opaqueUuid" }
+          ]
+        },
+        "messageId": {
+          "allOf": [
+            {
+              "$ref": "schemas/message.reaction-toggle.schema.json#/properties/messageId"
+            },
+            { "$ref": "#/$defs/opaqueUuid" }
+          ]
+        },
+        "payload": {
+          "$ref": "schemas/message.reaction-toggle.schema.json#/$defs/payload"
+        }
+      }
+    }
+  }
+}

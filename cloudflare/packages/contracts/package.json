@@ -1,0 +1,31 @@
+{
+  "name": "@punks/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./desktop": "./src/desktop.ts",
+    "./profiles/*": "./profiles/*",
+    "./schemas/*": "./schemas/*"
+  },
+  "scripts": {
+    "generate": "node ./scripts/generate-types.mjs && node ./scripts/generate-artifacts.mjs",
+    "check:generated": "node ./scripts/generate-types.mjs --check && node ./scripts/generate-artifacts.mjs --check",
+    "check:dart": "node ./scripts/check-dart.mjs",
+    "lint": "biome check src/index.ts src/registry.ts test scripts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "check": "pnpm check:generated && pnpm check:dart && pnpm lint && pnpm typecheck && pnpm test"
+  },
+  "dependencies": {
+    "@cfworker/json-schema": "^4.1.1"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.6",
+    "@types/node": "^25.6.0",
+    "json-schema-to-typescript": "^15.0.4",
+    "typescript": "~6.0.0",
+    "vitest": "^4.1.10"
+  }
+}

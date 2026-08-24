@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/message.finalize-erasure@1",
+  "title": "FinalizeMessageErasureCommand",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "commandId", "workspaceId", "conversationId", "messageId", "actor", "payload"],
+  "properties": {
+    "contract": { "const": "message.finalize-erasure@1" },
+    "commandId": { "type": "string", "format": "uuid" },
+    "workspaceId": { "type": "string", "format": "uuid" },
+    "conversationId": { "type": "string", "format": "uuid" },
+    "messageId": { "type": "string", "format": "uuid" },
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "service"],
+      "properties": {
+        "kind": { "const": "service" },
+        "service": { "const": "crypto-erasure" }
+      }
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["expectedRetractionCommandId"],
+      "properties": {
+        "expectedRetractionCommandId": { "type": "string", "format": "uuid" }
+      }
+    }
+  }
+}

@@ -1,0 +1,213 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/conversation.follow-server-frame@1",
+  "title": "ConversationFollowServerFrame",
+  "$comment": "Ephemeral authorized WebSocket output only. Frames must never contain a signed Nostr event, ciphertext reference, content key identifier, commitment, opaque search token, session credential, raw outbox payload, Reaction actor identity, or Reaction roster. Runtime invariants additionally cap serialized changes frames at 262144 UTF-8 bytes, require fromExclusiveCursor <= throughCursor <= the current visible high-water, and require every nested Message or patch cursor to be no greater than throughCursor.",
+  "oneOf": [
+    { "$ref": "#/$defs/accepted" },
+    { "$ref": "#/$defs/changes" },
+    { "$ref": "#/$defs/ready" },
+    { "$ref": "#/$defs/resyncRequired" },
+    { "$ref": "#/$defs/conversationUnavailable" }
+  ],
+  "$defs": {
+    "accepted": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "type",
+        "resumeAfterCursor",
+        "targetHighWaterCursor"
+      ],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "type": { "const": "accepted" },
+        "resumeAfterCursor": { "type": "integer", "minimum": 0 },
+        "targetHighWaterCursor": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "changes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "type",
+        "fromExclusiveCursor",
+        "throughCursor",
+        "messages",
+        "threadPatches",
+        "reactionPatches",
+        "reactionCollectionPatches"
+      ],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "type": { "const": "changes" },
+        "fromExclusiveCursor": { "type": "integer", "minimum": 0 },
+        "throughCursor": { "type": "integer", "minimum": 1 },
+        "messages": {
+          "type": "array",
+          "maxItems": 100,
+          "uniqueItems": true,
+          "items": { "$ref": "schemas/message.view.schema.json" }
+        },
+        "threadPatches": {
+          "type": "array",
+          "maxItems": 100,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/threadPatch" }
+        },
+        "reactionPatches": {
+          "type": "array",
+          "maxItems": 100,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/reactionPatch" }
+        },
+        "reactionCollectionPatches": {
+          "type": "array",
+          "maxItems": 100,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/reactionCollectionPatch" }
+        }
+      }
+    },
+    "threadPatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "messageId",
+        "replyCount",
+        "descendantCount",
+        "lastReplyAt",
+        "revision",
+        "cursor"
+      ],
+      "properties": {
+        "messageId": { "type": "string", "format": "uuid" },
+        "replyCount": { "type": "integer", "minimum": 0 },
+        "descendantCount": { "type": "integer", "minimum": 0 },
+        "lastReplyAt": {
+          "anyOf": [
+            { "type": "string", "format": "date-time" },
+            { "type": "null" }
+          ]
+        },
+        "revision": { "type": "integer", "minimum": 1 },
+        "cursor": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "reactionPatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "messageId",
+        "reaction",
+        "count",
+        "reactedByPunk",
+        "cursor"
+      ],
+      "properties": {
+        "messageId": { "type": "string", "format": "uuid" },
+        "reaction": { "$ref": "#/$defs/canonicalReaction" },
+        "count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "reactedByPunk": { "type": "boolean" },
+        "cursor": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "canonicalReaction": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^(?!\\s)(?!.*\\s$).+$",
+          "not": {
+            "anyOf": [
+              { "pattern": "^:" },
+              { "pattern": ":$" },
+              { "pattern": "[\\r\\n\\u2028\\u2029]" }
+            ]
+          }
+        },
+        {
+          "type": "string",
+          "maxLength": 66,
+          "pattern": "^:[a-z0-9_-]{1,64}:$"
+        }
+      ]
+    },
+    "reactionCollectionPatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "messageId",
+        "visibility",
+        "cursor",
+        "refreshRequired"
+      ],
+      "properties": {
+        "messageId": { "type": "string", "format": "uuid" },
+        "visibility": {
+          "enum": [
+            "visible",
+            "temporarily-hidden",
+            "permanently-hidden"
+          ]
+        },
+        "cursor": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "refreshRequired": { "type": "boolean" }
+      }
+    },
+    "ready": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "type", "highWaterCursor"],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "type": { "const": "ready" },
+        "highWaterCursor": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "resyncRequired": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "type",
+        "reason",
+        "afterCursor",
+        "highWaterCursor"
+      ],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "type": { "const": "resync-required" },
+        "reason": { "enum": ["history_required", "slow_consumer"] },
+        "afterCursor": { "type": "integer", "minimum": 0 },
+        "highWaterCursor": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "conversationUnavailable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "type", "reason", "cursor"],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "type": { "const": "conversation-unavailable" },
+        "reason": { "const": "archived" },
+        "cursor": { "type": "integer", "minimum": 1 }
+      }
+    }
+  }
+}

@@ -1,0 +1,7 @@
+# Posséder le client sémantique desktop en Rust
+
+Le client desktop constitue une exception explicite à l’ADR 0016, qui conserve TypeScript comme défaut général pour les applications Tauri. Pour `desktop/`, Rust possède le `PunksAccountClient`, le jar de Session de Compte Punks, HTTP, WebSocket, la machine FOLLOW, la validation des contrats, les annulations, les reprises de lectures prouvées sûres et les leases de `WorkspaceSession`. React reçoit uniquement des vues Punks validées et appelle une commande Tauri typée par opération du profil commun ; il ne reçoit ni cookie, ni primitive HTTP/WebSocket, ni dispatcher JSON générique.
+
+Le web conserve une implémentation TypeScript sémantiquement indépendante. Rust, TypeScript et `workerd` partagent le registre, le profil `desktop-social-loop@1` et le corpus de conformité, mais aucun de ces clients ne délègue sa sémantique à l’autre. Le wrapper IPC ne transforme pas les données métier : il vérifie la lease `{origin, punkId, workspaceId, generation}` avant toute I/O et avant toute publication de résultat, puis transporte les DTO générés et validés.
+
+Cette exception place les secrets et les effets réseau derrière la frontière native déjà requise par la Cérémonie de connexion desktop, permet l’arrêt effectif de FOLLOW et des travaux lors d’un changement de Compte Punks ou de Workspace, et rend testable l’interdiction de replay des mutations. Elle n’autorise ni transport Buzz/Nostr côté client, ni mode hybride, ni accès réseau depuis le WebView, ni nouvelle sémantique propre à Rust.

@@ -1,0 +1,255 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/message@1",
+  "title": "Message",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "workspaceId",
+    "conversationId",
+    "author",
+    "messageType",
+    "status",
+    "topicPresent",
+    "mentionedPunkIds",
+    "mediaIds",
+    "parentMessageId",
+    "threadRootMessageId",
+    "threadDepth",
+    "broadcast",
+    "replyCount",
+    "descendantCount",
+    "lastReplyAt",
+    "originalContentCommitment",
+    "currentVersion",
+    "contentVersions",
+    "retraction",
+    "erasureMarker",
+    "revision",
+    "createdCursor",
+    "cursor",
+    "createdAt",
+    "updatedAt",
+    "editedAt"
+  ],
+  "properties": {
+    "id": { "type": "string", "format": "uuid" },
+    "workspaceId": { "type": "string", "format": "uuid" },
+    "conversationId": { "type": "string", "format": "uuid" },
+    "author": { "$ref": "#/$defs/actor" },
+    "messageType": {
+      "enum": ["stream-message", "forum-post", "forum-comment"]
+    },
+    "status": { "enum": ["active", "retracted", "erased"] },
+    "topicPresent": { "type": "boolean" },
+    "mentionedPunkIds": {
+      "type": "array",
+      "maxItems": 50,
+      "uniqueItems": true,
+      "items": { "type": "string", "format": "uuid" }
+    },
+    "mediaIds": {
+      "type": "array",
+      "maxItems": 50,
+      "uniqueItems": true,
+      "items": { "type": "string", "format": "uuid" }
+    },
+    "parentMessageId": {
+      "anyOf": [
+        { "type": "string", "format": "uuid" },
+        { "type": "null" }
+      ]
+    },
+    "threadRootMessageId": { "type": "string", "format": "uuid" },
+    "threadDepth": { "type": "integer", "minimum": 0, "maximum": 100 },
+    "broadcast": { "type": "boolean" },
+    "replyCount": { "type": "integer", "minimum": 0 },
+    "descendantCount": { "type": "integer", "minimum": 0 },
+    "lastReplyAt": {
+      "anyOf": [
+        { "type": "string", "format": "date-time" },
+        { "type": "null" }
+      ]
+    },
+    "originalContentCommitment": {
+      "anyOf": [
+        { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        { "type": "null" }
+      ]
+    },
+    "currentVersion": {
+      "anyOf": [
+        { "type": "integer", "minimum": 1 },
+        { "type": "null" }
+      ]
+    },
+    "contentVersions": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": { "$ref": "#/$defs/contentVersion" }
+    },
+    "retraction": {
+      "anyOf": [
+        { "$ref": "#/$defs/retraction" },
+        { "type": "null" }
+      ]
+    },
+    "erasureMarker": {
+      "anyOf": [
+        { "$ref": "#/$defs/erasureMarker" },
+        { "type": "null" }
+      ]
+    },
+    "revision": { "type": "integer", "minimum": 1 },
+    "createdCursor": { "type": "integer", "minimum": 1 },
+    "cursor": { "type": "integer", "minimum": 1 },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "editedAt": {
+      "anyOf": [
+        { "type": "string", "format": "date-time" },
+        { "type": "null" }
+      ]
+    }
+  },
+  "$defs": {
+    "actor": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "punkId"],
+          "properties": {
+            "kind": { "const": "punk" },
+            "punkId": { "type": "string", "format": "uuid" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "installationId"],
+          "properties": {
+            "kind": { "const": "bot" },
+            "installationId": { "type": "string", "format": "uuid" }
+          }
+        }
+      ]
+    },
+    "contentVersion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "contentCommitment",
+        "ciphertextRef",
+        "contentKeyId",
+        "topicPresent",
+        "createdAt"
+      ],
+      "properties": {
+        "version": { "type": "integer", "minimum": 1 },
+        "contentCommitment": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "ciphertextRef": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "contentKeyId": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "topicPresent": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "retraction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "commandId",
+        "kind",
+        "actor",
+        "requestedAt",
+        "eraseAfter",
+        "reasonCode",
+        "publicReason"
+      ],
+      "properties": {
+        "commandId": { "type": "string", "format": "uuid" },
+        "kind": { "enum": ["author", "moderation"] },
+        "actor": { "$ref": "#/$defs/actor" },
+        "requestedAt": { "type": "string", "format": "date-time" },
+        "eraseAfter": { "type": "string", "format": "date-time" },
+        "reasonCode": {
+          "anyOf": [
+            { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z0-9-]+$" },
+            { "type": "null" }
+          ]
+        },
+        "publicReason": {
+          "anyOf": [
+            { "type": "string", "minLength": 1, "maxLength": 280 },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "erasureMarker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "erasedAt",
+        "retractedAt",
+        "retractionKind",
+        "destroyedVersionCount"
+      ],
+      "properties": {
+        "erasedAt": { "type": "string", "format": "date-time" },
+        "retractedAt": { "type": "string", "format": "date-time" },
+        "retractionKind": { "enum": ["author", "moderation"] },
+        "destroyedVersionCount": { "type": "integer", "minimum": 1 }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "active" } } },
+      "then": {
+        "properties": {
+          "currentVersion": { "type": "integer", "minimum": 1 },
+          "originalContentCommitment": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "contentVersions": { "minItems": 1 },
+          "retraction": { "type": "null" },
+          "erasureMarker": { "type": "null" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "status": { "const": "retracted" } } },
+      "then": {
+        "properties": {
+          "currentVersion": { "type": "integer", "minimum": 1 },
+          "originalContentCommitment": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "contentVersions": { "minItems": 1 },
+          "retraction": { "$ref": "#/$defs/retraction" },
+          "erasureMarker": { "type": "null" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "status": { "const": "erased" } } },
+      "then": {
+        "properties": {
+          "currentVersion": { "type": "null" },
+          "originalContentCommitment": { "type": "null" },
+          "contentVersions": { "maxItems": 0 },
+          "retraction": { "type": "null" },
+          "erasureMarker": { "$ref": "#/$defs/erasureMarker" }
+        }
+      }
+    }
+  ]
+}

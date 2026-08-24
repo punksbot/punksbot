@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/bot-installation@1",
+  "title": "BotInstallation",
+  "$comment": "Bounded Installation summary. Grants and action admissions are normalized collections owned by the Installation Durable Object and are never embedded as rosters.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "workspaceId",
+    "botId",
+    "status",
+    "config",
+    "grantCount",
+    "openAdmissionCount",
+    "authorityGeneration",
+    "revision",
+    "cursor",
+    "createdAt",
+    "updatedAt",
+    "revokedAt"
+  ],
+  "properties": {
+    "id": { "type": "string", "format": "uuid" },
+    "workspaceId": { "type": "string", "format": "uuid" },
+    "botId": { "type": "string", "format": "uuid" },
+    "status": { "enum": ["active", "revoked"] },
+    "runtimeRelease": {
+      "oneOf": [
+        { "$ref": "#/$defs/runtimeReleaseRef" },
+        { "type": "null" }
+      ]
+    },
+    "config": { "$ref": "#/$defs/config" },
+    "grantCount": { "type": "integer", "minimum": 0 },
+    "openAdmissionCount": { "type": "integer", "minimum": 0 },
+    "authorityGeneration": { "type": "integer", "minimum": 1 },
+    "revision": { "type": "integer", "minimum": 1 },
+    "cursor": { "type": "integer", "minimum": 1 },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "revokedAt": {
+      "anyOf": [
+        { "type": "string", "format": "date-time" },
+        { "type": "null" }
+      ]
+    }
+  },
+  "$defs": {
+    "config": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contractId", "value"],
+      "properties": {
+        "contractId": {
+          "const": "punks://contracts/bot.config.empty@1"
+        },
+        "value": {
+          "type": "object",
+          "additionalProperties": false
+        }
+      }
+    },
+    "runtimeReleaseRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["releaseId", "releaseDigest"],
+      "properties": {
+        "releaseId": { "const": "punks.reaction-turn.v1" },
+        "releaseDigest": {
+          "const": "fe075600eab020932774516439f643e8b83f62a10245e6388ee25bbf61aa837f"
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "active" } } },
+      "then": { "properties": { "revokedAt": { "type": "null" } } }
+    },
+    {
+      "if": { "properties": { "status": { "const": "revoked" } } },
+      "then": {
+        "properties": {
+          "revokedAt": { "type": "string", "format": "date-time" }
+        }
+      }
+    }
+  ]
+}

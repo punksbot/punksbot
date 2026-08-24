@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": [
+      "../../worker-runtime.d.ts",
+      "./worker-bindings.d.ts",
+      "@cloudflare/vitest-pool-workers/types"
+    ]
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts", "vitest.config.ts"]
+}

@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/bot-action.execute@1",
+  "title": "ExecuteBotActionCommand",
+  "$comment": "Private runtime-to-action-authority command. The credential authenticates a fresh invocation; actionId remains stable across retries. Capability is always derived from the exact action contract.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "credential",
+    "invocationId",
+    "actionId",
+    "workspaceId",
+    "installationId",
+    "botId",
+    "authorityGeneration",
+    "action"
+  ],
+  "properties": {
+    "contract": { "const": "bot-action.execute@1" },
+    "credential": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048,
+      "pattern": "^pbi1\\.[a-z0-9][a-z0-9._-]{0,63}\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]{43}$"
+    },
+    "invocationId": { "$ref": "#/$defs/opaqueUuid" },
+    "actionId": { "$ref": "#/$defs/opaqueUuid" },
+    "workspaceId": { "$ref": "#/$defs/opaqueUuid" },
+    "installationId": { "$ref": "#/$defs/opaqueUuid" },
+    "botId": { "$ref": "#/$defs/opaqueUuid" },
+    "authorityGeneration": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "action": {
+      "oneOf": [
+        { "$ref": "#/$defs/reactionAdd" },
+        { "$ref": "#/$defs/reactionRemove" },
+        { "$ref": "#/$defs/reactionToggle" }
+      ]
+    }
+  },
+  "$defs": {
+    "opaqueUuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "reactionPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reaction"],
+      "properties": {
+        "reaction": {
+          "oneOf": [
+            {
+              "type": "string",
+              "maxLength": 64,
+              "not": {
+                "anyOf": [
+                  { "pattern": "^:" },
+                  { "pattern": ":$" },
+                  { "pattern": "[\\r\\n\\u2028\\u2029]" }
+                ]
+              }
+            },
+            {
+              "type": "string",
+              "maxLength": 66,
+              "pattern": "^:[A-Za-z0-9_-]{1,64}:$"
+            }
+          ]
+        }
+      }
+    },
+    "reactionAdd": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract", "conversationId", "messageId", "payload"],
+      "properties": {
+        "contract": { "const": "message.reaction-add@1" },
+        "conversationId": { "$ref": "#/$defs/opaqueUuid" },
+        "messageId": { "$ref": "#/$defs/opaqueUuid" },
+        "payload": { "$ref": "#/$defs/reactionPayload" }
+      }
+    },
+    "reactionRemove": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract", "conversationId", "messageId", "payload"],
+      "properties": {
+        "contract": { "const": "message.reaction-remove@1" },
+        "conversationId": { "$ref": "#/$defs/opaqueUuid" },
+        "messageId": { "$ref": "#/$defs/opaqueUuid" },
+        "payload": { "$ref": "#/$defs/reactionPayload" }
+      }
+    },
+    "reactionToggle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract", "conversationId", "messageId", "payload"],
+      "properties": {
+        "contract": { "const": "message.reaction-toggle@1" },
+        "conversationId": { "$ref": "#/$defs/opaqueUuid" },
+        "messageId": { "$ref": "#/$defs/opaqueUuid" },
+        "payload": { "$ref": "#/$defs/reactionPayload" }
+      }
+    }
+  }
+}

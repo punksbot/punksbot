@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/message.history-response@1",
+  "title": "MessageHistoryResponse",
+  "$comment": "Runtime invariants: serialized UTF-8 is at most 1048576 bytes; every item matches the response Workspace and Conversation; createdCursor values are strictly ascending and no greater than highWaterCursor; nextCursor is emitted whenever more authorized items remain.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "workspaceId",
+    "conversationId",
+    "highWaterCursor",
+    "order",
+    "items",
+    "nextCursor"
+  ],
+  "properties": {
+    "workspaceId": { "type": "string", "format": "uuid" },
+    "conversationId": { "type": "string", "format": "uuid" },
+    "highWaterCursor": { "type": "integer", "minimum": 1 },
+    "order": { "const": "createdCursor-ascending" },
+    "items": {
+      "type": "array",
+      "maxItems": 100,
+      "uniqueItems": true,
+      "items": { "$ref": "schemas/message.view.schema.json" }
+    },
+    "nextCursor": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 512,
+          "pattern": "^mhc1\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]{43}$"
+        },
+        { "type": "null" }
+      ]
+    }
+  }
+}

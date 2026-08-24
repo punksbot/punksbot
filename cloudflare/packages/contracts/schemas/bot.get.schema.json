@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/bot.get@1",
+  "title": "GetBotQuery",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "botId"],
+  "properties": {
+    "contract": { "const": "bot.get@1" },
+    "botId": { "type": "string", "format": "uuid" }
+  }
+}

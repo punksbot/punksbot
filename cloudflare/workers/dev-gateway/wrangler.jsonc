@@ -1,0 +1,43 @@
+{
+  "$schema": "../../../../node_modules/wrangler/config-schema.json",
+  "account_id": "3a391620584c792dbbd8cfa148d7634a",
+  "name": "punks-dev-gateway",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-21",
+  "workers_dev": false,
+  "preview_urls": false,
+  "vars": {
+    "PUNKS_UI_ORIGIN": "http://localhost:1420"
+  },
+  "services": [
+    { "binding": "API", "service": "punks-api" },
+    { "binding": "AUTH", "service": "punks-auth" },
+    {
+      "binding": "AUTH_DEV_BOOTSTRAP",
+      "service": "punks-auth",
+      "entrypoint": "LocalDevAuthBootstrapService",
+      "props": {
+        "role": "punks-local-dev-bootstrap",
+        "environment": "local"
+      }
+    },
+    {
+      "binding": "API_DEV_BOOTSTRAP",
+      "service": "punks-api",
+      "entrypoint": "LocalDevApiBootstrapService",
+      "props": {
+        "role": "punks-local-dev-bootstrap",
+        "environment": "local"
+      }
+    },
+    {
+      "binding": "BOT_WAKE_TRIGGER",
+      "service": "punks-api",
+      "entrypoint": "BotWakeTriggerService",
+      "props": {
+        "role": "punks-bot-wake-trigger",
+        "environment": "local"
+      }
+    }
+  ]
+}

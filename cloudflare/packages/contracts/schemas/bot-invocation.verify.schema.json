@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/bot-invocation.verify@1",
+  "title": "VerifyBotInvocationCredentialQuery",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "credential",
+    "invocationId",
+    "workspaceId",
+    "installationId",
+    "botId",
+    "authorityGeneration"
+  ],
+  "properties": {
+    "contract": { "const": "bot-invocation.verify@1" },
+    "credential": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048,
+      "pattern": "^pbi1\\.[a-z0-9][a-z0-9._-]{0,63}\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]{43}$"
+    },
+    "invocationId": { "$ref": "#/$defs/opaqueUuid" },
+    "workspaceId": { "$ref": "#/$defs/opaqueUuid" },
+    "installationId": { "$ref": "#/$defs/opaqueUuid" },
+    "botId": { "$ref": "#/$defs/opaqueUuid" },
+    "authorityGeneration": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    }
+  },
+  "$defs": {
+    "opaqueUuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    }
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "name": "@punks/dev-gateway-worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "types": "wrangler types worker-bindings.d.ts --env-interface CloudflareBindings --include-runtime false",
+    "check:types": "wrangler types worker-bindings.d.ts --env-interface CloudflareBindings --include-runtime false --check",
+    "lint": "biome check src test vitest.config.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "check": "pnpm check:types && pnpm lint && pnpm typecheck && pnpm test"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.6",
+    "@cloudflare/vitest-pool-workers": "^0.22.0",
+    "typescript": "~6.0.0",
+    "vitest": "^4.1.10",
+    "wrangler": "^4.124.0"
+  }
+}

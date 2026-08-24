@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/registry@1",
+  "title": "ContractRegistry",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "version", "contracts"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "name": { "const": "punks-contracts" },
+    "version": { "type": "integer", "minimum": 1 },
+    "contracts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "file", "kind"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^punks://contracts/[a-z0-9.-]+@[1-9][0-9]*$" },
+          "file": { "type": "string", "pattern": "^schemas/[a-z0-9.-]+\\.schema\\.json$" },
+          "kind": {
+            "enum": [
+              "command",
+              "query",
+              "response",
+              "event",
+              "state",
+              "service",
+              "projection",
+              "archive"
+            ]
+          },
+          "generationTargets": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "enum": ["typescript", "rust", "dart", "openapi"]
+            }
+          }
+        }
+      }
+    }
+  }
+}

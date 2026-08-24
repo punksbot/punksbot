@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/message.post@1",
+  "title": "PostMessageCommand",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "commandId", "workspaceId", "conversationId", "actor", "payload"],
+  "properties": {
+    "contract": { "const": "message.post@1" },
+    "commandId": { "type": "string", "format": "uuid" },
+    "workspaceId": { "type": "string", "format": "uuid" },
+    "conversationId": { "type": "string", "format": "uuid" },
+    "actor": { "$ref": "#/$defs/actor" },
+    "payload": {
+      "$comment": "The canonical UTF-8 JSON envelope {schemaVersion:1,content,topic} must be at most 65536 bytes. Runtime validation is mandatory because JSON Schema maxLength counts characters, not UTF-8 bytes.",
+      "x-punks-maxUtf8EnvelopeBytes": 65536,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "content",
+        "replyToMessageId",
+        "broadcast",
+        "topic",
+        "mentionedPunkIds",
+        "mediaIds"
+      ],
+      "properties": {
+        "content": { "type": "string", "maxLength": 65536 },
+        "replyToMessageId": {
+          "anyOf": [
+            { "type": "string", "format": "uuid" },
+            { "type": "null" }
+          ]
+        },
+        "broadcast": { "type": "boolean" },
+        "topic": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255,
+              "pattern": "\\S"
+            },
+            { "type": "null" }
+          ]
+        },
+        "mentionedPunkIds": {
+          "type": "array",
+          "maxItems": 50,
+          "uniqueItems": true,
+          "items": { "type": "string", "format": "uuid" }
+        },
+        "mediaIds": {
+          "type": "array",
+          "maxItems": 50,
+          "uniqueItems": true,
+          "items": { "type": "string", "format": "uuid" }
+        }
+      },
+      "not": {
+        "required": ["content", "mediaIds"],
+        "properties": {
+          "content": { "maxLength": 0 },
+          "mediaIds": { "maxItems": 0 }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "actor": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "punkId"],
+          "properties": {
+            "kind": { "const": "punk" },
+            "punkId": { "type": "string", "format": "uuid" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "installationId"],
+          "properties": {
+            "kind": { "const": "bot" },
+            "installationId": { "type": "string", "format": "uuid" }
+          }
+        }
+      ]
+    }
+  }
+}

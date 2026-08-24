@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/bot.config.empty@1",
+  "title": "EmptyBotConfig",
+  "$comment": "The first Punks Bot slice accepts one Punks-owned configuration contract and no arbitrary executable or external-integration fields.",
+  "type": "object",
+  "additionalProperties": false
+}

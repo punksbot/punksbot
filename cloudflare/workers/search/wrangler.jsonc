@@ -1,0 +1,103 @@
+{
+  "$schema": "../../../../node_modules/wrangler/config-schema.json",
+  "account_id": "3a391620584c792dbbd8cfa148d7634a",
+  "name": "punks-search",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-20",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "vars": {
+    "ENVIRONMENT": "local",
+    "D1_SHARD_COUNT": "4"
+  },
+  "d1_databases": [
+    {
+      "binding": "PROJECTION_DB_0",
+      "database_name": "punks-projection-local",
+      "database_id": "00000000-0000-0000-0000-000000000000"
+    },
+    {
+      "binding": "PROJECTION_DB_1",
+      "database_name": "punks-projection-local-1",
+      "database_id": "00000000-0000-0000-0000-000000000001"
+    },
+    {
+      "binding": "PROJECTION_DB_2",
+      "database_name": "punks-projection-local-2",
+      "database_id": "00000000-0000-0000-0000-000000000002"
+    },
+    {
+      "binding": "PROJECTION_DB_3",
+      "database_name": "punks-projection-local-3",
+      "database_id": "00000000-0000-0000-0000-000000000003"
+    }
+  ],
+  "observability": {
+    "enabled": true
+  },
+  "env": {
+    "local": {
+      "name": "punks-search-local",
+      "workers_dev": false,
+      "preview_urls": false,
+      "vars": {
+        "ENVIRONMENT": "local",
+        "D1_SHARD_COUNT": "4"
+      },
+      "d1_databases": [
+        {
+          "binding": "PROJECTION_DB_0",
+          "database_name": "punks-projection-local",
+          "database_id": "00000000-0000-0000-0000-000000000000"
+        },
+        {
+          "binding": "PROJECTION_DB_1",
+          "database_name": "punks-projection-local-1",
+          "database_id": "00000000-0000-0000-0000-000000000001"
+        },
+        {
+          "binding": "PROJECTION_DB_2",
+          "database_name": "punks-projection-local-2",
+          "database_id": "00000000-0000-0000-0000-000000000002"
+        },
+        {
+          "binding": "PROJECTION_DB_3",
+          "database_name": "punks-projection-local-3",
+          "database_id": "00000000-0000-0000-0000-000000000003"
+        }
+      ]
+    },
+    "staging": {
+      "name": "punks-search-staging",
+      "workers_dev": false,
+      "preview_urls": false,
+      "vars": {
+        "ENVIRONMENT": "staging",
+        "D1_SHARD_COUNT": "4"
+      },
+      "d1_databases": [
+        {
+          "binding": "PROJECTION_DB_0",
+          "database_name": "punks-projection-staging",
+          "database_id": "4a5b6514-bb4f-40e9-86f9-8e8ccc671222"
+        },
+        {
+          "binding": "PROJECTION_DB_1",
+          "database_name": "punks-projection-staging-1",
+          "database_id": "d433f118-83a3-4b84-b9c5-8777ccbaeae6"
+        },
+        {
+          "binding": "PROJECTION_DB_2",
+          "database_name": "punks-projection-staging-2",
+          "database_id": "078668b5-8571-46ad-b5f6-c393ffd3cf01"
+        },
+        {
+          "binding": "PROJECTION_DB_3",
+          "database_name": "punks-projection-staging-3",
+          "database_id": "d8264607-e63c-47f8-b725-48ea2462875e"
+        }
+      ]
+    }
+  }
+}

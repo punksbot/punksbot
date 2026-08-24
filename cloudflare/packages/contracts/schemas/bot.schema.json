@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/bot@1",
+  "title": "Bot",
+  "$comment": "Bounded global definition of a Punks-operated Bot. Per-Workspace configuration, grants, admissions, and memory belong to the Bot Installation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "slug",
+    "name",
+    "description",
+    "status",
+    "configContractId",
+    "supportedActionContracts",
+    "revision",
+    "cursor",
+    "createdAt",
+    "updatedAt",
+    "suspendedAt",
+    "withdrawnAt"
+  ],
+  "properties": {
+    "id": { "type": "string", "format": "uuid" },
+    "slug": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 48,
+      "pattern": "^[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])$"
+    },
+    "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "description": { "type": "string", "maxLength": 4000 },
+    "status": { "enum": ["published", "suspended", "withdrawn"] },
+    "configContractId": {
+      "const": "punks://contracts/bot.config.empty@1"
+    },
+    "runtimeRelease": {
+      "oneOf": [
+        { "$ref": "#/$defs/runtimeReleaseRef" },
+        { "type": "null" }
+      ]
+    },
+    "supportedActionContracts": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 3,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "message.reaction-add@1",
+          "message.reaction-remove@1",
+          "message.reaction-toggle@1"
+        ]
+      }
+    },
+    "revision": { "type": "integer", "minimum": 1 },
+    "cursor": { "type": "integer", "minimum": 1 },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "suspendedAt": {
+      "anyOf": [
+        { "type": "string", "format": "date-time" },
+        { "type": "null" }
+      ]
+    },
+    "withdrawnAt": {
+      "anyOf": [
+        { "type": "string", "format": "date-time" },
+        { "type": "null" }
+      ]
+    }
+  },
+  "$defs": {
+    "runtimeReleaseRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["releaseId", "releaseDigest"],
+      "properties": {
+        "releaseId": { "const": "punks.reaction-turn.v1" },
+        "releaseDigest": {
+          "const": "fe075600eab020932774516439f643e8b83f62a10245e6388ee25bbf61aa837f"
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "published" } } },
+      "then": {
+        "properties": {
+          "suspendedAt": { "type": "null" },
+          "withdrawnAt": { "type": "null" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "status": { "const": "suspended" } } },
+      "then": {
+        "properties": {
+          "suspendedAt": { "type": "string", "format": "date-time" },
+          "withdrawnAt": { "type": "null" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "status": { "const": "withdrawn" } } },
+      "then": {
+        "properties": {
+          "withdrawnAt": { "type": "string", "format": "date-time" }
+        }
+      }
+    }
+  ]
+}
