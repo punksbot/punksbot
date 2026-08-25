@@ -1,23 +1,26 @@
 #!/usr/bin/env node
 
 import { createHash } from "node:crypto";
+import { realpathSync } from "node:fs";
+import { basename, dirname, relative, resolve } from "node:path";
 import {
-  closeSync,
-  constants,
-  fstatSync,
-  lstatSync,
-  openSync,
-  readFileSync,
-  realpathSync,
-  writeFileSync,
-} from "node:fs";
-import { basename, isAbsolute, relative, resolve } from "node:path";
+  CANONICAL_STAGING_ACCOUNT_ID,
+  validateStagingDeploymentProof,
+} from "../../cloudflare/scripts/staging-deployment-proof.mjs";
 import {
   BASELINE_BUZZ,
   CHECKPOINT_RECUPERATION,
 } from "../migration-manifest-lib.mjs";
 import {
+  validateCandidateAggregateContent,
+  validateInstalledReleaseNames,
+  validatePromotionProfilesContent,
+  validateStagingMaterialContent,
+} from "../promotion-materials-lib.mjs";
+import { validateSigstoreBundleContent } from "../github-attestation-lib.mjs";
+import {
   MATRICE_ACCESSIBILITE,
+  METHODES_ACCESSIBILITE,
   PREUVES_RECUPERATION,
   SCANS_LEGACY,
   TYPES_FAUTE,
@@ -29,12 +32,19 @@ import {
   PLATEFORMES,
   PREUVES_OBLIGATOIRES,
 } from "../release-graph-lib.mjs";
+import {
+  cheminCanonique,
+  dansRacine,
+  lireFichierRegulierSansLien,
+  parserJson,
+  referenceFichierDansRacine,
+} from "./promotion-evidence-io.mjs";
+import { runPromotionDossierCli } from "./promotion-dossier-cli.mjs";
 
 const INDEX_SCHEMA = "punks.promotion-evidence-index.v1";
 const PREUVE_SCHEMA = "punks.promotion-proof.v1";
 const SHA1_RE = /^[0-9a-f]{40}$/;
 const SHA256_RE = /^[0-9a-f]{64}$/;
-const DEPLOIEMENT_RE = /^sha256:[0-9a-f]{64}$/;
 
 function refuser(message) {
   throw new Error(`dossier de promotion refusé : ${message}`);
@@ -44,87 +54,14 @@ function estObjet(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function cheminCanonique(chemin) {
+function clesExactes(value, cles) {
+  if (!estObjet(value)) return false;
+  const actuelles = Object.keys(value).sort();
+  const attendues = [...cles].sort();
   return (
-    typeof chemin === "string" &&
-    chemin.length > 0 &&
-    chemin === chemin.trim() &&
-    !chemin.includes("\\") &&
-    !chemin.startsWith("/") &&
-    chemin
-      .split("/")
-      .every((segment) => segment !== "" && segment !== "." && segment !== "..")
+    actuelles.length === attendues.length &&
+    actuelles.every((cle, index) => cle === attendues[index])
   );
-}
-
-function dansRacine(racine, chemin) {
-  const relatif = relative(racine, chemin);
-  return relatif === "" || (!relatif.startsWith("..") && !isAbsolute(relatif));
-}
-
-function lireFichierRegulierSansLien(chemin, racine, libelle) {
-  let racineReelle;
-  let cheminReel;
-  try {
-    racineReelle = realpathSync(racine);
-    const statut = lstatSync(chemin);
-    if (statut.isSymbolicLink()) {
-      refuser(`${libelle} est un lien symbolique`);
-    }
-    if (!statut.isFile()) {
-      refuser(`${libelle} doit être un fichier régulier`);
-    }
-    cheminReel = realpathSync(chemin);
-  } catch (erreur) {
-    if (
-      String(erreur?.message ?? "").startsWith("dossier de promotion refusé")
-    ) {
-      throw erreur;
-    }
-    refuser(`${libelle} est illisible (${String(erreur?.code ?? "erreur")})`);
-  }
-  if (!dansRacine(racineReelle, cheminReel)) {
-    refuser(`${libelle} sort de la racine des preuves`);
-  }
-
-  let descripteur;
-  try {
-    descripteur = openSync(
-      chemin,
-      constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0),
-    );
-    const avant = fstatSync(descripteur, { bigint: true });
-    const contenu = readFileSync(descripteur);
-    const apres = fstatSync(descripteur, { bigint: true });
-    if (
-      avant.dev !== apres.dev ||
-      avant.ino !== apres.ino ||
-      avant.size !== apres.size ||
-      avant.mtimeNs !== apres.mtimeNs
-    ) {
-      refuser(`${libelle} a changé pendant sa lecture`);
-    }
-    return contenu;
-  } catch (erreur) {
-    if (
-      String(erreur?.message ?? "").startsWith("dossier de promotion refusé")
-    ) {
-      throw erreur;
-    }
-    refuser(`${libelle} ne peut pas être lu sans suivre de lien`);
-  } finally {
-    if (descripteur !== undefined) {
-      closeSync(descripteur);
-    }
-  }
-}
-
-function parserJson(contenu, libelle) {
-  try {
-    return JSON.parse(contenu.toString("utf8"));
-  } catch {
-    refuser(`${libelle} n'est pas un JSON valide`);
-  }
 }
 
 function exigerChaine(value, libelle) {
@@ -132,6 +69,20 @@ function exigerChaine(value, libelle) {
     refuser(`${libelle} doit être une chaîne non vide`);
   }
   return value;
+}
+
+function exigerMethodesAccessibilite(values, libelle) {
+  if (
+    !Array.isArray(values) ||
+    values.length !== METHODES_ACCESSIBILITE.length ||
+    new Set(values).size !== METHODES_ACCESSIBILITE.length ||
+    !METHODES_ACCESSIBILITE.every((methode) => values.includes(methode))
+  ) {
+    refuser(
+      `${libelle} doit citer exactement ${METHODES_ACCESSIBILITE.join(" + ")}`,
+    );
+  }
+  return [...values];
 }
 
 function exigerPlateforme(preuve, attendue, id) {
@@ -180,16 +131,23 @@ function chargerPreuves({
   const hashes = new Set();
   const chargees = new Map();
   for (const reference of index.preuves) {
-    if (!estObjet(reference)) {
+    if (!clesExactes(reference, ["id", "chemin", "sha256", "sujet"])) {
       refuser("référence de preuve malformée");
     }
-    const { id, chemin, sha256 } = reference;
+    const { id, chemin, sha256, sujet } = reference;
     exigerChaine(id, "identifiant de preuve");
     if (!cheminCanonique(chemin)) {
       refuser(`preuve « ${id} » avec chemin non canonique ou hors racine`);
     }
     if (!SHA256_RE.test(sha256 ?? "")) {
       refuser(`preuve « ${id} » sans sha256 valide`);
+    }
+    if (
+      !clesExactes(sujet, ["chemin", "sha256"]) ||
+      !cheminCanonique(sujet.chemin) ||
+      !SHA256_RE.test(sujet.sha256 ?? "")
+    ) {
+      refuser(`preuve « ${id} » sans sujet brut content-addressé valide`);
     }
     if (ids.has(id)) refuser(`identifiant de preuve dupliqué « ${id} »`);
     if (chemins.has(chemin)) refuser(`chemin de preuve dupliqué « ${chemin} »`);
@@ -237,7 +195,44 @@ function chargerPreuves({
     if (!estObjet(preuve.data)) {
       refuser(`preuve « ${id} » sans données réelles`);
     }
-    chargees.set(id, { preuve, reference: { chemin, sha256 } });
+    const sujetAbsolu = resolve(racineReelle, sujet.chemin);
+    const sujetReel = realpathSync(sujetAbsolu);
+    if (sujetReel !== sujetAbsolu || !dansRacine(racineReelle, sujetReel)) {
+      refuser(
+        `sujet de la preuve « ${id} » sort de la racine ou traverse un lien symbolique`,
+      );
+    }
+    if (!basename(sujet.chemin).startsWith(sujet.sha256)) {
+      refuser(`sujet de la preuve « ${id} » non content-addressé`);
+    }
+    const contenuSujet = lireFichierRegulierSansLien(
+      sujetAbsolu,
+      racineReelle,
+      `sujet de la preuve « ${id} »`,
+    );
+    const sujetRecalcule = createHash("sha256")
+      .update(contenuSujet)
+      .digest("hex");
+    if (
+      sujetRecalcule !== sujet.sha256 ||
+      preuve.data.subjectSha256 !== sujet.sha256
+    ) {
+      refuser(`preuve « ${id} » avec sujet brut ou subjectSha256 divergent`);
+    }
+    chargees.set(id, {
+      preuve,
+      reference: {
+        chemin,
+        sha256,
+        subjectSha256: sujet.sha256,
+        sujet: { ...sujet },
+      },
+      sujet: {
+        absolu: sujetAbsolu,
+        contenu: contenuSujet,
+        sha256: sujet.sha256,
+      },
+    });
   }
   return chargees;
 }
@@ -259,27 +254,114 @@ function creerConsommateur(chargees) {
   return { prendre, finir };
 }
 
-function construireDossier({ chargees, deploiementId }) {
+function chargerPreuveDeploiementStaging({
+  racinePreuves,
+  chemin,
+  candidatSha,
+}) {
+  const racine = realpathSync(racinePreuves);
+  const cheminDeclare = resolve(chemin);
+  const absolu = realpathSync(cheminDeclare);
+  if (!dansRacine(racine, absolu)) {
+    refuser("la preuve de déploiement staging sort de la racine des preuves");
+  }
+  const contenu = lireFichierRegulierSansLien(
+    cheminDeclare,
+    racine,
+    "preuve de déploiement staging",
+  );
+  let preuve;
+  try {
+    preuve = validateStagingDeploymentProof(
+      parserJson(contenu, "la preuve de déploiement staging"),
+      {
+        accountId: CANONICAL_STAGING_ACCOUNT_ID,
+        environment: "staging",
+        sourceSha: candidatSha,
+      },
+    );
+  } catch (erreur) {
+    refuser(
+      `preuve de déploiement staging invalide : ${erreur instanceof Error ? erreur.message : String(erreur)}`,
+    );
+  }
+  return {
+    preuve,
+    absolu,
+    contenu,
+    sha256: createHash("sha256").update(contenu).digest("hex"),
+  };
+}
+
+function chargerProfilPromotion(chemin, tranche) {
+  const cheminDeclare = resolve(chemin);
+  const racine = realpathSync(dirname(cheminDeclare));
+  const contenu = lireFichierRegulierSansLien(
+    cheminDeclare,
+    racine,
+    "matériau des profils de promotion",
+  );
+  let profil;
+  try {
+    profil = validatePromotionProfilesContent(contenu, { tranche });
+  } catch (erreur) {
+    refuser(
+      `matériau des profils de promotion invalide : ${erreur instanceof Error ? erreur.message : String(erreur)}`,
+    );
+  }
+  return {
+    absolu: realpathSync(cheminDeclare),
+    contenu,
+    profil,
+    sha256: createHash("sha256").update(contenu).digest("hex"),
+  };
+}
+
+function construireDossier({
+  chargees,
+  deploiementStaging,
+  profilPromotion,
+  repository,
+}) {
+  const deploiementId = deploiementStaging.preuve.deploymentId;
   const { prendre, finir } = creerConsommateur(chargees);
   const preuves = {};
   const citer = (id) => {
     const entree = prendre(id);
     const subjectSha256 = entree.preuve.data.subjectSha256;
-    if (subjectSha256 !== undefined && !SHA256_RE.test(subjectSha256)) {
+    if (!SHA256_RE.test(subjectSha256 ?? "")) {
       refuser(`preuve « ${id} » avec subjectSha256 invalide`);
     }
-    preuves[id] = {
-      ...entree.reference,
-      ...(subjectSha256 === undefined ? {} : { subjectSha256 }),
-    };
+    preuves[id] = { ...entree.reference };
     return entree;
   };
 
-  const candidat = prendre("candidat").preuve;
+  const candidat = citer("candidat").preuve;
   if (!Number.isInteger(candidat.data.tranche) || candidat.data.tranche < 1) {
     refuser("preuve candidat sans tranche entière positive");
   }
-  const registres = prendre("registres").preuve.data.registres;
+  const profilEntree = citer("profil/promotion");
+  if (
+    profilEntree.sujet.sha256 !== profilPromotion.sha256 ||
+    !profilEntree.sujet.contenu.equals(profilPromotion.contenu)
+  ) {
+    refuser("profil de promotion indexé divergent du matériau versionné exact");
+  }
+  const profil = profilPromotion.profil;
+  if (
+    profil.tranche !== candidat.data.tranche ||
+    profilEntree.preuve.data.materiau !==
+      "cloudflare/promotion-profiles.json" ||
+    profilEntree.preuve.data.profil !== profil.id ||
+    profilEntree.preuve.data.tranche !== profil.tranche ||
+    JSON.stringify(profilEntree.preuve.data.recits) !==
+      JSON.stringify(profil.stories) ||
+    JSON.stringify(profilEntree.preuve.data.autorites) !==
+      JSON.stringify(profil.authorities.map(({ id }) => id))
+  ) {
+    refuser("preuve du profil de promotion divergente de son matériau exact");
+  }
+  const registres = citer("registres").preuve.data.registres;
   if (!Array.isArray(registres)) refuser("preuve registres malformée");
   const nomsRegistres = registres.map((registre) => registre?.nom);
   if (
@@ -287,6 +369,35 @@ function construireDossier({ chargees, deploiementId }) {
     !NOMS_REGISTRES_ATTESTATION.every((nom) => nomsRegistres.includes(nom))
   ) {
     refuser("preuve registres incomplète ou dupliquée");
+  }
+
+  const stagingDeploiement = citer("staging/deploiement");
+  if (
+    stagingDeploiement.sujet.absolu !== deploiementStaging.absolu ||
+    stagingDeploiement.sujet.sha256 !== deploiementStaging.sha256
+  ) {
+    refuser(
+      "preuve staging indexée divergente de la preuve de déploiement fournie",
+    );
+  }
+  const donneesDeploiement = stagingDeploiement.preuve.data;
+  const workersDeployes = deploiementStaging.preuve.workers.map(
+    ({ name, versionId, deploymentId }) => ({
+      name,
+      versionId,
+      deploymentId,
+    }),
+  );
+  const nomsWorkersDeployes = workersDeployes.map(({ name }) => name);
+  if (
+    donneesDeploiement.compte !== deploiementStaging.preuve.accountId ||
+    donneesDeploiement.environnement !==
+      deploiementStaging.preuve.environment ||
+    donneesDeploiement.deploiement !== deploiementId ||
+    JSON.stringify(donneesDeploiement.workers) !==
+      JSON.stringify(nomsWorkersDeployes)
+  ) {
+    refuser("preuve staging distante divergente de son enveloppe indexée");
   }
 
   const stagingEntree = citer("staging/materiau");
@@ -299,8 +410,36 @@ function construireDossier({ chargees, deploiementId }) {
   if (staging.deploiement !== deploiementId) {
     refuser("matériau staging lié au mauvais déploiement");
   }
+  let materiauStaging;
+  try {
+    materiauStaging = validateStagingMaterialContent(
+      stagingEntree.sujet.contenu,
+    );
+  } catch (erreur) {
+    refuser(
+      `matériau staging invalide : ${erreur instanceof Error ? erreur.message : String(erreur)}`,
+    );
+  }
+  const autorites = profil.authorities.map(({ id }) => id);
+  if (
+    staging.compte !== deploiementStaging.preuve.accountId ||
+    staging.environnement !== deploiementStaging.preuve.environment ||
+    staging.compte !== materiauStaging.accountId ||
+    staging.zone !== materiauStaging.zoneId ||
+    JSON.stringify(staging.workers) !== JSON.stringify(nomsWorkersDeployes) ||
+    JSON.stringify([...materiauStaging.workers].sort()) !==
+      JSON.stringify([...nomsWorkersDeployes].sort()) ||
+    profil.authorities.some(
+      ({ worker }) => !nomsWorkersDeployes.includes(worker),
+    )
+  ) {
+    refuser(
+      "matériau staging divergent des Workers et autorités réellement observés",
+    );
+  }
 
   const digestsProduction = {};
+  const production = {};
   for (const nom of ["bundle", "manifeste"]) {
     const id = `production/${nom}`;
     const entree = citer(id);
@@ -309,11 +448,67 @@ function construireDossier({ chargees, deploiementId }) {
       refuser(`${id}.data.subjectSha256 doit lier le contenu exact`);
     }
     digestsProduction[nom] = digest;
+    production[nom] = entree;
+  }
+  try {
+    validateSigstoreBundleContent(production.bundle.sujet.contenu);
+  } catch (erreur) {
+    refuser(
+      `production/bundle n'est pas un bundle Sigstore valide : ${erreur instanceof Error ? erreur.message : String(erreur)}`,
+    );
   }
 
   const artefacts = [];
   const bundles = new Map();
   for (const plateforme of PLATEFORMES) {
+    const transcriptId = `transcript/${plateforme}`;
+    const transcript = citer(transcriptId);
+    exigerPlateforme(transcript.preuve, plateforme, transcriptId);
+    if (
+      transcript.preuve.data.schema !==
+        "punks.installed-social-loop-transcript.v1" ||
+      transcript.preuve.data.plateforme !== plateforme
+    ) {
+      refuser(`preuve « ${transcriptId} » avec transcript installé invalide`);
+    }
+    const reobservationId = `staging/reobservation/${plateforme}`;
+    const reobservation = citer(reobservationId);
+    exigerPlateforme(reobservation.preuve, plateforme, reobservationId);
+    let preuvePostParcours;
+    try {
+      preuvePostParcours = validateStagingDeploymentProof(
+        parserJson(
+          reobservation.sujet.contenu,
+          `la preuve « ${reobservationId} »`,
+        ),
+        {
+          accountId: CANONICAL_STAGING_ACCOUNT_ID,
+          environment: "staging",
+          sourceSha: candidat.candidateSha,
+        },
+      );
+    } catch (erreur) {
+      refuser(
+        `preuve « ${reobservationId} » avec réobservation Cloudflare invalide : ${erreur instanceof Error ? erreur.message : String(erreur)}`,
+      );
+    }
+    const donneesReobservation = reobservation.preuve.data;
+    if (
+      !reobservation.sujet.contenu.equals(deploiementStaging.contenu) ||
+      preuvePostParcours.deploymentId !== deploiementId ||
+      donneesReobservation.transcriptSha256 !== transcript.sujet.sha256 ||
+      donneesReobservation.initialStagingProofSha256 !==
+        deploiementStaging.sha256 ||
+      donneesReobservation.deploymentId !== deploiementId ||
+      JSON.stringify(donneesReobservation.workers) !==
+        JSON.stringify(workersDeployes) ||
+      JSON.stringify(donneesReobservation.sequence) !==
+        JSON.stringify(["transcript-installed", "cloudflare-reobserved"])
+    ) {
+      refuser(
+        `preuve « ${reobservationId} » sans lien causal exact transcript → réobservation Cloudflare`,
+      );
+    }
     const bundleId = `artefact/${plateforme}/bundle`;
     const signatureId = `artefact/${plateforme}/signature`;
     const bundle = citer(bundleId);
@@ -325,26 +520,66 @@ function construireDossier({ chargees, deploiementId }) {
       const id = `artefact/${plateforme}/verification/${verification}`;
       const entree = citer(id);
       exigerPlateforme(entree.preuve, plateforme, id);
+      if (
+        entree.preuve.data.transcriptSha256 !== transcript.sujet.sha256 ||
+        entree.sujet.sha256 !== transcript.sujet.sha256
+      ) {
+        refuser(`preuve « ${id} » divergente du transcript installé`);
+      }
       verifications[verification] = entree.preuve.result;
     }
     exigerChaine(bundle.preuve.data.nom, `${bundleId}.data.nom`);
     exigerChaine(bundle.preuve.data.bundleId, `${bundleId}.data.bundleId`);
+    exigerChaine(signature.preuve.data.nom, `${signatureId}.data.nom`);
+    try {
+      validateInstalledReleaseNames({
+        platform: plateforme,
+        candidateSha: candidat.candidateSha,
+        artifactName: bundle.preuve.data.nom,
+        signatureName: signature.preuve.data.nom,
+      });
+    } catch (erreur) {
+      refuser(
+        `artefact installé ${plateforme} réattribué : ${erreur instanceof Error ? erreur.message : String(erreur)}`,
+      );
+    }
     if (!SHA256_RE.test(bundle.preuve.data.subjectSha256 ?? "")) {
       refuser(
         `${bundleId}.data.subjectSha256 doit lier l'artefact signé exact`,
       );
+    }
+    if (bundle.preuve.data.taille !== bundle.sujet.contenu.length) {
+      refuser(`${bundleId}.data.taille diverge de l'artefact exact`);
+    }
+    if (!SHA256_RE.test(bundle.preuve.data.transcriptSha256 ?? "")) {
+      refuser(
+        `${bundleId}.data.transcriptSha256 doit lier l'exécution installée exacte`,
+      );
+    }
+    if (bundle.preuve.data.transcriptSha256 !== transcript.sujet.sha256) {
+      refuser(`preuve « ${bundleId} » divergente du transcript brut installé`);
     }
     if (!SHA256_RE.test(signature.preuve.data.subjectSha256 ?? "")) {
       refuser(
         `${signatureId}.data.subjectSha256 doit lier la signature exacte`,
       );
     }
+    if (signature.preuve.data.taille !== signature.sujet.contenu.length) {
+      refuser(`${signatureId}.data.taille diverge de la signature exacte`);
+    }
+    if (signature.preuve.data.transcriptSha256 !== transcript.sujet.sha256) {
+      refuser(`preuve « ${signatureId} » divergente du transcript installé`);
+    }
     bundles.set(plateforme, bundle.preuve.data.subjectSha256);
     artefacts.push({
       plateforme,
       nom: bundle.preuve.data.nom,
       sha256: bundle.preuve.data.subjectSha256,
+      taille: bundle.sujet.contenu.length,
+      signatureNom: signature.preuve.data.nom,
       signature: signature.preuve.data.subjectSha256,
+      signatureTaille: signature.sujet.contenu.length,
+      transcriptSha256: bundle.preuve.data.transcriptSha256,
       identite: {
         bundleId: bundle.preuve.data.bundleId,
         verifications,
@@ -352,19 +587,21 @@ function construireDossier({ chargees, deploiementId }) {
     });
   }
 
-  const idsParcours = [...chargees.keys()].filter((id) =>
-    id.startsWith("parcours/"),
-  );
-  const recits = new Set();
-  for (const id of idsParcours) {
-    const segments = id.split("/");
-    if (segments.length !== 3 || !PLATEFORMES.includes(segments[1])) {
-      refuser(`coordonnée de parcours invalide « ${id} »`);
-    }
-    exigerChaine(segments[2], `récit de ${id}`);
-    recits.add(segments[2]);
+  try {
+    validateCandidateAggregateContent(production.manifeste.sujet.contenu, {
+      candidateSha: candidat.candidateSha,
+      stagingDeploymentId: deploiementId,
+      stagingProofSha256: stagingDeploiement.sujet.sha256,
+      repository,
+      artifacts: artefacts,
+    });
+  } catch (erreur) {
+    refuser(
+      `production/manifeste divergent des artefacts installés : ${erreur instanceof Error ? erreur.message : String(erreur)}`,
+    );
   }
-  if (recits.size === 0) refuser("aucune preuve de parcours UI+IPC+contrats");
+
+  const recits = profil.stories;
   const executions = [];
   let contour;
   let serveurVite;
@@ -375,6 +612,15 @@ function construireDossier({ chargees, deploiementId }) {
       const entree = citer(id);
       exigerPlateforme(entree.preuve, plateforme, id);
       const data = entree.preuve.data;
+      const transcriptSha256 = artefacts.find(
+        (artefact) => artefact.plateforme === plateforme,
+      )?.transcriptSha256;
+      if (
+        data.transcriptSha256 !== transcriptSha256 ||
+        entree.sujet.sha256 !== transcriptSha256
+      ) {
+        refuser(`preuve « ${id} » divergente du transcript installé`);
+      }
       if (data.sha256Artefact !== bundles.get(plateforme)) {
         refuser(`preuve « ${id} » liée au mauvais artefact signé`);
       }
@@ -407,27 +653,100 @@ function construireDossier({ chargees, deploiementId }) {
     }
   }
 
-  const fautes = TYPES_FAUTE.map((type) => {
-    const id = `faute/${type}`;
-    const entree = citer(id);
-    const plateforme = entree.preuve.data.plateforme;
-    exigerPlateforme(entree.preuve, plateforme, id);
-    if (!PLATEFORMES.includes(plateforme)) {
-      refuser(`preuve « ${id} » sur plateforme inconnue`);
+  const fautes = TYPES_FAUTE.flatMap((type) =>
+    autorites.map((autorite) => {
+      const id = `faute/${type}/${autorite}`;
+      const entree = citer(id);
+      const plateforme = entree.preuve.data.plateforme;
+      exigerPlateforme(entree.preuve, plateforme, id);
+      if (!PLATEFORMES.includes(plateforme)) {
+        refuser(`preuve « ${id} » sur plateforme inconnue`);
+      }
+      if (entree.preuve.data.autorite !== autorite) {
+        refuser(`preuve « ${id} » liée à une autre autorité`);
+      }
+      const data = entree.preuve.data;
+      const artefact = artefacts.find(
+        (candidate) => candidate.plateforme === plateforme,
+      );
+      const executionId = exigerChaine(
+        data.executionId,
+        `${id}.data.executionId`,
+      );
+      if (
+        data.sha256Artefact !== artefact.sha256 ||
+        data.transcriptSha256 !== artefact.transcriptSha256 ||
+        data.captureSha256 !== entree.sujet.sha256
+      ) {
+        refuser(`preuve « ${id} » sans exécution/capture causale exacte`);
+      }
+      return {
+        type,
+        plateforme,
+        autorite,
+        executionId,
+        sha256Artefact: data.sha256Artefact,
+        transcriptSha256: data.transcriptSha256,
+        captureSha256: data.captureSha256,
+        preuveSha256: entree.reference.sha256,
+        resultat: entree.preuve.result,
+      };
+    }),
+  );
+
+  const scenariosRecuperation = fautes.map((faute) => {
+    const preuvesRecuperation = {};
+    for (const nom of PREUVES_RECUPERATION) {
+      const id = `recuperation/${nom}/${faute.type}/${faute.autorite}`;
+      const entree = citer(id);
+      exigerPlateforme(entree.preuve, faute.plateforme, id);
+      const data = entree.preuve.data;
+      if (
+        data.type !== faute.type ||
+        data.autorite !== faute.autorite ||
+        data.plateforme !== faute.plateforme ||
+        data.executionId !== faute.executionId ||
+        data.fauteSha256 !== faute.preuveSha256 ||
+        data.sha256Artefact !== faute.sha256Artefact ||
+        data.captureSha256 !== faute.captureSha256
+      ) {
+        refuser(
+          `preuve de récupération « ${id} » sans lien causal vers la faute exacte`,
+        );
+      }
+      preuvesRecuperation[nom] = {
+        resultat: entree.preuve.result,
+        preuveSha256: entree.reference.sha256,
+        subjectSha256: entree.sujet.sha256,
+      };
     }
     return {
-      type,
-      plateforme,
-      autorite: exigerChaine(entree.preuve.data.autorite, `${id}.autorite`),
-      resultat: entree.preuve.result,
+      type: faute.type,
+      autorite: faute.autorite,
+      plateforme: faute.plateforme,
+      executionId: faute.executionId,
+      fauteSha256: faute.preuveSha256,
+      sha256Artefact: faute.sha256Artefact,
+      captureSha256: faute.captureSha256,
+      preuves: preuvesRecuperation,
     };
   });
-
-  const recuperation = {};
-  for (const nom of PREUVES_RECUPERATION) {
-    recuperation[nom] = citer(`recuperation/${nom}`).preuve.result;
+  const capturesEntree = citer("recuperation/captures");
+  const capturesAttendues = fautes.map(({ type, autorite, captureSha256 }) => ({
+    type,
+    autorite,
+    captureSha256,
+  }));
+  if (
+    JSON.stringify(capturesEntree.preuve.data.captures) !==
+    JSON.stringify(capturesAttendues)
+  ) {
+    refuser("preuve de récupération des captures divergente des fautes");
   }
-  recuperation.captures = citer("recuperation/captures").reference.sha256;
+  const recuperation = {
+    scenarios: scenariosRecuperation,
+    captures: capturesEntree.sujet.sha256,
+  };
 
   const accessibilite = PLATEFORMES.map((plateforme) => {
     const matrice = {};
@@ -435,12 +754,57 @@ function construireDossier({ chargees, deploiementId }) {
       const id = `accessibilite/${plateforme}/${critere}`;
       const entree = citer(id);
       exigerPlateforme(entree.preuve, plateforme, id);
-      matrice[critere] = entree.preuve.result;
+      const transcriptSha256 = artefacts.find(
+        (artefact) => artefact.plateforme === plateforme,
+      )?.transcriptSha256;
+      if (
+        entree.preuve.data.transcriptSha256 !== transcriptSha256 ||
+        entree.sujet.sha256 !== transcriptSha256
+      ) {
+        refuser(`preuve « ${id} » divergente du transcript installé`);
+      }
+      const observation = {
+        resultat: entree.preuve.result,
+        methodes: exigerMethodesAccessibilite(
+          entree.preuve.data.methodes,
+          `${id}.data.methodes`,
+        ),
+      };
+      if (critere === "lecteur-ecran") {
+        observation.technologie = exigerChaine(
+          entree.preuve.data.technologie,
+          `${id}.data.technologie`,
+        );
+      }
+      matrice[critere] = observation;
     }
     const resultatId = `accessibilite/${plateforme}/resultat`;
     const resultat = citer(resultatId);
     exigerPlateforme(resultat.preuve, plateforme, resultatId);
-    return { plateforme, matrice, resultat: resultat.preuve.result };
+    const transcriptSha256 = artefacts.find(
+      (artefact) => artefact.plateforme === plateforme,
+    )?.transcriptSha256;
+    if (
+      resultat.preuve.data.transcriptSha256 !== transcriptSha256 ||
+      resultat.sujet.sha256 !== transcriptSha256
+    ) {
+      refuser(`preuve « ${resultatId} » divergente du transcript installé`);
+    }
+    return {
+      plateforme,
+      matrice,
+      resultat: {
+        resultat: resultat.preuve.result,
+        methodes: exigerMethodesAccessibilite(
+          resultat.preuve.data.methodes,
+          `${resultatId}.data.methodes`,
+        ),
+        technologieLecteurEcran: exigerChaine(
+          resultat.preuve.data.technologieLecteurEcran,
+          `${resultatId}.data.technologieLecteurEcran`,
+        ),
+      },
+    };
   });
 
   const goldens = [...chargees.keys()]
@@ -476,7 +840,7 @@ function construireDossier({ chargees, deploiementId }) {
       const entree = citer(`scan/${cible}`);
       return [
         cible,
-        { resultat: entree.preuve.result, empreinte: entree.reference.sha256 },
+        { resultat: entree.preuve.result, empreinte: entree.sujet.sha256 },
       ];
     }),
   );
@@ -496,6 +860,11 @@ function construireDossier({ chargees, deploiementId }) {
     "checkpoint-recuperation": CHECKPOINT_RECUPERATION,
     "baseline-buzz": BASELINE_BUZZ,
     candidat: { sha: candidat.candidateSha, tranche: candidat.data.tranche },
+    profil: {
+      id: profil.id,
+      materiau: "cloudflare/promotion-profiles.json",
+      "materiau-sha256": profilEntree.sujet.sha256,
+    },
     liaison: {
       canal: "punks-desktop",
       artefacts,
@@ -504,8 +873,11 @@ function construireDossier({ chargees, deploiementId }) {
         compte: staging.compte,
         zone: staging.zone,
         deploiement: staging.deploiement,
+        "deploiement-preuve-sha256": stagingDeploiement.sujet.sha256,
         materiau: staging.materiau,
         "materiau-sha256": stagingEntree.preuve.data.subjectSha256,
+        workers: workersDeployes,
+        autorites,
       },
       "digests-production": digestsProduction,
       registres,
@@ -514,7 +886,7 @@ function construireDossier({ chargees, deploiementId }) {
       contour,
       serveurVite,
       facadeTest,
-      recits: [...recits].sort(),
+      recits: [...recits],
       executions,
     },
     fautes,
@@ -522,7 +894,7 @@ function construireDossier({ chargees, deploiementId }) {
     accessibilite,
     goldens,
     retrait: {
-      diff: retraitDiff.reference.sha256,
+      diff: retraitDiff.sujet.sha256,
       "verdicts-executes": verdictsExecutes,
       lignes,
     },
@@ -540,24 +912,67 @@ export function assemblerDossierPromotion({
   racinePreuves,
   indexPreuves,
   candidatSha,
-  deploiementId,
+  promotionProfile,
+  stagingDeploymentProof,
+  provenanceBundle,
+  repository,
+  sourceRef,
+  signerWorkflow,
+  verifierProvenance,
+  ghBinary = "gh",
 }) {
   if (!SHA1_RE.test(candidatSha ?? "")) {
     refuser("SHA candidat exact de 40 hexadécimaux attendu");
   }
-  if (!DEPLOIEMENT_RE.test(deploiementId ?? "")) {
-    refuser("identifiant de déploiement exact sha256 attendu");
-  }
   exigerChaine(racinePreuves, "racine des preuves");
   exigerChaine(indexPreuves, "index des preuves");
+  exigerChaine(promotionProfile, "matériau des profils de promotion");
+  exigerChaine(stagingDeploymentProof, "preuve de déploiement staging");
+  exigerChaine(provenanceBundle, "bundle de provenance Sigstore");
+  exigerChaine(repository, "dépôt de provenance");
+  exigerChaine(sourceRef, "ref source de provenance");
+  exigerChaine(signerWorkflow, "workflow signataire de provenance");
+  const deploiementStaging = chargerPreuveDeploiementStaging({
+    racinePreuves,
+    chemin: stagingDeploymentProof,
+    candidatSha,
+  });
+  const deploiementId = deploiementStaging.preuve.deploymentId;
   const chargees = chargerPreuves({
     racinePreuves,
     indexPreuves,
     candidatSha,
     deploiementId,
   });
-  const dossier = construireDossier({ chargees, candidatSha, deploiementId });
-  const erreurs = validerDossier(dossier, { racinePreuves });
+  const tranche = chargees.get("candidat")?.preuve?.data?.tranche;
+  const profilPromotion = chargerProfilPromotion(promotionProfile, tranche);
+  const dossier = construireDossier({
+    chargees,
+    deploiementStaging,
+    profilPromotion,
+    repository,
+  });
+  dossier.provenance = {
+    schema: "punks.promotion-evidence-provenance.v1",
+    repository,
+    sourceRef,
+    signerWorkflow,
+    bundle: referenceFichierDansRacine(
+      racinePreuves,
+      provenanceBundle,
+      "bundle de provenance Sigstore",
+    ),
+    index: referenceFichierDansRacine(
+      racinePreuves,
+      indexPreuves,
+      "index de preuves",
+    ),
+  };
+  const erreurs = validerDossier(dossier, {
+    racinePreuves,
+    verifierProvenance,
+    ghBinary,
+  });
   if (erreurs.length > 0) {
     refuser(
       `dossier incompatible avec validerDossier : ${erreurs.join(" ; ")}`,
@@ -566,40 +981,8 @@ export function assemblerDossierPromotion({
   return dossier;
 }
 
-function lireOptions(argv) {
-  const options = new Map();
-  for (let index = 0; index < argv.length; index += 2) {
-    const cle = argv[index];
-    const valeur = argv[index + 1];
-    if (!cle?.startsWith("--") || valeur === undefined) {
-      refuser("options attendues par paires --nom valeur");
-    }
-    if (options.has(cle)) refuser(`option dupliquée ${cle}`);
-    options.set(cle, valeur);
-  }
-  return options;
-}
-
 export function run(argv = process.argv.slice(2)) {
-  const options = lireOptions(argv);
-  const exiger = (nom) => {
-    const valeur = options.get(nom);
-    if (valeur === undefined) refuser(`option obligatoire manquante ${nom}`);
-    return valeur;
-  };
-  const dossier = assemblerDossierPromotion({
-    racinePreuves: resolve(exiger("--racine-preuves")),
-    indexPreuves: resolve(exiger("--index-preuves")),
-    candidatSha: exiger("--candidat-sha"),
-    deploiementId: exiger("--deploiement-id"),
-  });
-  const sortie = resolve(exiger("--sortie"));
-  writeFileSync(sortie, `${JSON.stringify(dossier, null, 2)}\n`, {
-    encoding: "utf8",
-    flag: "wx",
-    mode: 0o600,
-  });
-  return dossier;
+  return runPromotionDossierCli(argv, assemblerDossierPromotion);
 }
 
 if (import.meta.url === new URL(process.argv[1], "file:").href) {

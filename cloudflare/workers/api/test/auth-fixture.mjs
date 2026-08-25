@@ -1,5 +1,23 @@
 import { WorkerEntrypoint } from "cloudflare:workers";
 
+export class RuntimeIdentityService extends WorkerEntrypoint {
+  async runtimeVersion() {
+    return { versionId: "00000000-0000-4000-8000-000000000001" };
+  }
+}
+
+export class RuntimeIdentityFailureService extends WorkerEntrypoint {
+  async runtimeVersion() {
+    throw new Error("runtime identity unavailable");
+  }
+}
+
+export class RuntimeIdentityInvalidService extends WorkerEntrypoint {
+  async runtimeVersion() {
+    return { versionId: "version-forgee" };
+  }
+}
+
 const ownerSessionId = "11111111-1111-8111-8111-111111111111";
 const otherSessionId = "22222222-2222-8222-8222-222222222222";
 const revocableSessionId = "33333333-3333-8333-8333-333333333333";

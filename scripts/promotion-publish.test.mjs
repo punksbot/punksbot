@@ -20,43 +20,14 @@ import {
   finaliserPromotion,
   publierPromotion,
 } from "./promotion-publish-lib.mjs";
-import {
-  NOMS_REGISTRES_ATTESTATION,
-  PLATEFORMES,
-  PREUVES_OBLIGATOIRES,
-} from "./release-graph-lib.mjs";
+import { emissionValidePourSha } from "./promotion-dossier-validator-fixture.mjs";
 
-const SHA_CANDIDAT = "0123456789abcdef0123456789abcdef01234567";
+const EMISSION_LOCALE = emissionValidePourSha();
+const DOSSIER = EMISSION_LOCALE.dossier;
+const CONTEXTE_DOSSIER = EMISSION_LOCALE.contexte;
+const SHA_CANDIDAT = DOSSIER.candidat.sha;
 const TAG_CANDIDAT = `punks-staging-${SHA_CANDIDAT}`;
-const ATTESTATION = {
-  sha: SHA_CANDIDAT,
-  dossier: { sha256: "a".repeat(64) },
-  "checkpoint-baseline": BASELINE_BUZZ,
-  registres: NOMS_REGISTRES_ATTESTATION.map((nom, index) => ({
-    nom,
-    version: index + 1,
-    sha256: (index + 1).toString(16).padStart(2, "0").repeat(32),
-  })),
-  staging: {
-    environnement: "staging",
-    compte: "1a".repeat(16),
-    zone: "2b".repeat(16),
-    deploiement: "deploy-1",
-  },
-  gates: PREUVES_OBLIGATOIRES.map((gate) => ({
-    gate,
-    resultat: "vert",
-    sha: SHA_CANDIDAT,
-  })),
-  artefacts: PLATEFORMES.map((plateforme, index) => ({
-    plateforme,
-    sha256: (index + 10).toString(16).padStart(2, "0").repeat(32),
-  })),
-  "digests-production": {
-    bundle: "ba".repeat(32),
-    manifeste: "ca".repeat(32),
-  },
-};
+const ATTESTATION = EMISSION_LOCALE.attestation;
 
 function recuPour(attestation) {
   const id = `recu-promotion-1-${attestation.sha}`;
@@ -69,7 +40,8 @@ function recuPour(attestation) {
   return { id, contenu, sha256: canonicalSha256(contenu) };
 }
 
-const RECU = recuPour(ATTESTATION);
+const RECU = EMISSION_LOCALE.recu;
+const CONTENU_DOSSIER = `${JSON.stringify(DOSSIER, null, 2)}\n`;
 const CONTENU_ATTESTATION_LOCAL = `${JSON.stringify(ATTESTATION, null, 2)}\n`;
 const CONTENU_RECU_LOCAL = `${JSON.stringify(RECU, null, 2)}\n`;
 
@@ -218,6 +190,8 @@ function creerFrontieres({ release = {}, verrous = {}, journal = null } = {}) {
 function optionsPublication(surcharge = {}) {
   return {
     graphe: CONTENU_GRAPHE_PUBLICATION,
+    dossier: Buffer.from(CONTENU_DOSSIER),
+    contexteDossier: CONTEXTE_DOSSIER,
     attestation: Buffer.from(CONTENU_ATTESTATION_LOCAL),
     recu: Buffer.from(CONTENU_RECU_LOCAL),
     depot: "mabzadev/punksbot",
@@ -375,10 +349,9 @@ test("deux promotions au même préfixe SHA gardent des identités et clés dist
     draft: true,
   });
 
-  const attestationSuivante = structuredClone(ATTESTATION);
-  attestationSuivante.sha = shaSuivant;
-  for (const gate of attestationSuivante.gates) gate.sha = shaSuivant;
-  const recuSuivant = recuPour(attestationSuivante);
+  const emissionSuivante = emissionValidePourSha(shaSuivant);
+  const attestationSuivante = emissionSuivante.attestation;
+  const recuSuivant = emissionSuivante.recu;
   assert.notEqual(recuSuivant.id, RECU.id);
   assert.equal(
     attestationSuivante.sha.slice(0, 12),
@@ -389,6 +362,10 @@ test("deux promotions au même préfixe SHA gardent des identités et clés dist
   const premier = await publierPromotion(optionsPublication(), frontieres);
   const suivant = await publierPromotion(
     optionsPublication({
+      dossier: Buffer.from(
+        `${JSON.stringify(emissionSuivante.dossier, null, 2)}\n`,
+      ),
+      contexteDossier: emissionSuivante.contexte,
       attestation: Buffer.from(
         `${JSON.stringify(attestationSuivante, null, 2)}\n`,
       ),
@@ -501,6 +478,7 @@ test("refuse toute attestation locale incomplète avant signature et écriture",
   const mutations = [
     (attestation) => delete attestation.dossier,
     (attestation) => delete attestation["checkpoint-baseline"],
+    (attestation) => delete attestation.profil,
     (attestation) => delete attestation.registres,
     (attestation) => delete attestation.staging,
     (attestation) => delete attestation.gates,
@@ -1215,9 +1193,11 @@ test("refuse le succès si une frontière annonce une création sans objet véri
 test("le CLI publie les deux fichiers locaux via les seules frontières injectées", async () => {
   const temp = mkdtempSync(join(tmpdir(), "punks-promotion-publish-cli-"));
   const cheminGraphe = join(temp, "release-graph.json");
+  const cheminDossier = join(temp, "promotion-dossier.json");
   const cheminAttestation = join(temp, "attestation-tranche-1.json");
   const cheminRecu = join(temp, "recu-promotion-1.json");
   writeFileSync(cheminGraphe, CONTENU_GRAPHE_PUBLICATION, { flag: "wx" });
+  writeFileSync(cheminDossier, CONTENU_DOSSIER, { flag: "wx" });
   writeFileSync(cheminAttestation, CONTENU_ATTESTATION_LOCAL, { flag: "wx" });
   writeFileSync(cheminRecu, CONTENU_RECU_LOCAL, { flag: "wx" });
   const sorties = [];
@@ -1227,6 +1207,8 @@ test("le CLI publie les deux fichiers locaux via les seules frontières injecté
     [
       "--graphe",
       cheminGraphe,
+      "--dossier",
+      cheminDossier,
       "--attestation",
       cheminAttestation,
       "--recu",
@@ -1245,6 +1227,9 @@ test("le CLI publie les deux fichiers locaux via les seules frontières injecté
     ],
     {
       frontieres: creerFrontieres(),
+      construireContexteDossier: () => ({
+        contexteValidation: CONTEXTE_DOSSIER,
+      }),
       ecrireSortie: (ligne) => sorties.push(ligne),
       ecrireErreur: (ligne) => erreurs.push(ligne),
     },

@@ -92,6 +92,17 @@ const uuidPattern =
 const FOLLOW_PROTOCOL = "punks.follow.v1";
 const DESKTOP_PROFILE = "desktop-social-loop@1";
 const DESKTOP_MINIMUM_CLIENT_VERSION = "0.6.0";
+const WORKER_VERSION_HEADER = "x-punks-worker-version-id";
+const WORKER_VERSIONS_HEADER = "x-punks-worker-versions";
+const STAGING_RUNTIME_PROBES = [
+  ["punks-auth-staging", "AUTH_RUNTIME_IDENTITY"],
+  ["punks-attestation-staging", "ATTESTATION_RUNTIME_IDENTITY"],
+  ["punks-erasure-staging", "ERASURE_RUNTIME_IDENTITY"],
+  ["punks-projector-staging", "PROJECTOR_RUNTIME_IDENTITY"],
+  ["punks-search-staging", "SEARCH_RUNTIME_IDENTITY"],
+  ["punks-api-staging", null],
+  ["punks-bot-runtime-staging", "BOT_RUNTIME_IDENTITY"],
+] as const;
 const DESKTOP_CAPABILITIES = [
   "compatibility",
   "account-session",
@@ -124,6 +135,38 @@ function semanticVersionAtLeast(candidate: string, minimum: string): boolean {
     if (candidatePart !== minimumPart) return candidatePart > minimumPart;
   }
   return true;
+}
+
+async function stagingRuntimeVersions(
+  env: ApiEnv,
+): Promise<{ name: string; versionId: string }[]> {
+  const apiVersionId = env.CF_VERSION_METADATA?.id;
+  if (!uuidPattern.test(apiVersionId ?? "")) {
+    throw new Error("API Worker version unavailable");
+  }
+  return Promise.all(
+    STAGING_RUNTIME_PROBES.map(async ([name, binding]) => {
+      if (binding === null) return { name, versionId: apiVersionId };
+      const result = await env[binding].runtimeVersion();
+      if (
+        result === null ||
+        typeof result !== "object" ||
+        Array.isArray(result) ||
+        Object.keys(result).length !== 1 ||
+        !uuidPattern.test(result.versionId ?? "")
+      ) {
+        throw new Error(`Worker version unavailable for ${name}`);
+      }
+      return { name, versionId: result.versionId };
+    }),
+  );
+}
+
+function base64UrlJson(value: unknown): string {
+  return btoa(JSON.stringify(value))
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replace(/=+$/u, "");
 }
 
 async function desktopCompatibility(
@@ -189,6 +232,25 @@ async function desktopCompatibility(
       "internal",
       "Desktop Compatibility response violated its contract",
     );
+  }
+  if (compatible && environment === "staging") {
+    try {
+      const versions = await stagingRuntimeVersions(env);
+      const apiVersionId = versions.find(
+        ({ name }) => name === "punks-api-staging",
+      )?.versionId;
+      return json(response, 200, {
+        "cache-control": "no-store",
+        [WORKER_VERSION_HEADER]: apiVersionId ?? "",
+        [WORKER_VERSIONS_HEADER]: base64UrlJson(versions),
+      });
+    } catch {
+      return problem(
+        500,
+        "internal",
+        "Desktop Compatibility cannot identify every executing Worker version",
+      );
+    }
   }
   return json(response, 200, { "cache-control": "no-store" });
 }

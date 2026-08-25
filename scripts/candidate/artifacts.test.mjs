@@ -6,6 +6,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -20,7 +21,7 @@ import {
   sourceShaAnnotation,
   STAGING_DEPLOYMENT_PROOF_SCHEMA,
 } from "../../cloudflare/scripts/staging-deployment-proof.mjs";
-import { aggregateCandidate, collectPlatformLeg } from "./artifacts.mjs";
+import { aggregateCandidate, collectPlatformLeg, run } from "./artifacts.mjs";
 
 const SOURCE_SHA = "a".repeat(40);
 const STAGING_PROOF_MATERIAL = {
@@ -141,6 +142,75 @@ function createFakeGh(root, succeeds = true) {
   );
   chmodSync(path, 0o700);
   return path;
+}
+
+function createOutputRacingFakeGh(root, output) {
+  const path = join(root, "gh-output-racing");
+  write(
+    path,
+    [
+      "#!/usr/bin/env node",
+      'const { existsSync, mkdirSync, writeFileSync } = require("node:fs");',
+      `const output = ${JSON.stringify(output)};`,
+      'if (!existsSync(output)) { mkdirSync(output); writeFileSync(output + "/foreign.txt", "concurrent owner\\n"); }',
+      "process.stdout.write(JSON.stringify([{ verificationResult: { verified: true } }]));",
+      "",
+    ].join("\n"),
+  );
+  chmodSync(path, 0o700);
+  return path;
+}
+
+function fileSha256(path) {
+  return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
+
+function createRacingFakeGh(root, input) {
+  const expectedSubjects = new Set();
+  const expectedBundles = new Set();
+  for (const platform of Object.keys(TARGETS)) {
+    const platformRoot = join(input, platform);
+    const manifestPath = join(platformRoot, "platform-manifest.json");
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+    expectedSubjects.add(fileSha256(manifestPath));
+    expectedSubjects.add(fileSha256(join(platformRoot, "native-proof.json")));
+    for (const artifact of manifest.artifacts) {
+      expectedSubjects.add(fileSha256(join(platformRoot, artifact.path)));
+    }
+    expectedBundles.add(
+      fileSha256(join(platformRoot, "provenance.sigstore.json")),
+    );
+  }
+
+  const firstRoot = join(input, "macos-arm64");
+  const firstManifestPath = join(firstRoot, "platform-manifest.json");
+  const firstManifest = JSON.parse(readFileSync(firstManifestPath, "utf8"));
+  const firstArtifactPath = join(firstRoot, firstManifest.artifacts[0].path);
+  const firstBundlePath = join(firstRoot, "provenance.sigstore.json");
+  const marker = join(root, "race-triggered");
+  const path = join(root, "gh-racing");
+  write(
+    path,
+    [
+      "#!/usr/bin/env node",
+      'const { createHash } = require("node:crypto");',
+      'const { existsSync, readFileSync, writeFileSync } = require("node:fs");',
+      `const marker = ${JSON.stringify(marker)};`,
+      `const originals = ${JSON.stringify([firstManifestPath, firstArtifactPath, firstBundlePath])};`,
+      `const expectedSubjects = new Set(${JSON.stringify([...expectedSubjects])});`,
+      `const expectedBundles = new Set(${JSON.stringify([...expectedBundles])});`,
+      'const digest = (path) => createHash("sha256").update(readFileSync(path)).digest("hex");',
+      "const valueAfter = (name) => process.argv[process.argv.indexOf(name) + 1];",
+      'if (!existsSync(marker)) { for (const original of originals) writeFileSync(original, "replaced during gh verification\\n"); writeFileSync(marker, "done\\n"); }',
+      'const artifact = process.argv[process.argv.indexOf("verify") + 1];',
+      'const bundle = valueAfter("--bundle");',
+      'if (!expectedSubjects.has(digest(artifact)) || !expectedBundles.has(digest(bundle))) { process.stderr.write("gh reopened replaced bytes\\n"); process.exit(1); }',
+      "process.stdout.write(JSON.stringify([{ verificationResult: { verified: true } }]));",
+      "",
+    ].join("\n"),
+  );
+  chmodSync(path, 0o700);
+  return { path, firstArtifactPath, firstManifest };
 }
 
 function collectLeg(root, platform) {
@@ -281,6 +351,8 @@ test("collect rejects extra layout entries, identity mismatch and existing outpu
   const validRoot = mkdtempSync(join(tmpdir(), "punks-create-only-"));
   context.after(() => rmSync(validRoot, { force: true, recursive: true }));
   const collected = collectLeg(validRoot, "macos-arm64");
+  const secondInput = join(validRoot, "second-input");
+  mkdirSync(secondInput);
   assert.throws(
     () =>
       collectPlatformLeg({
@@ -288,12 +360,48 @@ test("collect rejects extra layout entries, identity mismatch and existing outpu
         target: TARGETS["macos-arm64"],
         sourceSha: SOURCE_SHA,
         stagingDeploymentId: DEPLOYMENT_ID,
-        bundle: createBundle(validRoot, "macos-arm64-second"),
+        bundle: createBundle(secondInput, "macos-arm64"),
         nativeProof: join(validRoot, "proof-macos-arm64.json"),
         output: collected.output,
       }),
     /already exists/,
   );
+});
+
+test("collect refuses a destination created after validation without touching its contents", (context) => {
+  const root = mkdtempSync(join(tmpdir(), "punks-collect-output-race-"));
+  context.after(() => rmSync(root, { force: true, recursive: true }));
+  const platform = "linux-x64";
+  const proofPath = join(root, "proof.json");
+  const output = join(root, "candidate-leg");
+  write(proofPath, JSON.stringify(nativeProof(platform)));
+
+  assert.throws(
+    () =>
+      collectPlatformLeg(
+        {
+          platform,
+          target: TARGETS[platform],
+          sourceSha: SOURCE_SHA,
+          stagingDeploymentId: DEPLOYMENT_ID,
+          bundle: createBundle(root, platform),
+          nativeProof: proofPath,
+          output,
+        },
+        {
+          beforeOutputCreate() {
+            mkdirSync(output);
+            write(join(output, "foreign.txt"), "concurrent owner\n");
+          },
+        },
+      ),
+    /already exists/,
+  );
+  assert.equal(
+    readFileSync(join(output, "foreign.txt"), "utf8"),
+    "concurrent owner\n",
+  );
+  assert.deepEqual(readdirSync(output), ["foreign.txt"]);
 });
 
 test("aggregate verifies four Sigstore legs and prepares immutable latest.json", (context) => {
@@ -338,9 +446,32 @@ test("aggregate verifies four Sigstore legs and prepares immutable latest.json",
   assert.throws(() => aggregateCandidate(options), /already exists/);
 });
 
+test("aggregate verifies and copies the exact bytes read before gh can replace inputs", (context) => {
+  const root = mkdtempSync(join(tmpdir(), "punks-aggregate-race-"));
+  context.after(() => rmSync(root, { force: true, recursive: true }));
+  const options = aggregateOptions(root);
+  const racing = createRacingFakeGh(root, options.input);
+  const selected = racing.firstManifest.artifacts[0];
+  const expectedContent = readFileSync(racing.firstArtifactPath);
+  options.ghBinary = racing.path;
+
+  const { aggregate } = aggregateCandidate(options);
+
+  assert.equal(
+    fileSha256(join(options.output, "release-assets", selected.name)),
+    createHash("sha256").update(expectedContent).digest("hex"),
+  );
+  assert.equal(
+    aggregate.releaseAssets.find(({ name }) => name === selected.name).sha256,
+    createHash("sha256").update(expectedContent).digest("hex"),
+  );
+});
+
 test("aggregate rejects a forged or mismatched staging deployment proof", (context) => {
   for (const mutation of ["digest", "source", "symlink"]) {
-    const root = mkdtempSync(join(tmpdir(), `punks-staging-proof-${mutation}-`));
+    const root = mkdtempSync(
+      join(tmpdir(), `punks-staging-proof-${mutation}-`),
+    );
     context.after(() => rmSync(root, { force: true, recursive: true }));
     const options = aggregateOptions(root);
     if (mutation === "digest") {
@@ -377,6 +508,23 @@ test("aggregate output is create-only even when the directory is empty", (contex
   );
 });
 
+test("aggregate refuses a destination created during verification without accepting foreign contents", (context) => {
+  const root = mkdtempSync(join(tmpdir(), "punks-aggregate-output-race-"));
+  context.after(() => rmSync(root, { force: true, recursive: true }));
+  const options = aggregateOptions(root);
+  options.ghBinary = createOutputRacingFakeGh(root, options.output);
+
+  assert.throws(
+    () => aggregateCandidate(options),
+    /Candidate aggregate output already exists/,
+  );
+  assert.equal(
+    readFileSync(join(options.output, "foreign.txt"), "utf8"),
+    "concurrent owner\n",
+  );
+  assert.deepEqual(readdirSync(options.output), ["foreign.txt"]);
+});
+
 test("aggregate rejects self-declared provenance and failed GitHub verification", (context) => {
   const selfDeclaredRoot = mkdtempSync(join(tmpdir(), "punks-self-declared-"));
   context.after(() =>
@@ -399,6 +547,17 @@ test("aggregate rejects self-declared provenance and failed GitHub verification"
   assert.throws(
     () => aggregateCandidate(failed),
     /GitHub attestation verification failed/,
+  );
+});
+
+test("the real artifact CLI exposes no verifier binary or unknown option", () => {
+  assert.throws(
+    () => run(["aggregate", "--gh-binary", "/tmp/faux-gh"]),
+    /unknown option --gh-binary/i,
+  );
+  assert.throws(
+    () => run(["collect", "--inconnue", "valeur"]),
+    /unknown option --inconnue/i,
   );
 });
 

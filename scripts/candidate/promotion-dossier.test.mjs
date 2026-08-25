@@ -11,18 +11,77 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import test from "node:test";
-import { validerDossier } from "../promotion-dossier-lib.mjs";
+import {
+  canonicalJson,
+  CANONICAL_STAGING_ACCOUNT_ID,
+  CANONICAL_STAGING_WORKER_NAMES,
+  sourceShaAnnotation,
+  STAGING_DEPLOYMENT_PROOF_SCHEMA,
+} from "../../cloudflare/scripts/staging-deployment-proof.mjs";
+import {
+  METHODES_ACCESSIBILITE,
+  PREUVES_RECUPERATION,
+  TYPES_FAUTE,
+  validerDossier,
+} from "../promotion-dossier-lib.mjs";
+import {
+  bundleSigstoreFixture,
+  contenuManifesteCandidatFixture,
+  contenuTranscriptInstalleFixture,
+  nomsReleaseInstallee,
+} from "../promotion-test-fixtures.mjs";
 import { assemblerDossierPromotion } from "./promotion-dossier.mjs";
 
 const SHA_CANDIDAT = "a".repeat(40);
-const DEPLOIEMENT = `sha256:${"b".repeat(64)}`;
-const DIGESTS_PRODUCTION = {
-  bundle: "c".repeat(64),
-  manifeste: "d".repeat(64),
+const MATERIAU_PREUVE_STAGING = {
+  schema: STAGING_DEPLOYMENT_PROOF_SCHEMA,
+  accountId: CANONICAL_STAGING_ACCOUNT_ID,
+  environment: "staging",
+  sourceSha: SHA_CANDIDAT,
+  observer: "cloudflare-remote",
+  workers: CANONICAL_STAGING_WORKER_NAMES.map((name, index) => ({
+    name,
+    versionId: `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+    sourceShaAnnotation: sourceShaAnnotation(SHA_CANDIDAT),
+    deploymentId: `10000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+  })),
 };
+const DEPLOIEMENT = `sha256:${createHash("sha256")
+  .update(canonicalJson(MATERIAU_PREUVE_STAGING), "utf8")
+  .digest("hex")}`;
+const CONTENU_PREUVE_STAGING = `${JSON.stringify(
+  {
+    ...MATERIAU_PREUVE_STAGING,
+    deploymentId: DEPLOIEMENT,
+  },
+  null,
+  2,
+)}\n`;
 const PLATEFORMES = ["macos-arm64", "macos-x64", "linux-x64", "windows-x64"];
+const WORKERS = [...CANONICAL_STAGING_WORKER_NAMES];
+const PROFIL_PROMOTION_PATH = resolve("cloudflare/promotion-profiles.json");
+const CONTENU_PROFIL_PROMOTION = readFileSync(PROFIL_PROMOTION_PATH);
+const PROFIL_PROMOTION = JSON.parse(CONTENU_PROFIL_PROMOTION).profiles.find(
+  ({ tranche }) => tranche === 1,
+);
+const AUTORITES = PROFIL_PROMOTION.authorities.map(({ id }) => id);
+const RECITS = [...PROFIL_PROMOTION.stories];
+const CONTENU_MATERIAU_STAGING = readFileSync(
+  resolve("cloudflare/staging.resources.json"),
+);
+const MATERIAU_STAGING = JSON.parse(CONTENU_MATERIAU_STAGING);
+const DEPOT = "punksbot/punksbot";
+const REF_SOURCE = "refs/heads/staging";
+const WORKFLOW_SIGNATAIRE =
+  "github.com/punksbot/punksbot/.github/workflows/punks-desktop-candidate.yml";
+
+function technologieLecteurEcran(plateforme) {
+  if (plateforme.startsWith("macos-")) return "VoiceOver";
+  if (plateforme === "windows-x64") return "NVDA";
+  return "Orca";
+}
 const VERIFICATIONS = [
   "signature",
   "identite-application",
@@ -55,19 +114,69 @@ function sha256(contenu) {
   return createHash("sha256").update(contenu).digest("hex");
 }
 
+const CONTENU_BUNDLE_PRODUCTION = `${JSON.stringify(bundleSigstoreFixture())}\n`;
+const ARTEFACTS_PRODUCTION = PLATEFORMES.map((plateforme) => {
+  const [nom, signatureNom] = nomsReleaseInstallee(plateforme, SHA_CANDIDAT);
+  return {
+    nom,
+    sha256: sha256(`bundle:${plateforme}`),
+    taille: Buffer.byteLength(`bundle:${plateforme}`),
+    signatureNom,
+    signature: sha256(`signature:${plateforme}`),
+    signatureTaille: Buffer.byteLength(`signature:${plateforme}`),
+  };
+});
+const CONTENU_MANIFESTE_PRODUCTION = contenuManifesteCandidatFixture({
+  candidateSha: SHA_CANDIDAT,
+  stagingDeploymentId: DEPLOIEMENT,
+  stagingProofSha256: sha256(CONTENU_PREUVE_STAGING),
+  repository: DEPOT,
+  plateformes: PLATEFORMES,
+  artefacts: ARTEFACTS_PRODUCTION,
+});
+const DIGESTS_PRODUCTION = {
+  bundle: sha256(CONTENU_BUNDLE_PRODUCTION),
+  manifeste: sha256(CONTENU_MANIFESTE_PRODUCTION),
+};
+
+function contenuTranscript(plateforme) {
+  return contenuTranscriptInstalleFixture({
+    candidateSha: SHA_CANDIDAT,
+    stagingDeploymentId: DEPLOIEMENT,
+    plateforme,
+    workers: MATERIAU_PREUVE_STAGING.workers,
+    artifactSha256: sha256(`bundle:${plateforme}`),
+  });
+}
+
 function creerJeuDePreuves() {
   const racine = mkdtempSync(join(tmpdir(), "punks-promotion-dossier-"));
   const references = [];
   const parId = new Map();
+  const appelsProvenance = [];
 
-  const ajouter = (id, data = {}, surcharges = {}) => {
+  const ajouter = (
+    id,
+    data = {},
+    surcharges = {},
+    contenuSujet = `observation:${id}\n`,
+  ) => {
+    const octetsSujet = Buffer.from(contenuSujet);
+    const empreinteSujet = sha256(octetsSujet);
+    const sujetChemin = join(
+      "sha256",
+      `${empreinteSujet}-${id.replaceAll(/[^a-z0-9.-]/gi, "-")}-subject.bin`,
+    );
+    const sujetAbsolu = join(racine, sujetChemin);
+    mkdirSync(dirname(sujetAbsolu), { recursive: true });
+    writeFileSync(sujetAbsolu, octetsSujet, { flag: "wx" });
     const preuve = {
       schema: "punks.promotion-proof.v1",
       id,
       candidateSha: SHA_CANDIDAT,
       stagingDeploymentId: DEPLOIEMENT,
       result: "vert",
-      data,
+      data: { ...data, subjectSha256: empreinteSujet },
       ...surcharges,
     };
     const contenu = `${JSON.stringify(preuve)}\n`;
@@ -79,13 +188,36 @@ function creerJeuDePreuves() {
     const absolu = join(racine, chemin);
     mkdirSync(dirname(absolu), { recursive: true });
     writeFileSync(absolu, contenu, { flag: "wx" });
-    const reference = { id, chemin, sha256: empreinte };
+    const reference = {
+      id,
+      chemin,
+      sha256: empreinte,
+      sujet: { chemin: sujetChemin, sha256: empreinteSujet },
+    };
     references.push(reference);
-    parId.set(id, { absolu, preuve, reference });
+    parId.set(id, {
+      absolu,
+      preuve,
+      reference,
+      sujetAbsolu,
+      contenuSujet: octetsSujet,
+    });
     return reference;
   };
 
   ajouter("candidat", { tranche: 1 });
+  ajouter(
+    "profil/promotion",
+    {
+      materiau: "cloudflare/promotion-profiles.json",
+      profil: PROFIL_PROMOTION.id,
+      tranche: 1,
+      recits: RECITS,
+      autorites: AUTORITES,
+    },
+    {},
+    CONTENU_PROFIL_PROMOTION,
+  );
   ajouter("registres", {
     registres: [
       ["registre-contrats", "1"],
@@ -98,72 +230,184 @@ function creerJeuDePreuves() {
       sha256: octet.repeat(64),
     })),
   });
-  ajouter("staging/materiau", {
-    environnement: "staging",
-    compte: "1".repeat(32),
-    zone: "2".repeat(32),
-    deploiement: DEPLOIEMENT,
-    materiau: "cloudflare/staging.resources.json",
-    subjectSha256: "5".repeat(64),
-  });
-  ajouter("production/bundle", {
-    subjectSha256: DIGESTS_PRODUCTION.bundle,
-  });
-  ajouter("production/manifeste", {
-    subjectSha256: DIGESTS_PRODUCTION.manifeste,
-  });
-
+  ajouter(
+    "staging/materiau",
+    {
+      environnement: "staging",
+      compte: CANONICAL_STAGING_ACCOUNT_ID,
+      zone: MATERIAU_STAGING.zone.id,
+      deploiement: DEPLOIEMENT,
+      materiau: "cloudflare/staging.resources.json",
+      workers: WORKERS,
+    },
+    {},
+    CONTENU_MATERIAU_STAGING,
+  );
+  ajouter(
+    "staging/deploiement",
+    {
+      compte: CANONICAL_STAGING_ACCOUNT_ID,
+      environnement: "staging",
+      deploiement: DEPLOIEMENT,
+      workers: WORKERS,
+    },
+    {},
+    CONTENU_PREUVE_STAGING,
+  );
   const bundles = new Map();
   for (const plateforme of PLATEFORMES) {
+    const transcript = contenuTranscript(plateforme);
+    const transcriptSha256 = sha256(transcript);
+    const [nomArtefact, nomSignature] = nomsReleaseInstallee(
+      plateforme,
+      SHA_CANDIDAT,
+    );
+    ajouter(
+      `transcript/${plateforme}`,
+      {
+        schema: "punks.installed-social-loop-transcript.v1",
+        plateforme,
+      },
+      { plateforme },
+      transcript,
+    );
+    ajouter(
+      `staging/reobservation/${plateforme}`,
+      {
+        transcriptSha256,
+        initialStagingProofSha256: sha256(CONTENU_PREUVE_STAGING),
+        deploymentId: DEPLOIEMENT,
+        workers: MATERIAU_PREUVE_STAGING.workers.map(
+          ({ name, versionId, deploymentId }) => ({
+            name,
+            versionId,
+            deploymentId,
+          }),
+        ),
+        sequence: ["transcript-installed", "cloudflare-reobserved"],
+      },
+      { plateforme },
+      CONTENU_PREUVE_STAGING,
+    );
     ajouter(
       `artefact/${plateforme}/bundle`,
       {
-        nom: `punks-${plateforme}`,
-        bundleId: "bot.punks.desktop",
-        subjectSha256: sha256(`bundle:${plateforme}`),
+        nom: nomArtefact,
+        bundleId: "bot.punks.desktop.staging",
+        taille: Buffer.byteLength(`bundle:${plateforme}`),
+        transcriptSha256,
       },
       { plateforme },
+      `bundle:${plateforme}`,
     );
     bundles.set(plateforme, sha256(`bundle:${plateforme}`));
     ajouter(
       `artefact/${plateforme}/signature`,
-      { subjectSha256: sha256(`signature:${plateforme}`) },
+      {
+        nom: nomSignature,
+        taille: Buffer.byteLength(`signature:${plateforme}`),
+        transcriptSha256,
+      },
       { plateforme },
+      `signature:${plateforme}`,
     );
     for (const verification of VERIFICATIONS) {
       ajouter(
         `artefact/${plateforme}/verification/${verification}`,
-        {},
+        { transcriptSha256 },
         { plateforme },
+        transcript,
+      );
+    }
+    for (const recit of RECITS) {
+      ajouter(
+        `parcours/${plateforme}/${recit}`,
+        {
+          sha256Artefact: bundles.get(plateforme),
+          via: ["ui", "ipc-rust", "contrats-publics"],
+          contour: "distribue",
+          serveurVite: false,
+          facadeTest: false,
+          transcriptSha256,
+        },
+        { plateforme },
+        transcript,
+      );
+    }
+    for (const critere of ACCESSIBILITE) {
+      ajouter(
+        `accessibilite/${plateforme}/${critere}`,
+        {
+          transcriptSha256,
+          methodes: METHODES_ACCESSIBILITE,
+          ...(critere === "lecteur-ecran"
+            ? { technologie: technologieLecteurEcran(plateforme) }
+            : {}),
+        },
+        { plateforme },
+        transcript,
       );
     }
     ajouter(
-      `parcours/${plateforme}/boucle-sociale`,
+      `accessibilite/${plateforme}/resultat`,
       {
-        sha256Artefact: bundles.get(plateforme),
-        via: ["ui", "ipc-rust", "contrats-publics"],
-        contour: "distribue",
-        serveurVite: false,
-        facadeTest: false,
+        transcriptSha256,
+        methodes: METHODES_ACCESSIBILITE,
+        technologieLecteurEcran: technologieLecteurEcran(plateforme),
       },
       { plateforme },
+      transcript,
     );
-    for (const critere of ACCESSIBILITE) {
-      ajouter(`accessibilite/${plateforme}/${critere}`, {}, { plateforme });
-    }
-    ajouter(`accessibilite/${plateforme}/resultat`, {}, { plateforme });
   }
+  ajouter("production/bundle", {}, {}, CONTENU_BUNDLE_PRODUCTION);
+  ajouter("production/manifeste", {}, {}, CONTENU_MANIFESTE_PRODUCTION);
 
-  ["coupure", "revocation", "perte-autorite"].forEach((type, index) => {
-    ajouter(
-      `faute/${type}`,
-      { autorite: "workers", plateforme: PLATEFORMES[index] },
-      { plateforme: PLATEFORMES[index] },
-    );
+  const captures = [];
+  TYPES_FAUTE.forEach((type, typeIndex) => {
+    AUTORITES.forEach((autorite, autoriteIndex) => {
+      const plateforme =
+        PLATEFORMES[(typeIndex + autoriteIndex) % PLATEFORMES.length];
+      const executionId = `fault-${type}-${autorite}`;
+      const contenuCapture = `capture:${type}:${autorite}\n`;
+      const captureSha256 = sha256(contenuCapture);
+      const faute = ajouter(
+        `faute/${type}/${autorite}`,
+        {
+          autorite,
+          plateforme,
+          executionId,
+          sha256Artefact: bundles.get(plateforme),
+          transcriptSha256: sha256(contenuTranscript(plateforme)),
+          captureSha256,
+        },
+        { plateforme },
+        contenuCapture,
+      );
+      captures.push({ type, autorite, captureSha256 });
+      for (const preuve of PREUVES_RECUPERATION) {
+        ajouter(
+          `recuperation/${preuve}/${type}/${autorite}`,
+          {
+            type,
+            autorite,
+            plateforme,
+            executionId,
+            fauteSha256: faute.sha256,
+            sha256Artefact: bundles.get(plateforme),
+            captureSha256,
+          },
+          { plateforme },
+          `recovery:${preuve}:${type}:${autorite}\n`,
+        );
+      }
+    });
   });
-  ajouter("recuperation/roll-forward");
-  ajouter("recuperation/rpo-logique-nul");
-  ajouter("recuperation/captures");
+  ajouter(
+    "recuperation/captures",
+    { captures },
+    {},
+    `${JSON.stringify(captures)}\n`,
+  );
 
   const testGolden = "desktop/tests/e2e/social-loop.spec.ts";
   ajouter(`golden/${testGolden}`, {
@@ -192,7 +436,32 @@ function creerJeuDePreuves() {
     })}\n`,
     { flag: "wx" },
   );
-  return { racine, index, parId, references, bundles };
+  const provenanceBundle = join(racine, "provenance.sigstore.json");
+  writeFileSync(
+    provenanceBundle,
+    `${JSON.stringify(bundleSigstoreFixture())}\n`,
+    {
+      flag: "wx",
+    },
+  );
+  const verifierProvenance = (appel) => {
+    appelsProvenance.push({
+      ...appel,
+      artifactSha256: sha256(appel.artifactContent),
+      bundleSha256: sha256(appel.bundleContent),
+    });
+  };
+  return {
+    racine,
+    index,
+    parId,
+    references,
+    bundles,
+    stagingDeploymentProof: parId.get("staging/deploiement").sujetAbsolu,
+    provenanceBundle,
+    verifierProvenance,
+    appelsProvenance,
+  };
 }
 
 function assembler(fixture, surcharges = {}) {
@@ -200,7 +469,13 @@ function assembler(fixture, surcharges = {}) {
     racinePreuves: fixture.racine,
     indexPreuves: fixture.index,
     candidatSha: SHA_CANDIDAT,
-    deploiementId: DEPLOIEMENT,
+    promotionProfile: PROFIL_PROMOTION_PATH,
+    stagingDeploymentProof: fixture.stagingDeploymentProof,
+    provenanceBundle: fixture.provenanceBundle,
+    repository: DEPOT,
+    sourceRef: REF_SOURCE,
+    signerWorkflow: WORKFLOW_SIGNATAIRE,
+    verifierProvenance: fixture.verifierProvenance,
     ...surcharges,
   });
 }
@@ -247,8 +522,28 @@ test("assemble un dossier complet uniquement depuis les preuves réelles", (t) =
     PLATEFORMES,
   );
   assert.deepEqual(
-    validerDossier(dossier, { racinePreuves: fixture.racine }),
+    validerDossier(dossier, {
+      racinePreuves: fixture.racine,
+      verifierProvenance: fixture.verifierProvenance,
+    }),
     [],
+  );
+  assert.ok(
+    fixture.appelsProvenance.some(
+      ({ artifactSha256 }) =>
+        artifactSha256 === sha256(readFileSync(fixture.index)),
+    ),
+    "l'index exact doit être vérifié par l'attestation GitHub",
+  );
+  assert.ok(
+    fixture.appelsProvenance.some(
+      ({ artifactSha256 }) =>
+        artifactSha256 ===
+        sha256(
+          readFileSync(fixture.parId.get("transcript/linux-x64").sujetAbsolu),
+        ),
+    ),
+    "les octets exacts du transcript doivent être sujets de l'attestation",
   );
   assert.equal(
     dossier.gates["cloudflare-check"].resultat,
@@ -256,6 +551,205 @@ test("assemble un dossier complet uniquement depuis les preuves réelles", (t) =
       readFileSync(fixture.parId.get("gate/cloudflare-check").absolu, "utf8"),
     ).result,
   );
+});
+
+test("refuse de mélanger les preuves de deux exécutions installées", (t) => {
+  for (const id of [
+    "artefact/linux-x64/signature",
+    "artefact/linux-x64/verification/updater",
+    "parcours/linux-x64/publication",
+    "accessibilite/linux-x64/clavier",
+    "accessibilite/linux-x64/resultat",
+  ]) {
+    const fixture = creerJeuDePreuves();
+    t.after(() => rmSync(fixture.racine, { recursive: true, force: true }));
+    remplacerPreuve(fixture, id, (preuve) => {
+      preuve.data.transcriptSha256 = "f".repeat(64);
+    });
+
+    assert.throws(
+      () => assembler(fixture),
+      /divergente.*transcript/i,
+      `la preuve ${id} doit provenir du même transcript installé`,
+    );
+  }
+});
+
+test("la validation finale refuse de réattribuer les preuves à un autre candidat", (t) => {
+  const fixture = creerJeuDePreuves();
+  t.after(() => rmSync(fixture.racine, { recursive: true, force: true }));
+  const dossier = assembler(fixture);
+  const autreSha = "e".repeat(40);
+  dossier.candidat.sha = autreSha;
+  for (const gate of Object.values(dossier.gates)) {
+    gate.sha = autreSha;
+  }
+
+  const erreurs = validerDossier(dossier, {
+    racinePreuves: fixture.racine,
+    verifierProvenance: fixture.verifierProvenance,
+  });
+
+  assert.match(
+    erreurs.join("\n"),
+    /preuve.*SHA candidat/i,
+    "les enveloppes de preuve doivent rester liées au SHA qui les a produites",
+  );
+});
+
+test("la validation finale refuse de réattribuer les preuves à un autre staging", (t) => {
+  const fixture = creerJeuDePreuves();
+  t.after(() => rmSync(fixture.racine, { recursive: true, force: true }));
+  const dossier = assembler(fixture);
+  const autreDeploiement = `sha256:${"f".repeat(64)}`;
+  dossier.liaison.staging.deploiement = autreDeploiement;
+  for (const execution of dossier.parcours.executions) {
+    execution.deploiement = autreDeploiement;
+  }
+
+  const erreurs = validerDossier(dossier, {
+    racinePreuves: fixture.racine,
+    verifierProvenance: fixture.verifierProvenance,
+  });
+
+  assert.match(
+    erreurs.join("\n"),
+    /preuve.*déploiement staging/i,
+    "les enveloppes de preuve doivent rester liées au staging qui les a produites",
+  );
+});
+
+test("la validation finale refuse une identité d'artefact divergente de sa preuve", (t) => {
+  const fixture = creerJeuDePreuves();
+  t.after(() => rmSync(fixture.racine, { recursive: true, force: true }));
+  const dossier = assembler(fixture);
+  dossier.liaison.artefacts[0].identite.bundleId =
+    "bot.punks.desktop.contrefait";
+
+  const erreurs = validerDossier(dossier, {
+    racinePreuves: fixture.racine,
+    verifierProvenance: fixture.verifierProvenance,
+  });
+
+  assert.match(
+    erreurs.join("\n"),
+    /preuve.*identité d'application/i,
+    "le dossier final doit conserver l'identité observée dans l'artefact installé",
+  );
+});
+
+test("le dossier final conserve les preuves de l'identité candidate et des registres", (t) => {
+  const fixture = creerJeuDePreuves();
+  t.after(() => rmSync(fixture.racine, { recursive: true, force: true }));
+
+  const dossier = assembler(fixture);
+  const { id: _candidatId, ...preuveCandidat } =
+    fixture.parId.get("candidat").reference;
+  const { id: _registresId, ...preuveRegistres } =
+    fixture.parId.get("registres").reference;
+  preuveCandidat.subjectSha256 = preuveCandidat.sujet.sha256;
+  preuveRegistres.subjectSha256 = preuveRegistres.sujet.sha256;
+
+  assert.deepEqual(dossier.preuves.candidat, preuveCandidat);
+  assert.deepEqual(dossier.preuves.registres, preuveRegistres);
+});
+
+test("la validation finale exige les versions exactes du graphe de release", (t) => {
+  const fixture = creerJeuDePreuves();
+  t.after(() => rmSync(fixture.racine, { recursive: true, force: true }));
+  const dossier = assembler(fixture);
+  const registresAttendus = Object.fromEntries(
+    dossier.liaison.registres.map((registre) => [
+      registre.nom,
+      { version: registre.version, sha256: registre.sha256 },
+    ]),
+  );
+  registresAttendus.profil = {
+    ...registresAttendus.profil,
+    version: registresAttendus.profil.version + 1,
+  };
+
+  const erreurs = validerDossier(dossier, {
+    racinePreuves: fixture.racine,
+    verifierProvenance: fixture.verifierProvenance,
+    registresAttendus,
+  });
+
+  assert.match(
+    erreurs.join("\n"),
+    /registre « profil ».*version.*graphe de release/i,
+  );
+});
+
+test("la validation finale refuse de citer deux fois le même registre", (t) => {
+  const fixture = creerJeuDePreuves();
+  t.after(() => rmSync(fixture.racine, { recursive: true, force: true }));
+  const dossier = assembler(fixture);
+  dossier.liaison.registres.push({ ...dossier.liaison.registres[0] });
+
+  const erreurs = validerDossier(dossier, {
+    racinePreuves: fixture.racine,
+    verifierProvenance: fixture.verifierProvenance,
+  });
+
+  assert.match(erreurs.join("\n"), /registre.*cité deux fois/i);
+});
+
+test("la validation finale compare chaque projection aux données réellement prouvées", async (t) => {
+  const mutations = [
+    ["candidat", (dossier) => (dossier.candidat.tranche = 2)],
+    ["registres", (dossier) => (dossier.liaison.registres[0].version = 2)],
+    [
+      "staging/materiau",
+      (dossier) => (dossier.liaison.staging.compte = "9".repeat(32)),
+    ],
+    [
+      "parcours/macos-arm64/publication",
+      (dossier) =>
+        dossier.parcours.executions
+          .find(
+            (execution) =>
+              execution.plateforme === "macos-arm64" &&
+              execution.recit === "publication",
+          )
+          .via.push("canal-parallele"),
+    ],
+    [
+      `faute/coupure/${AUTORITES[0]}`,
+      (dossier) => (dossier.fautes[0].autorite = "autre"),
+    ],
+    [
+      "accessibilite/windows-x64/lecteur-ecran",
+      (dossier) =>
+        dossier.accessibilite
+          .find((entree) => entree.plateforme === "windows-x64")
+          .matrice["lecteur-ecran"].methodes.pop(),
+    ],
+    [
+      "golden/desktop/tests/e2e/social-loop.spec.ts",
+      (dossier) => (dossier.goldens[0].verdict = "hors-perimetre"),
+    ],
+    ["retrait/diff", (dossier) => (dossier.retrait["verdicts-executes"] = 2)],
+  ];
+
+  for (const [preuveAttendue, modifier] of mutations) {
+    await t.test(preuveAttendue, () => {
+      const fixture = creerJeuDePreuves();
+      t.after(() => rmSync(fixture.racine, { recursive: true, force: true }));
+      const dossier = assembler(fixture);
+      modifier(dossier);
+
+      const erreurs = validerDossier(dossier, {
+        racinePreuves: fixture.racine,
+        verifierProvenance: fixture.verifierProvenance,
+      });
+
+      assert.match(
+        erreurs.join("\n"),
+        new RegExp(`preuve.*${preuveAttendue.replaceAll("/", "\\/")}`, "i"),
+      );
+    });
+  }
 });
 
 test("refuse une preuve obligatoire omise", (t) => {
@@ -271,6 +765,23 @@ test("refuse une preuve obligatoire omise", (t) => {
     () => assembler(fixture),
     /preuve obligatoire absente.*cloudflare-check/,
   );
+});
+
+test("le profil externe exige chaque récit sur les quatre plateformes", (t) => {
+  const fixture = creerJeuDePreuves();
+  t.after(() => rmSync(fixture.racine, { recursive: true, force: true }));
+  const recit = RECITS.at(-1);
+  for (let index = fixture.references.length - 1; index >= 0; index -= 1) {
+    if (
+      fixture.references[index].id.startsWith("parcours/") &&
+      fixture.references[index].id.endsWith(`/${recit}`)
+    ) {
+      fixture.references.splice(index, 1);
+    }
+  }
+  reecrireIndex(fixture);
+
+  assert.throws(() => assembler(fixture), new RegExp(`preuve.*${recit}`, "i"));
 });
 
 test("refuse le contenu altéré après son adressage", (t) => {
@@ -290,7 +801,7 @@ test("refuse le contenu altéré après son adressage", (t) => {
 test("refuse une preuve proprement re-hashée mais liée au mauvais SHA", (t) => {
   const fixture = creerJeuDePreuves();
   t.after(() => rmSync(fixture.racine, { recursive: true, force: true }));
-  remplacerPreuve(fixture, "parcours/windows-x64/boucle-sociale", (preuve) => {
+  remplacerPreuve(fixture, "parcours/windows-x64/publication", (preuve) => {
     preuve.candidateSha = "c".repeat(40);
   });
 
@@ -379,5 +890,56 @@ test("refuse toute valeur non verte et toute plateforme divergente", (t) => {
   assert.throws(
     () => assembler(fixturePlateforme),
     /plateforme macos-x64.*macos-arm64/,
+  );
+});
+
+test("refuse les enveloppes auto-déclarées sans provenance GitHub vérifiée", (t) => {
+  const fixture = creerJeuDePreuves();
+  t.after(() => rmSync(fixture.racine, { recursive: true, force: true }));
+
+  assert.throws(
+    () =>
+      assembler(fixture, {
+        verifierProvenance: () => {
+          throw new Error("verification rejected");
+        },
+      }),
+    /provenance.*verification rejected/i,
+  );
+
+  writeFileSync(
+    fixture.provenanceBundle,
+    `${JSON.stringify({ verified: true })}\n`,
+  );
+  assert.throws(() => assembler(fixture), /Sigstore|provenance/i);
+});
+
+test("refuse une récupération verte sans lien causal vers la faute exacte", (t) => {
+  const fixture = creerJeuDePreuves();
+  t.after(() => rmSync(fixture.racine, { recursive: true, force: true }));
+  const id = `recuperation/roll-forward/coupure/${AUTORITES[0]}`;
+  remplacerPreuve(fixture, id, (preuve) => {
+    preuve.data.fauteSha256 = "f".repeat(64);
+  });
+
+  assert.throws(() => assembler(fixture), /récupération.*faute|lien causal/i);
+});
+
+test("refuse un staging forgé même si son identifiant déclaré reste inchangé", (t) => {
+  const fixture = creerJeuDePreuves();
+  t.after(() => rmSync(fixture.racine, { recursive: true, force: true }));
+  const preuve = JSON.parse(
+    readFileSync(fixture.stagingDeploymentProof, "utf8"),
+  );
+  preuve.workers[0].deploymentId = "20000000-0000-4000-8000-000000000001";
+  const forge = join(fixture.racine, "staging-forge.json");
+  writeFileSync(forge, `${JSON.stringify(preuve)}\n`);
+
+  assert.throws(
+    () =>
+      assembler(fixture, {
+        stagingDeploymentProof: forge,
+      }),
+    /staging.*digest|preuve.*staging/i,
   );
 });

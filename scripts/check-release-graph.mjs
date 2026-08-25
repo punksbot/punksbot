@@ -110,7 +110,15 @@ function loadJsonDocument(absolutePath) {
   return JSON.parse(readFileSync(absolutePath, "utf8"));
 }
 
+/**
+ * Calcule les hashes vivants et charge les matériaux qui les ont produits.
+ *
+ * Retourne `{ hashes, ledger, manifest, registry, profile, staging }` afin que
+ * les consommateurs valident les mêmes octets et les mêmes projections.
+ */
 export function computeLiveHashes(files) {
+  const manifest = loadYamlDocument(manifestPath);
+  const ledger = loadYamlDocument(ledgerPath);
   const registry = loadJsonDocument(registryPath);
   const profile = loadJsonDocument(profilePath);
   const staging = loadJsonDocument(stagingPath);
@@ -120,7 +128,12 @@ export function computeLiveHashes(files) {
       schemas: treeSha256(files, [CONTRACT_ROOTS[0]]),
       generes: treeSha256(files, CONTRACT_ROOTS.slice(1)),
       profil: canonicalSha256(profile),
+      "registre-goldens": canonicalSha256(ledger),
+      "manifeste-retrait": canonicalSha256(manifest),
+      staging: canonicalSha256(staging),
     },
+    ledger,
+    manifest,
     registry,
     profile,
     staging,
@@ -186,19 +199,20 @@ function chargerGraphePrecedent() {
   }
 }
 
+/**
+ * Valide le graphe contre l'état vivant du dépôt.
+ *
+ * Retourne `{ graph, erreurs, live }`, où `live` contient les hashes et les
+ * documents `ledger`, `manifest`, `registry`, `profile` et `staging` chargés
+ * par `computeLiveHashes` pour cette validation précise.
+ */
 export function runValidation() {
   const graph = loadYamlDocument(graphPath);
-  const manifest = loadYamlDocument(manifestPath);
-  const ledger = loadYamlDocument(ledgerPath);
   const files = trackedFiles();
-  const { hashes, registry, profile, staging } = computeLiveHashes(files);
+  const { hashes, ledger, manifest, registry, profile, staging } =
+    computeLiveHashes(files);
   const erreurs = validateReleaseGraph(graph, {
-    hashes: {
-      ...hashes,
-      "registre-goldens": canonicalSha256(ledger),
-      "manifeste-retrait": canonicalSha256(manifest),
-      staging: canonicalSha256(staging),
-    },
+    hashes,
     stagingIds: {
       compte: staging?.account?.id,
       zone: staging?.zone?.id,
@@ -243,7 +257,11 @@ export function runValidation() {
     }
   }
 
-  return { graph, erreurs };
+  return {
+    graph,
+    erreurs,
+    live: { hashes, ledger, manifest, registry, profile, staging },
+  };
 }
 
 export function main() {

@@ -20,17 +20,19 @@ n'effectuent jamais d'appel réseau.
 La paire locale est volontairement non publiée et non signée. Avant toute
 frontière distante, `promotion-publish.mjs` :
 
-1. lit `docs/migration/release-graph.yaml`, vérifie le canal, la baseline, le
+1. relit le dossier content-addressé et toutes ses preuves depuis sa racine,
+   recalcule l'attestation et le Reçu locaux, puis exige leur égalité exacte ;
+2. lit `docs/migration/release-graph.yaml`, vérifie le canal, la baseline, le
    checkpoint, l'unique candidat encore en `preparation`, la politique de
    bootstrap et les deux destinations R2 ancrées ;
-2. impose `--bootstrap-r2` pour la tranche 1 et le refuse pour les suivantes ;
-3. ajoute `publiee: [release, r2]` à l'attestation ;
-4. recalcule son hash canonique, l'inscrit dans le Reçu avec les deux
+3. impose `--bootstrap-r2` pour la tranche 1 et le refuse pour les suivantes ;
+4. ajoute `publiee: [release, r2]` à l'attestation ;
+5. recalcule son hash canonique, l'inscrit dans le Reçu avec les deux
    approbateurs ancrés et, pour la tranche 1, avec
    `bootstrap-github-attestation-sha256` ;
-5. fait signer les octets canoniques par exactement deux clés Ed25519
+6. fait signer les octets canoniques par exactement deux clés Ed25519
    distinctes puis vérifie lui-même les signatures ;
-6. ajoute `publication: [release, r2]` au Reçu final.
+7. ajoute `publication: [release, r2]` au Reçu final.
 
 Les octets finaux sont déterministes pour une même paire et un même registre
 d'approbateurs ordonné. Le premier bootstrap écrit et relit obligatoirement les
@@ -45,6 +47,7 @@ Publication initiale de la tranche 1 :
 ```bash
 pnpm promotion:publier -- \
   --graphe docs/migration/release-graph.yaml \
+  --dossier ./promotion/promotion-dossier.json \
   --attestation ./promotion/attestation-tranche-1.json \
   --recu ./promotion/recu-promotion-1.json \
   --depot punksbot/punksbot \

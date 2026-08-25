@@ -107,8 +107,60 @@ function withDirectory(directory: {
   } as ApiEnv;
 }
 
+type RuntimeFaultBindings = {
+  TEST_RUNTIME_IDENTITY_FAILURE: ApiEnv["AUTH_RUNTIME_IDENTITY"];
+  TEST_RUNTIME_IDENTITY_INVALID: ApiEnv["AUTH_RUNTIME_IDENTITY"];
+};
+
+function requeteCompatibiliteStaging(): Request {
+  return new Request("https://staging.punks.bot/api/v1/desktop/compatibility", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      contract: "desktop.compatibility@1",
+      profile: "desktop-social-loop@1",
+      clientVersion: "0.6.0",
+      distribution: "staging",
+      platform: "macos-arm64",
+    }),
+  });
+}
+
+function environnementStagingWorkerd(
+  authRuntime?: ApiEnv["AUTH_RUNTIME_IDENTITY"],
+): ApiEnv {
+  const workerd = env as unknown as ApiEnv & RuntimeFaultBindings;
+  return {
+    ...workerd,
+    ENVIRONMENT: "staging",
+    DESKTOP_SOCIAL_LOOP_ENABLED: "true",
+    CF_VERSION_METADATA: {
+      id: "e7da36e8-7c29-44df-a672-ae132818d042",
+      tag: "",
+      timestamp: "2026-08-25T00:00:00.000Z",
+    },
+    AUTH_RUNTIME_IDENTITY: authRuntime ?? workerd.AUTH_RUNTIME_IDENTITY,
+  } as ApiEnv;
+}
+
 describe("desktop-social-loop@1 discovery API", () => {
   it("fails closed on compatibility before any Workspace mount", async () => {
+    const workerVersionId = "e7da36e8-7c29-44df-a672-ae132818d042";
+    const workerVersions = [
+      ["punks-auth-staging", "00000000-0000-4000-8000-000000000001"],
+      ["punks-attestation-staging", "00000000-0000-4000-8000-000000000002"],
+      ["punks-erasure-staging", "00000000-0000-4000-8000-000000000003"],
+      ["punks-projector-staging", "00000000-0000-4000-8000-000000000004"],
+      ["punks-search-staging", "00000000-0000-4000-8000-000000000005"],
+      ["punks-api-staging", workerVersionId],
+      ["punks-bot-runtime-staging", "00000000-0000-4000-8000-000000000007"],
+    ] as const;
+    const versionsByName = new Map<string, string>(workerVersions);
+    const runtimeVersion = (name: string) => ({
+      runtimeVersion: async () => ({
+        versionId: versionsByName.get(name),
+      }),
+    });
     const unavailable = await SELF.fetch(
       "https://punks.bot/api/v1/desktop/compatibility",
       {
@@ -142,16 +194,38 @@ describe("desktop-social-loop@1 discovery API", () => {
           contract: "desktop.compatibility@1",
           profile: "desktop-social-loop@1",
           clientVersion: "0.6.0",
-          distribution: "development",
+          distribution: "staging",
           platform: "macos-arm64",
         }),
       }),
       {
         ...(env as ApiEnv),
+        ENVIRONMENT: "staging",
         DESKTOP_SOCIAL_LOOP_ENABLED: "true",
+        CF_VERSION_METADATA: {
+          id: workerVersionId,
+          tag: "",
+          timestamp: "2026-08-25T00:00:00.000Z",
+        },
+        AUTH_RUNTIME_IDENTITY: runtimeVersion("punks-auth-staging"),
+        ATTESTATION_RUNTIME_IDENTITY: runtimeVersion(
+          "punks-attestation-staging",
+        ),
+        ERASURE_RUNTIME_IDENTITY: runtimeVersion("punks-erasure-staging"),
+        PROJECTOR_RUNTIME_IDENTITY: runtimeVersion("punks-projector-staging"),
+        SEARCH_RUNTIME_IDENTITY: runtimeVersion("punks-search-staging"),
+        BOT_RUNTIME_IDENTITY: runtimeVersion("punks-bot-runtime-staging"),
       } as unknown as ApiEnv,
     );
     expect(compatible.status).toBe(200);
+    expect(compatible.headers.get("x-punks-worker-version-id")).toBe(
+      workerVersionId,
+    );
+    const aggregateHeader = compatible.headers.get("x-punks-worker-versions");
+    expect(aggregateHeader).not.toBeNull();
+    expect(
+      JSON.parse(Buffer.from(aggregateHeader ?? "", "base64url").toString()),
+    ).toEqual(workerVersions.map(([name, versionId]) => ({ name, versionId })));
     await expect(compatible.json()).resolves.toMatchObject({
       compatible: true,
       capabilities: expect.arrayContaining([
@@ -178,11 +252,94 @@ describe("desktop-social-loop@1 discovery API", () => {
       } as unknown as ApiEnv,
     );
     expect(incompatible.status).toBe(200);
+    expect(incompatible.headers.get("x-punks-worker-version-id")).toBeNull();
+    expect(incompatible.headers.get("x-punks-worker-versions")).toBeNull();
     await expect(incompatible.json()).resolves.toMatchObject({
       compatible: false,
       minimumClientVersion: "0.6.0",
       capabilities: [],
     });
+  });
+
+  it("refuse le staging si la version Worker exécutée est indisponible", async () => {
+    const response = await route(
+      new Request("https://staging.punks.bot/api/v1/desktop/compatibility", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          contract: "desktop.compatibility@1",
+          profile: "desktop-social-loop@1",
+          clientVersion: "0.6.0",
+          distribution: "staging",
+          platform: "macos-arm64",
+        }),
+      }),
+      {
+        ...(env as ApiEnv),
+        ENVIRONMENT: "staging",
+        DESKTOP_SOCIAL_LOOP_ENABLED: "true",
+        CF_VERSION_METADATA: undefined,
+      } as unknown as ApiEnv,
+    );
+
+    expect(response.status).toBe(500);
+    expect(response.headers.get("x-punks-worker-version-id")).toBeNull();
+    expect(response.headers.get("x-punks-worker-versions")).toBeNull();
+  });
+
+  it("observe les six named RPC réelles dans workerd pour le staging compatible", async () => {
+    const response = await route(
+      requeteCompatibiliteStaging(),
+      environnementStagingWorkerd(),
+    );
+
+    expect(response.status).toBe(200);
+    const header = response.headers.get("x-punks-worker-versions");
+    expect(header).not.toBeNull();
+    const workers = JSON.parse(
+      Buffer.from(header ?? "", "base64url").toString(),
+    );
+    expect(workers.map(({ name }: { name: string }) => name)).toEqual([
+      "punks-auth-staging",
+      "punks-attestation-staging",
+      "punks-erasure-staging",
+      "punks-projector-staging",
+      "punks-search-staging",
+      "punks-api-staging",
+      "punks-bot-runtime-staging",
+    ]);
+    expect(
+      workers.every(({ versionId }: { versionId: string }) =>
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(
+          versionId,
+        ),
+      ),
+    ).toBe(true);
+    await expect(response.json()).resolves.toMatchObject({
+      compatible: true,
+      capabilities: expect.arrayContaining(["conversation-follow"]),
+    });
+  });
+
+  it.each([
+    {
+      libelle: "une RPC runtime échoue",
+      binding: "TEST_RUNTIME_IDENTITY_FAILURE" as const,
+    },
+    {
+      libelle: "une RPC runtime retourne une version invalide",
+      binding: "TEST_RUNTIME_IDENTITY_INVALID" as const,
+    },
+  ])("refuse le staging lorsque $libelle", async ({ binding }) => {
+    const workerd = env as unknown as ApiEnv & RuntimeFaultBindings;
+    const response = await route(
+      requeteCompatibiliteStaging(),
+      environnementStagingWorkerd(workerd[binding]),
+    );
+
+    expect(response.status).toBe(500);
+    expect(response.headers.get("x-punks-worker-version-id")).toBeNull();
+    expect(response.headers.get("x-punks-worker-versions")).toBeNull();
   });
 
   it("reauthorizes every Workspace candidate and drops stale projections", async () => {

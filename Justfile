@@ -108,7 +108,7 @@ file-size-check:
 # incomplete verdicts, reproducible canonical hashes, derived-view drift, and
 # the sealed expansion/activation/contraction policy with its attestation model.
 migration-check:
-    node --test scripts/check-migration-manifests.test.mjs scripts/check-release-graph.test.mjs scripts/check-promotion-dossier.test.mjs
+    node --test scripts/check-migration-manifests.test.mjs scripts/check-release-graph.test.mjs scripts/release-graph-live-state.test.mjs scripts/check-promotion-dossier.test.mjs scripts/promotion-dossier-lib.test.mjs scripts/promotion-materials-lib.test.mjs scripts/promotion-local-emission.test.mjs scripts/candidate/installed-app.test.mjs scripts/candidate/promotion-dossier.test.mjs scripts/candidate/promotion-dossier-cli.test.mjs
     node scripts/check-migration-manifests.mjs
     node scripts/check-release-graph.mjs
 

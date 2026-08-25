@@ -59,6 +59,20 @@ interface CandidateRow {
   last_cursor: unknown;
 }
 
+/** Dedicated private probe for the version executing this Search Worker. */
+export class RuntimeIdentityService extends WorkerEntrypoint<CloudflareBindings> {
+  override fetch(): Response {
+    return new Response("Not found", {
+      status: 404,
+      headers: { "cache-control": "no-store" },
+    });
+  }
+
+  runtimeVersion(): { versionId: string } {
+    return { versionId: this.env.CF_VERSION_METADATA.id };
+  }
+}
+
 /** Private, bounded lookup of active Message candidates from D1 projections. */
 export default class MessageCandidateSearch extends WorkerEntrypoint<CloudflareBindings> {
   /** Finds active candidates containing every supplied opaque lexical token. */

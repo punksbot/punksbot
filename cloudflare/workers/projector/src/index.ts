@@ -9,6 +9,7 @@ import type {
   WorkspaceProjectionMessageV2,
 } from "@punks/contracts";
 import { validateContract } from "@punks/contracts";
+import { WorkerEntrypoint } from "cloudflare:workers";
 
 import { type AttestationRegistryEnv, verifyAttestation } from "./attestation";
 import {
@@ -41,6 +42,20 @@ import {
   projectionDatabase,
   type ProjectionShardEnv,
 } from "./shards";
+
+/** Dedicated private probe for the version executing this Projector Worker. */
+export class RuntimeIdentityService extends WorkerEntrypoint<CloudflareBindings> {
+  override fetch(): Response {
+    return new Response("Not found", {
+      status: 404,
+      headers: { "cache-control": "no-store" },
+    });
+  }
+
+  runtimeVersion(): { versionId: string } {
+    return { versionId: this.env.CF_VERSION_METADATA.id };
+  }
+}
 
 export { ProjectionDirectoryService } from "./directory-service";
 

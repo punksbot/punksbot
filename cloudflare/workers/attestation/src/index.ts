@@ -4,11 +4,26 @@ import type {
   PunksProblem,
 } from "@punks/contracts";
 import { validateContract } from "@punks/contracts";
+import { WorkerEntrypoint } from "cloudflare:workers";
 
 import { attestNostrEvent } from "./nostr";
 
 interface AttestationEnv extends CloudflareBindings {
   ATTESTATION_PRIVATE_KEY: string;
+}
+
+/** Dedicated private probe for the version executing this Attestation Worker. */
+export class RuntimeIdentityService extends WorkerEntrypoint<AttestationEnv> {
+  override fetch(): Response {
+    return new Response("Not found", {
+      status: 404,
+      headers: { "cache-control": "no-store" },
+    });
+  }
+
+  runtimeVersion(): { versionId: string } {
+    return { versionId: this.env.CF_VERSION_METADATA.id };
+  }
 }
 
 const jsonHeaders = {

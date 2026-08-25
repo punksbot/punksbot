@@ -4,8 +4,6 @@ import { createHash } from "node:crypto";
 import {
   closeSync,
   constants,
-  copyFileSync,
-  existsSync,
   fstatSync,
   lstatSync,
   mkdirSync,
@@ -15,17 +13,23 @@ import {
 } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  CANONICAL_STAGING_ACCOUNT_ID,
+  createCloudflareApiBoundary,
+  createStagingDeploymentProof,
+  observeStagingDeployment,
+  validateStagingDeploymentProof,
+} from "../../cloudflare/scripts/staging-deployment-proof.mjs";
+import { validateInstalledReleaseNames } from "../promotion-materials-lib.mjs";
+import {
+  MATRICE_ACCESSIBILITE as ACCESSIBILITY,
+  METHODES_ACCESSIBILITE,
+  REQUIRED_STORIES,
+  VERIFICATIONS_ARTEFACT as VERIFICATIONS,
+  validateInstalledTranscript,
+} from "../promotion-installed-transcript-lib.mjs";
 
-export const REQUIRED_STORIES = Object.freeze([
-  "connexion",
-  "workspace",
-  "lecture-live",
-  "pagination",
-  "publication",
-  "reponse",
-  "sujet",
-  "reactions",
-]);
+export { REQUIRED_STORIES };
 
 const PLATFORMS = Object.freeze([
   "macos-arm64",
@@ -33,38 +37,10 @@ const PLATFORMS = Object.freeze([
   "linux-x64",
   "windows-x64",
 ]);
-const VERIFICATIONS = Object.freeze([
-  "signature",
-  "identite-application",
-  "protocol-handlers",
-  "stockage-securise",
-  "updater",
-]);
-const ACCESSIBILITY = Object.freeze([
-  "clavier",
-  "focus",
-  "zoom-200",
-  "contraste",
-  "mouvement-reduit",
-  "lecteur-ecran",
-]);
 const SHA1_RE = /^[0-9a-f]{40}$/;
-const SHA256_RE = /^[0-9a-f]{64}$/;
-const DEPLOYMENT_RE = /^sha256:[0-9a-f]{64}$/;
 
 function fail(message) {
   throw new Error(`installed candidate proof rejected: ${message}`);
-}
-
-function exactKeys(value, keys, label) {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    fail(`${label} must be an object`);
-  }
-  const actual = Object.keys(value).sort();
-  const expected = [...keys].sort();
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    fail(`${label} has an unexpected shape`);
-  }
 }
 
 function stableFile(path, label) {
@@ -111,154 +87,28 @@ function parseTranscript(path) {
   return { ...file, transcript };
 }
 
-function validateTranscript({
-  transcript,
-  platform,
-  candidateSha,
-  stagingDeploymentId,
-  artifactSha256,
-}) {
-  exactKeys(
-    transcript,
-    [
-      "schema",
-      "candidateSha",
-      "stagingDeploymentId",
-      "platform",
-      "result",
-      "driver",
-      "contour",
-      "serveurVite",
-      "facadeTest",
-      "installed",
-      "verifications",
-      "stories",
-      "accessibility",
-      "network",
-    ],
-    "driver transcript",
-  );
-  if (
-    transcript.schema !== "punks.installed-social-loop-transcript.v1" ||
-    transcript.candidateSha !== candidateSha ||
-    transcript.stagingDeploymentId !== stagingDeploymentId ||
-    transcript.platform !== platform ||
-    transcript.result !== "vert"
-  ) {
-    fail("driver transcript identity or result does not match the candidate");
+function parseStagingDeploymentProof(path, candidateSha) {
+  const file = stableFile(path, "staging deployment proof");
+  let document;
+  try {
+    document = JSON.parse(file.content.toString("utf8"));
+  } catch {
+    fail("staging deployment proof is not JSON");
   }
-  const expectedDriver = platform.startsWith("macos-")
-    ? "xctest"
-    : "tauri-driver";
-  if (transcript.driver !== expectedDriver) {
-    fail(`${platform} must use the reviewed ${expectedDriver} driver`);
-  }
-  if (
-    transcript.contour !== "distribue" ||
-    transcript.serveurVite !== false ||
-    transcript.facadeTest !== false
-  ) {
-    fail("the exact distributed installation is required; no Vite or test facade");
-  }
-
-  exactKeys(
-    transcript.installed,
-    ["bundleId", "artifactSha256", "binarySha256", "launched"],
-    "installed application",
-  );
-  if (
-    transcript.installed.bundleId !== "bot.punks.desktop.staging" ||
-    transcript.installed.artifactSha256 !== artifactSha256 ||
-    !SHA256_RE.test(transcript.installed.binarySha256 ?? "") ||
-    transcript.installed.launched !== true
-  ) {
-    fail("installed application identity or artifact digest is divergent");
-  }
-
-  exactKeys(transcript.verifications, VERIFICATIONS, "native verifications");
-  for (const verification of VERIFICATIONS) {
-    if (transcript.verifications[verification] !== "vert") {
-      fail(`native verification ${verification} is not green`);
-    }
-  }
-
-  if (!Array.isArray(transcript.stories)) fail("stories must be an array");
-  const stories = new Map();
-  for (const story of transcript.stories) {
-    exactKeys(story, ["id", "result", "via", "assertions"], "story");
-    if (!REQUIRED_STORIES.includes(story.id) || stories.has(story.id)) {
-      fail(`unknown or duplicate story ${String(story.id)}`);
-    }
-    if (
-      story.result !== "vert" ||
-      !Array.isArray(story.via) ||
-      !["ui", "ipc-rust", "contrats-publics"].every((layer) =>
-        story.via.includes(layer),
-      ) ||
-      !Array.isArray(story.assertions) ||
-      story.assertions.length === 0 ||
-      story.assertions.some(
-        (assertion) =>
-          typeof assertion !== "string" ||
-          assertion.length === 0 ||
-          assertion.length > 500,
-      )
-    ) {
-      fail(`story ${story.id} is not proven through UI + IPC + public contracts`);
-    }
-    stories.set(story.id, story);
-  }
-  for (const story of REQUIRED_STORIES) {
-    if (!stories.has(story)) fail(`required story ${story} is missing`);
-  }
-
-  exactKeys(transcript.accessibility, ACCESSIBILITY, "accessibility matrix");
-  for (const criterion of ACCESSIBILITY) {
-    if (transcript.accessibility[criterion] !== "vert") {
-      fail(`accessibility criterion ${criterion} is not green`);
-    }
-  }
-
-  exactKeys(transcript.network, ["requests"], "network evidence");
-  if (
-    !Array.isArray(transcript.network.requests) ||
-    transcript.network.requests.length < 2
-  ) {
-    fail("network evidence must include HTTPS and FOLLOW observations");
-  }
-  const transports = new Set();
-  for (const request of transcript.network.requests) {
-    exactKeys(
-      request,
-      ["transport", "method", "origin", "path", "status"],
-      "network request",
+  try {
+    return {
+      ...file,
+      proof: validateStagingDeploymentProof(document, {
+        accountId: CANONICAL_STAGING_ACCOUNT_ID,
+        environment: "staging",
+        sourceSha: candidateSha,
+      }),
+    };
+  } catch (error) {
+    fail(
+      `staging deployment proof is invalid: ${error instanceof Error ? error.message : String(error)}`,
     );
-    const expectedOrigin =
-      request.transport === "https"
-        ? "https://staging.punks.bot"
-        : request.transport === "wss"
-          ? "wss://staging.punks.bot"
-          : null;
-    if (
-      expectedOrigin === null ||
-      request.origin !== expectedOrigin ||
-      typeof request.method !== "string" ||
-      !request.path.startsWith("/api/") ||
-      !Number.isInteger(request.status) ||
-      request.status < 100 ||
-      request.status > 599 ||
-      /buzz|nostr|relay|huddle/iu.test(
-        `${request.origin}${request.path}`,
-      )
-    ) {
-      fail("network evidence contains an unreviewed or legacy destination");
-    }
-    transports.add(request.transport);
   }
-  if (!transports.has("https") || !transports.has("wss")) {
-    fail("network evidence must cover HTTPS and WSS FOLLOW");
-  }
-  return { stories };
 }
 
 function proof({ id, platform, candidateSha, stagingDeploymentId, data }) {
@@ -273,47 +123,136 @@ function proof({ id, platform, candidateSha, stagingDeploymentId, data }) {
   };
 }
 
-function writeProof(output, value) {
+function writeProof(output, value, sujet) {
   const content = Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
   const digest = sha256(content);
   const safeId = value.id.replaceAll(/[^a-z0-9.-]/giu, "-");
   const relative = `sha256/${digest}-${safeId}.json`;
   writeFileSync(join(output, relative), content, { flag: "wx", mode: 0o600 });
-  return { id: value.id, chemin: relative, sha256: digest };
+  return { id: value.id, chemin: relative, sha256: digest, sujet };
 }
 
-export function emitInstalledAppEvidence({
-  platform,
-  candidateSha,
-  stagingDeploymentId,
-  artifact,
-  signature,
-  transcript,
-  output,
-}) {
+function writeSubject(output, content, label) {
+  const digest = sha256(content);
+  const relative = `sha256/${digest}-${label}`;
+  writeFileSync(join(output, relative), content, { flag: "wx", mode: 0o600 });
+  return { chemin: relative, sha256: digest };
+}
+
+/**
+ * Émet le lot create-only d'une exécution réellement installée.
+ *
+ * L'identité du staging est dérivée de la preuve distante canonique, jamais
+ * d'un identifiant fourni séparément. Chaque verdict référence en outre les
+ * octets locaux exacts (artefact, signature ou transcript) qui l'ont produit.
+ * Après validation du snapshot du transcript, une nouvelle observation de
+ * l'API Cloudflare doit encore retrouver exactement les mêmes sept versions et
+ * déploiements avant que le moindre octet du lot ne soit écrit.
+ *
+ * `remoteBoundary` est un point d'injection réservé aux tests de cette API. Le
+ * chemin CLI n'en accepte aucun et construit toujours la frontière Cloudflare
+ * authentifiée réelle.
+ */
+export async function emitInstalledAppEvidence(
+  {
+    platform,
+    candidateSha,
+    stagingDeploymentProof,
+    artifact,
+    signature,
+    transcript,
+    output,
+  },
+  { remoteBoundary } = {},
+) {
   if (!PLATFORMS.includes(platform)) fail("unsupported platform");
   if (!SHA1_RE.test(candidateSha ?? "")) fail("exact source SHA required");
-  if (!DEPLOYMENT_RE.test(stagingDeploymentId ?? "")) {
-    fail("exact staging deployment ID required");
-  }
+  const staging = parseStagingDeploymentProof(
+    stagingDeploymentProof,
+    candidateSha,
+  );
+  const stagingDeploymentId = staging.proof.deploymentId;
   const artifactFile = stableFile(artifact, "installed artifact");
   const signatureFile = stableFile(signature, "updater signature");
   const artifactDigest = sha256(artifactFile.content);
   const signatureDigest = sha256(signatureFile.content);
   const parsed = parseTranscript(transcript);
-  const { stories } = validateTranscript({
-    transcript: parsed.transcript,
+  validateInstalledReleaseNames({
     platform,
     candidateSha,
-    stagingDeploymentId,
-    artifactSha256: artifactDigest,
+    artifactName: basename(artifactFile.absolute),
+    signatureName: basename(signatureFile.absolute),
   });
+  let transcriptValide;
+  try {
+    transcriptValide = validateInstalledTranscript(parsed.transcript, {
+      platform,
+      candidateSha,
+      stagingDeploymentId,
+      artifactSha256: artifactDigest,
+      deployedWorkers: staging.proof.workers.map(
+        ({ name, versionId, deploymentId }) => ({
+          name,
+          versionId,
+          deploymentId,
+        }),
+      ),
+    });
+  } catch (error) {
+    fail(error instanceof Error ? error.message : String(error));
+  }
+  const { stories, accessibility } = transcriptValide;
   const outputPath = resolve(output);
-  if (existsSync(outputPath)) fail("evidence output already exists");
-  mkdirSync(join(outputPath, "sha256"), { recursive: true, mode: 0o700 });
-
-  const common = { platform, candidateSha, stagingDeploymentId };
   const transcriptDigest = sha256(parsed.content);
+  const observation = await observeStagingDeployment(
+    {
+      accountId: CANONICAL_STAGING_ACCOUNT_ID,
+      environment: "staging",
+      sourceSha: candidateSha,
+    },
+    remoteBoundary ?? createCloudflareApiBoundary(),
+  );
+  const postStagingProof = createStagingDeploymentProof(observation);
+  const postStagingContent = Buffer.from(
+    `${JSON.stringify(postStagingProof, null, 2)}\n`,
+  );
+  if (
+    postStagingProof.deploymentId !== stagingDeploymentId ||
+    !postStagingContent.equals(staging.content)
+  ) {
+    fail(
+      "post-exercise Cloudflare observation differs from the exact staging aggregate",
+    );
+  }
+
+  try {
+    mkdirSync(outputPath, { mode: 0o700 });
+  } catch (error) {
+    if (error?.code === "EEXIST") fail("evidence output already exists");
+    throw error;
+  }
+  mkdirSync(join(outputPath, "sha256"), { mode: 0o700 });
+  const common = { platform, candidateSha, stagingDeploymentId };
+  const artifactSubject = writeSubject(
+    outputPath,
+    artifactFile.content,
+    "installed-artifact.bin",
+  );
+  const signatureSubject = writeSubject(
+    outputPath,
+    signatureFile.content,
+    "updater-signature.bin",
+  );
+  const transcriptSubject = writeSubject(
+    outputPath,
+    parsed.content,
+    "driver-transcript.json",
+  );
+  const postStagingSubject = writeSubject(
+    outputPath,
+    postStagingContent,
+    "staging-post-exercise.json",
+  );
   const values = [
     proof({
       ...common,
@@ -322,6 +261,7 @@ export function emitInstalledAppEvidence({
         nom: basename(artifactFile.absolute),
         bundleId: parsed.transcript.installed.bundleId,
         subjectSha256: artifactDigest,
+        taille: artifactFile.content.length,
         installedBinarySha256: parsed.transcript.installed.binarySha256,
         transcriptSha256: transcriptDigest,
       },
@@ -332,7 +272,36 @@ export function emitInstalledAppEvidence({
       data: {
         nom: basename(signatureFile.absolute),
         subjectSha256: signatureDigest,
+        taille: signatureFile.content.length,
         transcriptSha256: transcriptDigest,
+      },
+    }),
+    proof({
+      ...common,
+      id: `transcript/${platform}`,
+      data: {
+        subjectSha256: transcriptDigest,
+        schema: parsed.transcript.schema,
+        plateforme: platform,
+        byteLength: parsed.content.length,
+      },
+    }),
+    proof({
+      ...common,
+      id: `staging/reobservation/${platform}`,
+      data: {
+        subjectSha256: postStagingSubject.sha256,
+        transcriptSha256: transcriptDigest,
+        initialStagingProofSha256: sha256(staging.content),
+        deploymentId: stagingDeploymentId,
+        workers: postStagingProof.workers.map(
+          ({ name, versionId, deploymentId }) => ({
+            name,
+            versionId,
+            deploymentId,
+          }),
+        ),
+        sequence: ["transcript-installed", "cloudflare-reobserved"],
       },
     }),
   ];
@@ -341,7 +310,11 @@ export function emitInstalledAppEvidence({
       proof({
         ...common,
         id: `artefact/${platform}/verification/${verification}`,
-        data: { driver: parsed.transcript.driver, transcriptSha256: transcriptDigest },
+        data: {
+          driver: parsed.transcript.driver,
+          subjectSha256: transcriptDigest,
+          transcriptSha256: transcriptDigest,
+        },
       }),
     );
   }
@@ -358,17 +331,27 @@ export function emitInstalledAppEvidence({
           serveurVite: parsed.transcript.serveurVite,
           facadeTest: parsed.transcript.facadeTest,
           assertions: observed.assertions,
+          subjectSha256: transcriptDigest,
           transcriptSha256: transcriptDigest,
         },
       }),
     );
   }
   for (const criterion of ACCESSIBILITY) {
+    const observed = accessibility.get(criterion);
     values.push(
       proof({
         ...common,
         id: `accessibilite/${platform}/${criterion}`,
-        data: { driver: parsed.transcript.driver, transcriptSha256: transcriptDigest },
+        data: {
+          driver: parsed.transcript.driver,
+          subjectSha256: transcriptDigest,
+          transcriptSha256: transcriptDigest,
+          methodes: observed.methodes,
+          ...(observed.technologie === undefined
+            ? {}
+            : { technologie: observed.technologie }),
+        },
       }),
     );
   }
@@ -376,22 +359,46 @@ export function emitInstalledAppEvidence({
     proof({
       ...common,
       id: `accessibilite/${platform}/resultat`,
-      data: { driver: parsed.transcript.driver, transcriptSha256: transcriptDigest },
+      data: {
+        driver: parsed.transcript.driver,
+        subjectSha256: transcriptDigest,
+        transcriptSha256: transcriptDigest,
+        methodes: METHODES_ACCESSIBILITE,
+        technologieLecteurEcran: accessibility.get("lecteur-ecran").technologie,
+      },
     }),
   );
 
-  const references = values.map((value) => writeProof(outputPath, value));
+  const references = values.map((value) => {
+    const sujet =
+      value.id === `artefact/${platform}/bundle`
+        ? artifactSubject
+        : value.id === `artefact/${platform}/signature`
+          ? signatureSubject
+          : value.id === `staging/reobservation/${platform}`
+            ? postStagingSubject
+            : transcriptSubject;
+    return writeProof(outputPath, value, sujet);
+  });
   references.sort((left, right) => left.id.localeCompare(right.id));
   writeFileSync(
     join(outputPath, "index.json"),
     `${JSON.stringify({ schema: "punks.promotion-evidence-index.v1", preuves: references }, null, 2)}\n`,
     { flag: "wx", mode: 0o600 },
   );
-  copyFileSync(parsed.absolute, join(outputPath, "transcript.json"), constants.COPYFILE_EXCL);
   return { references, transcriptSha256: transcriptDigest };
 }
 
 function options(argv) {
+  const expected = new Set([
+    "--platform",
+    "--source-sha",
+    "--staging-deployment-proof",
+    "--installed-artifact",
+    "--updater-signature",
+    "--driver-transcript",
+    "--proof-output",
+  ]);
   const result = new Map();
   for (let index = 0; index < argv.length; index += 2) {
     const flag = argv[index];
@@ -401,6 +408,12 @@ function options(argv) {
     }
     result.set(flag, value);
   }
+  if (
+    result.size !== expected.size ||
+    [...result.keys()].some((flag) => !expected.has(flag))
+  ) {
+    fail("the exact installed evidence CLI arguments are required");
+  }
   const required = (name) => {
     const value = result.get(name);
     if (!value) fail(`${name} is required`);
@@ -409,12 +422,12 @@ function options(argv) {
   return { required };
 }
 
-export function run(argv = process.argv.slice(2)) {
+export async function run(argv = process.argv.slice(2)) {
   const { required } = options(argv);
-  return emitInstalledAppEvidence({
+  return await emitInstalledAppEvidence({
     platform: required("--platform"),
     candidateSha: required("--source-sha"),
-    stagingDeploymentId: required("--staging-deployment-id"),
+    stagingDeploymentProof: required("--staging-deployment-proof"),
     artifact: required("--installed-artifact"),
     signature: required("--updater-signature"),
     transcript: required("--driver-transcript"),
@@ -422,9 +435,12 @@ export function run(argv = process.argv.slice(2)) {
   });
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (
+  process.argv[1] &&
+  resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+) {
   try {
-    run();
+    await run();
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;

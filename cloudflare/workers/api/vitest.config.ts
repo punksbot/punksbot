@@ -13,6 +13,10 @@ const directoryFixture = new URL(
   "./test/directory-fixture.mjs",
   import.meta.url,
 ).pathname;
+const runtimeIdentityFixture = new URL(
+  "./test/runtime-identity-fixture.mjs",
+  import.meta.url,
+).pathname;
 
 export default defineConfig({
   plugins: [
@@ -41,6 +45,14 @@ export default defineConfig({
         },
         serviceBindings: {
           ATTESTATION: (request: Request) => attestationWorker.fetch(request),
+          TEST_RUNTIME_IDENTITY_FAILURE: {
+            name: "punks-auth",
+            entrypoint: "RuntimeIdentityFailureService",
+          },
+          TEST_RUNTIME_IDENTITY_INVALID: {
+            name: "punks-auth",
+            entrypoint: "RuntimeIdentityInvalidService",
+          },
           BOT_ACTION_SERVICE: {
             name: "punks-api",
             entrypoint: "BotActionService",
@@ -112,6 +124,12 @@ export default defineConfig({
         },
         workers: [
           {
+            name: "punks-attestation",
+            modules: true,
+            scriptPath: runtimeIdentityFixture,
+            compatibilityDate: "2026-08-20",
+          },
+          {
             name: "punks-auth",
             modules: true,
             scriptPath: authFixture,
@@ -133,6 +151,12 @@ export default defineConfig({
             name: "punks-projector",
             modules: true,
             scriptPath: directoryFixture,
+            compatibilityDate: "2026-08-20",
+          },
+          {
+            name: "punks-bot-runtime",
+            modules: true,
+            scriptPath: runtimeIdentityFixture,
             compatibilityDate: "2026-08-20",
           },
         ],

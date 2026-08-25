@@ -1,5 +1,11 @@
 import { WorkerEntrypoint } from "cloudflare:workers";
 
+export class RuntimeIdentityService extends WorkerEntrypoint {
+  async runtimeVersion() {
+    return { versionId: "00000000-0000-4000-8000-000000000003" };
+  }
+}
+
 const tombstones = new Map();
 const calls = [];
 let lookupMode = "available";

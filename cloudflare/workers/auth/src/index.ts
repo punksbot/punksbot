@@ -23,6 +23,17 @@ import type {
 
 export { AuthTransactionDO } from "./auth-transaction-do";
 export { AccountMergeIntentDO } from "./account-merge-intent-do";
+
+/** Dedicated private probe for the version executing this Auth Worker. */
+export class RuntimeIdentityService extends WorkerEntrypoint<AuthEnv> {
+  override fetch(): Response {
+    return privateNotFound();
+  }
+
+  runtimeVersion(): { versionId: string } {
+    return { versionId: this.env.CF_VERSION_METADATA.id };
+  }
+}
 export { DesktopDeliveryDO } from "./desktop-delivery-do";
 export { EmailClaimDO } from "./email-claim-do";
 export { IdentityClaimDO } from "./identity-claim-do";

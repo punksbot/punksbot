@@ -79,6 +79,20 @@ type StoredRead =
   | { status: "corrupt" }
   | { status: "unavailable" };
 
+/** Dedicated private probe for the version executing this Erasure Worker. */
+export class RuntimeIdentityService extends WorkerEntrypoint<CloudflareBindings> {
+  override fetch(): Response {
+    return new Response("Not found", {
+      status: 404,
+      headers: { "cache-control": "no-store" },
+    });
+  }
+
+  runtimeVersion(): { versionId: string } {
+    return { versionId: this.env.CF_VERSION_METADATA.id };
+  }
+}
+
 /** Private, append-only registry of Message erasure tombstones. */
 export default class ErasureRegistry extends WorkerEntrypoint<CloudflareBindings> {
   /** Records one create-only tombstone or replays the exact prior decision. */

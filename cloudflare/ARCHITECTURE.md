@@ -407,6 +407,23 @@ phase without relying on an in-memory socket registry.
    transports, backup state and monotonically verified counter, and serializes
    assertions before issuing a fresh session.
 
+## Desktop compatibility runtime identity
+
+`POST /api/v1/desktop/compatibility` expose les identités d'exécution
+uniquement lorsque la requête est compatible et que l'API tourne en staging.
+La réponse 200 porte alors deux en-têtes non mis en cache :
+
+- `x-punks-worker-version-id` contient l'UUID de version de l'API Worker ;
+- `x-punks-worker-versions` contient, sans padding, le JSON canonique encodé en
+  base64url des sept objets `{name, versionId}` dans l'ordre fermé Auth,
+  Attestation, Erasure, Projector, Search, API, Bot Runtime.
+
+Les six identités non-API proviennent de named Service Bindings privées dont
+la surface HTTP répond seulement 404 `no-store`. Une identité absente,
+malformée ou indisponible produit une réponse 500 sans aucun de ces en-têtes.
+Les réponses locales, production ou incompatibles ne sondent pas ces bindings
+et n'exposent pas les identités runtime.
+
 ## Security boundaries
 
 - Nostr envelopes, kinds and signatures are internal journal and attestation

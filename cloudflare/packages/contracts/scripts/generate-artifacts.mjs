@@ -946,6 +946,24 @@ function contractReference(reference) {
   };
 }
 
+function successResponseHeaders(operation) {
+  if (operation.name !== "checkCompatibility") return {};
+  return {
+    headers: {
+      "x-punks-worker-version-id": {
+        description:
+          "Version UUID de l'API Worker exécutée, présente uniquement pour un succès staging compatible.",
+        schema: { type: "string", format: "uuid" },
+      },
+      "x-punks-worker-versions": {
+        description:
+          "JSON canonique encodé en base64url des sept Workers exécutés, dans l'ordre fermé du staging; présent uniquement pour un succès staging compatible.",
+        schema: { type: "string", pattern: "^[A-Za-z0-9_-]+$" },
+      },
+    },
+  };
+}
+
 function successResponseSchemas(operation) {
   const responseContract = operation.responseContract;
   const contracted =
@@ -1001,6 +1019,7 @@ function successResponseSchemas(operation) {
           status === 201
             ? "Ressource créée par le Worker."
             : "Réponse de succès du Worker.",
+        ...successResponseHeaders(operation),
         ...(schema === null
           ? {}
           : {

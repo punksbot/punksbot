@@ -16,6 +16,17 @@ import { consumeBotWakeQueue } from "./bot-wake-queue";
 
 export { BotWakeWorkflow } from "./bot-wake-workflow";
 
+/** Dedicated private probe for the version executing this Bot Runtime Worker. */
+export class RuntimeIdentityService extends WorkerEntrypoint<BotRuntimeEnv> {
+  override fetch(): Response {
+    return privateNotFound();
+  }
+
+  runtimeVersion(): { versionId: string } {
+    return { versionId: this.env.CF_VERSION_METADATA.id };
+  }
+}
+
 function isValidContract(contractId: ContractId, input: unknown): boolean {
   try {
     return validateContract(contractId, input).valid;

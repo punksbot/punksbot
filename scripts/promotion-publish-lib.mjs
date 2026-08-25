@@ -7,12 +7,13 @@ import {
   canonicalSha256,
 } from "./migration-manifest-lib.mjs";
 import {
+  validerEmissionLocaleDepuisDossier,
+  validerPaireLocale,
+} from "./promotion-local-emission-lib.mjs";
+import {
   ANCRAGE_APPROBATEURS_RELEASE,
   CANAL_RELEASE,
   empreinteClePubliqueEd25519,
-  NOMS_REGISTRES_ATTESTATION,
-  PLATEFORMES,
-  PREUVES_OBLIGATOIRES,
   PUBLICATION,
   validateReleaseGraph,
   verifierSignatureRecu,
@@ -66,170 +67,6 @@ function clesExactes(valeur, cles) {
     Object.keys(valeur).sort().join("\u0000") ===
       [...cles].sort().join("\u0000")
   );
-}
-
-function valeursUniquesExactes(liste, attendues, cle) {
-  if (!Array.isArray(liste) || liste.length !== attendues.length) return false;
-  const valeurs = liste.map((entree) => entree?.[cle]);
-  return (
-    new Set(valeurs).size === attendues.length &&
-    attendues.every((attendue) => valeurs.includes(attendue))
-  );
-}
-
-function validerAttestationLocale(attestation) {
-  if (
-    !clesExactes(attestation, [
-      "artefacts",
-      "checkpoint-baseline",
-      "digests-production",
-      "dossier",
-      "gates",
-      "registres",
-      "sha",
-      "staging",
-    ])
-  ) {
-    throw new Error("attestation locale complète à schéma fermé exigée");
-  }
-  if (
-    !clesExactes(attestation.dossier, ["sha256"]) ||
-    !estSha256(attestation.dossier.sha256)
-  ) {
-    throw new Error(
-      "l'attestation locale complète doit lier le hash canonique du dossier de preuve",
-    );
-  }
-  if (attestation["checkpoint-baseline"] !== BASELINE_BUZZ) {
-    throw new Error(
-      "l'attestation locale complète doit lier le checkpoint de baseline exact",
-    );
-  }
-  if (
-    !valeursUniquesExactes(
-      attestation.registres,
-      NOMS_REGISTRES_ATTESTATION,
-      "nom",
-    ) ||
-    attestation.registres.some(
-      (registre) =>
-        !clesExactes(registre, ["nom", "sha256", "version"]) ||
-        !Number.isInteger(registre?.version) ||
-        registre.version < 1 ||
-        !estSha256(registre?.sha256),
-    )
-  ) {
-    throw new Error(
-      "l'attestation locale complète doit contenir les versions et hashes exacts de tous les registres",
-    );
-  }
-  const staging = attestation.staging;
-  if (
-    !clesExactes(staging, ["compte", "deploiement", "environnement", "zone"]) ||
-    staging?.environnement !== "staging" ||
-    !/^[0-9a-f]{32}$/.test(staging?.compte ?? "") ||
-    !/^[0-9a-f]{32}$/.test(staging?.zone ?? "") ||
-    typeof staging?.deploiement !== "string" ||
-    staging.deploiement.trim() === ""
-  ) {
-    throw new Error(
-      "l'attestation locale complète doit contenir les identifiants du déploiement staging exact",
-    );
-  }
-  if (
-    !valeursUniquesExactes(attestation.gates, PREUVES_OBLIGATOIRES, "gate") ||
-    attestation.gates.some(
-      (gate) =>
-        !clesExactes(gate, ["gate", "resultat", "sha"]) ||
-        gate?.resultat !== "vert" ||
-        gate?.sha !== attestation.sha,
-    )
-  ) {
-    throw new Error(
-      "l'attestation locale complète doit contenir toutes les gates vertes liées au SHA exact",
-    );
-  }
-  if (
-    !valeursUniquesExactes(attestation.artefacts, PLATEFORMES, "plateforme") ||
-    attestation.artefacts.some(
-      (artefact) =>
-        !clesExactes(artefact, ["plateforme", "sha256"]) ||
-        !estSha256(artefact?.sha256),
-    )
-  ) {
-    throw new Error(
-      "l'attestation locale complète doit contenir les hashes de tous les artefacts distribués",
-    );
-  }
-  const digests = attestation["digests-production"];
-  if (
-    !clesExactes(digests, ["bundle", "manifeste"]) ||
-    !estSha256(digests.bundle) ||
-    !estSha256(digests.manifeste)
-  ) {
-    throw new Error(
-      "l'attestation locale complète doit sceller les digests du bundle et du manifeste production",
-    );
-  }
-}
-
-function validerPaireLocale(attestation, recu) {
-  if (!/^[0-9a-f]{40}$/.test(attestation?.sha)) {
-    throw new Error(
-      "le SHA exact de l'attestation doit contenir 40 hexadécimaux",
-    );
-  }
-  if (
-    attestation.sha === BASELINE_BUZZ ||
-    attestation.sha === CHECKPOINT_RECUPERATION
-  ) {
-    throw new Error(
-      "le SHA de publication Punks doit être distinct des checkpoints Buzz interdits",
-    );
-  }
-  validerAttestationLocale(attestation);
-  const correspondance = /^recu-promotion-([1-9][0-9]*)-([0-9a-f]{40})$/.exec(
-    recu?.id ?? "",
-  );
-  if (!correspondance) {
-    throw new Error("identifiant du Reçu de promotion invalide");
-  }
-  if (correspondance[2] !== attestation.sha) {
-    throw new Error("l'identifiant du Reçu doit citer le SHA de l'attestation");
-  }
-  const contenu = recu?.contenu;
-  if (
-    !clesExactes(recu, ["contenu", "id", "sha256"]) ||
-    !clesExactes(contenu, ["attestation-sha256", "id", "schema", "type"])
-  ) {
-    throw new Error("Reçu local à schéma fermé exigé");
-  }
-  if (
-    !contenu ||
-    typeof contenu !== "object" ||
-    Array.isArray(contenu) ||
-    contenu.schema !== "punks.release-receipt.v1" ||
-    contenu.id !== recu.id ||
-    contenu.type !== "promotion" ||
-    contenu["attestation-sha256"] !== canonicalSha256(attestation) ||
-    recu.sha256 !== canonicalSha256(contenu)
-  ) {
-    throw new Error(
-      "le Reçu local doit lier exactement son contenu canonique et l'attestation locale",
-    );
-  }
-  if (
-    "publiee" in attestation ||
-    "publication" in attestation ||
-    "publication" in recu ||
-    "signatures" in recu ||
-    "approbateurs" in contenu
-  ) {
-    throw new Error(
-      "la source locale doit être non publiée et non signée avant finalisation",
-    );
-  }
-  return Number(correspondance[1]);
 }
 
 function identitePromotion({ attestation, recu, tag, canal }) {
@@ -1327,6 +1164,7 @@ export async function publierPromotion(
   { github, cloudflare, approbation, confiance },
 ) {
   validerDestinationsR2(options.r2, confiance);
+  const dossier = lireDocument(options.dossier, "dossier de promotion");
   const attestation = lireDocument(options.attestation, "attestation");
   const recu = lireDocument(options.recu, "Reçu");
   const identite = identitePromotion({
@@ -1335,6 +1173,12 @@ export async function publierPromotion(
     tag: options.tag,
     canal: options.canal,
   });
+  validerEmissionLocaleDepuisDossier(
+    dossier.document,
+    options.contexteDossier,
+    attestation.document,
+    recu.document,
+  );
   validerContextePublicationPromotion(
     options.graphe,
     identite,

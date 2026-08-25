@@ -3580,7 +3580,23 @@
                 }
               }
             },
-            "description": "Réponse de succès du Worker."
+            "description": "Réponse de succès du Worker.",
+            "headers": {
+              "x-punks-worker-version-id": {
+                "description": "Version UUID de l'API Worker exécutée, présente uniquement pour un succès staging compatible.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "x-punks-worker-versions": {
+                "description": "JSON canonique encodé en base64url des sept Workers exécutés, dans l'ordre fermé du staging; présent uniquement pour un succès staging compatible.",
+                "schema": {
+                  "pattern": "^[A-Za-z0-9_-]+$",
+                  "type": "string"
+                }
+              }
+            }
           },
           "default": {
             "content": {

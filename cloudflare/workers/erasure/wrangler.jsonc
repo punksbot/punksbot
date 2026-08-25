@@ -7,6 +7,7 @@
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
   "preview_urls": false,
+  "version_metadata": { "binding": "CF_VERSION_METADATA" },
   "vars": {
     "ENVIRONMENT": "local"
   },
@@ -24,6 +25,7 @@
       "name": "punks-erasure-local",
       "workers_dev": false,
       "preview_urls": false,
+      "version_metadata": { "binding": "CF_VERSION_METADATA" },
       "vars": {
         "ENVIRONMENT": "local"
       },
@@ -38,6 +40,7 @@
       "name": "punks-erasure-staging",
       "workers_dev": false,
       "preview_urls": false,
+      "version_metadata": { "binding": "CF_VERSION_METADATA" },
       "vars": {
         "ENVIRONMENT": "staging"
       },

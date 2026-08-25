@@ -115,6 +115,11 @@ export interface ProjectionDirectoryService {
   }): Promise<ProjectionConversationCandidate[]>;
 }
 
+/** Private probe returning only the Worker version executing the RPC call. */
+export interface RuntimeIdentityService {
+  runtimeVersion(): Promise<{ versionId: string }>;
+}
+
 export interface ApiEnv extends CloudflareBindings {
   BOT_WAKE_QUEUE: Queue<import("@punks/contracts").BotWakeQueueBody>;
   OPERATOR_PROVISIONING_TOKEN: string;
@@ -133,6 +138,18 @@ export interface ApiEnv extends CloudflareBindings {
   MESSAGE_SEARCH: CloudflareBindings["MESSAGE_SEARCH"] &
     MessageCandidateSearchService;
   PROJECTION_DIRECTORY: Fetcher & ProjectionDirectoryService;
+  AUTH_RUNTIME_IDENTITY: CloudflareBindings["AUTH_RUNTIME_IDENTITY"] &
+    RuntimeIdentityService;
+  ATTESTATION_RUNTIME_IDENTITY: CloudflareBindings["ATTESTATION_RUNTIME_IDENTITY"] &
+    RuntimeIdentityService;
+  ERASURE_RUNTIME_IDENTITY: CloudflareBindings["ERASURE_RUNTIME_IDENTITY"] &
+    RuntimeIdentityService;
+  PROJECTOR_RUNTIME_IDENTITY: CloudflareBindings["PROJECTOR_RUNTIME_IDENTITY"] &
+    RuntimeIdentityService;
+  SEARCH_RUNTIME_IDENTITY: CloudflareBindings["SEARCH_RUNTIME_IDENTITY"] &
+    RuntimeIdentityService;
+  BOT_RUNTIME_IDENTITY: CloudflareBindings["BOT_RUNTIME_IDENTITY"] &
+    RuntimeIdentityService;
   ACCOUNT_MERGE_AUTHORITY: CloudflareBindings["ACCOUNT_MERGE_AUTHORITY"];
   ACCOUNT_MERGE_RIGHTS_INDEX: CloudflareBindings["ACCOUNT_MERGE_RIGHTS_INDEX"] & {
     prepareWorkspaceMembershipChange(input: unknown): Promise<boolean>;

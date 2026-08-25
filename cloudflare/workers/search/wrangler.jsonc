@@ -7,6 +7,7 @@
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
   "preview_urls": false,
+  "version_metadata": { "binding": "CF_VERSION_METADATA" },
   "vars": {
     "ENVIRONMENT": "local",
     "D1_SHARD_COUNT": "4"
@@ -41,6 +42,7 @@
       "name": "punks-search-local",
       "workers_dev": false,
       "preview_urls": false,
+      "version_metadata": { "binding": "CF_VERSION_METADATA" },
       "vars": {
         "ENVIRONMENT": "local",
         "D1_SHARD_COUNT": "4"
@@ -72,6 +74,7 @@
       "name": "punks-search-staging",
       "workers_dev": false,
       "preview_urls": false,
+      "version_metadata": { "binding": "CF_VERSION_METADATA" },
       "vars": {
         "ENVIRONMENT": "staging",
         "D1_SHARD_COUNT": "4"

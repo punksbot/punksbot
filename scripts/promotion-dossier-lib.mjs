@@ -11,14 +11,16 @@
  * Ce socle matérialise le dossier attendu et ses règles de refus :
  *
  *   - la liaison relie sans ambiguïté le SHA du candidat, l'identité des
- *     artefacts Tauri signés, les digests du bundle et du manifeste production,
- *     et les identifiants du déploiement Workers testé ;
+ *     artefacts Tauri signés, leur transcript d'exécution installé, les digests
+ *     du bundle et du manifeste production, et les identifiants du déploiement
+ *     Workers testé ;
  *   - le parcours distribué passe par l'interface, l'IPC Rust et les contrats
  *     publics, sans serveur Vite ni façade de test ;
  *   - macOS arm64, macOS x64, Linux x64 et Windows x64 vérifient signature,
  *     identité d'application, protocol handlers, stockage sécurisé et updater ;
- *   - les scénarios injectent coupures, révocations et pertes d'autorité puis
- *     prouvent le roll-forward et le RPO logique nul ;
+ *   - les scénarios injectent coupures, révocations et pertes de chaque
+ *     autorité, puis prouvent le roll-forward, le RPO logique nul, la
+ *     non-restauration des sessions et la résistance du reçu au PITR ;
  *   - le dossier échoue si une plateforme, une preuve d'accessibilité, un
  *     verdict golden, un diff de retrait ou un scan legacy manque ;
  *   - chaque verdict est relié à une preuve locale content-addressée dont le
@@ -30,56 +32,57 @@
  *
  * Utilisé par scripts/check-promotion-dossier.mjs et ses tests.
  */
-import { createHash } from "node:crypto";
-import {
-  closeSync,
-  constants,
-  fstatSync,
-  lstatSync,
-  openSync,
-  readFileSync,
-  realpathSync,
-} from "node:fs";
-import { basename, isAbsolute, relative, resolve } from "node:path";
 import {
   BASELINE_BUZZ,
   CHECKPOINT_RECUPERATION,
-  canonicalSha256,
 } from "./migration-manifest-lib.mjs";
+import { construireEmissionAttestation } from "./promotion-attestation-lib.mjs";
+import {
+  IDENTITE_APPLICATION_PUNKS,
+  VERIFICATIONS_ARTEFACT,
+} from "./promotion-installed-transcript-lib.mjs";
+import {
+  lirePreuveLocale,
+  lireSujetLocal,
+  validerProvenanceDossier,
+  validerProjectionPreuve,
+  validerSujetPreuve,
+} from "./promotion-proof-lib.mjs";
+import {
+  validateDeployedWorkerDescriptors,
+  validatePromotionProfileDescriptor,
+} from "./promotion-materials-lib.mjs";
+import {
+  MATRICE_ACCESSIBILITE,
+  PREUVES_RECUPERATION,
+  TYPES_FAUTE,
+  validerAccessibilite,
+  validerFautes,
+} from "./promotion-resilience-lib.mjs";
 import {
   NOMS_REGISTRES_ATTESTATION,
   PLATEFORMES,
   PREUVES_OBLIGATOIRES,
 } from "./release-graph-lib.mjs";
 
-export const VERIFICATIONS_ARTEFACT = [
-  "signature",
-  "identite-application",
-  "protocol-handlers",
-  "stockage-securise",
-  "updater",
-];
-
-export const TYPES_FAUTE = ["coupure", "revocation", "perte-autorite"];
-
-export const PREUVES_RECUPERATION = ["roll-forward", "rpo-logique-nul"];
+export { IDENTITE_APPLICATION_PUNKS, VERIFICATIONS_ARTEFACT };
 
 export const SCANS_LEGACY = ["sources", "dependances", "artefact", "reseau"];
 
-export const MATRICE_ACCESSIBILITE = [
-  "clavier",
-  "focus",
-  "zoom-200",
-  "contraste",
-  "mouvement-reduit",
-  "lecteur-ecran",
-];
+export {
+  MATRICE_ACCESSIBILITE,
+  METHODES_ACCESSIBILITE,
+  PREUVES_RECUPERATION,
+  TYPES_FAUTE,
+} from "./promotion-resilience-lib.mjs";
 
 export const VIA_DISTRIBUE = ["ui", "ipc-rust", "contrats-publics"];
 
 const SHA256_RE = /^[0-9a-f]{64}$/;
 const SHA1_RE = /^[0-9a-f]{40}$/;
+const DEPLOIEMENT_RE = /^sha256:[0-9a-f]{64}$/;
 const TRANCHE_RE = /^tranche:([0-9]+)$/;
+const PREUVE_SCHEMA = "punks.promotion-proof.v1";
 
 function estSha256(valeur) {
   return typeof valeur === "string" && SHA256_RE.test(valeur);
@@ -102,12 +105,24 @@ function resultatVert(valeur) {
   return valeur === "vert";
 }
 
+function estCoordonnee(valeur) {
+  return (
+    typeof valeur === "string" &&
+    valeur !== "" &&
+    valeur === valeur.trim() &&
+    !valeur.includes("/") &&
+    !valeur.includes("\\")
+  );
+}
+
 /**
  * Valide un dossier de preuve de promotion.
  *
  * `contexte` (facultatif) relie le dossier au dépôt réel :
  *   - ledgerRetraits : lignes retraits-par-tranche du registre des goldens ;
  *   - hashes : hashes vivants des registres (dérive refusée) ;
+ *   - registresAttendus : versions et hashes exacts du candidat dans le
+ *     graphe de release ;
  *   - stagingIds : { compte, zone } du matériau de staging réel.
  *   - racinePreuves : répertoire contenant les copies locales
  *     content-addressées citées par `dossier.preuves`.
@@ -124,6 +139,7 @@ export function validerDossier(dossier, contexte = {}) {
     ? contexte.ledgerRetraits
     : null;
   const hashes = contexte.hashes ?? null;
+  const registresAttendus = contexte.registresAttendus ?? null;
   const stagingIds = contexte.stagingIds ?? null;
 
   if (
@@ -161,22 +177,33 @@ export function validerDossier(dossier, contexte = {}) {
   if (!Number.isInteger(candidat?.tranche) || candidat?.tranche < 1) {
     push("candidat : tranche entière ≥ 1 attendue");
   }
+  try {
+    validatePromotionProfileDescriptor(dossier.profil, {
+      expectedSha256: contexte.promotionProfileSha256,
+    });
+  } catch (erreur) {
+    push(
+      `profil : matériau de promotion fermé invalide (${erreur instanceof Error ? erreur.message : String(erreur)})`,
+    );
+  }
 
   const { artefacts, staging, registres } = validerLiaison(
     dossier.liaison,
     stagingIds,
+    hashes?.staging,
     push,
   );
 
   validerParcours(dossier.parcours, artefacts, staging, push);
-  validerFautes(dossier.fautes, dossier.recuperation, push);
+  validerFautes(dossier.fautes, dossier.recuperation, staging?.autorites, push);
   validerAccessibilite(dossier.accessibilite, push);
   validerGoldens(dossier.goldens, candidat, ledgerRetraits, push);
   validerRetrait(dossier.retrait, candidat, ledgerRetraits, push);
   validerScans(dossier.scans, push);
   validerGates(dossier.gates, candidat, push);
-  verifierRegistresCites(registres, hashes, push);
+  verifierRegistresCites(registres, hashes, registresAttendus, push);
   validerPreuves(dossier, contexte, ledgerRetraits, push);
+  validerProvenanceDossier(dossier, contexte, push);
 
   return errors;
 }
@@ -187,6 +214,13 @@ function ajouterPreuveAttendue(attendues, identifiant, sha256) {
 
 function preuvesAttendues(dossier, ledgerRetraits) {
   const attendues = new Map();
+  ajouterPreuveAttendue(attendues, "candidat");
+  ajouterPreuveAttendue(
+    attendues,
+    "profil/promotion",
+    dossier.profil?.["materiau-sha256"],
+  );
+  ajouterPreuveAttendue(attendues, "registres");
   const artefacts = Array.isArray(dossier.liaison?.artefacts)
     ? dossier.liaison.artefacts
     : [];
@@ -204,6 +238,16 @@ function preuvesAttendues(dossier, ledgerRetraits) {
       `artefact/${plateforme}/signature`,
       artefact?.signature,
     );
+    ajouterPreuveAttendue(
+      attendues,
+      `transcript/${plateforme}`,
+      artefact?.transcriptSha256,
+    );
+    ajouterPreuveAttendue(
+      attendues,
+      `staging/reobservation/${plateforme}`,
+      dossier.liaison?.staging?.["deploiement-preuve-sha256"],
+    );
     for (const verification of VERIFICATIONS_ARTEFACT) {
       ajouterPreuveAttendue(
         attendues,
@@ -216,6 +260,11 @@ function preuvesAttendues(dossier, ledgerRetraits) {
     attendues,
     "staging/materiau",
     dossier.liaison?.staging?.["materiau-sha256"],
+  );
+  ajouterPreuveAttendue(
+    attendues,
+    "staging/deploiement",
+    dossier.liaison?.staging?.["deploiement-preuve-sha256"],
   );
   for (const nom of ["bundle", "manifeste"]) {
     ajouterPreuveAttendue(
@@ -234,11 +283,32 @@ function preuvesAttendues(dossier, ledgerRetraits) {
       ajouterPreuveAttendue(attendues, `parcours/${plateforme}/${recit}`);
     }
   }
+  const autorites = Array.isArray(dossier.liaison?.staging?.autorites)
+    ? dossier.liaison.staging.autorites
+    : [];
   for (const type of TYPES_FAUTE) {
-    ajouterPreuveAttendue(attendues, `faute/${type}`);
-  }
-  for (const preuve of PREUVES_RECUPERATION) {
-    ajouterPreuveAttendue(attendues, `recuperation/${preuve}`);
+    for (const autorite of autorites) {
+      const faute = dossier.fautes?.find(
+        (scenario) =>
+          scenario?.type === type && scenario?.autorite === autorite,
+      );
+      ajouterPreuveAttendue(
+        attendues,
+        `faute/${type}/${autorite}`,
+        faute?.captureSha256,
+      );
+      for (const preuve of PREUVES_RECUPERATION) {
+        const recuperation = dossier.recuperation?.scenarios?.find(
+          (scenario) =>
+            scenario?.type === type && scenario?.autorite === autorite,
+        );
+        ajouterPreuveAttendue(
+          attendues,
+          `recuperation/${preuve}/${type}/${autorite}`,
+          recuperation?.preuves?.[preuve]?.subjectSha256,
+        );
+      }
+    }
   }
   ajouterPreuveAttendue(
     attendues,
@@ -283,122 +353,6 @@ function preuvesAttendues(dossier, ledgerRetraits) {
   return attendues;
 }
 
-function cheminEstDansRacine(racine, chemin) {
-  const relatif = relative(racine, chemin);
-  return relatif === "" || (!relatif.startsWith("..") && !isAbsolute(relatif));
-}
-
-function lirePreuveLocale(identifiant, preuve, racinePreuves, push) {
-  if (!preuve || typeof preuve !== "object") {
-    push(`preuves : preuve « ${identifiant} » manquante`);
-    return null;
-  }
-  if (!estSha256(preuve.sha256)) {
-    push(`preuves : preuve « ${identifiant} » sans sha256 valide`);
-    return null;
-  }
-  if (!estCheminGitCanonique(preuve.chemin)) {
-    push(
-      `preuves : preuve « ${identifiant} » sans chemin local canonique — une copie locale content-addressée est exigée, même lorsqu'une URL est citée`,
-    );
-    return null;
-  }
-  if (preuve.url !== undefined) {
-    try {
-      const url = new URL(preuve.url);
-      if (
-        url.protocol !== "https:" ||
-        url.username !== "" ||
-        url.password !== "" ||
-        url.hash !== ""
-      ) {
-        throw new Error("URL non immuable");
-      }
-    } catch {
-      push(
-        `preuves : preuve « ${identifiant} » avec URL invalide — HTTPS sans identifiants ni fragment exigé`,
-      );
-      return null;
-    }
-  }
-  if (typeof racinePreuves !== "string" || racinePreuves.trim() === "") {
-    push(
-      `preuves : preuve « ${identifiant} » invérifiable — racine locale des preuves manquante`,
-    );
-    return null;
-  }
-
-  let racineReelle;
-  let cheminReel;
-  const cheminDeclare = resolve(racinePreuves, preuve.chemin);
-  try {
-    racineReelle = realpathSync(racinePreuves);
-    const statutLien = lstatSync(cheminDeclare);
-    if (statutLien.isSymbolicLink()) {
-      push(`preuves : preuve « ${identifiant} » — lien symbolique interdit`);
-      return null;
-    }
-    if (!statutLien.isFile()) {
-      push(`preuves : preuve « ${identifiant} » — fichier régulier exigé`);
-      return null;
-    }
-    cheminReel = realpathSync(cheminDeclare);
-  } catch (erreur) {
-    push(
-      `preuves : preuve « ${identifiant} » illisible (${String(erreur?.code ?? "erreur")})`,
-    );
-    return null;
-  }
-  const cheminContentAdresse = resolve(racineReelle, preuve.chemin);
-  if (
-    !cheminEstDansRacine(racineReelle, cheminReel) ||
-    cheminReel !== cheminContentAdresse
-  ) {
-    push(
-      `preuves : preuve « ${identifiant} » sort de la racine ou traverse un lien symbolique`,
-    );
-    return null;
-  }
-  if (!basename(preuve.chemin).startsWith(preuve.sha256)) {
-    push(
-      `preuves : preuve « ${identifiant} » — chemin local non immuable : le nom doit être content-addressé par son sha256`,
-    );
-    return null;
-  }
-
-  let descripteur;
-  try {
-    descripteur = openSync(
-      cheminDeclare,
-      constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0),
-    );
-    const avant = fstatSync(descripteur, { bigint: true });
-    const contenu = readFileSync(descripteur);
-    const apres = fstatSync(descripteur, { bigint: true });
-    if (
-      avant.dev !== apres.dev ||
-      avant.ino !== apres.ino ||
-      avant.size !== apres.size ||
-      avant.mtimeNs !== apres.mtimeNs
-    ) {
-      push(
-        `preuves : preuve « ${identifiant} » modifiée pendant sa vérification`,
-      );
-      return null;
-    }
-    return createHash("sha256").update(contenu).digest("hex");
-  } catch (erreur) {
-    push(
-      `preuves : preuve « ${identifiant} » impossible à relire sans suivre de lien (${String(erreur?.code ?? "erreur")})`,
-    );
-    return null;
-  } finally {
-    if (descripteur !== undefined) {
-      closeSync(descripteur);
-    }
-  }
-}
-
 function validerPreuves(dossier, contexte, ledgerRetraits, push) {
   const preuves =
     dossier.preuves && typeof dossier.preuves === "object"
@@ -407,19 +361,103 @@ function validerPreuves(dossier, contexte, ledgerRetraits, push) {
   const attendues = preuvesAttendues(dossier, ledgerRetraits);
   for (const [identifiant, shaAttendu] of attendues) {
     const preuve = preuves[identifiant];
-    const shaRecalcule = lirePreuveLocale(
+    const preuveLocale = lirePreuveLocale(
       identifiant,
       preuve,
       contexte.racinePreuves,
       push,
     );
-    if (shaRecalcule === null || !preuve) {
+    if (preuveLocale === null || !preuve) {
       continue;
     }
-    if (shaRecalcule !== preuve.sha256) {
+    const sujetLocal = lireSujetLocal(
+      identifiant,
+      preuve.sujet,
+      contexte.racinePreuves,
+      push,
+    );
+    if (preuveLocale.sha256 !== preuve.sha256) {
       push(
         `preuves : preuve « ${identifiant} » — le hash recalculé ne correspond pas au sha256 déclaré`,
       );
+    }
+    const document = preuveLocale.document;
+    const clesReference = Object.keys(preuve).sort();
+    if (
+      clesReference.some(
+        (cle) =>
+          !["chemin", "sha256", "subjectSha256", "sujet", "url"].includes(cle),
+      )
+    ) {
+      push(
+        `preuves : preuve « ${identifiant} » — référence à schéma fermé exigée`,
+      );
+    }
+    if (
+      !document ||
+      typeof document !== "object" ||
+      Array.isArray(document) ||
+      document.schema !== PREUVE_SCHEMA ||
+      document.id !== identifiant
+    ) {
+      push(
+        `preuves : preuve « ${identifiant} » — enveloppe ${PREUVE_SCHEMA} liée à son identifiant exigée`,
+      );
+    } else if (
+      Object.keys(document).some(
+        (cle) =>
+          ![
+            "candidateSha",
+            "data",
+            "id",
+            "plateforme",
+            "result",
+            "schema",
+            "stagingDeploymentId",
+          ].includes(cle),
+      )
+    ) {
+      push(
+        `preuves : preuve « ${identifiant} » — enveloppe à schéma fermé exigée`,
+      );
+    } else if (document.candidateSha !== dossier.candidat?.sha) {
+      push(`preuves : preuve « ${identifiant} » liée à un autre SHA candidat`);
+    } else if (
+      document.stagingDeploymentId !== dossier.liaison?.staging?.deploiement
+    ) {
+      push(
+        `preuves : preuve « ${identifiant} » liée à un autre déploiement staging`,
+      );
+    } else if (
+      document.result !== "vert" ||
+      !document.data ||
+      typeof document.data !== "object" ||
+      Array.isArray(document.data)
+    ) {
+      push(
+        `preuves : preuve « ${identifiant} » — résultat vert et données observées exigés`,
+      );
+    } else {
+      if (
+        preuve.subjectSha256 !== undefined &&
+        document.data.subjectSha256 !== preuve.subjectSha256
+      ) {
+        push(
+          `preuves : preuve « ${identifiant} » — sujet content-addressé divergent de son contenu`,
+        );
+      }
+      if (
+        sujetLocal === null ||
+        sujetLocal.sha256 !== preuve.sujet?.sha256 ||
+        sujetLocal.sha256 !== preuve.subjectSha256
+      ) {
+        push(
+          `preuves : preuve « ${identifiant} » — octets du sujet brut divergents`,
+        );
+      } else {
+        validerSujetPreuve(identifiant, sujetLocal, document, dossier, push);
+      }
+      validerProjectionPreuve(identifiant, document, dossier, push);
     }
     if (
       preuve.subjectSha256 !== undefined &&
@@ -441,7 +479,7 @@ function validerPreuves(dossier, contexte, ledgerRetraits, push) {
   }
 }
 
-function validerLiaison(liaison, stagingIds, push) {
+function validerLiaison(liaison, stagingIds, stagingMateriauSha256, push) {
   if (!liaison || typeof liaison !== "object") {
     push("liaison manquante — le dossier doit lier SHA, artefacts et staging");
     return { artefacts: [], staging: null, registres: [] };
@@ -468,11 +506,33 @@ function validerLiaison(liaison, stagingIds, push) {
     if (typeof artefact.nom !== "string" || artefact.nom.trim() === "") {
       push(`liaison : artefact ${artefact.plateforme} sans nom`);
     }
+    if (
+      typeof artefact.signatureNom !== "string" ||
+      artefact.signatureNom.trim() === ""
+    ) {
+      push(`liaison : artefact ${artefact.plateforme} sans nom de signature`);
+    }
     if (!estSha256(artefact.sha256)) {
       push(`liaison : artefact ${artefact.plateforme} sans sha256 valide`);
     }
     if (!estSha256(artefact.signature)) {
       push(`liaison : artefact ${artefact.plateforme} sans signature valide`);
+    }
+    if (!Number.isInteger(artefact.taille) || artefact.taille < 1) {
+      push(`liaison : artefact ${artefact.plateforme} sans taille exacte`);
+    }
+    if (
+      !Number.isInteger(artefact.signatureTaille) ||
+      artefact.signatureTaille < 1
+    ) {
+      push(
+        `liaison : artefact ${artefact.plateforme} sans taille de signature exacte`,
+      );
+    }
+    if (!estSha256(artefact.transcriptSha256)) {
+      push(
+        `liaison : artefact ${artefact.plateforme} sans transcript installé content-addressé`,
+      );
     }
     const identite = artefact.identite;
     if (
@@ -482,6 +542,10 @@ function validerLiaison(liaison, stagingIds, push) {
     ) {
       push(
         `liaison : artefact ${artefact.plateforme} sans identité d'application (bundleId)`,
+      );
+    } else if (identite.bundleId !== IDENTITE_APPLICATION_PUNKS) {
+      push(
+        `liaison : artefact ${artefact.plateforme} — identité d'application Punks staging exacte « ${IDENTITE_APPLICATION_PUNKS} » exigée`,
       );
     }
     const verifications = identite?.verifications ?? {};
@@ -513,17 +577,35 @@ function validerLiaison(liaison, stagingIds, push) {
         push(`liaison : staging.${cle} (identifiant hexadécimal) manquant`);
       }
     }
-    if (
-      typeof staging.deploiement !== "string" ||
-      staging.deploiement.trim() === ""
-    ) {
+    if (staging.deploiement === "") {
       push("liaison : identifiant de déploiement Workers exact manquant");
+    } else if (!DEPLOIEMENT_RE.test(staging.deploiement ?? "")) {
+      push(
+        "liaison : identifiant de déploiement Workers exact sha256 manquant ou invalide",
+      );
+    }
+    if (!estSha256(staging["deploiement-preuve-sha256"])) {
+      push(
+        "liaison : preuve distante content-addressée du déploiement Workers manquante",
+      );
+    }
+    try {
+      validateDeployedWorkerDescriptors(staging.workers);
+    } catch (erreur) {
+      push(
+        `liaison : versions des Workers staging invalides (${erreur instanceof Error ? erreur.message : String(erreur)})`,
+      );
     }
     if (
       staging.materiau !== "cloudflare/staging.resources.json" ||
       !estSha256(staging["materiau-sha256"])
     ) {
       push("liaison : matériau de staging isolé manquant ou invalide");
+    } else if (
+      stagingMateriauSha256 !== undefined &&
+      staging["materiau-sha256"] !== stagingMateriauSha256
+    ) {
+      push("liaison : matériau de staging divergent du dépôt courant");
     }
     if (
       stagingIds &&
@@ -532,6 +614,22 @@ function validerLiaison(liaison, stagingIds, push) {
       push(
         "liaison : identifiants de staging divergents du matériau réel du dépôt",
       );
+    }
+    const autorites = staging.autorites;
+    if (!Array.isArray(autorites) || autorites.length === 0) {
+      push("liaison : liste des autorités staging manquante");
+    } else {
+      const vues = new Set();
+      for (const autorite of autorites) {
+        if (!estCoordonnee(autorite)) {
+          push(`liaison : autorité staging invalide « ${String(autorite)} »`);
+          continue;
+        }
+        if (vues.has(autorite)) {
+          push(`liaison : autorité staging « ${autorite} » citée deux fois`);
+        }
+        vues.add(autorite);
+      }
     }
   }
 
@@ -547,17 +645,24 @@ function validerLiaison(liaison, stagingIds, push) {
   }
 
   const registres = Array.isArray(liaison.registres) ? liaison.registres : [];
-  const noms = new Set(registres.map((r) => r?.nom));
+  const occurrences = new Map();
+  for (const registre of registres) {
+    const nom = registre?.nom;
+    occurrences.set(nom, (occurrences.get(nom) ?? 0) + 1);
+  }
   for (const nom of NOMS_REGISTRES_ATTESTATION) {
-    if (!noms.has(nom)) {
+    const nombre = occurrences.get(nom) ?? 0;
+    if (nombre === 0) {
       push(`liaison : registre « ${nom} » non cité (version et hash exigés)`);
+    } else if (nombre > 1) {
+      push(`liaison : registre « ${nom} » cité deux fois`);
     }
   }
 
   return { artefacts, staging, registres };
 }
 
-function verifierRegistresCites(registres, hashes, push) {
+function verifierRegistresCites(registres, hashes, registresAttendus, push) {
   for (const registre of registres) {
     if (
       !registre ||
@@ -578,6 +683,17 @@ function verifierRegistresCites(registres, hashes, push) {
     ) {
       push(
         `liaison : registre « ${registre.nom} » ne correspond pas au dépôt courant — le dossier doit citer les artefacts réellement testés`,
+      );
+    }
+    const attendu = registresAttendus?.[registre.nom];
+    if (attendu && registre.version !== attendu.version) {
+      push(
+        `liaison : registre « ${registre.nom} » — version divergente du graphe de release`,
+      );
+    }
+    if (attendu && registre.sha256 !== attendu.sha256) {
+      push(
+        `liaison : registre « ${registre.nom} » — hash divergent du graphe de release`,
       );
     }
   }
@@ -613,6 +729,13 @@ function validerParcours(parcours, artefacts, staging, push) {
   ) {
     push("parcours : les récits de la tranche doivent être cités");
     return;
+  }
+  const recitsVus = new Set();
+  for (const recit of recits) {
+    if (recitsVus.has(recit)) {
+      push(`parcours : récit « ${recit} » cité deux fois`);
+    }
+    recitsVus.add(recit);
   }
   const executions = Array.isArray(parcours.executions)
     ? parcours.executions
@@ -672,9 +795,13 @@ function validerParcours(parcours, artefacts, staging, push) {
       );
     }
     const via = Array.isArray(execution.via) ? execution.via : [];
-    if (!VIA_DISTRIBUE.every((couche) => via.includes(couche))) {
+    if (
+      via.length !== VIA_DISTRIBUE.length ||
+      new Set(via).size !== VIA_DISTRIBUE.length ||
+      !VIA_DISTRIBUE.every((couche) => via.includes(couche))
+    ) {
       push(
-        `parcours : ${cle} doit passer par ${VIA_DISTRIBUE.join(" + ")} — interface, IPC Rust et contrats publics`,
+        `parcours : ${cle} doit citer les couches exactes ${VIA_DISTRIBUE.join(" + ")} — interface, IPC Rust et contrats publics (UI), sans chemin parallèle`,
       );
     }
   }
@@ -687,88 +814,15 @@ function validerParcours(parcours, artefacts, staging, push) {
   }
 }
 
-function validerFautes(fautes, recuperation, push) {
-  const scenarios = Array.isArray(fautes) ? fautes : [];
-  if (scenarios.length === 0) {
-    push("fautes : les scénarios de faute injectée sont exigés");
-  }
-  const typesVus = new Set();
-  for (const scenario of scenarios) {
-    if (!scenario || !TYPES_FAUTE.includes(scenario.type)) {
-      push(
-        `fautes : type inconnu « ${String(scenario?.type)} » (attendu ${TYPES_FAUTE.join(", ")})`,
-      );
-      continue;
-    }
-    typesVus.add(scenario.type);
-    if (
-      typeof scenario.autorite !== "string" ||
-      scenario.autorite.trim() === ""
-    ) {
-      push(`fautes : scénario ${scenario.type} sans autorité citée`);
-    }
-    if (!PLATEFORMES.includes(scenario.plateforme)) {
-      push(`fautes : scénario ${scenario.type} sur plateforme inconnue`);
-    }
-    if (!resultatVert(scenario.resultat)) {
-      push(`fautes : scénario ${scenario.type} non vert`);
-    }
-  }
-  for (const type of TYPES_FAUTE) {
-    if (!typesVus.has(type)) {
-      push(`fautes : aucun scénario de type « ${type} » injecté`);
-    }
-  }
-  if (!recuperation || typeof recuperation !== "object") {
-    push("recuperation : preuves de récupération manquantes");
-    return;
-  }
-  for (const preuve of PREUVES_RECUPERATION) {
-    if (!resultatVert(recuperation[preuve])) {
-      push(
-        `recuperation : « ${preuve} » doit être prouvé vert par les scénarios`,
-      );
-    }
-  }
-  if (!estSha256(recuperation.captures)) {
-    push("recuperation : empreinte des captures de faute manquante");
-  }
-}
-
-function validerAccessibilite(accessibilite, push) {
-  const entrees = Array.isArray(accessibilite) ? accessibilite : [];
-  const plateformesVues = new Set();
-  for (const entree of entrees) {
-    if (!entree || !PLATEFORMES.includes(entree.plateforme)) {
-      push(
-        `accessibilite : plateforme inconnue « ${String(entree?.plateforme)} »`,
-      );
-      continue;
-    }
-    plateformesVues.add(entree.plateforme);
-    const matrice = entree.matrice ?? {};
-    for (const critere of MATRICE_ACCESSIBILITE) {
-      if (!resultatVert(matrice[critere])) {
-        push(
-          `accessibilite : ${entree.plateforme} — critère « ${critere} » manquant ou non vert`,
-        );
-      }
-    }
-    if (!resultatVert(entree.resultat)) {
-      push(`accessibilite : ${entree.plateforme} non vert`);
-    }
-  }
-  for (const plateforme of PLATEFORMES) {
-    if (!plateformesVues.has(plateforme)) {
-      push(
-        `accessibilite : preuve manquante pour ${plateforme} — le dossier échoue sans matrice complète`,
-      );
-    }
-  }
-}
-
 function validerGoldens(goldens, candidat, ledgerRetraits, push) {
   const verdicts = Array.isArray(goldens) ? goldens : [];
+  const testsVus = new Set();
+  for (const verdict of verdicts) {
+    if (testsVus.has(verdict?.test)) {
+      push(`goldens : verdict « ${String(verdict?.test)} » cité deux fois`);
+    }
+    testsVus.add(verdict?.test);
+  }
   const lignesAttendues =
     ledgerRetraits === null
       ? null
@@ -829,6 +883,8 @@ function validerRetrait(retrait, candidat, ledgerRetraits, push) {
     push(
       "retrait : lignes du registre des goldens retirées par ce candidat exigées",
     );
+  } else if (new Set(retrait.lignes).size !== retrait.lignes.length) {
+    push("retrait : ligne du registre des goldens citée deux fois");
   }
   if (ledgerRetraits !== null) {
     const attendues = ledgerRetraits
@@ -913,46 +969,7 @@ export function construireAttestation(dossier, contexte = {}) {
         "attestation refusée : le graphe de release doit autoriser le candidat (gate vert, tranche présente, candidat non déjà scellé)",
     };
   }
-  const liaison = dossier.liaison;
-  const attestation = {
-    sha: dossier.candidat.sha,
-    dossier: { sha256: canonicalSha256(dossier) },
-    "checkpoint-baseline": dossier["baseline-buzz"],
-    registres: liaison.registres.map((r) => ({
-      nom: r.nom,
-      version: r.version,
-      sha256: r.sha256,
-    })),
-    staging: {
-      environnement: liaison.staging.environnement,
-      compte: liaison.staging.compte,
-      zone: liaison.staging.zone,
-      deploiement: liaison.staging.deploiement,
-    },
-    gates: PREUVES_OBLIGATOIRES.map((preuve) => ({
-      gate: preuve,
-      resultat: dossier.gates[preuve].resultat,
-      sha: dossier.candidat.sha,
-    })),
-    artefacts: liaison.artefacts.map((a) => ({
-      plateforme: a.plateforme,
-      sha256: a.sha256,
-    })),
-    "digests-production": { ...liaison["digests-production"] },
-  };
-  const recuId = `recu-promotion-${dossier.candidat.tranche}-${dossier.candidat.sha}`;
-  const contenuRecu = {
-    schema: "punks.release-receipt.v1",
-    id: recuId,
-    type: "promotion",
-    "attestation-sha256": canonicalSha256(attestation),
-  };
-  const recu = {
-    id: recuId,
-    contenu: contenuRecu,
-    sha256: canonicalSha256(contenuRecu),
-  };
-  return { attestation, recu };
+  return construireEmissionAttestation(dossier);
 }
 
 /** Un candidat est-il déjà scellé dans le graphe de release ? */

@@ -191,6 +191,27 @@ describe("artefacts API générés desktop-social-loop@1", () => {
     ).toEqual(expect.arrayContaining(["200", "201", "default"]));
   });
 
+  it("OpenAPI : documente les versions Workers du succès staging", () => {
+    const response = (
+      (openApiJson.paths["/api/v1/desktop/compatibility"] as JsonObject)
+        .post as JsonObject
+    ).responses as JsonObject;
+    const headers = (response["200"] as JsonObject).headers as JsonObject;
+
+    expect(Object.keys(headers).sort()).toEqual([
+      "x-punks-worker-version-id",
+      "x-punks-worker-versions",
+    ]);
+    expect(headers["x-punks-worker-version-id"]).toMatchObject({
+      description: expect.stringMatching(/API Worker.*staging compatible/i),
+      schema: { type: "string", format: "uuid" },
+    });
+    expect(headers["x-punks-worker-versions"]).toMatchObject({
+      description: expect.stringMatching(/base64url.*sept Workers/i),
+      schema: { type: "string", pattern: "^[A-Za-z0-9_-]+$" },
+    });
+  });
+
   it("AsyncAPI : chaque variable du canal FOLLOW est déclarée", () => {
     for (const [channelName, channel] of objectEntries(asyncApiJson.channels)) {
       const placeholders = [...channelName.matchAll(/\{([^}]+)\}/g)].map(

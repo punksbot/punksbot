@@ -1,23 +1,27 @@
 #!/usr/bin/env node
 
 import { createHash } from "node:crypto";
-import { spawnSync } from "node:child_process";
 import {
+  closeSync,
   constants,
-  copyFileSync,
-  existsSync,
+  fstatSync,
   lstatSync,
   mkdirSync,
+  openSync,
   readFileSync,
   readdirSync,
   statSync,
   writeFileSync,
 } from "node:fs";
-import { basename, join, relative, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import {
   CANONICAL_STAGING_ACCOUNT_ID,
   validateStagingDeploymentProof,
 } from "../../cloudflare/scripts/staging-deployment-proof.mjs";
+import {
+  validateSigstoreBundleContent,
+  verifyGithubSubject,
+} from "../github-attestation-lib.mjs";
 
 const SOURCE_SHA = /^[0-9a-f]{40}$/;
 const DEPLOYMENT_ID = /^sha256:[0-9a-f]{64}$/;
@@ -55,9 +59,34 @@ function fail(message) {
   throw new Error(message);
 }
 
+const COMMAND_OPTIONS = {
+  collect: new Set([
+    "--platform",
+    "--target",
+    "--source-sha",
+    "--staging-deployment-id",
+    "--bundle",
+    "--native-proof",
+    "--output",
+  ]),
+  aggregate: new Set([
+    "--input",
+    "--output",
+    "--staging-proof",
+    "--source-sha",
+    "--staging-deployment-id",
+    "--repository",
+    "--release-tag",
+    "--source-ref",
+    "--signer-workflow",
+  ]),
+};
+
 function parseArguments(argv) {
   if (argv.length === 0) fail("A collect or aggregate command is required");
   const command = argv[0];
+  const allowed = COMMAND_OPTIONS[command];
+  if (allowed === undefined) fail(`Unknown command ${String(command)}`);
   const values = new Map();
   for (let index = 1; index < argv.length; index += 2) {
     const name = argv[index];
@@ -65,7 +94,10 @@ function parseArguments(argv) {
     if (!name?.startsWith("--") || value === undefined) {
       fail("Arguments must be supplied as --name value pairs");
     }
-    values.set(name.slice(2), value);
+    if (!allowed.has(name)) fail(`Unknown option ${name}`);
+    const key = name.slice(2);
+    if (values.has(key)) fail(`Duplicate option ${name}`);
+    values.set(key, value);
   }
   return { command, values };
 }
@@ -88,31 +120,82 @@ function readJson(path) {
 }
 
 function writeJsonExclusive(path, value) {
-  writeFileSync(path, JSON.stringify(value, null, 2) + "\n", {
-    encoding: "utf8",
+  const content = jsonContent(value);
+  writeFileSync(path, content, {
     flag: "wx",
     mode: 0o644,
   });
+  return content;
 }
 
-function sha256(path) {
-  return createHash("sha256").update(readFileSync(path)).digest("hex");
+function jsonContent(value) {
+  return Buffer.from(JSON.stringify(value, null, 2) + "\n");
+}
+
+function createOutputRoot(path, alreadyExistsMessage) {
+  try {
+    mkdirSync(path, { mode: 0o700 });
+  } catch (error) {
+    if (error?.code === "EEXIST") fail(alreadyExistsMessage);
+    throw error;
+  }
+}
+
+function readStableFile(path, label) {
+  const metadata = lstatSync(path);
+  if (metadata.isSymbolicLink() || !metadata.isFile()) {
+    fail(`${label} must be one real regular file`);
+  }
+  let descriptor;
+  try {
+    descriptor = openSync(
+      path,
+      constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0),
+    );
+    const before = fstatSync(descriptor, { bigint: true });
+    const content = readFileSync(descriptor);
+    const after = fstatSync(descriptor, { bigint: true });
+    if (
+      before.dev !== after.dev ||
+      before.ino !== after.ino ||
+      before.size !== after.size ||
+      before.mtimeNs !== after.mtimeNs
+    ) {
+      fail(`${label} changed while it was read`);
+    }
+    return {
+      path,
+      content,
+      sha256: createHash("sha256").update(content).digest("hex"),
+      size: content.length,
+    };
+  } finally {
+    if (descriptor !== undefined) closeSync(descriptor);
+  }
+}
+
+function parseJsonContent(file, label) {
+  try {
+    return JSON.parse(file.content.toString("utf8"));
+  } catch {
+    fail(`${label} is not valid JSON`);
+  }
 }
 
 function loadStagingProof(path, sourceSha, stagingDeploymentId) {
-  const metadata = lstatSync(path);
-  if (metadata.isSymbolicLink() || !metadata.isFile()) {
-    fail("Staging deployment proof must be one real regular file");
-  }
-  const proof = validateStagingDeploymentProof(readJson(path), {
-    accountId: CANONICAL_STAGING_ACCOUNT_ID,
-    environment: "staging",
-    sourceSha,
-  });
+  const file = readStableFile(path, "Staging deployment proof");
+  const proof = validateStagingDeploymentProof(
+    parseJsonContent(file, "Staging deployment proof"),
+    {
+      accountId: CANONICAL_STAGING_ACCOUNT_ID,
+      environment: "staging",
+      sourceSha,
+    },
+  );
   if (proof.deploymentId !== stagingDeploymentId) {
     fail("Staging deployment proof ID does not match candidate identity");
   }
-  return proof;
+  return { proof, file };
 }
 
 function topEntries(directory) {
@@ -271,8 +354,7 @@ function inspectBundle(platform, bundleRoot) {
   fail("Unsupported platform " + platform);
 }
 
-function validateNativeProof(path, platform) {
-  const proof = readJson(path);
+function validateNativeProofValue(proof, platform) {
   if (
     proof.schema !== "punks.desktop-native-proof.v1" ||
     proof.platform !== platform ||
@@ -306,7 +388,11 @@ function readVersion() {
   return config.version;
 }
 
-export function collectPlatformLeg(options) {
+/**
+ * Collect one signed platform leg into a newly owned create-only directory.
+ * The optional boundary is test-only and is not exposed by the CLI.
+ */
+export function collectPlatformLeg(options, testBoundary = {}) {
   const {
     platform,
     target,
@@ -320,40 +406,59 @@ export function collectPlatformLeg(options) {
   if (PLATFORM_TARGETS[platform] !== target) {
     fail("Platform and Rust target do not match");
   }
-  if (existsSync(output)) fail("Platform leg output already exists");
 
-  const proof = validateNativeProof(nativeProof, platform);
+  const nativeProofFile = readStableFile(
+    nativeProof,
+    `Native proof for ${platform}`,
+  );
+  const proof = validateNativeProofValue(
+    parseJsonContent(nativeProofFile, `Native proof for ${platform}`),
+    platform,
+  );
   const sourceArtifacts = inspectBundle(platform, bundle);
+  const version = readVersion();
+  const prefix = "punks-desktop-" + platform + "-" + sourceSha;
+  const artifactFiles = sourceArtifacts.map(({ source, suffix, role }) => ({
+    ...readStableFile(source, `Source artifact ${basename(source)}`),
+    name: prefix + suffix,
+    role,
+  }));
+
+  testBoundary.beforeOutputCreate?.();
+  createOutputRoot(output, "Platform leg output already exists");
   const platformRoot = join(output, platform);
   const artifactRoot = join(platformRoot, "artifacts");
-  mkdirSync(artifactRoot, { recursive: true, mode: 0o755 });
+  mkdirSync(platformRoot, { mode: 0o755 });
+  mkdirSync(artifactRoot, { mode: 0o755 });
 
-  const prefix = "punks-desktop-" + platform + "-" + sourceSha;
-  const artifacts = sourceArtifacts.map(({ source, suffix, role }) => {
-    const name = prefix + suffix;
+  const artifacts = artifactFiles.map((file) => {
+    const { name, role } = file;
     const destination = join(artifactRoot, name);
-    copyFileSync(source, destination, constants.COPYFILE_EXCL);
+    writeFileSync(destination, file.content, { flag: "wx", mode: 0o644 });
     return {
       name,
       path: "artifacts/" + name,
       role,
-      sha256: sha256(destination),
-      size: statSync(destination).size,
+      sha256: file.sha256,
+      size: file.size,
     };
   });
 
   const proofDestination = join(platformRoot, "native-proof.json");
-  copyFileSync(nativeProof, proofDestination, constants.COPYFILE_EXCL);
+  writeFileSync(proofDestination, nativeProofFile.content, {
+    flag: "wx",
+    mode: 0o644,
+  });
   const manifest = {
     schema: "punks.desktop-platform-leg.v1",
     sourceSha,
     stagingDeploymentId,
-    version: readVersion(),
+    version,
     platform,
     target,
     nativeProof: {
       path: "native-proof.json",
-      sha256: sha256(proofDestination),
+      sha256: nativeProofFile.sha256,
       identity: proof.identity,
       timestamped: proof.timestamped,
     },
@@ -371,75 +476,6 @@ function findArtifact(manifest, role) {
   return artifact;
 }
 
-function validateSigstoreBundle(path) {
-  const bundle = readJson(path);
-  if (
-    typeof bundle.mediaType !== "string" ||
-    !bundle.mediaType.startsWith("application/vnd.dev.sigstore.bundle.") ||
-    typeof bundle.dsseEnvelope?.payload !== "string" ||
-    !Array.isArray(bundle.dsseEnvelope?.signatures) ||
-    bundle.dsseEnvelope.signatures.length === 0 ||
-    !bundle.verificationMaterial ||
-    typeof bundle.verificationMaterial !== "object"
-  ) {
-    fail("The provenance file is not a Sigstore bundle");
-  }
-}
-
-function verifyGithubSubject({
-  artifact,
-  bundle,
-  repository,
-  sourceSha,
-  sourceRef,
-  signerWorkflow,
-  ghBinary,
-}) {
-  const result = spawnSync(
-    ghBinary,
-    [
-      "attestation",
-      "verify",
-      artifact,
-      "--repo",
-      repository,
-      "--signer-workflow",
-      signerWorkflow,
-      "--source-digest",
-      sourceSha,
-      "--source-ref",
-      sourceRef,
-      "--deny-self-hosted-runners",
-      "--bundle",
-      bundle,
-      "--format",
-      "json",
-    ],
-    {
-      encoding: "utf8",
-      env: process.env,
-    },
-  );
-  if (result.error) throw result.error;
-  if (result.status !== 0) {
-    fail(
-      "GitHub attestation verification failed for " +
-        basename(artifact) +
-        ": " +
-        (result.stderr || "unknown gh failure").trim(),
-    );
-  }
-  let verification;
-  try {
-    verification = JSON.parse(result.stdout);
-  } catch {
-    fail("GitHub attestation verification did not return JSON");
-  }
-  if (!Array.isArray(verification) || verification.length === 0) {
-    fail("GitHub attestation verification returned no verified statement");
-  }
-}
-
 function verifyLeg(
   inputRoot,
   platform,
@@ -451,7 +487,14 @@ function verifyLeg(
   const manifestPath = join(root, "platform-manifest.json");
   const provenancePath = join(root, "provenance.sigstore.json");
   const nativeProofPath = join(root, "native-proof.json");
-  const manifest = readJson(manifestPath);
+  const manifestFile = readStableFile(
+    manifestPath,
+    `Platform manifest for ${platform}`,
+  );
+  const manifest = parseJsonContent(
+    manifestFile,
+    `Platform manifest for ${platform}`,
+  );
   if (
     manifest.schema !== "punks.desktop-platform-leg.v1" ||
     manifest.platform !== platform ||
@@ -461,21 +504,25 @@ function verifyLeg(
   ) {
     fail("Invalid platform manifest for " + platform);
   }
-  if (
-    !existsSync(provenancePath) ||
-    lstatSync(provenancePath).isSymbolicLink()
-  ) {
-    fail("Verified provenance bundle missing for " + platform);
-  }
-  validateSigstoreBundle(provenancePath);
+  const provenanceFile = readStableFile(
+    provenancePath,
+    `Verified provenance bundle for ${platform}`,
+  );
+  validateSigstoreBundleContent(provenanceFile.content);
+  const nativeProofFile = readStableFile(
+    nativeProofPath,
+    `Native proof for ${platform}`,
+  );
   if (
     manifest.nativeProof?.path !== "native-proof.json" ||
-    lstatSync(nativeProofPath).isSymbolicLink() ||
-    sha256(nativeProofPath) !== manifest.nativeProof.sha256
+    nativeProofFile.sha256 !== manifest.nativeProof.sha256
   ) {
     fail("Native proof digest mismatch for " + platform);
   }
-  validateNativeProof(nativeProofPath, platform);
+  validateNativeProofValue(
+    parseJsonContent(nativeProofFile, `Native proof for ${platform}`),
+    platform,
+  );
   if (!Array.isArray(manifest.artifacts)) {
     fail("Platform manifest artifacts must be an array");
   }
@@ -495,26 +542,29 @@ function verifyLeg(
   ) {
     fail("Platform manifest does not contain the exact artifact role set");
   }
-  const subjects = [manifestPath, nativeProofPath];
+  const subjects = [manifestFile, nativeProofFile];
+  const artifactFiles = new Map();
   for (const artifact of manifest.artifacts) {
     const path = join(root, artifact.path);
+    const file = readStableFile(path, `Artifact ${artifact.name}`);
     if (
       artifact.path !== "artifacts/" + artifact.name ||
       !artifact.name.includes(sourceSha) ||
       basename(path) !== artifact.name ||
-      lstatSync(path).isSymbolicLink() ||
-      !statSync(path).isFile() ||
-      sha256(path) !== artifact.sha256 ||
-      statSync(path).size !== artifact.size
+      file.sha256 !== artifact.sha256 ||
+      file.size !== artifact.size
     ) {
       fail("Artifact digest mismatch for " + artifact.name);
     }
-    subjects.push(path);
+    artifactFiles.set(artifact.path, file);
+    subjects.push(file);
   }
   for (const subject of subjects) {
     verifyGithubSubject({
-      artifact: subject,
+      artifact: subject.path,
+      artifactContent: subject.content,
       bundle: provenancePath,
+      bundleContent: provenanceFile.content,
       repository: verification.repository,
       sourceSha,
       sourceRef: verification.sourceRef,
@@ -522,7 +572,13 @@ function verifyLeg(
       ghBinary: verification.ghBinary,
     });
   }
-  return { root, manifest, provenancePath };
+  return {
+    root,
+    manifest,
+    manifestFile,
+    provenanceFile,
+    artifactFiles,
+  };
 }
 
 function updaterSelection(manifest) {
@@ -569,8 +625,11 @@ export function aggregateCandidate(options) {
     ghBinary = "gh",
   } = options;
   assertCandidateIdentity(sourceSha, stagingDeploymentId);
-  if (existsSync(output)) fail("Candidate aggregate output already exists");
-  loadStagingProof(stagingProof, sourceSha, stagingDeploymentId);
+  const staging = loadStagingProof(
+    stagingProof,
+    sourceSha,
+    stagingDeploymentId,
+  );
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)) {
     fail("repository must be owner/name");
   }
@@ -608,32 +667,27 @@ export function aggregateCandidate(options) {
     fail("Every platform leg must have the same version");
   const version = [...versions][0];
 
-  const releaseAssets = join(output, "release-assets");
-  mkdirSync(releaseAssets, { recursive: true, mode: 0o755 });
-
   const allAssetNames = legs.flatMap(({ manifest }) =>
     manifest.artifacts.map(({ name }) => name),
   );
   if (new Set(allAssetNames).size !== allAssetNames.length) {
     fail("Platform legs contain duplicate release asset names");
   }
-  for (const { root, manifest } of legs) {
-    for (const artifact of manifest.artifacts) {
-      copyFileSync(
-        join(root, artifact.path),
-        join(releaseAssets, artifact.name),
-        constants.COPYFILE_EXCL,
-      );
-    }
-  }
+  const releaseAssetFiles = legs.flatMap(({ manifest, artifactFiles }) =>
+    manifest.artifacts.map((artifact) => {
+      const file = artifactFiles.get(artifact.path);
+      if (!file) fail("Verified artifact bytes are unavailable");
+      return { name: artifact.name, content: file.content };
+    }),
+  );
 
   const platforms = {};
-  for (const { manifest } of legs) {
+  for (const { manifest, artifactFiles } of legs) {
     const { artifact, signature } = updaterSelection(manifest);
-    const signatureValue = readFileSync(
-      join(releaseAssets, signature.name),
-      "utf8",
-    ).trim();
+    const signatureValue = artifactFiles
+      .get(signature.path)
+      ?.content.toString("utf8")
+      .trim();
     if (!signatureValue)
       fail("Updater signature is empty for " + manifest.platform);
     platforms[PLATFORM_KEYS[manifest.platform]] = {
@@ -647,26 +701,29 @@ export function aggregateCandidate(options) {
     notes: "Punks staging candidate " + sourceSha,
     platforms,
   };
-  const latestPath = join(releaseAssets, "latest.json");
-  const immutableLatestPath = join(
-    releaseAssets,
-    "latest-" + sourceSha + ".json",
+  const latestName = "latest.json";
+  const immutableLatestName = "latest-" + sourceSha + ".json";
+  if (
+    allAssetNames.includes(latestName) ||
+    allAssetNames.includes(immutableLatestName)
+  ) {
+    fail("Platform legs collide with reserved updater metadata names");
+  }
+  const latestContent = jsonContent(latest);
+  const immutableLatestContent = jsonContent(latest);
+  releaseAssetFiles.push(
+    { name: latestName, content: latestContent },
+    { name: immutableLatestName, content: immutableLatestContent },
   );
-  writeJsonExclusive(latestPath, latest);
-  writeJsonExclusive(immutableLatestPath, latest);
 
-  const stagedProofPath = join(output, "staging-deployment-proof.json");
-  copyFileSync(stagingProof, stagedProofPath, constants.COPYFILE_EXCL);
-
-  const releaseAssetManifest = topEntries(releaseAssets).map((entry) => {
-    if (!entry.isFile()) fail("Release assets must contain files only");
-    const path = join(releaseAssets, entry.name);
-    return {
-      name: entry.name,
-      sha256: sha256(path),
-      size: statSync(path).size,
-    };
-  });
+  const releaseAssetManifest = releaseAssetFiles
+    .map(({ name, content }) => ({
+      name,
+      sha256: createHash("sha256").update(content).digest("hex"),
+      size: content.length,
+    }))
+    .sort((left, right) => left.name.localeCompare(right.name));
+  const stagedProofName = "staging-deployment-proof.json";
   const aggregate = {
     schema: "punks.desktop-candidate-aggregate.v1",
     sourceSha,
@@ -675,24 +732,38 @@ export function aggregateCandidate(options) {
     repository,
     releaseTag,
     stagingProof: {
-      path: relative(output, stagedProofPath),
-      sha256: sha256(stagedProofPath),
+      path: stagedProofName,
+      sha256: staging.file.sha256,
     },
     platforms: PLATFORMS.map((platform) => {
       const leg = legs.find(({ manifest }) => manifest.platform === platform);
       return {
         platform,
         target: leg.manifest.target,
-        manifestSha256: sha256(join(leg.root, "platform-manifest.json")),
-        provenanceSha256: sha256(leg.provenancePath),
+        manifestSha256: leg.manifestFile.sha256,
+        provenanceSha256: leg.provenanceFile.sha256,
       };
     }),
     immutableLatest: {
-      path: relative(output, immutableLatestPath),
-      sha256: sha256(immutableLatestPath),
+      path: "release-assets/" + immutableLatestName,
+      sha256: createHash("sha256").update(immutableLatestContent).digest("hex"),
     },
     releaseAssets: releaseAssetManifest,
   };
+
+  createOutputRoot(output, "Candidate aggregate output already exists");
+  const releaseAssets = join(output, "release-assets");
+  mkdirSync(releaseAssets, { mode: 0o755 });
+  for (const { name, content } of releaseAssetFiles) {
+    writeFileSync(join(releaseAssets, name), content, {
+      flag: "wx",
+      mode: 0o644,
+    });
+  }
+  writeFileSync(join(output, stagedProofName), staging.file.content, {
+    flag: "wx",
+    mode: 0o644,
+  });
   writeJsonExclusive(join(output, "aggregate-manifest.json"), aggregate);
   return { aggregate, latest };
 }
@@ -721,7 +792,6 @@ export function run(argv = process.argv.slice(2)) {
       releaseTag: required(values, "release-tag"),
       sourceRef: required(values, "source-ref"),
       signerWorkflow: required(values, "signer-workflow"),
-      ghBinary: values.get("gh-binary") ?? "gh",
     });
   }
   fail("Unknown command " + command);

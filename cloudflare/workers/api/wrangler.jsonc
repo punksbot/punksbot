@@ -6,6 +6,7 @@
   "compatibility_date": "2026-08-20",
   "workers_dev": false,
   "preview_urls": false,
+  "version_metadata": { "binding": "CF_VERSION_METADATA" },
   "vars": {
     "DESKTOP_SOCIAL_LOOP_ENABLED": "false",
     "ENVIRONMENT": "local",
@@ -67,6 +68,36 @@
     }
   ],
   "services": [
+    {
+      "binding": "AUTH_RUNTIME_IDENTITY",
+      "service": "punks-auth",
+      "entrypoint": "RuntimeIdentityService"
+    },
+    {
+      "binding": "ATTESTATION_RUNTIME_IDENTITY",
+      "service": "punks-attestation",
+      "entrypoint": "RuntimeIdentityService"
+    },
+    {
+      "binding": "ERASURE_RUNTIME_IDENTITY",
+      "service": "punks-erasure",
+      "entrypoint": "RuntimeIdentityService"
+    },
+    {
+      "binding": "PROJECTOR_RUNTIME_IDENTITY",
+      "service": "punks-projector",
+      "entrypoint": "RuntimeIdentityService"
+    },
+    {
+      "binding": "SEARCH_RUNTIME_IDENTITY",
+      "service": "punks-search",
+      "entrypoint": "RuntimeIdentityService"
+    },
+    {
+      "binding": "BOT_RUNTIME_IDENTITY",
+      "service": "punks-bot-runtime",
+      "entrypoint": "RuntimeIdentityService"
+    },
     { "binding": "ATTESTATION", "service": "punks-attestation" },
     {
       "binding": "AUTH_SERVICE",
@@ -118,6 +149,7 @@
       "name": "punks-api-staging",
       "workers_dev": false,
       "preview_urls": false,
+      "version_metadata": { "binding": "CF_VERSION_METADATA" },
       "routes": [
         { "pattern": "staging.punks.bot/api/*", "zone_name": "punks.bot" }
       ],
@@ -160,6 +192,36 @@
         ]
       },
       "services": [
+        {
+          "binding": "AUTH_RUNTIME_IDENTITY",
+          "service": "punks-auth-staging",
+          "entrypoint": "RuntimeIdentityService"
+        },
+        {
+          "binding": "ATTESTATION_RUNTIME_IDENTITY",
+          "service": "punks-attestation-staging",
+          "entrypoint": "RuntimeIdentityService"
+        },
+        {
+          "binding": "ERASURE_RUNTIME_IDENTITY",
+          "service": "punks-erasure-staging",
+          "entrypoint": "RuntimeIdentityService"
+        },
+        {
+          "binding": "PROJECTOR_RUNTIME_IDENTITY",
+          "service": "punks-projector-staging",
+          "entrypoint": "RuntimeIdentityService"
+        },
+        {
+          "binding": "SEARCH_RUNTIME_IDENTITY",
+          "service": "punks-search-staging",
+          "entrypoint": "RuntimeIdentityService"
+        },
+        {
+          "binding": "BOT_RUNTIME_IDENTITY",
+          "service": "punks-bot-runtime-staging",
+          "entrypoint": "RuntimeIdentityService"
+        },
         { "binding": "ATTESTATION", "service": "punks-attestation-staging" },
         {
           "binding": "AUTH_SERVICE",

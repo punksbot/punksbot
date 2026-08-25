@@ -3,10 +3,12 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { construireContexteValidationDossier } from "./check-promotion-dossier.mjs";
 import { publierPromotion } from "./promotion-publish-lib.mjs";
 
 const OPTIONS_VALEUR = new Set([
   "--graphe",
+  "--dossier",
   "--attestation",
   "--recu",
   "--depot",
@@ -20,6 +22,7 @@ const OPTIONS_DRAPEAU = new Set(["--bootstrap-r2"]);
 
 const OPTIONS_REQUISES = [
   "--graphe",
+  "--dossier",
   "--attestation",
   "--recu",
   "--depot",
@@ -31,6 +34,7 @@ const OPTIONS_REQUISES = [
 export const USAGE_PUBLICATION = [
   "usage : node scripts/promotion-publish.mjs",
   "  --graphe <release-graph.yaml|json>",
+  "  --dossier <promotion-dossier.json>",
   "  --attestation <attestation-tranche-N.json>",
   "  --recu <recu-promotion-N.json>",
   "  --depot <owner/repo>",
@@ -78,6 +82,7 @@ function lireArguments(argv) {
   return {
     aide: false,
     graphe: valeurs.get("--graphe"),
+    dossier: valeurs.get("--dossier"),
     attestation: valeurs.get("--attestation"),
     recu: valeurs.get("--recu"),
     depot: valeurs.get("--depot"),
@@ -139,6 +144,7 @@ export async function executerCliPublication(
   argv = process.argv.slice(2),
   {
     frontieres: frontieresInjectees = null,
+    construireContexteDossier = construireContexteValidationDossier,
     ecrireSortie = (ligne) => process.stdout.write(`${ligne}\n`),
     ecrireErreur = (ligne) => process.stderr.write(`${ligne}\n`),
   } = {},
@@ -163,13 +169,27 @@ export async function executerCliPublication(
     const frontieres =
       frontieresInjectees ??
       (await chargerFrontieres(argumentsCli.moduleFrontieres, configuration));
-    const [graphe, attestation, recu] = await Promise.all([
+    const cheminDossier = resolve(argumentsCli.dossier);
+    const [graphe, dossier, attestation, recu] = await Promise.all([
       readFile(resolve(argumentsCli.graphe)),
+      readFile(cheminDossier),
       readFile(resolve(argumentsCli.attestation)),
       readFile(resolve(argumentsCli.recu)),
     ]);
+    const documentDossier = JSON.parse(dossier.toString("utf8"));
+    const { contexteValidation: contexteDossier } = construireContexteDossier(
+      documentDossier,
+      cheminDossier,
+    );
     const resultat = await publierPromotion(
-      { ...configuration, graphe, attestation, recu },
+      {
+        ...configuration,
+        graphe,
+        dossier,
+        contexteDossier,
+        attestation,
+        recu,
+      },
       frontieres,
     );
     ecrireSortie(JSON.stringify(resultat));

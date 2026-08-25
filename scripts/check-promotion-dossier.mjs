@@ -27,6 +27,7 @@
  *   - l'attestation et le Reçu ne sont jamais écrasés (create-only).
  */
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   closeSync,
   fstatSync,
@@ -40,24 +41,16 @@ import {
 } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  canonicalSha256,
-  loadYamlDocument,
-} from "./migration-manifest-lib.mjs";
+import { canonicalSha256 } from "./migration-manifest-lib.mjs";
 import { repoRoot } from "./render-withdrawal-inventory.mjs";
-import {
-  computeLiveHashes,
-  runValidation as runGraphValidation,
-} from "./check-release-graph.mjs";
+import { runValidation as runGraphValidation } from "./check-release-graph.mjs";
 import {
   candidatDejaScelle,
   construireAttestation,
   tranchePresente,
   validerDossier,
 } from "./promotion-dossier-lib.mjs";
-
-const ledgerPath = join(repoRoot, "docs/migration/goldens-ledger.yaml");
-const graphPath = join(repoRoot, "docs/migration/release-graph.yaml");
+import { NOMS_REGISTRES_ATTESTATION } from "./release-graph-lib.mjs";
 
 /**
  * Refuse en mode fail-closed tout checkout dont le porcelain Git n'est pas
@@ -239,16 +232,65 @@ function headCourant() {
   }).trim();
 }
 
-function fichiersSuivis() {
-  const sortie = execFileSync("git", ["ls-files", "-z"], {
-    cwd: repoRoot,
-    encoding: null,
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  return sortie
-    .toString("utf8")
-    .split("\0")
-    .filter((f) => f.length > 0);
+/** Refuse d'attribuer des gates à un candidat ou à un HEAD différent. */
+export function exigerCandidatStable({ shaAvant, shaApres, shaCandidat }) {
+  if (shaAvant !== shaApres) {
+    throw new Error(
+      `[gate] HEAD a changé pendant les gates (${String(shaAvant)} → ${String(shaApres)}) — aucune attestation`,
+    );
+  }
+  if (shaCandidat !== shaAvant) {
+    throw new Error(
+      `[gate] le SHA du candidat (${String(shaCandidat)}) n'est pas le SHA testé (${String(shaAvant)}) — la preuve doit être produite sur l'état exact`,
+    );
+  }
+}
+
+function registresAttendusPourTranche(graph, tranche) {
+  const release = (Array.isArray(graph?.releases) ? graph.releases : []).find(
+    (entree) => entree?.tranche === tranche,
+  );
+  if (!release) return null;
+  return Object.fromEntries(
+    NOMS_REGISTRES_ATTESTATION.map((nom) => [
+      nom,
+      {
+        version: release.materiaux?.[nom]?.version,
+        sha256: release.materiaux?.[nom]?.sha256,
+      },
+    ]),
+  );
+}
+
+/** Construit le contexte matériel vivant qui permet de relire un dossier. */
+export function construireContexteValidationDossier(
+  dossier,
+  cheminDossierAbsolu,
+) {
+  const validationGraphe = runGraphValidation();
+  const graph = validationGraphe.graph;
+  const live = validationGraphe.live;
+  return {
+    validationGraphe,
+    contexteValidation: {
+      ledgerRetraits: live.ledger?.["retraits-par-tranche"]?.lignes ?? [],
+      hashes: live.hashes,
+      registresAttendus: registresAttendusPourTranche(
+        graph,
+        dossier.candidat?.tranche,
+      ),
+      stagingIds: {
+        compte: live.staging?.account?.id,
+        zone: live.staging?.zone?.id,
+      },
+      promotionProfileSha256: createHash("sha256")
+        .update(
+          readFileSync(join(repoRoot, "cloudflare/promotion-profiles.json")),
+        )
+        .digest("hex"),
+      racinePreuves: dirname(cheminDossierAbsolu),
+    },
+  };
 }
 
 /** Exécute réellement pnpm cloudflare:check ; retourne { resultat, code }. */
@@ -266,21 +308,61 @@ function executerCloudflareCheck() {
   }
 }
 
-export function main(argv = process.argv.slice(2)) {
-  const sansExecution = argv.includes("--sans-execution");
-  const cheminDossier = argv.find((a) => !a.startsWith("--"));
-  const sortieIdx = argv.indexOf("--sortie");
-  const sortie =
-    sortieIdx !== -1
-      ? resolve(repoRoot, argv[sortieIdx + 1])
-      : join(repoRoot, "docs/migration/promotion");
+const USAGE =
+  "usage : node scripts/check-promotion-dossier.mjs <dossier.json> [--sortie <dir>] [--sans-execution]";
 
-  if (!cheminDossier || typeof cheminDossier !== "string") {
-    console.error(
-      "usage : node scripts/check-promotion-dossier.mjs <dossier.json> [--sortie <dir>] [--sans-execution]",
-    );
+function analyserArguments(argv) {
+  let cheminDossier = null;
+  let sortie = null;
+  let sansExecution = false;
+  for (let index = 0; index < argv.length; index += 1) {
+    const argument = argv[index];
+    if (argument === "--sans-execution") {
+      if (sansExecution) {
+        throw new Error("--sans-execution ne peut être fourni qu'une fois");
+      }
+      sansExecution = true;
+      continue;
+    }
+    if (argument === "--sortie") {
+      if (sortie !== null) {
+        throw new Error("--sortie ne peut être fourni qu'une fois");
+      }
+      const valeur = argv[index + 1];
+      if (typeof valeur !== "string" || valeur.startsWith("--")) {
+        throw new Error("--sortie exige un répertoire");
+      }
+      sortie = valeur;
+      index += 1;
+      continue;
+    }
+    if (typeof argument !== "string" || argument.startsWith("--")) {
+      throw new Error(`option inconnue « ${String(argument)} »`);
+    }
+    if (cheminDossier !== null) {
+      throw new Error("un seul dossier JSON peut être validé");
+    }
+    cheminDossier = argument;
+  }
+  if (cheminDossier === null) {
+    throw new Error("chemin du dossier JSON manquant");
+  }
+  return { cheminDossier, sortie, sansExecution };
+}
+
+export function main(argv = process.argv.slice(2)) {
+  let argumentsCli;
+  try {
+    argumentsCli = analyserArguments(argv);
+  } catch (erreur) {
+    console.error(`✗ arguments invalides : ${erreur.message}`);
+    console.error(USAGE);
     process.exit(1);
   }
+  const { cheminDossier, sansExecution } = argumentsCli;
+  const sortie = argumentsCli.sortie
+    ? resolve(repoRoot, argumentsCli.sortie)
+    : join(repoRoot, "docs/migration/promotion");
 
   if (sansExecution) {
     console.error(
@@ -299,19 +381,23 @@ export function main(argv = process.argv.slice(2)) {
     process.exit(1);
   }
 
-  const cheminDossierAbsolu = resolve(repoRoot, cheminDossier);
-  const dossier = JSON.parse(readFileSync(cheminDossierAbsolu, "utf8"));
-  const ledger = loadYamlDocument(ledgerPath);
-  const graph = loadYamlDocument(graphPath);
-  const { hashes, staging } = computeLiveHashes(fichiersSuivis());
+  const shaAvant = headCourant();
 
-  const contexteValidation = {
-    ledgerRetraits: ledger?.["retraits-par-tranche"]?.lignes ?? [],
-    hashes,
-    stagingIds: { compte: staging?.account?.id, zone: staging?.zone?.id },
-    racinePreuves: dirname(cheminDossierAbsolu),
-  };
-  const erreurs = validerDossier(dossier, contexteValidation);
+  const cheminDossierAbsolu = resolve(repoRoot, cheminDossier);
+  let dossier;
+  try {
+    dossier = JSON.parse(readFileSync(cheminDossierAbsolu, "utf8"));
+    exigerCandidatStable({
+      shaAvant,
+      shaApres: shaAvant,
+      shaCandidat: dossier.candidat?.sha,
+    });
+  } catch (erreur) {
+    console.error(`✗ dossier illisible ou non attribuable : ${erreur.message}`);
+    process.exit(1);
+  }
+
+  const erreurs = [];
 
   // Autorisation 1 : pnpm cloudflare:check réellement exécuté sur ce candidat.
   let cloudflareCheck = "echec";
@@ -327,19 +413,21 @@ export function main(argv = process.argv.slice(2)) {
   // interdit d'attribuer le résultat à un checkout devenu sale.
   try {
     exigerCheckoutPropre();
-    const shaHead = headCourant();
-    if (dossier.candidat?.sha !== shaHead) {
-      erreurs.push(
-        `[gate] le SHA du candidat (${String(dossier.candidat?.sha)}) n'est pas le SHA testé (${shaHead}) — la preuve doit être produite sur l'état exact`,
-      );
-    }
+    exigerCandidatStable({
+      shaAvant,
+      shaApres: headCourant(),
+      shaCandidat: dossier.candidat?.sha,
+    });
   } catch (erreur) {
     erreurs.push(erreur.message);
   }
 
   // Autorisation 2 : le graphe de release doit être vert et autoriser la tranche.
   let autorisationGraphe = "echec";
-  const validationGraphe = runGraphValidation();
+  const { validationGraphe, contexteValidation } =
+    construireContexteValidationDossier(dossier, cheminDossierAbsolu);
+  const graph = validationGraphe.graph;
+  erreurs.push(...validerDossier(dossier, contexteValidation));
   if (validationGraphe.erreurs.length > 0) {
     erreurs.push(
       `[gate] le graphe de release est invalide (${validationGraphe.erreurs.length} erreur(s)) — aucune attestation`,
@@ -354,6 +442,20 @@ export function main(argv = process.argv.slice(2)) {
     );
   } else {
     autorisationGraphe = "vert";
+  }
+
+  // Une dernière lecture ferme aussi la fenêtre du contrôle du graphe : les
+  // octets validés et le SHA auquel l'attestation sera attribuée restent les
+  // mêmes jusqu'à l'écriture create-only.
+  try {
+    exigerCheckoutPropre();
+    exigerCandidatStable({
+      shaAvant,
+      shaApres: headCourant(),
+      shaCandidat: dossier.candidat?.sha,
+    });
+  } catch (erreur) {
+    erreurs.push(erreur.message);
   }
 
   if (erreurs.length > 0) {
