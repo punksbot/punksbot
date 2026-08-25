@@ -1,4 +1,3 @@
-import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import type {
   AuthSession,
   ConversationSummary,
@@ -7,19 +6,14 @@ import type {
   ListConversationsResponse,
   ListWorkspacesResponse,
   MessageHistoryResponse,
-  MessageMutationResponse,
   MessageReactionMutationResponse,
   MessageView,
   ResolveAuthorsQuery,
   ResolveAuthorsResponse,
   WorkspaceSummary,
 } from "@punks/contracts";
-import {
-  type DesktopContractId,
-  validateDesktopContract,
-} from "@punks/contracts/desktop";
-
-import { PunksDesktopFailure, type PunksFailureKind } from "./punksFailure";
+import { PunksDesktopFailure } from "./punksFailure";
+import { invokePunks, requireContract } from "./punksTauriTransport";
 import type {
   CeremonyPhaseView,
   EditMessageInput,
@@ -35,60 +29,6 @@ import type {
   ThreadPageInput,
   WorkspaceLease,
 } from "./punksClient";
-
-const failureKinds = new Set<PunksFailureKind>([
-  "problem",
-  "transport",
-  "contract_violation",
-  "cancelled",
-  "stale_workspace",
-  "session_expired",
-  "ambiguous",
-]);
-
-function normalizeFailure(error: unknown): PunksDesktopFailure {
-  if (error instanceof PunksDesktopFailure) return error;
-  if (
-    typeof error === "object" &&
-    error !== null &&
-    "kind" in error &&
-    typeof error.kind === "string" &&
-    failureKinds.has(error.kind as PunksFailureKind) &&
-    "message" in error &&
-    typeof error.message === "string"
-  ) {
-    return new PunksDesktopFailure(
-      error.kind as PunksFailureKind,
-      error.message,
-      "problem" in error ? error.problem : undefined,
-    );
-  }
-  return new PunksDesktopFailure(
-    "contract_violation",
-    "Tauri returned an invalid Punks failure",
-  );
-}
-
-async function invokePunks<T>(
-  command: string,
-  args?: Record<string, unknown>,
-): Promise<T> {
-  try {
-    return await tauriInvoke<T>(command, args);
-  } catch (error) {
-    throw normalizeFailure(error);
-  }
-}
-
-function requireContract<T>(contractId: DesktopContractId, value: unknown): T {
-  if (!validateDesktopContract(contractId, value).valid) {
-    throw new PunksDesktopFailure(
-      "contract_violation",
-      `Tauri result violated ${contractId}`,
-    );
-  }
-  return value as T;
-}
 
 class TauriWorkspaceSession implements PunksWorkspaceSession {
   readonly lease: WorkspaceLease;
@@ -183,69 +123,22 @@ class TauriWorkspaceSession implements PunksWorkspaceSession {
   }
 
   async editMessage(input: EditMessageInput): Promise<MessageView> {
-    const response = await invokePunks<MessageMutationResponse>(
-      "punks_edit_message",
-      { lease: this.lease, input },
-    );
-    const acknowledgement = requireContract<MessageMutationResponse>(
-      "punks://contracts/message.mutation-response@1",
-      response,
-    );
-    if (
-      acknowledgement.message.workspaceId !== this.lease.workspaceId ||
-      acknowledgement.message.conversationId !== input.conversationId ||
-      acknowledgement.message.id !== input.messageId
-    ) {
-      throw new PunksDesktopFailure(
-        "contract_violation",
-        "Tauri returned a Message from the wrong scope",
-      );
-    }
-    return acknowledgement.message;
+    const { editPunksMessage } = await import("./punksMessageLifecycleTauri");
+    return editPunksMessage(this.lease, input);
   }
 
   async retractMessage(input: RetractMessageInput): Promise<MessageView> {
-    const response = await invokePunks<MessageMutationResponse>(
-      "punks_retract_message",
-      { lease: this.lease, input },
+    const { retractPunksMessage } = await import(
+      "./punksMessageLifecycleTauri"
     );
-    const acknowledgement = requireContract<MessageMutationResponse>(
-      "punks://contracts/message.mutation-response@1",
-      response,
-    );
-    if (
-      acknowledgement.message.workspaceId !== this.lease.workspaceId ||
-      acknowledgement.message.conversationId !== input.conversationId ||
-      acknowledgement.message.id !== input.messageId
-    ) {
-      throw new PunksDesktopFailure(
-        "contract_violation",
-        "Tauri returned a Message from the wrong scope",
-      );
-    }
-    return acknowledgement.message;
+    return retractPunksMessage(this.lease, input);
   }
 
   async restoreMessage(input: RestoreMessageInput): Promise<MessageView> {
-    const response = await invokePunks<MessageMutationResponse>(
-      "punks_restore_message",
-      { lease: this.lease, input },
+    const { restorePunksMessage } = await import(
+      "./punksMessageLifecycleTauri"
     );
-    const acknowledgement = requireContract<MessageMutationResponse>(
-      "punks://contracts/message.mutation-response@1",
-      response,
-    );
-    if (
-      acknowledgement.message.workspaceId !== this.lease.workspaceId ||
-      acknowledgement.message.conversationId !== input.conversationId ||
-      acknowledgement.message.id !== input.messageId
-    ) {
-      throw new PunksDesktopFailure(
-        "contract_violation",
-        "Tauri returned a Message from the wrong scope",
-      );
-    }
-    return acknowledgement.message;
+    return restorePunksMessage(this.lease, input);
   }
 
   async addReaction(

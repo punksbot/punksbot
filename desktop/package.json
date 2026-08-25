@@ -14,6 +14,7 @@
     "check:punks-candidate": "node ./scripts/check-punks-candidate.mjs --base ./src-tauri/tauri.conf.json --config ./src-tauri/tauri.punks.conf.json",
     "check:punks-product": "node ./scripts/check-punks-frontend-product.mjs --root .",
     "check:punks-product-dist": "node ./scripts/check-punks-frontend-product.mjs --root . --dist",
+    "check:punks-capabilities": "node ./scripts/check-punks-capabilities.mjs",
     "lint": "biome lint .",
     "check": "biome check . && pnpm check:px-text && pnpm check:pubkey-truncation",
     "format": "biome format --write .",
@@ -24,6 +25,7 @@
     "test:e2e:smoke": "pnpm build:e2e && playwright test --project=smoke",
     "test:e2e:integration": "pnpm build:e2e && playwright test --project=integration",
     "test:e2e:release-smoke": "pnpm build:e2e && playwright test --config=playwright.release-smoke.config.ts",
+    "test:e2e:punks-capabilities": "node ./scripts/run-punks-capability-e2e.mjs",
     "test:e2e:report": "playwright show-report",
     "tauri:build": "tauri build"
   },

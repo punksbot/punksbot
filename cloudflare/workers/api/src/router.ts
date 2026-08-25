@@ -47,6 +47,10 @@ import type {
 } from "@punks/contracts";
 import { validateContract } from "@punks/contracts";
 import {
+  DESKTOP_SOCIAL_LOOP_CAPABILITIES,
+  DESKTOP_SOCIAL_LOOP_PROFILE_ID,
+} from "@punks/contracts/desktop-profile";
+import {
   canonicalJson,
   canonicalMessageReaction,
   decodeDirectoryCursor,
@@ -90,7 +94,7 @@ const botSlugPattern = workspaceSlugPattern;
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const FOLLOW_PROTOCOL = "punks.follow.v1";
-const DESKTOP_PROFILE = "desktop-social-loop@1";
+const DESKTOP_PROFILE = DESKTOP_SOCIAL_LOOP_PROFILE_ID;
 const DESKTOP_MINIMUM_CLIENT_VERSION = "0.6.0";
 const WORKER_VERSION_HEADER = "x-punks-worker-version-id";
 const WORKER_VERSIONS_HEADER = "x-punks-worker-versions";
@@ -103,19 +107,7 @@ const STAGING_RUNTIME_PROBES = [
   ["punks-api-staging", null],
   ["punks-bot-runtime-staging", "BOT_RUNTIME_IDENTITY"],
 ] as const;
-const DESKTOP_CAPABILITIES = [
-  "compatibility",
-  "account-session",
-  "authentication",
-  "workspace-selection",
-  "stream-list",
-  "message-history",
-  "threads",
-  "bounded-authors",
-  "conversation-follow",
-  "message-post",
-  "unicode-reactions",
-] as const;
+const DESKTOP_CAPABILITIES = DESKTOP_SOCIAL_LOOP_CAPABILITIES;
 
 function semanticVersionAtLeast(candidate: string, minimum: string): boolean {
   const parse = (value: string): readonly number[] | null => {

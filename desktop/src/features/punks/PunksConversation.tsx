@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   notifyManager,
   useMutation,
@@ -10,12 +18,10 @@ import type { MessageView } from "@punks/contracts";
 
 import {
   PunksDesktopFailure,
-  type EditMessageInput,
   type PunksFollowDelivery,
-  type RestoreMessageInput,
-  type RetractMessageInput,
 } from "@/shared/api/punksClient";
 import { canonicalPunksReaction } from "@/shared/api/punksReaction";
+import { usePunksCapabilityAvailable } from "@/shared/capabilities/PunksCapabilityProvider";
 
 import {
   applyConversationBatch,
@@ -32,18 +38,24 @@ import { ConversationStatusBanner } from "./PunksConversationStatusBanner";
 import { ConversationThreadPanel } from "./PunksConversationThreadPanel";
 import { actorKey, type FollowStatus } from "./PunksConversationTypes";
 import {
-  canRestoreMessage,
   failureStatus,
   pumpFollow,
   sameQueryKey,
 } from "./PunksConversationHelpers";
-import type { MessageLifecycleActions } from "./MessageLifecycleControls";
 import { mutationErrorMessage } from "./punksMutationErrors";
 import { usePunksAccount, usePunksWorkspace } from "./PunksRuntime";
 import type { PunksRoute } from "./routes";
 
 type AuthorActor = MessageView["author"];
 type AuthorActors = [AuthorActor, ...AuthorActor[]];
+type MessageActionsRenderer = (message: MessageView) => ReactNode;
+
+const NO_MESSAGE_ACTIONS: MessageActionsRenderer = () => null;
+const LazyMessageLifecycleBridge = lazy(() =>
+  import("./MessageLifecycleControls").then((module) => ({
+    default: module.MessageLifecycleBridge,
+  })),
+);
 
 type MessageKey = readonly [
   "punks",
@@ -299,6 +311,8 @@ export function PunksConversation({
   messageId: string | null;
 }) {
   const account = usePunksAccount();
+  const canReact = usePunksCapabilityAvailable("unicode-reactions");
+  const lifecycleAvailable = usePunksCapabilityAvailable("message-lifecycle");
   const { scope, manager, workspace } = usePunksWorkspace();
   const queryClient = useQueryClient();
   const [content, setContent] = useState("");
@@ -458,10 +472,6 @@ export function PunksConversation({
   );
   const canMutate =
     followStatus === "live" && streamQuery.data?.status === "active";
-  const canReact =
-    account.compatibility?.capabilities.includes("unicode-reactions") === true;
-  const lifecycleAvailable =
-    account.compatibility?.capabilities.includes("message-lifecycle") === true;
   const topicRequired =
     messageId === null && streamQuery.data?.topicRequired === true;
   const topicValid = !topicRequired || topic.trim().length > 0;
@@ -666,96 +676,6 @@ export function PunksConversation({
       });
     },
   });
-  const editMutation = useMutation({
-    mutationFn: (input: EditMessageInput) => {
-      if (!canMutate) {
-        throw new PunksDesktopFailure(
-          "problem",
-          "Message edits are blocked until the Stream is live",
-        );
-      }
-      return manager.run(scope, () => scope.session.editMessage(input));
-    },
-    retry: false,
-    onSuccess: applyMessageAcknowledgement,
-  });
-  const retractMutation = useMutation({
-    mutationFn: (input: RetractMessageInput) => {
-      if (!canMutate) {
-        throw new PunksDesktopFailure(
-          "problem",
-          "Message retractions are blocked until the Stream is live",
-        );
-      }
-      return manager.run(scope, () => scope.session.retractMessage(input));
-    },
-    retry: false,
-    onSuccess: applyMessageAcknowledgement,
-  });
-  const restoreMutation = useMutation({
-    mutationFn: (input: RestoreMessageInput) => {
-      if (!canMutate) {
-        throw new PunksDesktopFailure(
-          "problem",
-          "Message restoration is blocked until the Stream is live",
-        );
-      }
-      return manager.run(scope, () => scope.session.restoreMessage(input));
-    },
-    retry: false,
-    onSuccess: applyMessageAcknowledgement,
-  });
-  const lifecycleForMessage = (
-    message: MessageView,
-  ): MessageLifecycleActions | null => {
-    const author =
-      message.author.kind === "punk" &&
-      message.author.punkId === scope.lease.punkId;
-    const active = message.status === "active";
-    const canEdit = lifecycleAvailable && canMutate && author && active;
-    const canRetract =
-      lifecycleAvailable && canMutate && (author || canModerate) && active;
-    const canRestore =
-      lifecycleAvailable &&
-      canMutate &&
-      canRestoreMessage(message, author, canModerate);
-    if (!canEdit && !canRetract && !canRestore) return null;
-    const pending =
-      editMutation.isPending ||
-      retractMutation.isPending ||
-      restoreMutation.isPending;
-    return {
-      canEdit,
-      canRetract,
-      canRestore,
-      topicRequired:
-        streamQuery.data?.topicRequired === true &&
-        message.parentMessageId === null,
-      pending,
-      onEdit: async (nextContent, nextTopic) => {
-        await editMutation.mutateAsync({
-          conversationId,
-          messageId: message.id,
-          content: nextContent,
-          topic: nextTopic,
-        });
-      },
-      onRetract: async () => {
-        await retractMutation.mutateAsync({
-          conversationId,
-          messageId: message.id,
-          reasonCode: author ? "author-request" : "moderation",
-          publicReason: null,
-        });
-      },
-      onRestore: async () => {
-        await restoreMutation.mutateAsync({
-          conversationId,
-          messageId: message.id,
-        });
-      },
-    };
-  };
   const openThread = (message: MessageView) => {
     const route: PunksRoute = {
       kind: "message",
@@ -766,12 +686,8 @@ export function PunksConversation({
     account.navigate(route);
   };
 
-  const mutationError = mutationErrorMessage(
-    messageMutation.error ??
-      reactionMutation.error ??
-      editMutation.error ??
-      retractMutation.error ??
-      restoreMutation.error,
+  const baseMutationError = mutationErrorMessage(
+    messageMutation.error ?? reactionMutation.error,
   );
 
   useEffect(() => {
@@ -824,168 +740,192 @@ export function PunksConversation({
     );
   }
 
-  return (
-    <section
-      className="mx-auto flex w-full max-w-5xl flex-col gap-5 p-8"
-      data-testid="punks-conversation"
-    >
-      <header>
-        <p className="text-sm text-muted-foreground">{workspace.name}</p>
-        <h2 className="mt-1 text-2xl font-semibold">{streamQuery.data.name}</h2>
-        {streamQuery.data.topic ? (
-          <p className="mt-2 text-sm font-medium">{streamQuery.data.topic}</p>
-        ) : null}
-        <p className="mt-1 text-sm text-muted-foreground">
-          {streamQuery.data.purpose ?? "Live Workspace conversation"}
-        </p>
-        <div className="mt-3">
-          <ConversationStatusBanner status={followStatus} />
-        </div>
-      </header>
+  const stream = streamQuery.data;
+  const renderConversation = (
+    renderMessageActions: MessageActionsRenderer,
+    lifecycleMutationError: string | null,
+  ) => {
+    const mutationError = baseMutationError ?? lifecycleMutationError;
+    return (
+      <section
+        className="mx-auto flex w-full max-w-5xl flex-col gap-5 p-8"
+        data-testid="punks-conversation"
+      >
+        <header>
+          <p className="text-sm text-muted-foreground">{workspace.name}</p>
+          <h2 className="mt-1 text-2xl font-semibold">{stream.name}</h2>
+          {stream.topic ? (
+            <p className="mt-2 text-sm font-medium">{stream.topic}</p>
+          ) : null}
+          <p className="mt-1 text-sm text-muted-foreground">
+            {stream.purpose ?? "Live Workspace conversation"}
+          </p>
+          <div className="mt-3">
+            <ConversationStatusBanner status={followStatus} />
+          </div>
+        </header>
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.45fr)]">
-        <div className="space-y-3" data-testid="punks-message-list">
-          {history.history.nextCursor !== null ? (
-            <button
-              className="w-full rounded-md border border-border px-3 py-2 text-sm hover:bg-accent disabled:opacity-50"
-              data-testid="punks-load-older"
-              disabled={paginationPending || followStatus === "offline"}
-              onClick={() => void loadOlder()}
-              type="button"
-            >
-              {paginationPending
-                ? "Loading older Messages…"
-                : "Load older Messages"}
-            </button>
-          ) : null}
-          {paginationError ? (
-            <p className="text-sm text-destructive" role="alert">
-              {paginationError}
-            </p>
-          ) : null}
-          {visibleMessages.map((message) => (
-            <ConversationMessageRow
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.45fr)]">
+          <div className="space-y-3" data-testid="punks-message-list">
+            {history.history.nextCursor !== null ? (
+              <button
+                className="w-full rounded-md border border-border px-3 py-2 text-sm hover:bg-accent disabled:opacity-50"
+                data-testid="punks-load-older"
+                disabled={paginationPending || followStatus === "offline"}
+                onClick={() => void loadOlder()}
+                type="button"
+              >
+                {paginationPending
+                  ? "Loading older Messages…"
+                  : "Load older Messages"}
+              </button>
+            ) : null}
+            {paginationError ? (
+              <p className="text-sm text-destructive" role="alert">
+                {paginationError}
+              </p>
+            ) : null}
+            {visibleMessages.map((message) => (
+              <ConversationMessageRow
+                authors={authors}
+                canMutate={canMutate}
+                canReact={canReact}
+                key={message.id}
+                messageActions={renderMessageActions(message)}
+                message={message}
+                onOpenThread={() => openThread(message)}
+                onToggleReaction={(reaction) =>
+                  void reactionMutation.mutateAsync({ message, reaction })
+                }
+                reaction={currentReactionFor(message.id)}
+                reactionForValue={(reaction) =>
+                  currentReactionFor(message.id, reaction)
+                }
+                reactionPending={reactionMutation.isPending}
+                target={message.id === messageId}
+              />
+            ))}
+            {visibleMessages.length === 0 ? (
+              <p className="rounded-lg border border-dashed border-border p-5 text-sm text-muted-foreground">
+                No Messages yet.
+              </p>
+            ) : null}
+          </div>
+
+          {threadRootMessageId !== null ? (
+            <ConversationThreadPanel
               authors={authors}
               canMutate={canMutate}
               canReact={canReact}
-              key={message.id}
-              lifecycle={lifecycleForMessage(message)}
-              message={message}
-              onOpenThread={() => openThread(message)}
-              onToggleReaction={(reaction) =>
+              conversationId={conversationId}
+              renderMessageActions={renderMessageActions}
+              onLoadOlder={() => void loadOlderThread()}
+              onToggleReaction={(message, reaction) =>
                 void reactionMutation.mutateAsync({ message, reaction })
               }
-              reaction={currentReactionFor(message.id)}
-              reactionForValue={(reaction) =>
+              offline={followStatus === "offline"}
+              paginationPending={threadPaginationPending}
+              reactionForValue={(message, reaction) =>
                 currentReactionFor(message.id, reaction)
               }
               reactionPending={reactionMutation.isPending}
-              target={message.id === messageId}
+              targetMessageId={messageId}
+              thread={threadQuery.data}
+              threadStatus={
+                threadQuery.isError ? failureStatus(threadQuery.error) : null
+              }
             />
-          ))}
-          {visibleMessages.length === 0 ? (
-            <p className="rounded-lg border border-dashed border-border p-5 text-sm text-muted-foreground">
-              No Messages yet.
-            </p>
           ) : null}
         </div>
 
-        {threadRootMessageId !== null ? (
-          <ConversationThreadPanel
-            authors={authors}
-            canMutate={canMutate}
-            canReact={canReact}
-            conversationId={conversationId}
-            lifecycleForMessage={lifecycleForMessage}
-            onLoadOlder={() => void loadOlderThread()}
-            onToggleReaction={(message, reaction) =>
-              void reactionMutation.mutateAsync({ message, reaction })
+        <form
+          className="sticky bottom-0 rounded-lg border border-border bg-background p-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (
+              canMutate &&
+              topicValid &&
+              content.trim() &&
+              !messageMutation.isPending
+            ) {
+              void messageMutation.mutateAsync();
             }
-            offline={followStatus === "offline"}
-            paginationPending={threadPaginationPending}
-            reactionForValue={(message, reaction) =>
-              currentReactionFor(message.id, reaction)
+          }}
+        >
+          {messageId === null ? (
+            <div className="mb-2">
+              <label
+                className="mb-1 block text-xs text-muted-foreground"
+                htmlFor="punks-message-topic"
+              >
+                {topicRequired
+                  ? "Subject required for a new Message"
+                  : "Subject (optional)"}
+              </label>
+              <input
+                className="w-full rounded-md border border-border bg-background p-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+                data-testid="punks-message-topic"
+                disabled={!canMutate}
+                id="punks-message-topic"
+                onChange={(event) => setTopic(event.target.value)}
+                placeholder="Add a subject"
+                value={topic}
+              />
+            </div>
+          ) : null}
+          <label className="sr-only" htmlFor="punks-message-composer">
+            Message
+          </label>
+          <textarea
+            className="min-h-20 w-full resize-y rounded-md border border-border bg-background p-2 text-message outline-none focus:ring-2 focus:ring-primary"
+            data-testid="punks-message-composer"
+            disabled={!canMutate}
+            id="punks-message-composer"
+            onChange={(event) => setContent(event.target.value)}
+            placeholder={
+              messageId === null ? "Write a Message" : "Reply in this thread"
             }
-            reactionPending={reactionMutation.isPending}
-            targetMessageId={messageId}
-            thread={threadQuery.data}
-            threadStatus={
-              threadQuery.isError ? failureStatus(threadQuery.error) : null
-            }
+            value={content}
           />
-        ) : null}
-      </div>
-
-      <form
-        className="sticky bottom-0 rounded-lg border border-border bg-background p-3"
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (
-            canMutate &&
-            topicValid &&
-            content.trim() &&
-            !messageMutation.isPending
-          ) {
-            void messageMutation.mutateAsync();
-          }
-        }}
-      >
-        {messageId === null ? (
-          <div className="mb-2">
-            <label
-              className="mb-1 block text-xs text-muted-foreground"
-              htmlFor="punks-message-topic"
+          <div className="mt-2 flex items-center justify-between gap-3">
+            <ConversationStatusBanner status={followStatus} />
+            <button
+              className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-50"
+              disabled={
+                !canMutate ||
+                !topicValid ||
+                !content.trim() ||
+                messageMutation.isPending
+              }
+              type="submit"
             >
-              {topicRequired
-                ? "Subject required for a new Message"
-                : "Subject (optional)"}
-            </label>
-            <input
-              className="w-full rounded-md border border-border bg-background p-2 text-sm outline-none focus:ring-2 focus:ring-primary"
-              data-testid="punks-message-topic"
-              disabled={!canMutate}
-              id="punks-message-topic"
-              onChange={(event) => setTopic(event.target.value)}
-              placeholder="Add a subject"
-              value={topic}
-            />
+              {messageMutation.isPending ? "Sending…" : "Send"}
+            </button>
           </div>
-        ) : null}
-        <label className="sr-only" htmlFor="punks-message-composer">
-          Message
-        </label>
-        <textarea
-          className="min-h-20 w-full resize-y rounded-md border border-border bg-background p-2 text-message outline-none focus:ring-2 focus:ring-primary"
-          data-testid="punks-message-composer"
-          disabled={!canMutate}
-          id="punks-message-composer"
-          onChange={(event) => setContent(event.target.value)}
-          placeholder={
-            messageId === null ? "Write a Message" : "Reply in this thread"
-          }
-          value={content}
-        />
-        <div className="mt-2 flex items-center justify-between gap-3">
-          <ConversationStatusBanner status={followStatus} />
-          <button
-            className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-50"
-            disabled={
-              !canMutate ||
-              !topicValid ||
-              !content.trim() ||
-              messageMutation.isPending
-            }
-            type="submit"
-          >
-            {messageMutation.isPending ? "Sending…" : "Send"}
-          </button>
-        </div>
-        {mutationError !== null ? (
-          <p className="mt-2 text-sm text-destructive" role="alert">
-            {mutationError}
-          </p>
-        ) : null}
-      </form>
-    </section>
+          {mutationError !== null ? (
+            <p className="mt-2 text-sm text-destructive" role="alert">
+              {mutationError}
+            </p>
+          ) : null}
+        </form>
+      </section>
+    );
+  };
+
+  const unavailableLifecycle = renderConversation(NO_MESSAGE_ACTIONS, null);
+  if (!lifecycleAvailable) return unavailableLifecycle;
+
+  return (
+    <Suspense fallback={unavailableLifecycle}>
+      <LazyMessageLifecycleBridge
+        canModerate={canModerate}
+        canMutate={canMutate}
+        conversationId={conversationId}
+        onAcknowledged={applyMessageAcknowledgement}
+        streamTopicRequired={stream.topicRequired}
+      >
+        {renderConversation}
+      </LazyMessageLifecycleBridge>
+    </Suspense>
   );
 }

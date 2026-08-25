@@ -166,7 +166,7 @@ releases:
         sha256: 43da19a10635f299ddb980bbc8299fd5a1194ca8fc0876b5f13f4e24f09dab17
       generes:
         version: 1
-        sha256: c74ad8b648ad43624e9667122a031f667007157ad227a11e21644f68ef706752
+        sha256: 92800d004c4e53ce6ba46c69d2308becfeb4ebff5c73cc3d5a391076d5b9e872
       profil:
         id: desktop-social-loop@1
         version: 1
@@ -176,7 +176,7 @@ releases:
         sha256: e317ab42ffa0c0aaea7bc7b6ebe5d8ede446a4f0cc9738ed750c96f73d75e483
       manifeste-retrait:
         version: 1
-        sha256: 789deabe8356eaaa2dabae56aa0db83b65aea90d4750001a2d37a40e67e38c3e
+        sha256: 498f8594838cb7587e6a6f8aecf400350080707263508e25a6240a186e0ccb3c
     staging:
       environnement: staging
       compte: 3a391620584c792dbbd8cfa148d7634a

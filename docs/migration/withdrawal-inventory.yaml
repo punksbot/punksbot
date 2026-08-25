@@ -351,6 +351,11 @@ actifs:
   - chemin: desktop/playwright.release-smoke.config.ts
     classe: mock-test
     verdict: tranche:5
+  - chemin: desktop/playwright.punks-capabilities.config.ts
+    classe: mock-test
+    verdict: conserve
+    conservation: actif-punks
+    note: harnais Playwright isolé du bundle produit pour les capacités indisponibles
   - chemin: desktop/{playwright.config.ts,playwright.perf.config.ts}
     classe: mock-test
     verdict: conserve

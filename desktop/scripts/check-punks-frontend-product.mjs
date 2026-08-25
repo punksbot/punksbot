@@ -27,6 +27,20 @@ const FORBIDDEN_DIST_MARKERS = [
   "relay",
   "huddle",
 ];
+const LAZY_CAPABILITY_CHUNKS = [
+  {
+    capability: "message-lifecycle",
+    fileName:
+      /^(?:MessageLifecycleControls|punksMessageLifecycleTauri)-[A-Za-z0-9_-]+\.js$/u,
+    eagerMarkers: [
+      "punks_edit_message",
+      "punks_retract_message",
+      "punks_restore_message",
+      "Edit Message",
+      "Save edit",
+    ],
+  },
+];
 
 function fail(message) {
   throw new Error(`Punks frontend product check failed: ${message}`);
@@ -425,7 +439,7 @@ function validateDistribution(files) {
   const stylesheets = distFiles
     .map(([path]) => path)
     .filter((path) => path.endsWith(".css"));
-  if (javascript.length !== 1 || stylesheets.length !== 1) {
+  if (javascript.length === 0 || stylesheets.length !== 1) {
     fail(
       "desktop/dist assets must contain exactly one JavaScript and one CSS file",
     );
@@ -442,8 +456,44 @@ function validateDistribution(files) {
     fail("dist/index.html must contain exactly one module JavaScript entry");
   }
   const scriptPath = normalizeAssetReference(attribute(scripts[0], "src"));
-  if (!scriptPath || `dist/${scriptPath}` !== javascript[0]) {
+  const eagerScriptPath = scriptPath ? `dist/${scriptPath}` : undefined;
+  if (!eagerScriptPath || !javascript.includes(eagerScriptPath)) {
     fail("dist/index.html must reference the only JavaScript asset");
+  }
+
+  const eagerContents = files.get(eagerScriptPath)?.toString("utf8") ?? "";
+  for (const capability of LAZY_CAPABILITY_CHUNKS) {
+    if (
+      capability.eagerMarkers.some((marker) => eagerContents.includes(marker))
+    ) {
+      fail(
+        `eager JavaScript contains unavailable capability ${capability.capability}`,
+      );
+    }
+  }
+
+  for (const lazyPath of javascript.filter(
+    (path) => path !== eagerScriptPath,
+  )) {
+    const fileName = lazyPath.split("/").at(-1) ?? "";
+    const capability = LAZY_CAPABILITY_CHUNKS.find(({ fileName: pattern }) =>
+      pattern.test(fileName),
+    );
+    if (capability === undefined) {
+      fail(
+        "desktop/dist assets must contain exactly one JavaScript and one CSS file unless every additional JavaScript asset is a reviewed capability chunk",
+      );
+    }
+    const contents = files.get(lazyPath)?.toString("utf8") ?? "";
+    if (!capability.eagerMarkers.some((marker) => contents.includes(marker))) {
+      fail(
+        `capability chunk ${fileName} does not contain ${capability.capability}`,
+      );
+    }
+    const assetReference = lazyPath.slice("dist/".length);
+    if (html.includes(assetReference)) {
+      fail(`capability chunk ${fileName} must not be referenced by HTML`);
+    }
   }
 
   const stylesheetLinks = [...html.matchAll(/<link\b[^>]*>/giu)]

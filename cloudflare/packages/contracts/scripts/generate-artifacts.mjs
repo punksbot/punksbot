@@ -1363,6 +1363,23 @@ function stableJson(value) {
   return `${JSON.stringify(sortKeys(value), null, 2)}\n`;
 }
 
+function emitTypeScriptDesktopProfile() {
+  const capabilities = profile.capabilities
+    .map((capability) => `  ${JSON.stringify(capability)},`)
+    .join("\n");
+  return `/* Generated from profiles/desktop-social-loop@1.json. Do not edit. */
+
+export const DESKTOP_SOCIAL_LOOP_PROFILE_ID = ${JSON.stringify(profile.id)} as const;
+export const DESKTOP_SOCIAL_LOOP_REGISTRY_VERSION = ${JSON.stringify(profile.registryVersion)} as const;
+export const DESKTOP_SOCIAL_LOOP_CAPABILITIES = [
+${capabilities}
+] as const;
+
+export type DesktopSocialLoopCapability =
+  (typeof DESKTOP_SOCIAL_LOOP_CAPABILITIES)[number];
+`;
+}
+
 // ── Écriture / vérification ─────────────────────────────────────────────────
 
 const profileContractEntries = await profileContracts();
@@ -1383,6 +1400,10 @@ const contractsToPreload = [
 await preload(contractsToPreload);
 
 const targets = [
+  {
+    path: "src/generated/desktop-social-loop-profile.ts",
+    content: emitTypeScriptDesktopProfile(),
+  },
   {
     path: "generated/rust/punks_contracts.rs",
     content: emitRust(rustContracts),

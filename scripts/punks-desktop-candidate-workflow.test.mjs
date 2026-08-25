@@ -64,8 +64,7 @@ const publishPermissions = {
 };
 const artifactSigningAction =
   "azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82";
-const azureLoginAction =
-  "azure/login@f5d393ae46f8fde4be8b75f32e3fc50e654ad0ca";
+const azureLoginAction = "azure/login@f5d393ae46f8fde4be8b75f32e3fc50e654ad0ca";
 const allowedSecretSteps = {
   PUNKS_CLOUDFLARE_API_TOKEN: ["verify_staging/observe_staging"],
   PUNKS_APPLE_CERTIFICATE: ["build/import_apple"],
@@ -184,7 +183,7 @@ function validateWindowsSigner(source) {
     '"PUNKS_WINDOWS_RELEASE_ROOT"',
     '"PUNKS_WINDOWS_SIGNING_LEDGER"',
     '"PUNKS_WINDOWS_NSIS_TEMP"',
-    '[IO.FileAttributes]::ReparsePoint',
+    "[IO.FileAttributes]::ReparsePoint",
     '"nsis\\x64\\plugins\\x86-unicode\\nsisdl.dll"',
     '"wix\\x64\\wix\\wixuiextension.dll"',
     "$nsisPluginPaths -contains $relativeReleasePath",
@@ -207,9 +206,9 @@ function validateWindowsSigner(source) {
     "ExcludeInteractiveBrowserCredential = $true",
     "Invoke-ArtifactSigning @parameters",
     "Get-AuthenticodeSignature -LiteralPath $resolvedPath",
-    'TimeStamperCertificate',
-    'if ($ekuOids -notcontains $requiredEku)',
-    '[IO.File]::AppendAllText',
+    "TimeStamperCertificate",
+    "if ($ekuOids -notcontains $requiredEku)",
+    "[IO.File]::AppendAllText",
   ]) {
     invariant(
       executableSource.includes(fragment),
@@ -302,10 +301,7 @@ function requireCleanInstall(job, name) {
 }
 
 function collectSecretReferences(workflow) {
-  const expression = new RegExp(
-    "\\$\\{\\{\\s*secrets\\.([A-Z0-9_]+)\\s*\\}\\}",
-    "g",
-  );
+  const expression = /\$\{\{\s*secrets\.([A-Z0-9_]+)\s*\}\}/g;
   const references = [];
   for (const [jobName, job] of Object.entries(workflow.jobs)) {
     const jobScope = JSON.stringify({
@@ -426,10 +422,11 @@ function validateWorkflow(workflow) {
     "pnpm cloudflare:check",
     "pnpm --dir desktop check:punks-candidate",
     "pnpm --dir desktop check:punks-product",
+    "pnpm --dir desktop check:punks-capabilities",
     "node scripts/check-punks-rust.mjs",
     'tauri_config="$(jq -c . desktop/src-tauri/tauri.punks.conf.json)"',
     'export TAURI_CONFIG="$tauri_config"',
-    'c.bundle.externalBin.length !== 0',
+    "c.bundle.externalBin.length !== 0",
     "cargo check",
     "--no-default-features",
     "--features punks-desktop-social-loop",
@@ -551,7 +548,7 @@ function validateWorkflow(workflow) {
   }
   requireRun(workflowStep(build, "build_macos"), [
     'notarytool submit "$dmg"',
-    '--wait --output-format json',
+    "--wait --output-format json",
     "jq -er '.status'",
     'stapler staple "$dmg"',
   ]);
@@ -580,9 +577,7 @@ function validateWorkflow(workflow) {
     "Azure OIDC login contract changed",
   );
   const artifactSigningAuth = {
-    endpoint: workflowExpression(
-      "vars.PUNKS_AZURE_ARTIFACT_SIGNING_ENDPOINT",
-    ),
+    endpoint: workflowExpression("vars.PUNKS_AZURE_ARTIFACT_SIGNING_ENDPOINT"),
     "signing-account-name": workflowExpression(
       "vars.PUNKS_AZURE_ARTIFACT_SIGNING_ACCOUNT",
     ),
@@ -652,8 +647,8 @@ function validateWorkflow(workflow) {
   requireRun(bundleWindows, [
     "PUNKS_WINDOWS_SIGNING_LEDGER",
     "PUNKS_WINDOWS_NSIS_TEMP",
-    '$env:TEMP = $nsisTemp',
-    '$env:TMP = $nsisTemp',
+    "$env:TEMP = $nsisTemp",
+    "$env:TMP = $nsisTemp",
     '"patched-main" = 2',
     '"nsis-plugin" = 5',
     '"wix-extension" = 2',
@@ -680,11 +675,11 @@ function validateWorkflow(workflow) {
   ]);
   requireRunOrder(bundleWindows, [
     '$nsisTemp = Join-Path $env:RUNNER_TEMP "punks-nsis-temp"',
-    'New-Item -ItemType Directory -Path $nsisTemp',
-    '$env:PUNKS_WINDOWS_NSIS_TEMP = $nsisTemp',
-    '$env:TEMP = $nsisTemp',
-    '$env:TMP = $nsisTemp',
-    'pnpm --dir desktop tauri bundle',
+    "New-Item -ItemType Directory -Path $nsisTemp",
+    "$env:PUNKS_WINDOWS_NSIS_TEMP = $nsisTemp",
+    "$env:TEMP = $nsisTemp",
+    "$env:TMP = $nsisTemp",
+    "pnpm --dir desktop tauri bundle",
   ]);
   invariant(
     !bundleWindows.run.includes("--no-sign") &&
@@ -722,10 +717,7 @@ function validateWorkflow(workflow) {
     !build.steps.some((step) => step.id === "sign_windows_installers"),
     "Windows installers bypass Tauri's post-patch signing hooks",
   );
-  const refreshWindowsUpdater = workflowStep(
-    build,
-    "refresh_windows_updater",
-  );
+  const refreshWindowsUpdater = workflowStep(build, "refresh_windows_updater");
   requireRun(refreshWindowsUpdater, [
     "TAURI_SIGNING_PRIVATE_KEY",
     "TAURI_SIGNING_PRIVATE_KEY_PASSWORD",
@@ -736,8 +728,8 @@ function validateWorkflow(workflow) {
     "Test-Path $signaturePath",
   ]);
   invariant(
-      build.steps.indexOf(buildWindows) <
-        build.steps.indexOf(windowsSignerTest) &&
+    build.steps.indexOf(buildWindows) <
+      build.steps.indexOf(windowsSignerTest) &&
       build.steps.indexOf(windowsSignerTest) <
         build.steps.indexOf(signWindowsBinary) &&
       build.steps.indexOf(signWindowsBinary) <
@@ -757,10 +749,7 @@ function validateWorkflow(workflow) {
     'node scripts/check-punks-rust.mjs --binary "$binary"',
   ]);
   invariant(
-    Math.min(
-      build.steps.indexOf(dist),
-      build.steps.indexOf(nativeArtifact),
-    ) >
+    Math.min(build.steps.indexOf(dist), build.steps.indexOf(nativeArtifact)) >
       Math.max(
         build.steps.indexOf(workflowStep(build, "build_macos")),
         build.steps.indexOf(workflowStep(build, "build_linux")),
@@ -920,10 +909,7 @@ function validateWorkflow(workflow) {
   requireAttestationVerification(
     workflowStep(attest_candidate, "verify_candidate_attestation"),
   );
-  const stageDraft = workflowStep(
-    attest_candidate,
-    "stage_immutable_draft",
-  );
+  const stageDraft = workflowStep(attest_candidate, "stage_immutable_draft");
   requireRun(stageDraft, [
     'RELEASE_TAG="punks-staging-${SOURCE_SHA}"',
     'gh release view "$RELEASE_TAG"',
@@ -950,7 +936,7 @@ function validateWorkflow(workflow) {
   const verifyFinal = workflowStep(attest_candidate, "verify_staged_draft");
   requireRun(verifyFinal, [
     'gh release view "$RELEASE_TAG"',
-    '--json isDraft,isPrerelease,tagName,targetCommitish,assets',
+    "--json isDraft,isPrerelease,tagName,targetCommitish,assets",
     'jq -e --arg tag "$RELEASE_TAG" --arg sha "$SOURCE_SHA"',
     ".isDraft == true",
     ".isPrerelease == false",
@@ -1073,6 +1059,17 @@ const mutations = [
     error: /check-punks-rust/,
   },
   {
+    name: "Punks capability bundle gate is removed",
+    change(workflow) {
+      const step = workflowStep(workflow.jobs.gates, "run_gates");
+      step.run = step.run.replace(
+        "pnpm --dir desktop check:punks-capabilities",
+        "true",
+      );
+    },
+    error: /check:punks-capabilities/,
+  },
+  {
     name: "build loses OIDC permission",
     change(workflow) {
       delete workflow.jobs.build.permissions["id-token"];
@@ -1169,8 +1166,8 @@ const mutations = [
     change(workflow) {
       const step = workflowStep(workflow.jobs.build, "bundle_windows");
       step.run = step.run.replace(
-        '$env:TEMP = $nsisTemp',
-        '$env:IGNORED_TEMP = $nsisTemp',
+        "$env:TEMP = $nsisTemp",
+        "$env:IGNORED_TEMP = $nsisTemp",
       );
     },
     error: /misses \$env:TEMP = \$nsisTemp/,
@@ -1240,10 +1237,7 @@ const mutations = [
   {
     name: "Windows updater signature refresh is removed",
     change(workflow) {
-      const step = workflowStep(
-        workflow.jobs.build,
-        "refresh_windows_updater",
-      );
+      const step = workflowStep(workflow.jobs.build, "refresh_windows_updater");
       step.run = step.run.replace("tauri signer sign", "echo skipped");
     },
     error: /tauri signer sign/,
@@ -1259,10 +1253,11 @@ const mutations = [
   {
     name: "one native platform is removed",
     change(workflow) {
-      workflow.jobs.build.strategy.matrix.include = buildMatrixExpression.replace(
-        JSON.stringify(expectedMatrix),
-        JSON.stringify(expectedMatrix.slice(0, -1)),
-      );
+      workflow.jobs.build.strategy.matrix.include =
+        buildMatrixExpression.replace(
+          JSON.stringify(expectedMatrix),
+          JSON.stringify(expectedMatrix.slice(0, -1)),
+        );
     },
     error: /platform matrix/,
   },
@@ -1317,10 +1312,8 @@ const mutations = [
   {
     name: "remote staging observation is removed",
     change(workflow) {
-      workflowStep(
-        workflow.jobs.verify_staging,
-        "observe_staging",
-      ).run = "true";
+      workflowStep(workflow.jobs.verify_staging, "observe_staging").run =
+        "true";
     },
     error: /observe_staging misses/,
   },

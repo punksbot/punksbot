@@ -7,7 +7,6 @@ import {
   useMemo,
   useRef,
   useState,
-  useSyncExternalStore,
   type ReactNode,
 } from "react";
 
@@ -25,7 +24,6 @@ import {
   canonicalPunksPath,
   canonicalPunksUrl,
   type PunksRoute,
-  parsePunksPath,
 } from "./routes";
 import {
   createPunksLocalStore,
@@ -38,12 +36,7 @@ import {
 } from "./workspaceScope";
 import { PunksShell } from "./PunksShell";
 
-export type PunksBootstrapStatus =
-  | "loading"
-  | "blocked"
-  | "signed_out"
-  | "ready"
-  | "error";
+export type PunksBootstrapStatus = "loading" | "signed_out" | "ready" | "error";
 
 type BootstrapState = {
   status: PunksBootstrapStatus;
@@ -78,16 +71,6 @@ export type PunksWorkspaceRuntime = {
 
 const AccountContext = createContext<PunksAccountRuntime | null>(null);
 const WorkspaceContext = createContext<PunksWorkspaceRuntime | null>(null);
-
-function readPath(): string {
-  if (typeof window === "undefined") return "/";
-  return `${window.location.pathname}${window.location.search}${window.location.hash}`;
-}
-
-function subscribeToPath(onChange: () => void): () => void {
-  window.addEventListener("popstate", onChange);
-  return () => window.removeEventListener("popstate", onChange);
-}
 
 function navigatePunks(route: PunksRoute, replace = false): void {
   const path = canonicalPunksPath(route);
@@ -278,14 +261,18 @@ function PunksNoWorkspace() {
 
 function PunksAccountProvider({
   client,
+  compatibility,
+  route,
   children,
 }: {
   client: PunksAccountClient;
+  compatibility: DesktopCompatibilityResponse;
+  route: PunksRoute;
   children: ReactNode;
 }) {
   const [state, setState] = useState<BootstrapState>({
     status: "loading",
-    compatibility: null,
+    compatibility,
     session: null,
     workspaces: [],
     error: null,
@@ -295,17 +282,6 @@ function PunksAccountProvider({
   const refresh = useCallback(async () => {
     setState((current) => ({ ...current, status: "loading", error: null }));
     try {
-      const compatibility = await client.checkCompatibility();
-      if (!compatibility.compatible) {
-        setState({
-          status: "blocked",
-          compatibility,
-          session: null,
-          workspaces: [],
-          error: null,
-        });
-        return;
-      }
       const session = await client.getSession();
       const workspaces = await client.listWorkspaces();
       setState({
@@ -328,7 +304,7 @@ function PunksAccountProvider({
         setState((current) => ({ ...current, status: "error", error }));
       }
     }
-  }, [client]);
+  }, [client, compatibility]);
 
   useEffect(() => {
     void refresh();
@@ -336,18 +312,6 @@ function PunksAccountProvider({
 
   useEffect(() => () => void scopeManager.invalidate(), [scopeManager]);
 
-  const rawPath = useSyncExternalStore(subscribeToPath, readPath, () => "/");
-  const route = useMemo(
-    () =>
-      parsePunksPath(
-        rawPath.split("?", 1)[0]?.split("#", 1)[0] ?? "/",
-        rawPath.includes("?")
-          ? `?${rawPath.split("?", 2)[1]?.split("#", 1)[0] ?? ""}`
-          : "",
-        rawPath.includes("#") ? `#${rawPath.split("#", 2)[1] ?? ""}` : "",
-      ),
-    [rawPath],
-  );
   const localStore = useMemo(() => {
     if (state.compatibility === null || state.session === null) return null;
     const scope: PunksStorageScope = {
@@ -648,9 +612,21 @@ function PunksWorkspaceRouter() {
   );
 }
 
-export function PunksRuntime({ client }: { client: PunksAccountClient }) {
+export function PunksRuntime({
+  client,
+  compatibility,
+  route,
+}: {
+  client: PunksAccountClient;
+  compatibility: DesktopCompatibilityResponse;
+  route: PunksRoute;
+}) {
   return (
-    <PunksAccountProvider client={client}>
+    <PunksAccountProvider
+      client={client}
+      compatibility={compatibility}
+      route={route}
+    >
       <PunksAccountGate client={client} />
     </PunksAccountProvider>
   );
@@ -661,7 +637,6 @@ function PunksAccountGate({ client }: { client: PunksAccountClient }) {
   if (account.status === "loading") {
     return <PunksCompatibilityGate message="Checking Punks compatibility…" />;
   }
-  if (account.status === "blocked") return <PunksCompatibilityGate />;
   if (account.status === "signed_out") {
     return <PunksSignedOut client={client} onStarted={account.refresh} />;
   }

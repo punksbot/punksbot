@@ -4,6 +4,11 @@ import { describe, expect, it } from "vitest";
 import profileSchema from "../profiles/client-profile.schema.json";
 import operationCorpus from "../conformance/desktop-social-loop-operations.json";
 import desktopSocialLoop from "../profiles/desktop-social-loop@1.json";
+import {
+  DESKTOP_SOCIAL_LOOP_CAPABILITIES,
+  DESKTOP_SOCIAL_LOOP_PROFILE_ID,
+  DESKTOP_SOCIAL_LOOP_REGISTRY_VERSION,
+} from "../src/generated/desktop-social-loop-profile";
 import { validateContract } from "../src/registry";
 
 describe("desktop-social-loop@1 profile", () => {
@@ -25,6 +30,13 @@ describe("desktop-social-loop@1 profile", () => {
         "ambiguous",
       ],
     });
+    expect(DESKTOP_SOCIAL_LOOP_PROFILE_ID).toBe(desktopSocialLoop.id);
+    expect(DESKTOP_SOCIAL_LOOP_REGISTRY_VERSION).toBe(
+      desktopSocialLoop.registryVersion,
+    );
+    expect(DESKTOP_SOCIAL_LOOP_CAPABILITIES).toEqual(
+      desktopSocialLoop.capabilities,
+    );
   });
 
   it("closes the exact account and WorkspaceSession operation surface", () => {

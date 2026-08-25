@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./desktop": "./src/desktop.ts",
+    "./desktop-profile": "./src/generated/desktop-social-loop-profile.ts",
     "./profiles/*": "./profiles/*",
     "./schemas/*": "./schemas/*"
   },

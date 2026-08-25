@@ -1,17 +1,17 @@
 import type { MessageView } from "@punks/contracts";
+import type { ReactNode } from "react";
 
 import { ConversationMessageRow } from "./PunksConversationMessageRow";
 import { ConversationStatusBanner } from "./PunksConversationStatusBanner";
 import type { AuthorSummary, FollowStatus } from "./PunksConversationTypes";
 import { reactionFor, type ConversationCache } from "./socialLoop";
-import type { MessageLifecycleActions } from "./MessageLifecycleControls";
 
 export function ConversationThreadPanel({
   authors,
   canMutate,
   canReact,
   conversationId,
-  lifecycleForMessage,
+  renderMessageActions,
   offline,
   paginationPending,
   reactionForValue,
@@ -26,7 +26,7 @@ export function ConversationThreadPanel({
   canMutate: boolean;
   canReact?: boolean;
   conversationId: string;
-  lifecycleForMessage(message: MessageView): MessageLifecycleActions | null;
+  renderMessageActions(message: MessageView): ReactNode;
   offline: boolean;
   paginationPending: boolean;
   reactionForValue?(
@@ -66,7 +66,7 @@ export function ConversationThreadPanel({
                 authors={authors}
                 canMutate={canMutate}
                 canReact={canReact}
-                lifecycle={lifecycleForMessage(message)}
+                messageActions={renderMessageActions(message)}
                 message={message}
                 onOpenThread={() => undefined}
                 onToggleReaction={(reaction) =>

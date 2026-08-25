@@ -1,11 +1,7 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 import type { MessageView } from "@punks/contracts";
 
-import {
-  MessageLifecycleControls,
-  type MessageLifecycleActions,
-} from "./MessageLifecycleControls";
 import type { AuthorSummary } from "./PunksConversationTypes";
 import { actorKey } from "./PunksConversationTypes";
 import type { reactionFor } from "./socialLoop";
@@ -32,7 +28,7 @@ export function ConversationMessageRow({
   authors,
   canMutate,
   canReact = true,
-  lifecycle,
+  messageActions,
   message,
   reaction,
   reactionForValue,
@@ -44,7 +40,7 @@ export function ConversationMessageRow({
   authors: ReadonlyMap<string, AuthorSummary>;
   canMutate: boolean;
   canReact?: boolean;
-  lifecycle?: MessageLifecycleActions | null;
+  messageActions?: ReactNode;
   message: MessageView;
   reaction: ReturnType<typeof reactionFor>;
   reactionForValue?(reaction: string): ReturnType<typeof reactionFor>;
@@ -131,7 +127,7 @@ export function ConversationMessageRow({
         ) : null}
         {message.editedAt !== null ? <span>Edited</span> : null}
       </div>
-      <MessageLifecycleControls actions={lifecycle ?? null} message={message} />
+      {messageActions}
     </article>
   );
 }

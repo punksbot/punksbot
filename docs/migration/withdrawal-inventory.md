@@ -3,7 +3,7 @@
 > Vue dérivée de [`withdrawal-inventory.yaml`](./withdrawal-inventory.yaml), qui est canonique.
 > Régénérée par `scripts/render-withdrawal-inventory.mjs` (`pnpm migration:render`) — ne pas éditer.
 > Décisions : issues [#13](https://github.com/punksbot/punksbot/issues/13), [#14](https://github.com/punksbot/punksbot/issues/14) et [#17](https://github.com/punksbot/punksbot/issues/17).
-> Checkpoint de récupération : `50e16de180dda4365f8001a8a73503f16977a175` — baseline Buzz gelée : `da818eddc2f470c006a1073c8c5452f8a989f272` — version 1 — sha256 canonique `789deabe8356eaaa2dabae56aa0db83b65aea90d4750001a2d37a40e67e38c3e`.
+> Checkpoint de récupération : `50e16de180dda4365f8001a8a73503f16977a175` — baseline Buzz gelée : `da818eddc2f470c006a1073c8c5452f8a989f272` — version 1 — sha256 canonique `498f8594838cb7587e6a6f8aecf400350080707263508e25a6240a186e0ccb3c`.
 
 Chaque actif reçoit exactement un verdict. Un module partagé appartient à la tranche de
 son **dernier** consommateur ; ses parties antérieures disparaissent plus tôt (champ
@@ -146,6 +146,7 @@ L’entrée « Retrait global du serveur historique » s’ouvre uniquement lors
 - `desktop/src/{punks-main.tsx,punks.css}` — entrée et styles du produit desktop Punks vérifié
 - `desktop/src/features/punks/` — produit Punks, runtime Workspace et boucle sociale du candidat desktop
 - `desktop/tests/e2e/capability-masking.spec.ts` — garde structurelle Punks commune aux routes et surfaces indisponibles
+- `desktop/playwright.punks-capabilities.config.ts` — harnais Playwright isolé du bundle produit pour les capacités indisponibles
 - `desktop/scripts/*punks*` — gates du candidat, du frontend et de l’entrée produit desktop Punks
 - `desktop/src-tauri/src/{lib.rs,main.rs}` — séparation : modules, commandes et diagnostics sous cfg buzz-desktop retirés avec leurs tranches puis au scellement ; dispatcher desktop_lib::run et branche punks_runtime::run conservés pour le produit natif Punks
  — entrypoints Tauri mixtes dont la branche Punks est une dépendance active du candidat

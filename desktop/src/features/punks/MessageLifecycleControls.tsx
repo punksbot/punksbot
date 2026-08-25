@@ -1,6 +1,17 @@
-import { useState } from "react";
+import { useMutation } from "@tanstack/react-query";
+import { useState, type ReactNode } from "react";
 
 import type { MessageView } from "@punks/contracts";
+import {
+  PunksDesktopFailure,
+  type EditMessageInput,
+  type RestoreMessageInput,
+  type RetractMessageInput,
+} from "@/shared/api/punksClient";
+
+import { canRestoreMessage } from "./PunksConversationHelpers";
+import { mutationErrorMessage } from "./punksMutationErrors";
+import { usePunksWorkspace } from "./PunksRuntime";
 
 export type MessageLifecycleActions = {
   canEdit: boolean;
@@ -164,5 +175,126 @@ export function MessageLifecycleControls({
         </p>
       ) : null}
     </div>
+  );
+}
+
+export type MessageLifecycleRenderer = (message: MessageView) => ReactNode;
+
+export function MessageLifecycleBridge({
+  canModerate,
+  canMutate,
+  children,
+  conversationId,
+  onAcknowledged,
+  streamTopicRequired,
+}: {
+  canModerate: boolean;
+  canMutate: boolean;
+  children(
+    renderMessageLifecycle: MessageLifecycleRenderer,
+    mutationError: string | null,
+  ): ReactNode;
+  conversationId: string;
+  onAcknowledged(message: MessageView): void;
+  streamTopicRequired: boolean;
+}) {
+  const { scope, manager } = usePunksWorkspace();
+  const editMutation = useMutation({
+    mutationFn: (input: EditMessageInput) => {
+      if (!canMutate) {
+        throw new PunksDesktopFailure(
+          "problem",
+          "Message edits are blocked until the Stream is live",
+        );
+      }
+      return manager.run(scope, () => scope.session.editMessage(input));
+    },
+    retry: false,
+    onSuccess: onAcknowledged,
+  });
+  const retractMutation = useMutation({
+    mutationFn: (input: RetractMessageInput) => {
+      if (!canMutate) {
+        throw new PunksDesktopFailure(
+          "problem",
+          "Message retractions are blocked until the Stream is live",
+        );
+      }
+      return manager.run(scope, () => scope.session.retractMessage(input));
+    },
+    retry: false,
+    onSuccess: onAcknowledged,
+  });
+  const restoreMutation = useMutation({
+    mutationFn: (input: RestoreMessageInput) => {
+      if (!canMutate) {
+        throw new PunksDesktopFailure(
+          "problem",
+          "Message restoration is blocked until the Stream is live",
+        );
+      }
+      return manager.run(scope, () => scope.session.restoreMessage(input));
+    },
+    retry: false,
+    onSuccess: onAcknowledged,
+  });
+  const pending =
+    editMutation.isPending ||
+    retractMutation.isPending ||
+    restoreMutation.isPending;
+
+  const renderMessageLifecycle: MessageLifecycleRenderer = (message) => {
+    const author =
+      message.author.kind === "punk" &&
+      message.author.punkId === scope.lease.punkId;
+    const active = message.status === "active";
+    const canEdit = canMutate && author && active;
+    const canRetract = canMutate && (author || canModerate) && active;
+    const canRestore =
+      canMutate && canRestoreMessage(message, author, canModerate);
+    if (!canEdit && !canRetract && !canRestore) return null;
+
+    return (
+      <MessageLifecycleControls
+        actions={{
+          canEdit,
+          canRetract,
+          canRestore,
+          topicRequired:
+            streamTopicRequired && message.parentMessageId === null,
+          pending,
+          onEdit: async (content, topic) => {
+            await editMutation.mutateAsync({
+              conversationId,
+              messageId: message.id,
+              content,
+              topic,
+            });
+          },
+          onRetract: async () => {
+            await retractMutation.mutateAsync({
+              conversationId,
+              messageId: message.id,
+              reasonCode: author ? "author-request" : "moderation",
+              publicReason: null,
+            });
+          },
+          onRestore: async () => {
+            await restoreMutation.mutateAsync({
+              conversationId,
+              messageId: message.id,
+            });
+          },
+        }}
+        message={message}
+      />
+    );
+  };
+
+  return children(
+    renderMessageLifecycle,
+    mutationErrorMessage(
+      editMutation.error ?? retractMutation.error ?? restoreMutation.error,
+    ),
   );
 }

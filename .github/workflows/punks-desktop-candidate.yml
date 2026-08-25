@@ -148,6 +148,7 @@ jobs:
           pnpm --filter buzz check
           pnpm --dir desktop check:punks-candidate
           pnpm --dir desktop check:punks-product
+          pnpm --dir desktop check:punks-capabilities
           node scripts/check-punks-rust.mjs
           tauri_config="$(jq -c . desktop/src-tauri/tauri.punks.conf.json)"
           export TAURI_CONFIG="$tauri_config"
