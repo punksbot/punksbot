@@ -201,3 +201,94 @@ fn follow_contract_rejects_foreign_messages_before_renderer_delivery() {
 
     assert_eq!(failure.kind, FailureKind::ContractViolation);
 }
+
+#[test]
+fn follow_close_classification_distinguishes_revocation_from_transport() {
+    assert_eq!(
+        super::super::follow_connection::classify_follow_close(1008, "authorization revoked",),
+        FailureKind::Problem,
+    );
+    assert_eq!(
+        super::super::follow_connection::classify_follow_close(1008, "invalid acknowledgement",),
+        FailureKind::ContractViolation,
+    );
+    assert_eq!(
+        super::super::follow_connection::classify_follow_close(
+            1013,
+            "authorized content temporarily unavailable",
+        ),
+        FailureKind::Transport,
+    );
+}
+
+#[tokio::test]
+async fn message_history_rejects_non_rfc3339_timestamps() {
+    let conversation_id = "33333333-3333-4333-8333-333333333333";
+    let message_id = "44444444-4444-4444-8444-444444444444";
+    let client = client_with(move |_method, path, _body, _idempotency_key| {
+        Box::pin(async move {
+            Ok(match path.as_str() {
+                "/api/v1/desktop/compatibility" => compatibility(),
+                "/api/auth/v1/session" => session(),
+                path if path.starts_with("/api/v1/workspaces?") => workspaces(),
+                path if path.contains("/messages") => {
+                    let mut message = message_view(
+                        conversation_id,
+                        message_id,
+                        "active",
+                        Some("invalid timestamp"),
+                        None,
+                    );
+                    message["createdAt"] = json!("not-a-date");
+                    json!({
+                        "workspaceId": WORKSPACE_ID,
+                        "conversationId": conversation_id,
+                        "highWaterCursor": 1,
+                        "order": "createdCursor-ascending",
+                        "items": [message],
+                        "nextCursor": null
+                    })
+                }
+                _ => return Err(ClientFailure::new(FailureKind::Problem, "unexpected")),
+            })
+        })
+    });
+    prepare_account(&client).await;
+    let workspace = client.open_workspace(WORKSPACE_ID).await.unwrap();
+
+    let failure = workspace
+        .get_timeline(conversation_id, Some(100), None)
+        .await
+        .unwrap_err();
+
+    assert_eq!(failure.kind, FailureKind::ContractViolation);
+}
+
+#[test]
+fn follow_contract_rejects_non_rfc3339_thread_patch_timestamps() {
+    let conversation_id = "33333333-3333-4333-8333-333333333333";
+    let frame = serde_json::from_value::<FollowServerFrame>(json!({
+        "schemaVersion": 1,
+        "type": "changes",
+        "fromExclusiveCursor": 0,
+        "throughCursor": 1,
+        "messages": [],
+        "threadPatches": [{
+            "messageId": "44444444-4444-4444-8444-444444444444",
+            "replyCount": 1,
+            "descendantCount": 1,
+            "lastReplyAt": "not-a-date",
+            "revision": 1,
+            "cursor": 1
+        }],
+        "reactionPatches": [],
+        "reactionCollectionPatches": []
+    }))
+    .unwrap();
+
+    let failure =
+        super::super::follow::validate_follow_frame(&frame, WORKSPACE_ID, conversation_id)
+            .unwrap_err();
+
+    assert_eq!(failure.kind, FailureKind::ContractViolation);
+}

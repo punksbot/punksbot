@@ -13,12 +13,9 @@ import {
 import {
   purgeConversationProjections,
   replaceConversationProjection,
-} from "./conversationCacheCoordinator";
-import {
-  failureStatus,
-  pumpFollow,
   sameQueryKey,
-} from "./PunksConversationHelpers";
+} from "./conversationCacheCoordinator";
+import { failureStatus, pumpFollow } from "./PunksConversationHelpers";
 import type { FollowStatus } from "./PunksConversationTypes";
 import { usePunksWorkspace } from "./PunksRuntime";
 import { applyConversationBatch, type ConversationCache } from "./socialLoop";
@@ -49,12 +46,15 @@ export function useConversationFollow({
     scopeKey,
     cursor: null,
   });
-  const terminalScopeRef = useRef<string | null>(null);
+  const terminalScopeRef = useRef<{
+    scopeKey: string;
+    status: "archived" | "unavailable";
+  } | null>(null);
 
   if (cursorRef.current.scopeKey !== scopeKey) {
     cursorRef.current = { scopeKey, cursor: null };
   }
-  if (terminalScopeRef.current !== scopeKey) {
+  if (terminalScopeRef.current?.scopeKey !== scopeKey) {
     terminalScopeRef.current = null;
   }
 
@@ -68,16 +68,21 @@ export function useConversationFollow({
       );
     };
 
+    if (terminalScopeRef.current?.scopeKey === scopeKey) {
+      setStatus(terminalScopeRef.current.status);
+      return;
+    }
+
     if (!historyReady) {
       if (streamStatus === "archived" || streamStatus === "access-lost") {
+        const terminalStatus =
+          streamStatus === "archived" ? "archived" : "unavailable";
+        terminalScopeRef.current = { scopeKey, status: terminalStatus };
         purgeConversationViews();
+        setStatus(terminalStatus);
+        return;
       }
-      setStatus((current) =>
-        terminalScopeRef.current === scopeKey &&
-        (current === "archived" || current === "unavailable")
-          ? current
-          : "loading",
-      );
+      setStatus("loading");
       return;
     }
 
@@ -206,7 +211,7 @@ export function useConversationFollow({
                 restartFollow = true;
                 return false;
               }
-              terminalScopeRef.current = scopeKey;
+              terminalScopeRef.current = { scopeKey, status: "archived" };
               purgeConversationViews();
               setStatus("archived");
               return false;
@@ -225,7 +230,7 @@ export function useConversationFollow({
         }
         const nextStatus = failureStatus(error);
         if (nextStatus === "unavailable") {
-          terminalScopeRef.current = scopeKey;
+          terminalScopeRef.current = { scopeKey, status: "unavailable" };
           purgeConversationViews();
         }
         setStatus(nextStatus);

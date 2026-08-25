@@ -3,8 +3,6 @@ import type {
   ConversationSummary,
   ConversationView,
   DesktopCompatibilityResponse,
-  ListConversationsResponse,
-  ListWorkspacesResponse,
   MessageHistoryResponse,
   MessageReactionMutationResponse,
   MessageView,
@@ -47,21 +45,6 @@ const authenticationIntents = new Set([
   "link_github",
   "register_passkey",
 ]);
-const CONTRACT_DIRECTORY_PAGE_SIZE = 100;
-
-function contractDirectoryPages<T>(items: readonly T[]): readonly T[][] {
-  if (items.length === 0) return [[]];
-  const pages: T[][] = [];
-  for (
-    let offset = 0;
-    offset < items.length;
-    offset += CONTRACT_DIRECTORY_PAGE_SIZE
-  ) {
-    pages.push(items.slice(offset, offset + CONTRACT_DIRECTORY_PAGE_SIZE));
-  }
-  return pages;
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -181,22 +164,9 @@ class TauriWorkspaceSession implements PunksWorkspaceSession {
   }
 
   async listStreams(): Promise<ConversationSummary[]> {
-    const items = await invokePunks<ConversationSummary[]>(
-      "punks_list_streams",
-      { lease: this.lease },
-    );
-    for (const page of contractDirectoryPages(items)) {
-      requireContract<ListConversationsResponse>(
-        "punks://contracts/conversation.list-response@1",
-        {
-          contract: "conversation.list-response@1",
-          workspaceId: this.lease.workspaceId,
-          items: page,
-          nextCursor: null,
-        },
-      );
-    }
-    return items;
+    return invokePunks<ConversationSummary[]>("punks_list_streams", {
+      lease: this.lease,
+    });
   }
 
   async getStream(conversationId: string): Promise<ConversationView> {
@@ -382,20 +352,7 @@ export class TauriPunksAccountClient implements PunksAccountClient {
   }
 
   async listWorkspaces(): Promise<WorkspaceSummary[]> {
-    const items = await invokePunks<WorkspaceSummary[]>(
-      "punks_list_workspaces",
-    );
-    for (const page of contractDirectoryPages(items)) {
-      requireContract<ListWorkspacesResponse>(
-        "punks://contracts/workspace.list-response@1",
-        {
-          contract: "workspace.list-response@1",
-          items: page,
-          nextCursor: null,
-        },
-      );
-    }
-    return items;
+    return invokePunks<WorkspaceSummary[]>("punks_list_workspaces");
   }
 
   resolveWorkspace(

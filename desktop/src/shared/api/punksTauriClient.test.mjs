@@ -166,7 +166,7 @@ test("Workspace resolution sends an explicit durable-id or slug identity", async
   ]);
 });
 
-test("the Tauri WorkspaceSession admits an aggregated directory beyond one page", async () => {
+test("the Tauri WorkspaceSession transports a native aggregate beyond one page", async () => {
   const workspaceId = "11111111-1111-4111-8111-111111111111";
   const punkId = "22222222-2222-4222-8222-222222222222";
   const streams = Array.from({ length: 101 }, (_, index) => ({

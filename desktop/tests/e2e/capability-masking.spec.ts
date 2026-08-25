@@ -25,6 +25,7 @@ type PunksSocialSeed = {
   stream: ConversationView;
   timeline: MessageHistoryResponse;
   followBatch?: ChangesFrame;
+  followFailure?: { kind: string; message: string };
 };
 
 type PunksSeed = {
@@ -236,6 +237,9 @@ async function installPunksTauriBoundary(
                 kind: "apply_batch",
                 frame: structuredClone(socialSeed.followBatch),
               };
+            }
+            if (socialSeed?.followFailure) {
+              throw structuredClone(socialSeed.followFailure);
             }
             if (!followLiveDelivered) {
               if (followLiveRequested) {
@@ -640,4 +644,66 @@ test("la boucle sociale publie un batch avant ACK et bloque les mutations avant 
     page.getByTestId("punks-message-target-unavailable"),
   ).toBeVisible();
   expect(await invokedCommands(page)).not.toContain("punks_get_thread");
+});
+
+test("une révocation FOLLOW purge les vues et reste terminale", async ({
+  page,
+}) => {
+  const secretMessageId = "88888888-8888-4888-8888-888888888888";
+  const streamSummary: ConversationSummary = {
+    id: CONVERSATION_ID,
+    workspaceId: WORKSPACE_ID,
+    name: "Private revoked Stream",
+    type: "stream",
+    visibility: "private",
+    description: "Private description",
+    topic: "Private topic",
+    purpose: "Private purpose",
+    topicRequired: false,
+    ttlSeconds: null,
+    ttlDeadline: null,
+    revision: 1,
+    cursor: 1,
+    updatedAt: "2026-08-25T10:00:00.000Z",
+  };
+  await installPunksTauriBoundary(page, {
+    compatible: true,
+    capabilities: T1_CAPABILITIES,
+    social: {
+      streams: [streamSummary],
+      stream: {
+        ...streamSummary,
+        maxMembers: null,
+        status: "active",
+        createdAt: "2026-08-25T10:00:00.000Z",
+        archivedAt: null,
+      },
+      timeline: {
+        workspaceId: WORKSPACE_ID,
+        conversationId: CONVERSATION_ID,
+        highWaterCursor: 1,
+        order: "createdCursor-ascending",
+        items: [socialMessage(secretMessageId, 1, "Private Message body")],
+        nextCursor: null,
+      },
+      followFailure: {
+        kind: "problem",
+        message: "Punks FOLLOW authorization is no longer available",
+      },
+    },
+  });
+
+  await page.goto(`/w/capability-test/conversations/${CONVERSATION_ID}`);
+
+  await expect(page.getByTestId("punks-stream-unavailable")).toBeVisible();
+  await expect(
+    page.getByText("Private Message body", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByText("Private revoked Stream", { exact: true }),
+  ).toHaveCount(0);
+  const commands = await invokedCommands(page);
+  expect(
+    commands.filter((command) => command === "punks_follow_conversation"),
+  ).toHaveLength(1);
 });

@@ -7,17 +7,6 @@ import type { MessageView } from "@punks/contracts";
 
 import type { FollowStatus } from "./PunksConversationTypes";
 
-/** Compares React Query keys without allowing a cross-view cache update. */
-export function sameQueryKey(
-  left: readonly unknown[],
-  right: readonly unknown[],
-): boolean {
-  return (
-    left.length === right.length &&
-    left.every((value, index) => value === right[index])
-  );
-}
-
 /** Maps typed session failures to the only statuses the conversation renders. */
 export function failureStatus(
   error: unknown,

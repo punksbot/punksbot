@@ -3,8 +3,8 @@ use std::collections::HashSet;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    message_mutations::canonical_reaction, social_validation::validate_message_view_runtime,
-    validate_uuid, ClientFailure, MessageView,
+    message_mutations::canonical_reaction, social_validation::valid_rfc3339,
+    social_validation::validate_message_view_runtime, validate_uuid, ClientFailure, MessageView,
 };
 
 /// Typed `punks.follow.v1` server frame.
@@ -288,6 +288,10 @@ pub(crate) fn validate_follow_frame(
             for patch in thread_patches {
                 validate_uuid(&patch.message_id, "messageId")?;
                 if patch.revision < 1
+                    || patch
+                        .last_reply_at
+                        .as_ref()
+                        .is_some_and(|value| !valid_rfc3339(value))
                     || patch.cursor <= *from_exclusive_cursor
                     || patch.cursor > *through_cursor
                     || !thread_message_ids.insert(patch.message_id.as_str())

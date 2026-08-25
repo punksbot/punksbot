@@ -22,6 +22,14 @@ use crate::{
 const FOLLOW_PROTOCOL: &str = "punks.follow.v1";
 const MAX_FRAME_BYTES: usize = 262_144;
 
+pub(crate) fn classify_follow_close(code: u16, reason: &str) -> FailureKind {
+    match (code, reason) {
+        (1008, "authorization revoked" | "conversation unavailable") => FailureKind::Problem,
+        (1008, _) => FailureKind::ContractViolation,
+        _ => FailureKind::Transport,
+    }
+}
+
 /// Renderer delivery emitted by one native FOLLOW connection.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(
@@ -213,11 +221,18 @@ impl FollowConnection {
                         })?;
                     continue;
                 }
-                Message::Close(_) => {
-                    return Err(ClientFailure::new(
-                        FailureKind::Transport,
-                        "Punks FOLLOW connection ended",
-                    ))
+                Message::Close(frame) => {
+                    let kind = frame.as_ref().map_or(FailureKind::Transport, |frame| {
+                        classify_follow_close(frame.code.into(), frame.reason.as_ref())
+                    });
+                    let message = match kind {
+                        FailureKind::Problem => "Punks FOLLOW authorization is no longer available",
+                        FailureKind::ContractViolation => {
+                            "Punks FOLLOW closed after a protocol violation"
+                        }
+                        _ => "Punks FOLLOW connection ended",
+                    };
+                    return Err(ClientFailure::new(kind, message));
                 }
                 _ => {
                     return Err(ClientFailure::new(

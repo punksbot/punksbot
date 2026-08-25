@@ -8,7 +8,9 @@ use std::{
 use reqwest::{cookie::Jar, Client, Method};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use social_validation::{validate_message_page_runtime, validate_stream_summary};
+use social_validation::{
+    validate_message_page_runtime, validate_stream_summary, validate_stream_view,
+};
 use tokio::sync::{Mutex, RwLock};
 use tokio_util::sync::CancellationToken;
 
@@ -761,13 +763,11 @@ impl WorkspaceSession {
         self.assert_current().await?;
         let envelope: StreamEnvelope = decode("conversation.view@1", response)?;
         self.assert_current().await?;
-        if envelope.conversation.workspace_id != self.lease.workspace_id
-            || envelope.conversation.id != conversation_id
-            || envelope.conversation.stream_type != "stream"
-            || !matches!(envelope.conversation.status.as_str(), "active" | "archived")
-        {
-            return Err(ClientFailure::contract("conversation.view@1"));
-        }
+        validate_stream_view(
+            &envelope.conversation,
+            &self.lease.workspace_id,
+            conversation_id,
+        )?;
         Ok(envelope.conversation)
     }
 

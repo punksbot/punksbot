@@ -20,7 +20,8 @@ type RedactableStreamProjection = {
   purpose: string | null;
 };
 
-function sameQueryKey(left: QueryKey, right: QueryKey): boolean {
+/** Compares React Query keys without allowing a cross-view cache update. */
+export function sameQueryKey(left: QueryKey, right: QueryKey): boolean {
   return (
     left.length === right.length &&
     left.every((value, index) => value === right[index])

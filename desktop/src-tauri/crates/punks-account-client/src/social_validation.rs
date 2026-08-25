@@ -1,6 +1,17 @@
 use std::collections::HashSet;
 
-use crate::{validate_uuid, ClientFailure, MessageAuthor, MessagePage, MessageView, StreamSummary};
+use crate::{
+    validate_uuid, ClientFailure, MessageAuthor, MessagePage, MessageView, StreamSummary,
+    StreamView,
+};
+
+pub(crate) fn valid_rfc3339(value: &str) -> bool {
+    chrono::DateTime::parse_from_rfc3339(value).is_ok()
+}
+
+fn valid_optional_rfc3339(value: Option<&String>) -> bool {
+    value.is_none_or(|value| valid_rfc3339(value))
+}
 
 pub(crate) fn validate_stream_summary(
     stream: &StreamSummary,
@@ -26,11 +37,56 @@ pub(crate) fn validate_stream_summary(
             .as_ref()
             .is_none_or(|value| value.chars().count() <= 2_000)
         && stream.ttl_seconds.is_none_or(|value| value >= 60)
+        && valid_optional_rfc3339(stream.ttl_deadline.as_ref())
         && stream.revision >= 1
         && stream.cursor >= 1
-        && !stream.updated_at.is_empty();
+        && valid_rfc3339(&stream.updated_at);
     if !valid {
         return Err(ClientFailure::contract("conversation.list-response@1"));
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_stream_view(
+    stream: &StreamView,
+    workspace_id: &str,
+    conversation_id: &str,
+) -> Result<(), ClientFailure> {
+    validate_uuid(&stream.id, "conversationId")?;
+    validate_uuid(&stream.workspace_id, "workspaceId")?;
+    let valid = stream.id == conversation_id
+        && stream.workspace_id == workspace_id
+        && stream.stream_type == "stream"
+        && matches!(stream.visibility.as_str(), "open" | "private")
+        && !stream.name.is_empty()
+        && stream.name.chars().count() <= 255
+        && stream
+            .description
+            .as_ref()
+            .is_none_or(|value| value.chars().count() <= 4_000)
+        && stream
+            .topic
+            .as_ref()
+            .is_none_or(|value| value.chars().count() <= 255)
+        && stream
+            .purpose
+            .as_ref()
+            .is_none_or(|value| value.chars().count() <= 4_000)
+        && stream
+            .max_members
+            .is_none_or(|value| (1..=100_000).contains(&value))
+        && stream
+            .ttl_seconds
+            .is_none_or(|value| (1..=2_147_483_647).contains(&value))
+        && valid_optional_rfc3339(stream.ttl_deadline.as_ref())
+        && matches!(stream.status.as_str(), "active" | "archived")
+        && stream.revision >= 1
+        && stream.cursor >= 1
+        && valid_rfc3339(&stream.created_at)
+        && valid_rfc3339(&stream.updated_at)
+        && valid_optional_rfc3339(stream.archived_at.as_ref());
+    if !valid {
+        return Err(ClientFailure::contract("conversation.view@1"));
     }
     Ok(())
 }
@@ -154,8 +210,13 @@ pub(crate) fn validate_message_view_runtime(
         && topic_valid
         && public_reason_valid
         && status_valid
-        && !message.created_at.is_empty()
-        && !message.updated_at.is_empty();
+        && valid_rfc3339(&message.created_at)
+        && valid_rfc3339(&message.updated_at)
+        && valid_optional_rfc3339(message.last_reply_at.as_ref())
+        && valid_optional_rfc3339(message.edited_at.as_ref())
+        && valid_optional_rfc3339(message.retracted_at.as_ref())
+        && valid_optional_rfc3339(message.erase_after.as_ref())
+        && valid_optional_rfc3339(message.erased_at.as_ref());
     if !valid {
         return Err(ClientFailure::contract("message.view@1"));
     }
