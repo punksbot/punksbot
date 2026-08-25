@@ -404,6 +404,9 @@ function applyMessageState(
   ) {
     return { kind: "resync-required", reason: "protocol_violation" };
   }
+  if (messagesDiverge(state.history.items, [message])) {
+    return { kind: "resync-required", reason: "cursor_divergence" };
+  }
   const messages = mergeMessages(
     state.history.items,
     [message],
@@ -594,13 +597,12 @@ export function reduceConversationPage(
   return reduceConversation(state, { type: "page", page, mode });
 }
 
-/** Applies an acknowledged Message without advancing the FOLLOW cursor. */
+/** Reduces an acknowledged Message without advancing the FOLLOW cursor. */
 export function applyConversationMessage(
   state: ConversationCache,
   message: MessageView,
-): ConversationCache {
-  const reduction = reduceConversation(state, { type: "message", message });
-  return reduction.kind === "applied" ? reduction.state : state;
+): ConversationReduction {
+  return reduceConversation(state, { type: "message", message });
 }
 
 /**
@@ -613,6 +615,7 @@ export function applyConversationReaction(
   messageId: string,
   reaction: string,
   response: MessageReactionMutationResponse,
+  issuedAfterCursor: number,
 ): ConversationReduction {
   const view = response.reaction;
   if (
@@ -624,14 +627,20 @@ export function applyConversationReaction(
   ) {
     return { kind: "resync-required", reason: "protocol_violation" };
   }
+  // Reaction ACKs intentionally carry no Conversation cursor. They may only
+  // decorate the exact FOLLOW checkpoint at which the explicit intent was
+  // issued. If FOLLOW advanced while the request was in flight, its absolute
+  // patch is already the newer authority and the cursorless ACK is ignored.
+  if (state.appliedCursor !== issuedAfterCursor) {
+    return { kind: "ignored", state };
+  }
   const previous = reactionFor(state, messageId, reaction);
-  const cursor = Math.max(state.appliedCursor, previous?.cursor ?? 0);
   const patch: ReactionPatch = {
     messageId,
     reaction,
     count: previous?.count ?? 0,
     reactedByPunk: view !== null,
-    cursor,
+    cursor: issuedAfterCursor,
   };
   return {
     kind: "applied",

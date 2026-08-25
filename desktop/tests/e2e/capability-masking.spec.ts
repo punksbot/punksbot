@@ -116,6 +116,19 @@ async function installPunksTauriBoundary(
       let followLiveDelivered = false;
       let followLiveRequested = false;
       let releaseFollowLive: (() => void) | null = null;
+      const socialMessages = structuredClone(socialSeed?.timeline.items ?? []);
+      const reactionViews = new Map<
+        string,
+        {
+          id: string;
+          workspaceId: string;
+          conversationId: string;
+          messageId: string;
+          actor: { kind: "punk"; punkId: string };
+          reaction: string;
+          reactedAt: string;
+        }
+      >();
       Object.assign(window, {
         __PUNKS_CAPABILITY_COMMANDS__: commands,
         __PUNKS_CAPABILITY_CALLS__: calls,
@@ -206,7 +219,26 @@ async function installPunksTauriBoundary(
             if (socialSeed === undefined) {
               throw new Error("No social timeline fixture is installed");
             }
-            return structuredClone(socialSeed.timeline);
+            return {
+              ...structuredClone(socialSeed.timeline),
+              items: structuredClone(socialMessages),
+            };
+          case "punks_get_thread": {
+            if (socialSeed === undefined) {
+              throw new Error("No social thread fixture is installed");
+            }
+            const input = args.input as { threadRootMessageId: string };
+            return {
+              ...structuredClone(socialSeed.timeline),
+              items: structuredClone(
+                socialMessages.filter(
+                  (message) =>
+                    message.threadRootMessageId === input.threadRootMessageId,
+                ),
+              ),
+              nextCursor: null,
+            };
+          }
           case "punks_resolve_authors":
             return (
               (args.authors as readonly (
@@ -258,6 +290,106 @@ async function installPunksTauriBoundary(
           case "punks_confirm_follow_batch":
           case "punks_close_follow":
             return null;
+          case "punks_post_message": {
+            if (socialSeed === undefined) {
+              throw new Error("No social mutation fixture is installed");
+            }
+            const input = args.input as {
+              conversationId: string;
+              content: string;
+              topic?: string | null;
+              replyToMessageId?: string;
+            };
+            const parent = input.replyToMessageId
+              ? socialMessages.find(
+                  (message) => message.id === input.replyToMessageId,
+                )
+              : undefined;
+            if (input.replyToMessageId && parent === undefined) {
+              throw {
+                kind: "problem",
+                message: "Reply target is unavailable",
+              };
+            }
+            const id = crypto.randomUUID();
+            const cursor =
+              socialMessages.reduce(
+                (maximum, message) => Math.max(maximum, message.cursor),
+                socialSeed.timeline.highWaterCursor,
+              ) + 1;
+            const timestamp = new Date().toISOString();
+            const posted = {
+              id,
+              workspaceId: socialSeed.timeline.workspaceId,
+              conversationId: input.conversationId,
+              author: { kind: "punk" as const, punkId },
+              messageType: "stream-message" as const,
+              status: "active" as const,
+              content: input.content,
+              topic: input.topic ?? null,
+              mentionedPunkIds: [],
+              mediaIds: [],
+              parentMessageId: input.replyToMessageId ?? null,
+              threadRootMessageId: parent?.threadRootMessageId ?? id,
+              threadDepth: parent === undefined ? 0 : parent.threadDepth + 1,
+              broadcast: false,
+              replyCount: 0,
+              descendantCount: 0,
+              lastReplyAt: null,
+              currentVersion: 1,
+              retractionKind: null,
+              retractedAt: null,
+              eraseAfter: null,
+              publicReason: null,
+              erasedAt: null,
+              revision: 1,
+              createdCursor: cursor,
+              cursor,
+              createdAt: timestamp,
+              updatedAt: timestamp,
+              editedAt: null,
+            };
+            socialMessages.push(posted);
+            return structuredClone(posted);
+          }
+          case "punks_add_reaction": {
+            const input = args.input as {
+              conversationId: string;
+              messageId: string;
+              reaction: string;
+            };
+            const key = `${input.conversationId}:${input.messageId}:${input.reaction}`;
+            const existing = reactionViews.get(key);
+            const reaction = existing ?? {
+              id: crypto.randomUUID(),
+              workspaceId: socialSeed?.timeline.workspaceId ?? "",
+              conversationId: input.conversationId,
+              messageId: input.messageId,
+              actor: { kind: "punk" as const, punkId },
+              reaction: input.reaction,
+              reactedAt: new Date().toISOString(),
+            };
+            reactionViews.set(key, reaction);
+            return {
+              reaction: structuredClone(reaction),
+              effect: existing === undefined ? "added" : "unchanged",
+              replayed: false,
+            };
+          }
+          case "punks_remove_reaction": {
+            const input = args.input as {
+              conversationId: string;
+              messageId: string;
+              reaction: string;
+            };
+            const key = `${input.conversationId}:${input.messageId}:${input.reaction}`;
+            const removed = reactionViews.delete(key);
+            return {
+              reaction: null,
+              effect: removed ? "removed" : "unchanged",
+              replayed: false,
+            };
+          }
           case "punks_close_workspace":
             return null;
           case "punks_start_account_switch":
@@ -643,7 +775,164 @@ test("la boucle sociale publie un batch avant ACK et bloque les mutations avant 
   await expect(
     page.getByTestId("punks-message-target-unavailable"),
   ).toBeVisible();
+  await page.evaluate(() => {
+    (
+      window as typeof window & {
+        __PUNKS_RELEASE_FOLLOW__?: () => void;
+      }
+    ).__PUNKS_RELEASE_FOLLOW__?.();
+  });
+  await expect(page.getByTestId("punks-follow-live").first()).toBeVisible();
+  await expect(page.getByTestId("punks-message-composer")).toBeDisabled();
   expect(await invokedCommands(page)).not.toContain("punks_get_thread");
+  expect(await invokedCommands(page)).not.toContain("punks_post_message");
+});
+
+test("un Punk publie un Message racine avec son sujet depuis le Stream live", async ({
+  page,
+}) => {
+  const initialMessageId = "88888888-8888-4888-8888-888888888888";
+  const streamSummary: ConversationSummary = {
+    id: CONVERSATION_ID,
+    workspaceId: WORKSPACE_ID,
+    name: "Subject Stream",
+    type: "stream",
+    visibility: "private",
+    description: null,
+    topic: "Publication",
+    purpose: "Exercise explicit Message intents",
+    topicRequired: true,
+    ttlSeconds: null,
+    ttlDeadline: null,
+    revision: 1,
+    cursor: 1,
+    updatedAt: "2026-08-25T10:00:00.000Z",
+  };
+  await installPunksTauriBoundary(page, {
+    compatible: true,
+    capabilities: T1_CAPABILITIES,
+    social: {
+      streams: [streamSummary],
+      stream: {
+        ...streamSummary,
+        maxMembers: null,
+        status: "active",
+        createdAt: "2026-08-25T10:00:00.000Z",
+        archivedAt: null,
+      },
+      timeline: {
+        workspaceId: WORKSPACE_ID,
+        conversationId: CONVERSATION_ID,
+        highWaterCursor: 1,
+        order: "createdCursor-ascending",
+        items: [socialMessage(initialMessageId, 1, "Existing Message")],
+        nextCursor: null,
+      },
+    },
+  });
+  await page.goto(`/w/capability-test/conversations/${CONVERSATION_ID}`);
+  await expect(page.getByTestId("punks-message-composer")).toBeDisabled();
+  await page.evaluate(() => {
+    (
+      window as typeof window & {
+        __PUNKS_RELEASE_FOLLOW__?: () => void;
+      }
+    ).__PUNKS_RELEASE_FOLLOW__?.();
+  });
+  await expect(page.getByTestId("punks-follow-live").first()).toBeVisible();
+
+  await page.getByTestId("punks-message-topic").fill("Release notes");
+  const composer = page.getByTestId("punks-message-composer");
+  await composer.fill("The new social loop is live.");
+  await page.getByRole("button", { name: "Send" }).click();
+
+  await expect(
+    page
+      .getByTestId("punks-message-list")
+      .getByText("The new social loop is live.", { exact: true }),
+  ).toBeVisible();
+  const postedRow = page
+    .getByTestId("punks-message-list")
+    .locator("article")
+    .filter({ hasText: "The new social loop is live." });
+  await expect(
+    postedRow.getByText("Release notes", { exact: true }),
+  ).toBeVisible();
+  await expect(composer).toHaveValue("");
+  const postCalls = (await invokedCalls(page)).filter(
+    ({ command }) => command === "punks_post_message",
+  );
+  expect(postCalls).toHaveLength(1);
+  expect(postCalls[0]?.args.input).toEqual({
+    conversationId: CONVERSATION_ID,
+    content: "The new social loop is live.",
+    topic: "Release notes",
+  });
+
+  await page.goto(
+    `/w/capability-test/conversations/${CONVERSATION_ID}/messages/${initialMessageId}`,
+  );
+  await expect(page.getByTestId("punks-message-composer")).toBeDisabled();
+  await page.evaluate(() => {
+    (
+      window as typeof window & {
+        __PUNKS_RELEASE_FOLLOW__?: () => void;
+      }
+    ).__PUNKS_RELEASE_FOLLOW__?.();
+  });
+  await expect(page.getByTestId("punks-follow-live").first()).toBeVisible();
+  await page
+    .getByTestId("punks-message-composer")
+    .fill("A nested reply stays in the selected thread.");
+  await page.getByRole("button", { name: "Send" }).click();
+
+  await expect(
+    page
+      .getByTestId("punks-thread")
+      .getByText("A nested reply stays in the selected thread.", {
+        exact: true,
+      }),
+  ).toBeVisible();
+  const replyCalls = (await invokedCalls(page)).filter(
+    ({ command }) => command === "punks_post_message",
+  );
+  expect(replyCalls).toHaveLength(1);
+  expect(replyCalls[0]?.args.input).toEqual({
+    conversationId: CONVERSATION_ID,
+    content: "A nested reply stays in the selected thread.",
+    topic: null,
+    replyToMessageId: initialMessageId,
+  });
+
+  const initialRow = page
+    .getByTestId("punks-message-list")
+    .locator(`[data-message-id="${initialMessageId}"]`);
+  await initialRow
+    .getByTestId(`punks-reaction-input-${initialMessageId}`)
+    .fill("🦄");
+  const reactionButton = initialRow.getByTestId(
+    `punks-reaction-${initialMessageId}-thumbs-up`,
+  );
+  await expect(reactionButton).toHaveText("Add 🦄 0");
+  await reactionButton.click();
+  await expect(reactionButton).toHaveText("Remove 🦄 0");
+  await reactionButton.click();
+  await expect(reactionButton).toHaveText("Add 🦄 0");
+
+  const reactionCalls = (await invokedCalls(page)).filter(({ command }) =>
+    ["punks_add_reaction", "punks_remove_reaction"].includes(command),
+  );
+  expect(reactionCalls.map(({ command }) => command)).toEqual([
+    "punks_add_reaction",
+    "punks_remove_reaction",
+  ]);
+  for (const call of reactionCalls) {
+    expect(call.args.input).toEqual({
+      conversationId: CONVERSATION_ID,
+      messageId: initialMessageId,
+      reaction: "🦄",
+    });
+  }
 });
 
 test("une révocation FOLLOW purge les vues et reste terminale", async ({

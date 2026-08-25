@@ -225,6 +225,9 @@ export function PunksConversation({
   );
   const canMutate =
     followStatus === "live" && streamQuery.data?.status === "active";
+  const replyTargetAvailable =
+    messageId === null || targetMessage?.status === "active";
+  const canCompose = canMutate && replyTargetAvailable;
   const topicRequired =
     messageId === null && streamQuery.data?.topicRequired === true;
   const topicValid = !topicRequired || topic.trim().length > 0;
@@ -238,10 +241,12 @@ export function PunksConversation({
         { queryKey: messageQueryPrefix },
       )) {
         if (cached !== undefined) {
-          queryClient.setQueryData(
-            key,
-            applyConversationMessage(cached, message),
-          );
+          const reduction = applyConversationMessage(cached, message);
+          if (reduction.kind === "applied" || reduction.kind === "ignored") {
+            queryClient.setQueryData(key, reduction.state);
+          } else {
+            void queryClient.invalidateQueries({ queryKey: key });
+          }
         }
       }
     });
@@ -346,6 +351,12 @@ export function PunksConversation({
           "Messages are blocked until the Stream is live",
         );
       }
+      if (!replyTargetAvailable) {
+        throw new PunksDesktopFailure(
+          "problem",
+          "Replies require an active authorized Message target",
+        );
+      }
       return manager.run(scope, () =>
         scope.session.postMessage({
           conversationId,
@@ -384,8 +395,17 @@ export function PunksConversation({
       }
       const canonicalReaction = canonicalPunksReaction(reaction);
       const currentReaction = currentReactionFor(message.id, canonicalReaction);
-      return manager.run(scope, () =>
-        currentReaction?.reactedByPunk
+      const issuedAfterCursor =
+        queryClient.getQueryData<ConversationCache>(historyKey)?.appliedCursor;
+      if (issuedAfterCursor === undefined) {
+        throw new PunksDesktopFailure(
+          "contract_violation",
+          "The Stream mutation checkpoint is unavailable",
+        );
+      }
+      return manager.run(scope, async () => ({
+        issuedAfterCursor,
+        response: await (currentReaction?.reactedByPunk
           ? scope.session.removeReaction({
               conversationId,
               messageId: message.id,
@@ -395,11 +415,11 @@ export function PunksConversation({
               conversationId,
               messageId: message.id,
               reaction: canonicalReaction,
-            }),
-      );
+            })),
+      }));
     },
     retry: false,
-    onSuccess: (response, { message, reaction }) => {
+    onSuccess: ({ issuedAfterCursor, response }, { message, reaction }) => {
       if (!manager.isCurrent(scope)) return;
       const canonicalReaction = canonicalPunksReaction(reaction);
       notifyManager.batch(() => {
@@ -415,6 +435,7 @@ export function PunksConversation({
             message.id,
             canonicalReaction,
             response,
+            issuedAfterCursor,
           );
           if (reduction.kind === "applied" || reduction.kind === "ignored") {
             queryClient.setQueryData(key, reduction.state);
@@ -608,7 +629,7 @@ export function PunksConversation({
           onSubmit={(event) => {
             event.preventDefault();
             if (
-              canMutate &&
+              canCompose &&
               topicValid &&
               content.trim() &&
               !messageMutation.isPending
@@ -630,7 +651,7 @@ export function PunksConversation({
               <input
                 className="w-full rounded-md border border-border bg-background p-2 text-sm outline-none focus:ring-2 focus:ring-primary"
                 data-testid="punks-message-topic"
-                disabled={!canMutate}
+                disabled={!canCompose}
                 id="punks-message-topic"
                 onChange={(event) => setTopic(event.target.value)}
                 placeholder="Add a subject"
@@ -644,7 +665,7 @@ export function PunksConversation({
           <textarea
             className="min-h-20 w-full resize-y rounded-md border border-border bg-background p-2 text-message outline-none focus:ring-2 focus:ring-primary"
             data-testid="punks-message-composer"
-            disabled={!canMutate}
+            disabled={!canCompose}
             id="punks-message-composer"
             onChange={(event) => setContent(event.target.value)}
             placeholder={
@@ -657,7 +678,7 @@ export function PunksConversation({
             <button
               className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-50"
               disabled={
-                !canMutate ||
+                !canCompose ||
                 !topicValid ||
                 !content.trim() ||
                 messageMutation.isPending

@@ -332,12 +332,27 @@ test("a mutation acknowledgement updates the view without moving FOLLOW's cursor
   const initial = createConversationCache(page([], 4));
   const acknowledged = applyConversationMessage(initial, message(replyId, 5));
 
-  assert.equal(acknowledged.history.highWaterCursor, 5);
-  assert.equal(acknowledged.appliedCursor, 4);
+  assert.equal(acknowledged.kind, "applied");
+  if (acknowledged.kind !== "applied") return;
+  assert.equal(acknowledged.state.history.highWaterCursor, 5);
+  assert.equal(acknowledged.state.appliedCursor, 4);
   assert.deepEqual(
-    acknowledged.history.items.map((item) => item.id),
+    acknowledged.state.history.items.map((item) => item.id),
     [replyId],
   );
+});
+
+test("a divergent Message acknowledgement cannot rewrite FOLLOW authority at equal coordinates", () => {
+  const initial = createConversationCache(page([message(rootId, 4)], 4));
+  const acknowledged = applyConversationMessage(
+    initial,
+    message(rootId, 4, { content: "divergent acknowledgement" }),
+  );
+
+  assert.deepEqual(acknowledged, {
+    kind: "resync-required",
+    reason: "cursor_divergence",
+  });
 });
 
 test("reaction acknowledgements update only the Punk overlay and converge with FOLLOW", () => {
@@ -363,22 +378,28 @@ test("reaction acknowledgements update only the Punk overlay and converge with F
 
   assert.equal(followed.kind, "applied");
   if (followed.kind !== "applied") return;
-  const added = applyConversationReaction(followed.state, rootId, "👍", {
-    reaction: {
-      id: "66666666-6666-4666-8666-666666666666",
-      workspaceId,
-      conversationId,
-      messageId: rootId,
-      actor: {
-        kind: "punk",
-        punkId: "11111111-1111-4111-8111-111111111111",
+  const added = applyConversationReaction(
+    followed.state,
+    rootId,
+    "👍",
+    {
+      reaction: {
+        id: "66666666-6666-4666-8666-666666666666",
+        workspaceId,
+        conversationId,
+        messageId: rootId,
+        actor: {
+          kind: "punk",
+          punkId: "11111111-1111-4111-8111-111111111111",
+        },
+        reaction: "👍",
+        reactedAt: "2026-08-23T10:01:00.000Z",
       },
-      reaction: "👍",
-      reactedAt: "2026-08-23T10:01:00.000Z",
+      effect: "added",
+      replayed: false,
     },
-    effect: "added",
-    replayed: false,
-  });
+    6,
+  );
   assert.equal(added.kind, "applied");
   if (added.kind !== "applied") return;
   assert.deepEqual(reactionFor(added.state, rootId, "👍"), {
@@ -388,11 +409,17 @@ test("reaction acknowledgements update only the Punk overlay and converge with F
   });
   assert.equal(added.state.appliedCursor, 6);
 
-  const removed = applyConversationReaction(added.state, rootId, "👍", {
-    reaction: null,
-    effect: "removed",
-    replayed: false,
-  });
+  const removed = applyConversationReaction(
+    added.state,
+    rootId,
+    "👍",
+    {
+      reaction: null,
+      effect: "removed",
+      replayed: false,
+    },
+    6,
+  );
   assert.equal(removed.kind, "applied");
   if (removed.kind !== "applied") return;
   assert.equal(reactionFor(removed.state, rootId, "👍")?.reactedByPunk, false);
@@ -421,6 +448,61 @@ test("reaction acknowledgements update only the Punk overlay and converge with F
     count: 2,
     reactedByPunk: true,
     cursor: 7,
+  });
+});
+
+test("a delayed Reaction acknowledgement cannot overwrite a newer FOLLOW patch", () => {
+  const initial = createConversationCache(page([message(rootId, 4)], 4));
+  const followed = applyConversationBatch(initial, {
+    schemaVersion: 1,
+    type: "changes",
+    fromExclusiveCursor: 4,
+    throughCursor: 5,
+    messages: [],
+    threadPatches: [],
+    reactionPatches: [
+      {
+        messageId: rootId,
+        reaction: "👍",
+        count: 0,
+        reactedByPunk: false,
+        cursor: 5,
+      },
+    ],
+    reactionCollectionPatches: [],
+  });
+  assert.equal(followed.kind, "applied");
+  if (followed.kind !== "applied") return;
+
+  const delayed = applyConversationReaction(
+    followed.state,
+    rootId,
+    "👍",
+    {
+      reaction: {
+        id: "66666666-6666-4666-8666-666666666666",
+        workspaceId,
+        conversationId,
+        messageId: rootId,
+        actor: {
+          kind: "punk",
+          punkId: "11111111-1111-4111-8111-111111111111",
+        },
+        reaction: "👍",
+        reactedAt: "2026-08-23T10:01:00.000Z",
+      },
+      effect: "added",
+      replayed: false,
+    },
+    4,
+  );
+
+  assert.equal(delayed.kind, "ignored");
+  if (delayed.kind !== "ignored") return;
+  assert.deepEqual(reactionFor(delayed.state, rootId, "👍"), {
+    count: 0,
+    reactedByPunk: false,
+    cursor: 5,
   });
 });
 
@@ -460,5 +542,7 @@ test("reaction visibility and Message tombstones mask stale reaction patches", (
     hidden.state,
     message(rootId, 7, { status: "retracted", content: null }),
   );
-  assert.equal(reactionFor(retracted, rootId, "👍"), null);
+  assert.equal(retracted.kind, "applied");
+  if (retracted.kind !== "applied") return;
+  assert.equal(reactionFor(retracted.state, rootId, "👍"), null);
 });
