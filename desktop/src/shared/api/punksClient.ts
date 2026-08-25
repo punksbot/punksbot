@@ -25,6 +25,13 @@ import type {
   IdentityLinkProvider,
 } from "./punksAuthentication";
 import { PunksDesktopFailure } from "./punksFailure";
+import type {
+  EditMessageInput,
+  PostTextInput,
+  ReactionInput,
+  RestoreMessageInput,
+  RetractMessageInput,
+} from "./punksMessageMutationTypes";
 import { canonicalPunksReaction } from "./punksReaction";
 import {
   resolveWorkspaceIdentity,
@@ -41,6 +48,7 @@ export type {
   IdentityLinkProvider,
 } from "./punksAuthentication";
 export type { WorkspaceIdentity } from "./punksWorkspaceIdentity";
+export type * from "./punksMessageMutationTypes";
 
 export type WorkspaceLease = {
   origin: string;
@@ -57,44 +65,6 @@ export type MessagePageInput = {
 
 export type ThreadPageInput = MessagePageInput & {
   threadRootMessageId: string;
-};
-
-export type MessageReplyTarget = {
-  messageId: string;
-  threadRootMessageId: string;
-  threadDepth: number;
-};
-
-export type PostTextInput = {
-  conversationId: string;
-  content: string;
-  topic?: string | null;
-  replyTarget?: MessageReplyTarget;
-};
-
-export type EditMessageInput = {
-  conversationId: string;
-  messageId: string;
-  content: string;
-  topic?: string | null;
-};
-
-export type RetractMessageInput = {
-  conversationId: string;
-  messageId: string;
-  reasonCode?: string | null;
-  publicReason?: string | null;
-};
-
-export type RestoreMessageInput = {
-  conversationId: string;
-  messageId: string;
-};
-
-export type ReactionInput = {
-  conversationId: string;
-  messageId: string;
-  reaction: string;
 };
 
 export type PunksNavigationTarget = {

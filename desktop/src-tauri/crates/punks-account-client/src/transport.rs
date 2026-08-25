@@ -36,6 +36,13 @@ pub(crate) enum RequestSafety {
     Mutation,
 }
 
+#[derive(Clone, Copy)]
+enum RequestFailurePhase {
+    Build,
+    Connect,
+    AfterConnect,
+}
+
 pub(crate) struct HttpTransport {
     pub(crate) client: Client,
     pub(crate) jar: Arc<Jar>,
@@ -101,8 +108,14 @@ impl Transport {
                     request = request.header("idempotency-key", idempotency_key);
                 }
                 let response = request.send().await.map_err(|error| {
-                    let kind =
-                        classify_request_failure(safety, error.is_builder(), error.is_connect());
+                    let phase = if error.is_builder() {
+                        RequestFailurePhase::Build
+                    } else if error.is_connect() {
+                        RequestFailurePhase::Connect
+                    } else {
+                        RequestFailurePhase::AfterConnect
+                    };
+                    let kind = classify_request_failure(safety, phase);
                     ClientFailure::new(kind, "Punks request did not produce a response")
                 })?;
                 let status = response.status();
@@ -126,12 +139,8 @@ impl Transport {
     }
 }
 
-fn classify_request_failure(
-    safety: RequestSafety,
-    builder_failure: bool,
-    connection_failure: bool,
-) -> FailureKind {
-    if builder_failure {
+fn classify_request_failure(safety: RequestSafety, phase: RequestFailurePhase) -> FailureKind {
+    if matches!(phase, RequestFailurePhase::Build) {
         return FailureKind::ContractViolation;
     }
     classify_observed_interruption(
@@ -140,7 +149,7 @@ fn classify_request_failure(
         } else {
             "read"
         },
-        !connection_failure,
+        matches!(phase, RequestFailurePhase::AfterConnect),
         false,
         false,
     )
@@ -183,13 +192,13 @@ pub(crate) fn decode<T: DeserializeOwned>(
 
 #[cfg(test)]
 mod tests {
-    use super::{classify_request_failure, RequestSafety};
+    use super::{classify_request_failure, RequestFailurePhase, RequestSafety};
     use crate::FailureKind;
 
     #[test]
     fn mutation_connection_failure_is_transport_before_emission() {
         assert_eq!(
-            classify_request_failure(RequestSafety::Mutation, false, true),
+            classify_request_failure(RequestSafety::Mutation, RequestFailurePhase::Connect),
             FailureKind::Transport,
         );
     }
@@ -197,7 +206,7 @@ mod tests {
     #[test]
     fn mutation_failure_after_connection_is_ambiguous() {
         assert_eq!(
-            classify_request_failure(RequestSafety::Mutation, false, false),
+            classify_request_failure(RequestSafety::Mutation, RequestFailurePhase::AfterConnect),
             FailureKind::Ambiguous,
         );
     }
