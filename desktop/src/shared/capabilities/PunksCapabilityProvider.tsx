@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from "react";
 
-import type { PunksAccountClient } from "@/shared/api/punksClient";
+import type { PunksCompatibilityClient } from "@/shared/api/punksCompatibilityClient";
 import {
   hasCompletePunksCapabilitySet,
   intersectPunksCapabilities,
@@ -47,7 +47,7 @@ export function PunksCapabilityProvider({
   client,
   children,
 }: {
-  client: Pick<PunksAccountClient, "checkCompatibility">;
+  client: PunksCompatibilityClient;
   children: ReactNode;
 }) {
   const [availability, setAvailability] =

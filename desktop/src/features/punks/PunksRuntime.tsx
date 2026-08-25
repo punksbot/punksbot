@@ -11,6 +11,7 @@ import {
 } from "react";
 
 import {
+  createTauriPunksAccountClient,
   PunksDesktopFailure,
   type PunksAccountClient,
 } from "@/shared/api/punksClient";
@@ -629,6 +630,20 @@ export function PunksRuntime({
     >
       <PunksAccountGate client={client} />
     </PunksAccountProvider>
+  );
+}
+
+/** Lazily loaded Account/Workspace client for the resolved product profile. */
+export function TauriPunksRuntime({
+  compatibility,
+  route,
+}: {
+  compatibility: DesktopCompatibilityResponse;
+  route: PunksRoute;
+}) {
+  const [client] = useState(createTauriPunksAccountClient);
+  return (
+    <PunksRuntime client={client} compatibility={compatibility} route={route} />
   );
 }
 

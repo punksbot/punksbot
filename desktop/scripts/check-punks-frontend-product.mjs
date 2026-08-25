@@ -30,8 +30,20 @@ const FORBIDDEN_DIST_MARKERS = [
 const LAZY_CAPABILITY_CHUNKS = [
   {
     capability: "desktop-social-loop",
-    fileName: /^PunksRuntime-[A-Za-z0-9_-]+\.js$/u,
-    eagerMarkers: ["punks-workspace-shell"],
+    fileName: /^(?:PunksRuntime|punksTauriTransport)-[A-Za-z0-9_-]+\.js$/u,
+    eagerMarkers: [
+      "punks-workspace-shell",
+      "punks://contracts/auth.session@1",
+      "punks_get_session",
+      "punks_list_workspaces",
+      "punks_open_workspace",
+      "punks_get_timeline",
+      "punks_get_thread",
+      "punks_follow_conversation",
+      "punks_post_message",
+      "punks_add_reaction",
+      "punks_remove_reaction",
+    ],
   },
   {
     capability: "message-lifecycle",

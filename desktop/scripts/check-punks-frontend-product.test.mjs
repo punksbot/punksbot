@@ -394,6 +394,22 @@ test("dist mode accepts the isolated social runtime chunk", () => {
   }
 });
 
+test("dist mode accepts the isolated social contract transport chunk", () => {
+  const root = createSourceFixture();
+  createValidDist(root);
+  write(
+    root,
+    "dist/assets/punksTauriTransport-a1.js",
+    `export const contract = "punks://contracts/auth.session@1";\n`,
+  );
+  try {
+    const result = runChecker(root, "--dist");
+    assert.equal(result.status, 0, result.stderr);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 for (const [extension, contents] of [
   ["js", `export const extra = true;\n`],
   ["css", `.extra { display: block; }\n`],

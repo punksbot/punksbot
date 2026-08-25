@@ -5,6 +5,9 @@ const ORIGIN = "http://127.0.0.1:4174";
 const WORKSPACE_ID = "11111111-1111-4111-8111-111111111111";
 const PUNK_ID = "22222222-2222-4222-8222-222222222222";
 const SESSION_ID = "33333333-3333-4333-8333-333333333333";
+const ALL_CAPABILITY_CHUNKS =
+  /PunksRuntime|punksTauriTransport|MessageLifecycleControls|punksMessageLifecycleTauri/u;
+const LIFECYCLE_CHUNKS = /MessageLifecycleControls|punksMessageLifecycleTauri/u;
 
 const T1_CAPABILITIES = DESKTOP_SOCIAL_LOOP_CAPABILITIES;
 
@@ -147,7 +150,7 @@ test("une route directe indisponible s'arrête avant toute commande", async ({
     ),
   ).toEqual([]);
   expect((await loadedResources(page)).join("\n")).not.toMatch(
-    /MessageLifecycleControls|punksMessageLifecycleTauri/u,
+    ALL_CAPABILITY_CHUNKS,
   );
 });
 
@@ -188,7 +191,7 @@ test("la découverte et le clavier n'exposent aucune capacité ultérieure", asy
   await expect(page.getByTestId("punks-workspace-shell")).toBeVisible();
   expect(await invokedCommands(page)).toEqual(before);
   expect((await loadedResources(page)).join("\n")).not.toMatch(
-    /MessageLifecycleControls|punksMessageLifecycleTauri/u,
+    LIFECYCLE_CHUNKS,
   );
 });
 
@@ -225,7 +228,9 @@ test("une réponse compatible mais incomplète échoue fermée", async ({
   await expect(page.getByTestId("unavailable-terminal")).toBeVisible();
   await expect(page.getByTestId("punks-workspace-shell")).toHaveCount(0);
   expect(await invokedCommands(page)).toEqual(["punks_check_compatibility"]);
-  expect((await loadedResources(page)).join("\n")).not.toMatch(/PunksRuntime/u);
+  expect((await loadedResources(page)).join("\n")).not.toMatch(
+    ALL_CAPABILITY_CHUNKS,
+  );
 });
 
 test("une incompatibilité bloque avant tout montage de Workspace", async ({
@@ -244,7 +249,9 @@ test("une incompatibilité bloque avant tout montage de Workspace", async ({
   );
   await expect(page.getByTestId("punks-workspace-shell")).toHaveCount(0);
   expect(await invokedCommands(page)).toEqual(["punks_check_compatibility"]);
-  expect((await loadedResources(page)).join("\n")).not.toMatch(/PunksRuntime/u);
+  expect((await loadedResources(page)).join("\n")).not.toMatch(
+    ALL_CAPABILITY_CHUNKS,
+  );
 });
 
 test("une panne de compatibilité reste un état runtime récupérable", async ({
@@ -262,6 +269,9 @@ test("une panne de compatibilité reste un état runtime récupérable", async (
   await expect(page.getByTestId("client-incompatible-gate")).toHaveCount(0);
   await expect(page.getByTestId("punks-workspace-shell")).toHaveCount(0);
   expect(await invokedCommands(page)).toEqual(["punks_check_compatibility"]);
+  expect((await loadedResources(page)).join("\n")).not.toMatch(
+    ALL_CAPABILITY_CHUNKS,
+  );
 
   await error.getByRole("button", { name: "Try again" }).click();
   await expect(page.getByTestId("punks-workspace-shell")).toBeVisible();

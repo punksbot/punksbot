@@ -1,4 +1,4 @@
-import { createTauriPunksAccountClient } from "@/shared/api/punksClient";
+import { createTauriPunksCompatibilityClient } from "@/shared/api/punksCompatibilityClient";
 import {
   PunksCapabilityProvider,
   PunksUnavailableScreen,
@@ -12,7 +12,7 @@ import { parsePunksPath, type PunksRoute } from "./routes";
 
 const LazyPunksRuntime = lazy(() =>
   import("./PunksRuntime").then((module) => ({
-    default: module.PunksRuntime,
+    default: module.TauriPunksRuntime,
   })),
 );
 
@@ -79,13 +79,7 @@ function PunksCapabilityError({ onRetry }: { onRetry(): void }) {
   );
 }
 
-function PunksProduct({
-  client,
-  route,
-}: {
-  client: ReturnType<typeof createTauriPunksAccountClient>;
-  route: PunksRoute;
-}) {
+function PunksProduct({ route }: { route: PunksRoute }) {
   const availability = usePunksCapabilityAvailability();
   const completeCapabilitySet = useCompletePunksCapabilitySet();
 
@@ -102,7 +96,6 @@ function PunksProduct({
   return (
     <Suspense fallback={<PunksCapabilityLoading />}>
       <LazyPunksRuntime
-        client={client}
         compatibility={availability.compatibility}
         route={route}
       />
@@ -111,10 +104,10 @@ function PunksProduct({
 }
 
 function PunksAvailableRoute({ route }: { route: PunksRoute }) {
-  const [client] = useState(createTauriPunksAccountClient);
+  const [client] = useState(createTauriPunksCompatibilityClient);
   return (
     <PunksCapabilityProvider client={client}>
-      <PunksProduct client={client} route={route} />
+      <PunksProduct route={route} />
     </PunksCapabilityProvider>
   );
 }
