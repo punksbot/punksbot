@@ -555,6 +555,7 @@ async fn flush_revocations(
     Ok(queued)
 }
 
+/// Returns the sanitized Account Session and recoverable ceremony state.
 #[tauri::command]
 pub async fn punks_get_account_session_state(
     client: tauri::State<'_, PunksDesktopClient>,
@@ -647,6 +648,7 @@ async fn account_state_from_store(
     })
 }
 
+/// Starts an explicit sign-in in the system browser.
 #[tauri::command]
 pub async fn punks_start_sign_in(
     app: tauri::AppHandle,
@@ -666,6 +668,7 @@ pub async fn punks_start_sign_in(
     .await
 }
 
+/// Starts an explicit Account switch in the system browser.
 #[tauri::command]
 pub async fn punks_start_account_switch(
     app: tauri::AppHandle,
@@ -685,6 +688,7 @@ pub async fn punks_start_account_switch(
     .await
 }
 
+/// Starts a targeted reauthentication for one sensitive purpose.
 #[tauri::command]
 pub async fn punks_start_reauthentication(
     app: tauri::AppHandle,
@@ -716,6 +720,7 @@ pub async fn punks_start_reauthentication(
     .await
 }
 
+/// Starts an identity-link ceremony after targeted reauthentication.
 #[tauri::command]
 pub async fn punks_start_identity_link(
     app: tauri::AppHandle,
@@ -746,6 +751,7 @@ pub async fn punks_start_identity_link(
     .await
 }
 
+/// Starts passkey registration after targeted reauthentication.
 #[tauri::command]
 pub async fn punks_start_passkey_registration(
     app: tauri::AppHandle,
@@ -765,6 +771,7 @@ pub async fn punks_start_passkey_registration(
     .await
 }
 
+/// Resumes a persisted authentication or Session rotation explicitly.
 #[tauri::command]
 pub async fn punks_resume_interrupted_authentication(
     client: tauri::State<'_, PunksDesktopClient>,
@@ -777,6 +784,7 @@ pub async fn punks_resume_interrupted_authentication(
     complete_pending_authentication(&client, &store).await
 }
 
+/// Cancels the current ceremony and revokes any prepared Session.
 #[tauri::command]
 pub async fn punks_cancel_authentication(
     client: tauri::State<'_, PunksDesktopClient>,
@@ -820,6 +828,7 @@ pub async fn punks_cancel_authentication(
     Ok(CeremonyPhaseView::Cancelled)
 }
 
+/// Renews an eligible Account Session through confirmed rotation.
 #[tauri::command]
 pub async fn punks_renew_account_session(
     client: tauri::State<'_, PunksDesktopClient>,
@@ -892,6 +901,7 @@ pub async fn punks_renew_account_session(
     finish_pending_renewal(&client, &store, renewal).await
 }
 
+/// Signs out locally before attempting queued remote revocation.
 #[tauri::command]
 pub async fn punks_sign_out(
     client: tauri::State<'_, PunksDesktopClient>,

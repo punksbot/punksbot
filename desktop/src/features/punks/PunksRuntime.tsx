@@ -486,22 +486,32 @@ function PunksAccountProvider({
   );
 
   const logout = useCallback(async () => {
-    await scopeManager.invalidate();
     try {
+      await scopeManager.invalidate();
       await client.signOut();
-    } finally {
+    } catch (error) {
       setState((current) => ({
         ...current,
-        status: "signed_out",
-        accountSessionState: {
-          state: "signed_out",
-          authentication: { phase: "idle" },
-          resumeAvailable: false,
-        },
+        status: "error",
+        accountSessionState: null,
         session: null,
         workspaces: [],
+        error,
       }));
+      return;
     }
+    setState((current) => ({
+      ...current,
+      status: "signed_out",
+      accountSessionState: {
+        state: "signed_out",
+        authentication: { phase: "idle" },
+        resumeAvailable: false,
+      },
+      session: null,
+      workspaces: [],
+      error: null,
+    }));
   }, [client, scopeManager]);
 
   const navigate = useCallback(

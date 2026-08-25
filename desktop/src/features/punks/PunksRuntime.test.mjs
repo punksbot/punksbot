@@ -172,3 +172,69 @@ test("Account renewal is requested only on a visible foreground return", async (
   dom.window.document.dispatchEvent(new dom.window.Event("visibilitychange"));
   await waitFor(() => assert.equal(renewCalls, 1));
 });
+
+test("a failed secure-store sign-out stays blocked instead of claiming signed out", async () => {
+  let signOutCalls = 0;
+  const punkId = "22222222-2222-4222-8222-222222222222";
+  const workspaceId = "33333333-3333-4333-8333-333333333333";
+  const client = {
+    async getAccountSessionState() {
+      return {
+        state: "authenticated",
+        authentication: { phase: "idle" },
+        resumeAvailable: false,
+        session: {
+          sessionId: "11111111-1111-4111-8111-111111111111",
+          punkId,
+          authenticatedAt: "2026-08-25T10:00:00.000Z",
+          expiresAt: "2026-09-25T10:00:00.000Z",
+          recentReauthUntil: null,
+          punk: { id: punkId, displayName: "Locked Punk", avatarUrl: null },
+        },
+      };
+    },
+    async listWorkspaces() {
+      return [
+        {
+          id: workspaceId,
+          slug: "locked",
+          name: "Locked Workspace",
+          visibility: "private",
+          role: "owner",
+          revision: 1,
+        },
+      ];
+    },
+    async openWorkspace() {
+      return {
+        lease: {
+          origin: compatibility.origin,
+          punkId,
+          workspaceId,
+          generation: 1,
+        },
+        async listStreams() {
+          return [];
+        },
+        async close() {},
+      };
+    },
+    async signOut() {
+      signOutCalls += 1;
+      throw new Error("secure Account storage is unavailable");
+    },
+  };
+  render(
+    createElement(PunksRuntime, {
+      client,
+      compatibility,
+      route: { kind: "home" },
+    }),
+  );
+
+  fireEvent.click(await screen.findByTestId("punks-sign-out"));
+  await screen.findByTestId("punks-compatibility-gate");
+  assert.equal(signOutCalls, 1);
+  assert.equal(screen.queryByTestId("punks-workspace-shell"), null);
+  assert.equal(screen.queryByRole("button", { name: "Passkey" }), null);
+});

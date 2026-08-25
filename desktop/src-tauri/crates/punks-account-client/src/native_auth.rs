@@ -71,8 +71,11 @@ impl CompiledPunksEnvironment {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AuthenticationMethod {
+    /// Authentification Google OAuth dans le navigateur système.
     Google,
+    /// Authentification GitHub OAuth dans le navigateur système.
     Github,
+    /// Authentification ou enregistrement WebAuthn dans le navigateur système.
     Passkey,
 }
 
@@ -104,11 +107,17 @@ impl TryFrom<&str> for AuthenticationMethod {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PendingAuthIntent {
+    /// Ouvre une première Session de Compte Punks.
     SignIn,
+    /// Remplace explicitement la Session d'un Compte Punks connecté.
     SwitchAccount,
+    /// Prouve à nouveau un Moyen déjà lié pour une opération sensible.
     Reauthenticate,
+    /// Lie une identité Google après réauthentification ciblée.
     LinkGoogle,
+    /// Lie une identité GitHub après réauthentification ciblée.
     LinkGithub,
+    /// Enregistre une passkey après réauthentification ciblée.
     RegisterPasskey,
 }
 
@@ -130,12 +139,19 @@ impl PendingAuthIntent {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PendingAuthPhase {
+    /// Le flow existe et attend le parcours navigateur.
     Started,
+    /// Le navigateur a produit un résultat qui exige encore une décision.
     BrowserComplete,
+    /// Le résultat est prêt à être réclamé par le client natif.
     Ready,
+    /// La livraison native est préparée et attend sa confirmation.
     Delivering,
+    /// La livraison et ses effets sont confirmés côté serveur.
     Confirmed,
+    /// Le Punk ou une nouvelle cérémonie a annulé le flow.
     Cancelled,
+    /// Le flow a dépassé sa borne temporelle.
     Expired,
 }
 
