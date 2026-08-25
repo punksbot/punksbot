@@ -14,6 +14,48 @@
       "kind": "state"
     },
     {
+      "id": "punks://contracts/punk.get@1",
+      "file": "schemas/punk.get.schema.json",
+      "kind": "query",
+      "generationTargets": ["typescript", "rust", "dart", "openapi"]
+    },
+    {
+      "id": "punks://contracts/punk.update@1",
+      "file": "schemas/punk.update.schema.json",
+      "kind": "command",
+      "generationTargets": ["typescript", "rust", "dart", "openapi"]
+    },
+    {
+      "id": "punks://contracts/punk.summary@1",
+      "file": "schemas/punk.summary.schema.json",
+      "kind": "response",
+      "generationTargets": ["typescript", "rust", "dart", "openapi"]
+    },
+    {
+      "id": "punks://contracts/punk.summary-batch@1",
+      "file": "schemas/punk.summary-batch.schema.json",
+      "kind": "query",
+      "generationTargets": ["typescript", "rust", "dart", "openapi"]
+    },
+    {
+      "id": "punks://contracts/punk.summary-batch-response@1",
+      "file": "schemas/punk.summary-batch-response.schema.json",
+      "kind": "response",
+      "generationTargets": ["typescript", "rust", "dart", "openapi"]
+    },
+    {
+      "id": "punks://contracts/punk.search@1",
+      "file": "schemas/punk.search.schema.json",
+      "kind": "query",
+      "generationTargets": ["typescript", "rust", "dart", "openapi"]
+    },
+    {
+      "id": "punks://contracts/punk.search-response@1",
+      "file": "schemas/punk.search-response.schema.json",
+      "kind": "response",
+      "generationTargets": ["typescript", "rust", "dart", "openapi"]
+    },
+    {
       "id": "punks://contracts/bot@1",
       "file": "schemas/bot.schema.json",
       "kind": "state"
@@ -333,6 +375,60 @@
       "id": "punks://contracts/workspace.member-remove@1",
       "file": "schemas/workspace.member-remove.schema.json",
       "kind": "command"
+    },
+    {
+      "id": "punks://contracts/workspace.membership-mutation-response@1",
+      "file": "schemas/workspace.membership-mutation-response.schema.json",
+      "kind": "response",
+      "generationTargets": ["typescript", "rust", "dart", "openapi"]
+    },
+    {
+      "id": "punks://contracts/workspace.invitation@1",
+      "file": "schemas/workspace.invitation.schema.json",
+      "kind": "state",
+      "generationTargets": ["typescript", "rust", "dart", "openapi"]
+    },
+    {
+      "id": "punks://contracts/workspace.invite@1",
+      "file": "schemas/workspace.invite.schema.json",
+      "kind": "command",
+      "generationTargets": ["typescript", "rust", "dart", "openapi"]
+    },
+    {
+      "id": "punks://contracts/workspace.invite-get@1",
+      "file": "schemas/workspace.invite-get.schema.json",
+      "kind": "query",
+      "generationTargets": ["typescript", "rust", "dart", "openapi"]
+    },
+    {
+      "id": "punks://contracts/workspace.invite-response@1",
+      "file": "schemas/workspace.invite-response.schema.json",
+      "kind": "response",
+      "generationTargets": ["typescript", "rust", "dart", "openapi"]
+    },
+    {
+      "id": "punks://contracts/workspace.invite-revoke@1",
+      "file": "schemas/workspace.invite-revoke.schema.json",
+      "kind": "command",
+      "generationTargets": ["typescript", "rust", "dart", "openapi"]
+    },
+    {
+      "id": "punks://contracts/workspace.invite-revoke-response@1",
+      "file": "schemas/workspace.invite-revoke-response.schema.json",
+      "kind": "response",
+      "generationTargets": ["typescript", "rust", "dart", "openapi"]
+    },
+    {
+      "id": "punks://contracts/workspace.invite-claim@1",
+      "file": "schemas/workspace.invite-claim.schema.json",
+      "kind": "command",
+      "generationTargets": ["typescript", "rust", "dart", "openapi"]
+    },
+    {
+      "id": "punks://contracts/workspace.invite-claim-response@1",
+      "file": "schemas/workspace.invite-claim-response.schema.json",
+      "kind": "response",
+      "generationTargets": ["typescript", "rust", "dart", "openapi"]
     },
     {
       "id": "punks://contracts/workspace.get@1",

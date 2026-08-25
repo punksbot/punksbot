@@ -34,12 +34,14 @@ mod follow;
 mod follow_connection;
 mod message_mutations;
 mod native_auth;
+mod profiles;
 mod promotion_audit;
 mod semantic_trace;
 mod session;
 mod social_validation;
 mod transport;
 mod validation;
+mod workspace_governance;
 
 pub use authors::{AuthorReference, AuthorSummary};
 pub use failure::{ClientFailure, FailureKind};
@@ -49,6 +51,7 @@ pub use follow::{
 };
 pub use follow_connection::{FollowCancellation, FollowConnection, FollowDelivery};
 pub use message_mutations::MessageReplyTarget;
+pub use profiles::{PunkProfile, PunkPublicSummary, PunkSearchInput, PunkSearchPage};
 pub use semantic_trace::{
     normalize_semantic_trace, run_semantic_scenario, SemanticEvent, SemanticObservation,
     SemanticTrace,
@@ -57,6 +60,11 @@ pub use semantic_trace::{
 use transport::TestHandler;
 use transport::{decode, HttpTransport, RequestSafety, Transport};
 pub use validation::{validate_navigation_url, PunksNavigationTarget};
+pub use workspace_governance::{
+    ClaimWorkspaceInvitationResult, CreateWorkspaceInvitationResult,
+    RevokeWorkspaceInvitationResult, WorkspaceGovernanceView, WorkspaceInvitationRole,
+    WorkspaceInvitationView, WorkspaceMembershipMutationResult, WorkspaceRole,
+};
 
 /// Build distribution used by the Compatibility handshake.
 #[derive(Debug, Clone, Copy, Serialize)]

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/workspace.invite-revoke-response@1",
+  "title": "RevokeWorkspaceInvitationResponse",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "invitation", "replayed"],
+  "properties": {
+    "contract": { "const": "workspace.invite-revoke-response@1" },
+    "invitation": { "$ref": "schemas/workspace.invitation.schema.json" },
+    "replayed": { "type": "boolean" }
+  }
+}

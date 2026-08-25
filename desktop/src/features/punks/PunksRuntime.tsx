@@ -1,6 +1,8 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import {
   createContext,
+  lazy,
+  Suspense,
   useCallback,
   useContext,
   useEffect,
@@ -22,7 +24,10 @@ import type {
   DesktopCompatibilityResponse,
   WorkspaceSummary,
 } from "@punks/contracts";
-import { PunksUnavailableScreen } from "@/shared/capabilities/PunksCapabilityProvider";
+import {
+  PunksUnavailableScreen,
+  usePunksCapabilityAvailable,
+} from "@/shared/capabilities/PunksCapabilityProvider";
 
 import {
   canonicalPunksPath,
@@ -43,6 +48,12 @@ import { PunksAccountSwitching } from "./PunksAccountSwitching";
 import { PunksRuntimeError } from "./PunksRuntimeError";
 import { PunksShell } from "./PunksShell";
 import { PunksSignedOut } from "./PunksSignedOut";
+
+const LazyInvitationClaimGate = lazy(() =>
+  import("./IdentityGovernanceControls").then((module) => ({
+    default: module.InvitationClaimGate,
+  })),
+);
 
 export type PunksBootstrapStatus =
   | "loading"
@@ -139,12 +150,23 @@ function PunksCompatibilityGate({
 }
 
 function PunksNoWorkspace() {
+  const governanceAvailable = usePunksCapabilityAvailable(
+    "identity-governance",
+  );
   return (
     <div
       className="flex min-h-dvh items-center justify-center bg-app text-muted-foreground"
       data-testid="punks-no-workspace"
     >
-      <p className="text-sm">No Workspace is available for this Account.</p>
+      {governanceAvailable ? (
+        <Suspense
+          fallback={<p className="text-sm">Loading invitation tools…</p>}
+        >
+          <LazyInvitationClaimGate />
+        </Suspense>
+      ) : (
+        <p className="text-sm">No Workspace is available for this Account.</p>
+      )}
     </div>
   );
 }

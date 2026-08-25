@@ -5,38 +5,26 @@ import {
   type FollowState,
 } from "@punks/client/follow-reducer";
 import type {
-  AuthSession,
   ConversationFollowServerFrame,
-  ConversationSummary,
-  ConversationView,
-  DesktopCompatibilityResponse,
-  MessageHistoryResponse,
   MessageReactionMutationResponse,
   MessageView,
-  ResolveAuthorsQuery,
-  ResolveAuthorsResponse,
-  WorkspaceSummary,
+  Punk,
+  PunkPublicSummary,
 } from "@punks/contracts";
 import { TauriPunksAccountClient } from "./punksTauriClient";
+import { createFakeGovernanceAuthority } from "./punksFakeGovernance";
 import type {
   AccountSessionStateView,
-  AuthenticationMethod,
   CeremonyPhaseView,
-  IdentityLinkProvider,
 } from "./punksAuthentication";
 import { PunksDesktopFailure } from "./punksFailure";
 import type {
-  EditMessageInput,
-  PostTextInput,
-  ReactionInput,
-  RestoreMessageInput,
-  RetractMessageInput,
-} from "./punksMessageMutationTypes";
+  FakePunksClientSeed,
+  PunksAccountClient,
+  WorkspaceLease,
+} from "./punksClientTypes";
 import { canonicalPunksReaction } from "./punksReaction";
-import {
-  resolveWorkspaceIdentity,
-  type WorkspaceIdentity,
-} from "./punksWorkspaceIdentity";
+import { resolveWorkspaceIdentity } from "./punksWorkspaceIdentity";
 
 export { PunksDesktopFailure } from "./punksFailure";
 export type { PunksFailureKind } from "./punksFailure";
@@ -48,119 +36,12 @@ export type {
   IdentityLinkProvider,
 } from "./punksAuthentication";
 export type { WorkspaceIdentity } from "./punksWorkspaceIdentity";
-export type * from "./punksMessageMutationTypes";
-
-export type WorkspaceLease = {
-  origin: string;
-  punkId: string;
-  workspaceId: string;
-  generation: number;
-};
-
-export type MessagePageInput = {
-  conversationId: string;
-  limit?: number;
-  cursor?: string;
-};
-
-export type ThreadPageInput = MessagePageInput & {
-  threadRootMessageId: string;
-};
-
-export type PunksNavigationTarget = {
-  kind: "home" | "workspace" | "conversation" | "message";
-  path: string;
-};
-
-type ChangesFrame = Extract<ConversationFollowServerFrame, { type: "changes" }>;
-
-export type PunksFollowDelivery =
-  | { kind: "apply_batch"; frame: ChangesFrame }
-  | { kind: "became_live" }
-  | {
-      kind: "resync";
-      reason:
-        | "cursor_gap"
-        | "cursor_divergence"
-        | "protocol_violation"
-        | "history_required"
-        | "slow_consumer";
-      afterCursor: number;
-      highWaterCursor: number;
-    }
-  | { kind: "terminal"; reason: "archived"; cursor: number };
-
-export interface PunksFollow {
-  nextDelivery(): Promise<PunksFollowDelivery>;
-  confirmBatch(throughCursor: number): Promise<void>;
-  close(): Promise<void>;
-}
-
-export interface PunksWorkspaceSession {
-  readonly lease: WorkspaceLease;
-  close(): Promise<void>;
-  listStreams(): Promise<ConversationSummary[]>;
-  getStream(conversationId: string): Promise<ConversationView>;
-  getTimeline(input: MessagePageInput): Promise<MessageHistoryResponse>;
-  getThread(input: ThreadPageInput): Promise<MessageHistoryResponse>;
-  resolveAuthors(
-    authors: ResolveAuthorsQuery["authors"],
-  ): Promise<ResolveAuthorsResponse["authors"]>;
-  followConversation(
-    conversationId: string,
-    afterCursor: number,
-  ): Promise<PunksFollow>;
-  postMessage(input: PostTextInput): Promise<MessageView>;
-  editMessage(input: EditMessageInput): Promise<MessageView>;
-  retractMessage(input: RetractMessageInput): Promise<MessageView>;
-  restoreMessage(input: RestoreMessageInput): Promise<MessageView>;
-  addReaction(input: ReactionInput): Promise<MessageReactionMutationResponse>;
-  removeReaction(
-    input: ReactionInput,
-  ): Promise<MessageReactionMutationResponse>;
-}
-
-export interface PunksAccountClient {
-  checkCompatibility(): Promise<DesktopCompatibilityResponse>;
-  getAccountSessionState(): Promise<AccountSessionStateView>;
-  startSignIn(provider: AuthenticationMethod): Promise<CeremonyPhaseView>;
-  startAccountSwitch(
-    provider: AuthenticationMethod,
-  ): Promise<CeremonyPhaseView>;
-  startReauthentication(
-    method: AuthenticationMethod,
-    purpose: string,
-  ): Promise<CeremonyPhaseView>;
-  startIdentityLink(provider: IdentityLinkProvider): Promise<CeremonyPhaseView>;
-  startPasskeyRegistration(): Promise<CeremonyPhaseView>;
-  resumeInterruptedAuthentication(): Promise<CeremonyPhaseView>;
-  cancelAuthentication(): Promise<CeremonyPhaseView>;
-  renewAccountSession(): Promise<CeremonyPhaseView>;
-  signOut(): Promise<"revoked" | "queued">;
-  listWorkspaces(): Promise<WorkspaceSummary[]>;
-  resolveWorkspace(
-    identity: WorkspaceIdentity,
-  ): Promise<WorkspaceSummary | null>;
-  openWorkspace(workspaceId: string): Promise<PunksWorkspaceSession>;
-  /** Native envelope validation; test clients may omit this boundary. */
-  validateNavigation?(url: string): Promise<PunksNavigationTarget>;
-}
+export type * from "./punksClientTypes";
 
 /** Creates the packaged desktop implementation; raw Tauri invocation stays private. */
 export function createTauriPunksAccountClient(): PunksAccountClient {
   return new TauriPunksAccountClient();
 }
-
-export type FakePunksClientSeed = {
-  compatibility: DesktopCompatibilityResponse;
-  session: AuthSession;
-  accountSessionState?: AccountSessionStateView;
-  workspaces: WorkspaceSummary[];
-  streams: Record<string, ConversationSummary[]>;
-  messages: Record<string, MessageView[]>;
-  followFrames?: Record<string, ConversationFollowServerFrame[]>;
-};
-
 /** Deterministic adapter implementing the same semantic interface as Rust. */
 export function createFakePunksAccountClient(
   input: FakePunksClientSeed,
@@ -178,6 +59,38 @@ export function createFakePunksAccountClient(
   let compatible = false;
   let generation = 0;
   let activeLease: WorkspaceLease | null = null;
+  let profile: Punk = structuredClone(
+    seed.profile ?? {
+      id: seed.session.punkId,
+      status: "active",
+      displayName: seed.session.punk.displayName,
+      avatarUrl: seed.session.punk.avatarUrl,
+      identities: [
+        {
+          provider: "passkey",
+          subjectHash: "a".repeat(64),
+          emailHash: "b".repeat(64),
+          verifiedEmail: null,
+          username: null,
+          credentialId: "fake-punks-credential",
+          linkedAt: seed.session.authenticatedAt,
+        },
+      ],
+      mergedInto: null,
+      revision: 1,
+      createdAt: seed.session.authenticatedAt,
+      updatedAt: seed.session.authenticatedAt,
+    },
+  );
+  let punkSummaries: PunkPublicSummary[] = structuredClone(
+    seed.punkSummaries ?? [
+      {
+        punkId: profile.id,
+        displayName: profile.displayName,
+        avatarUrl: profile.avatarUrl,
+      },
+    ],
+  );
   const reactionViews = new Map<
     string,
     NonNullable<MessageReactionMutationResponse["reaction"]>
@@ -217,8 +130,14 @@ export function createFakePunksAccountClient(
       );
     }
   };
+  const governance = createFakeGovernanceAuthority(
+    seed,
+    assertCapability,
+    assertCurrent,
+  );
 
   const account: PunksAccountClient = {
+    ...governance.account,
     async checkCompatibility() {
       compatible = seed.compatibility.compatible;
       return structuredClone(seed.compatibility);
@@ -226,6 +145,59 @@ export function createFakePunksAccountClient(
     async getAccountSessionState() {
       assertCompatible();
       return structuredClone(accountSessionState);
+    },
+    async getPunkProfile() {
+      assertCompatible();
+      assertCapability("punk-profile");
+      return structuredClone(profile);
+    },
+    async updatePunkProfile(input) {
+      assertCompatible();
+      assertCapability("punk-profile");
+      if (input.expectedRevision !== profile.revision) {
+        throw new PunksDesktopFailure(
+          "problem",
+          "Punk profile revision changed",
+          { code: "revision_conflict" },
+        );
+      }
+      const displayName = input.displayName.trim().normalize("NFC");
+      if (displayName.length === 0) {
+        throw new PunksDesktopFailure(
+          "contract_violation",
+          "Punk display name is invalid",
+        );
+      }
+      profile = {
+        ...profile,
+        displayName,
+        avatarUrl: input.avatarUrl,
+        revision: profile.revision + 1,
+        updatedAt: new Date().toISOString(),
+      };
+      punkSummaries = punkSummaries.map((summary) =>
+        summary.punkId === profile.id
+          ? {
+              punkId: profile.id,
+              displayName: profile.displayName,
+              avatarUrl: profile.avatarUrl,
+            }
+          : summary,
+      );
+      if (accountSessionState.state === "authenticated") {
+        accountSessionState = {
+          ...accountSessionState,
+          session: {
+            ...accountSessionState.session,
+            punk: {
+              id: profile.id,
+              displayName: profile.displayName,
+              avatarUrl: profile.avatarUrl,
+            },
+          },
+        };
+      }
+      return structuredClone(profile);
     },
     async startSignIn(provider) {
       assertCompatible();
@@ -394,6 +366,7 @@ export function createFakePunksAccountClient(
       };
       return {
         lease,
+        ...governance.workspace(lease),
         async close() {
           assertCurrent(lease);
           activeLease = null;
@@ -496,6 +469,40 @@ export function createFakePunksAccountClient(
                 ]
               : [],
           );
+        },
+        async getPunkSummaries(punkIds) {
+          assertCapability("bounded-punk-summaries");
+          assertCurrent(lease);
+          const requested = new Set(punkIds);
+          return structuredClone(
+            punkSummaries.filter((summary) => requested.has(summary.punkId)),
+          );
+        },
+        async searchPunks(input) {
+          assertCapability("private-punk-search");
+          assertCurrent(lease);
+          const query = input.query;
+          const matches =
+            query.kind === "punk_id"
+              ? punkSummaries.filter(
+                  (summary) => summary.punkId === query.punkId,
+                )
+              : punkSummaries.filter((summary) =>
+                  summary.displayName
+                    .normalize("NFKC")
+                    .toLocaleLowerCase("en-US")
+                    .startsWith(
+                      query.value
+                        .trim()
+                        .normalize("NFKC")
+                        .toLocaleLowerCase("en-US"),
+                    ),
+                );
+          assertCurrent(lease);
+          return {
+            items: structuredClone(matches.slice(0, input.limit)),
+            nextCursor: null,
+          };
         },
         async followConversation(conversationId, afterCursor) {
           assertCurrent(lease);

@@ -283,6 +283,207 @@ class AuthSession {
   }
 }
 
+class GetPunkProfileQuery {
+  final String contract;
+
+  const GetPunkProfileQuery({
+    required this.contract,
+  });
+
+  factory GetPunkProfileQuery.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"contract"}, "GetPunkProfileQuery");
+    return GetPunkProfileQuery(
+      contract: _expectStringConst(_requiredKey(json, "contract", "GetPunkProfileQuery"), "punk.get@1", "GetPunkProfileQuery.contract"),
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "contract": contract,
+    };
+    return json;
+  }
+}
+
+enum PunkStatus {
+  active("active"),
+  merged("merged"),
+  deleting("deleting"),
+  deleted("deleted"),
+  ;
+
+  const PunkStatus(this.value);
+
+  final String value;
+
+  factory PunkStatus.fromJson(Object? value, String path) {
+    for (final candidate in values) {
+      if (candidate.value == value) return candidate;
+    }
+    throw FormatException('$path must be a PunkStatus value');
+  }
+
+  String toJson() => value;
+}
+
+enum PunkIdentitiesItemProvider {
+  google("google"),
+  github("github"),
+  passkey("passkey"),
+  ;
+
+  const PunkIdentitiesItemProvider(this.value);
+
+  final String value;
+
+  factory PunkIdentitiesItemProvider.fromJson(Object? value, String path) {
+    for (final candidate in values) {
+      if (candidate.value == value) return candidate;
+    }
+    throw FormatException('$path must be a PunkIdentitiesItemProvider value');
+  }
+
+  String toJson() => value;
+}
+
+class PunkIdentitiesItem {
+  final PunkIdentitiesItemProvider provider;
+  final String subjectHash;
+  final String emailHash;
+  final String? verifiedEmail;
+  final String? username;
+  final String? credentialId;
+  final String linkedAt;
+
+  const PunkIdentitiesItem({
+    required this.provider,
+    required this.subjectHash,
+    required this.emailHash,
+    required this.verifiedEmail,
+    required this.username,
+    required this.credentialId,
+    required this.linkedAt,
+  });
+
+  factory PunkIdentitiesItem.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"provider", "subjectHash", "emailHash", "verifiedEmail", "username", "credentialId", "linkedAt"}, "PunkIdentitiesItem");
+    return PunkIdentitiesItem(
+      provider: PunkIdentitiesItemProvider.fromJson(_requiredKey(json, "provider", "PunkIdentitiesItem"), "PunkIdentitiesItem.provider"),
+      subjectHash: _asString(_requiredKey(json, "subjectHash", "PunkIdentitiesItem"), "PunkIdentitiesItem.subjectHash"),
+      emailHash: _asString(_requiredKey(json, "emailHash", "PunkIdentitiesItem"), "PunkIdentitiesItem.emailHash"),
+      verifiedEmail: _requiredKey(json, "verifiedEmail", "PunkIdentitiesItem") == null ? null : _asString(_requiredKey(json, "verifiedEmail", "PunkIdentitiesItem"), "PunkIdentitiesItem.verifiedEmail"),
+      username: _requiredKey(json, "username", "PunkIdentitiesItem") == null ? null : _asString(_requiredKey(json, "username", "PunkIdentitiesItem"), "PunkIdentitiesItem.username"),
+      credentialId: _requiredKey(json, "credentialId", "PunkIdentitiesItem") == null ? null : _asString(_requiredKey(json, "credentialId", "PunkIdentitiesItem"), "PunkIdentitiesItem.credentialId"),
+      linkedAt: _asString(_requiredKey(json, "linkedAt", "PunkIdentitiesItem"), "PunkIdentitiesItem.linkedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "provider": provider.toJson(),
+      "subjectHash": subjectHash,
+      "emailHash": emailHash,
+      "verifiedEmail": verifiedEmail == null ? null : verifiedEmail!,
+      "username": username == null ? null : username!,
+      "credentialId": credentialId == null ? null : credentialId!,
+      "linkedAt": linkedAt,
+    };
+    return json;
+  }
+}
+
+class Punk {
+  final String id;
+  final PunkStatus status;
+  final String displayName;
+  final String? avatarUrl;
+  final List<PunkIdentitiesItem> identities;
+  final String? mergedInto;
+  final int revision;
+  final String createdAt;
+  final String updatedAt;
+
+  const Punk({
+    required this.id,
+    required this.status,
+    required this.displayName,
+    required this.avatarUrl,
+    required this.identities,
+    required this.mergedInto,
+    required this.revision,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  factory Punk.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"id", "status", "displayName", "avatarUrl", "identities", "mergedInto", "revision", "createdAt", "updatedAt"}, "Punk");
+    return Punk(
+      id: _asString(_requiredKey(json, "id", "Punk"), "Punk.id"),
+      status: PunkStatus.fromJson(_requiredKey(json, "status", "Punk"), "Punk.status"),
+      displayName: _asString(_requiredKey(json, "displayName", "Punk"), "Punk.displayName"),
+      avatarUrl: _requiredKey(json, "avatarUrl", "Punk") == null ? null : _asString(_requiredKey(json, "avatarUrl", "Punk"), "Punk.avatarUrl"),
+      identities: _asList(_requiredKey(json, "identities", "Punk"), "Punk.identities").map((item) => PunkIdentitiesItem.fromJson(_asMap(item, "Punk.identities[]"))).toList(growable: false),
+      mergedInto: _requiredKey(json, "mergedInto", "Punk") == null ? null : _asString(_requiredKey(json, "mergedInto", "Punk"), "Punk.mergedInto"),
+      revision: _asInt(_requiredKey(json, "revision", "Punk"), "Punk.revision"),
+      createdAt: _asString(_requiredKey(json, "createdAt", "Punk"), "Punk.createdAt"),
+      updatedAt: _asString(_requiredKey(json, "updatedAt", "Punk"), "Punk.updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "id": id,
+      "status": status.toJson(),
+      "displayName": displayName,
+      "avatarUrl": avatarUrl == null ? null : avatarUrl!,
+      "identities": identities.map((item) => item.toJson()).toList(growable: false),
+      "mergedInto": mergedInto == null ? null : mergedInto!,
+      "revision": revision,
+      "createdAt": createdAt,
+      "updatedAt": updatedAt,
+    };
+    return json;
+  }
+}
+
+class UpdatePunkProfileCommand {
+  final String contract;
+  final String commandId;
+  final int expectedRevision;
+  final String displayName;
+  final String? avatarUrl;
+
+  const UpdatePunkProfileCommand({
+    required this.contract,
+    required this.commandId,
+    required this.expectedRevision,
+    required this.displayName,
+    required this.avatarUrl,
+  });
+
+  factory UpdatePunkProfileCommand.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"contract", "commandId", "expectedRevision", "displayName", "avatarUrl"}, "UpdatePunkProfileCommand");
+    return UpdatePunkProfileCommand(
+      contract: _expectStringConst(_requiredKey(json, "contract", "UpdatePunkProfileCommand"), "punk.update@1", "UpdatePunkProfileCommand.contract"),
+      commandId: _asString(_requiredKey(json, "commandId", "UpdatePunkProfileCommand"), "UpdatePunkProfileCommand.commandId"),
+      expectedRevision: _asInt(_requiredKey(json, "expectedRevision", "UpdatePunkProfileCommand"), "UpdatePunkProfileCommand.expectedRevision"),
+      displayName: _asString(_requiredKey(json, "displayName", "UpdatePunkProfileCommand"), "UpdatePunkProfileCommand.displayName"),
+      avatarUrl: _requiredKey(json, "avatarUrl", "UpdatePunkProfileCommand") == null ? null : _asString(_requiredKey(json, "avatarUrl", "UpdatePunkProfileCommand"), "UpdatePunkProfileCommand.avatarUrl"),
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "contract": contract,
+      "commandId": commandId,
+      "expectedRevision": expectedRevision,
+      "displayName": displayName,
+      "avatarUrl": avatarUrl == null ? null : avatarUrl!,
+    };
+    return json;
+  }
+}
+
 enum DesktopAuthStartExchangeRequestIntent {
   signIn("sign_in"),
   switchAccount("switch_account"),
@@ -2897,6 +3098,269 @@ class ResolveAuthorsResponse {
   }
 }
 
+class PunkSummaryBatchQuery {
+  final String contract;
+  final String workspaceId;
+  final List<String> punkIds;
+
+  const PunkSummaryBatchQuery({
+    required this.contract,
+    required this.workspaceId,
+    required this.punkIds,
+  });
+
+  factory PunkSummaryBatchQuery.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"contract", "workspaceId", "punkIds"}, "PunkSummaryBatchQuery");
+    return PunkSummaryBatchQuery(
+      contract: _expectStringConst(_requiredKey(json, "contract", "PunkSummaryBatchQuery"), "punk.summary-batch@1", "PunkSummaryBatchQuery.contract"),
+      workspaceId: _asString(_requiredKey(json, "workspaceId", "PunkSummaryBatchQuery"), "PunkSummaryBatchQuery.workspaceId"),
+      punkIds: _asList(_requiredKey(json, "punkIds", "PunkSummaryBatchQuery"), "PunkSummaryBatchQuery.punkIds").map((item) => _asString(item, "PunkSummaryBatchQuery.punkIds[]")).toList(growable: false),
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "contract": contract,
+      "workspaceId": workspaceId,
+      "punkIds": punkIds.map((item) => item).toList(growable: false),
+    };
+    return json;
+  }
+}
+
+class PunkSummaryBatchResponseSummary {
+  final String punkId;
+  final String displayName;
+  final String? avatarUrl;
+
+  const PunkSummaryBatchResponseSummary({
+    required this.punkId,
+    required this.displayName,
+    required this.avatarUrl,
+  });
+
+  factory PunkSummaryBatchResponseSummary.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"punkId", "displayName", "avatarUrl"}, "PunkSummaryBatchResponseSummary");
+    return PunkSummaryBatchResponseSummary(
+      punkId: _asString(_requiredKey(json, "punkId", "PunkSummaryBatchResponseSummary"), "PunkSummaryBatchResponseSummary.punkId"),
+      displayName: _asString(_requiredKey(json, "displayName", "PunkSummaryBatchResponseSummary"), "PunkSummaryBatchResponseSummary.displayName"),
+      avatarUrl: _requiredKey(json, "avatarUrl", "PunkSummaryBatchResponseSummary") == null ? null : _asString(_requiredKey(json, "avatarUrl", "PunkSummaryBatchResponseSummary"), "PunkSummaryBatchResponseSummary.avatarUrl"),
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "punkId": punkId,
+      "displayName": displayName,
+      "avatarUrl": avatarUrl == null ? null : avatarUrl!,
+    };
+    return json;
+  }
+}
+
+class PunkSummaryBatchResponse {
+  final String contract;
+  final String workspaceId;
+  final List<PunkSummaryBatchResponseSummary> items;
+
+  const PunkSummaryBatchResponse({
+    required this.contract,
+    required this.workspaceId,
+    required this.items,
+  });
+
+  factory PunkSummaryBatchResponse.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"contract", "workspaceId", "items"}, "PunkSummaryBatchResponse");
+    return PunkSummaryBatchResponse(
+      contract: _expectStringConst(_requiredKey(json, "contract", "PunkSummaryBatchResponse"), "punk.summary-batch-response@1", "PunkSummaryBatchResponse.contract"),
+      workspaceId: _asString(_requiredKey(json, "workspaceId", "PunkSummaryBatchResponse"), "PunkSummaryBatchResponse.workspaceId"),
+      items: _asList(_requiredKey(json, "items", "PunkSummaryBatchResponse"), "PunkSummaryBatchResponse.items").map((item) => PunkSummaryBatchResponseSummary.fromJson(_asMap(item, "PunkSummaryBatchResponse.items[]"))).toList(growable: false),
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "contract": contract,
+      "workspaceId": workspaceId,
+      "items": items.map((item) => item.toJson()).toList(growable: false),
+    };
+    return json;
+  }
+}
+
+class PunkSearchQueryQueryPrefix extends PunkSearchQueryQuery {
+  final String kind;
+  final String value;
+
+  const PunkSearchQueryQueryPrefix({
+    required this.kind,
+    required this.value,
+  }) : super();
+
+  factory PunkSearchQueryQueryPrefix.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"kind", "value"}, "PunkSearchQueryQueryPrefix");
+    return PunkSearchQueryQueryPrefix(
+      kind: _expectStringConst(_requiredKey(json, "kind", "PunkSearchQueryQueryPrefix"), "prefix", "PunkSearchQueryQueryPrefix.kind"),
+      value: _asString(_requiredKey(json, "value", "PunkSearchQueryQueryPrefix"), "PunkSearchQueryQueryPrefix.value"),
+    );
+  }
+
+  @override
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "kind": kind,
+      "value": value,
+    };
+    return json;
+  }
+}
+
+class PunkSearchQueryQueryPunkId extends PunkSearchQueryQuery {
+  final String kind;
+  final String punkId;
+
+  const PunkSearchQueryQueryPunkId({
+    required this.kind,
+    required this.punkId,
+  }) : super();
+
+  factory PunkSearchQueryQueryPunkId.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"kind", "punkId"}, "PunkSearchQueryQueryPunkId");
+    return PunkSearchQueryQueryPunkId(
+      kind: _expectStringConst(_requiredKey(json, "kind", "PunkSearchQueryQueryPunkId"), "punk_id", "PunkSearchQueryQueryPunkId.kind"),
+      punkId: _asString(_requiredKey(json, "punkId", "PunkSearchQueryQueryPunkId"), "PunkSearchQueryQueryPunkId.punkId"),
+    );
+  }
+
+  @override
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "kind": kind,
+      "punkId": punkId,
+    };
+    return json;
+  }
+}
+
+sealed class PunkSearchQueryQuery {
+  const PunkSearchQueryQuery();
+
+  factory PunkSearchQueryQuery.fromJson(Map<String, Object?> json) {
+    switch (json["kind"]) {
+      case "prefix":
+        return PunkSearchQueryQueryPrefix.fromJson(json);
+      case "punk_id":
+        return PunkSearchQueryQueryPunkId.fromJson(json);
+      default:
+        throw FormatException('PunkSearchQueryQuery.kind has no matching variant');
+    }
+  }
+
+  Map<String, Object?> toJson();
+}
+
+class PunkSearchQuery {
+  final String contract;
+  final String workspaceId;
+  final PunkSearchQueryQuery query;
+  final int limit;
+  final String? cursor;
+
+  const PunkSearchQuery({
+    required this.contract,
+    required this.workspaceId,
+    required this.query,
+    required this.limit,
+    required this.cursor,
+  });
+
+  factory PunkSearchQuery.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"contract", "workspaceId", "query", "limit", "cursor"}, "PunkSearchQuery");
+    return PunkSearchQuery(
+      contract: _expectStringConst(_requiredKey(json, "contract", "PunkSearchQuery"), "punk.search@1", "PunkSearchQuery.contract"),
+      workspaceId: _asString(_requiredKey(json, "workspaceId", "PunkSearchQuery"), "PunkSearchQuery.workspaceId"),
+      query: PunkSearchQueryQuery.fromJson(_asMap(_requiredKey(json, "query", "PunkSearchQuery"), "PunkSearchQuery.query")),
+      limit: _asInt(_requiredKey(json, "limit", "PunkSearchQuery"), "PunkSearchQuery.limit"),
+      cursor: _requiredKey(json, "cursor", "PunkSearchQuery") == null ? null : _asString(_requiredKey(json, "cursor", "PunkSearchQuery"), "PunkSearchQuery.cursor"),
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "contract": contract,
+      "workspaceId": workspaceId,
+      "query": query.toJson(),
+      "limit": limit,
+      "cursor": cursor == null ? null : cursor!,
+    };
+    return json;
+  }
+}
+
+class PunkSearchResponseSummary {
+  final String punkId;
+  final String displayName;
+  final String? avatarUrl;
+
+  const PunkSearchResponseSummary({
+    required this.punkId,
+    required this.displayName,
+    required this.avatarUrl,
+  });
+
+  factory PunkSearchResponseSummary.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"punkId", "displayName", "avatarUrl"}, "PunkSearchResponseSummary");
+    return PunkSearchResponseSummary(
+      punkId: _asString(_requiredKey(json, "punkId", "PunkSearchResponseSummary"), "PunkSearchResponseSummary.punkId"),
+      displayName: _asString(_requiredKey(json, "displayName", "PunkSearchResponseSummary"), "PunkSearchResponseSummary.displayName"),
+      avatarUrl: _requiredKey(json, "avatarUrl", "PunkSearchResponseSummary") == null ? null : _asString(_requiredKey(json, "avatarUrl", "PunkSearchResponseSummary"), "PunkSearchResponseSummary.avatarUrl"),
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "punkId": punkId,
+      "displayName": displayName,
+      "avatarUrl": avatarUrl == null ? null : avatarUrl!,
+    };
+    return json;
+  }
+}
+
+class PunkSearchResponse {
+  final String contract;
+  final String workspaceId;
+  final List<PunkSearchResponseSummary> items;
+  final String? nextCursor;
+
+  const PunkSearchResponse({
+    required this.contract,
+    required this.workspaceId,
+    required this.items,
+    required this.nextCursor,
+  });
+
+  factory PunkSearchResponse.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"contract", "workspaceId", "items", "nextCursor"}, "PunkSearchResponse");
+    return PunkSearchResponse(
+      contract: _expectStringConst(_requiredKey(json, "contract", "PunkSearchResponse"), "punk.search-response@1", "PunkSearchResponse.contract"),
+      workspaceId: _asString(_requiredKey(json, "workspaceId", "PunkSearchResponse"), "PunkSearchResponse.workspaceId"),
+      items: _asList(_requiredKey(json, "items", "PunkSearchResponse"), "PunkSearchResponse.items").map((item) => PunkSearchResponseSummary.fromJson(_asMap(item, "PunkSearchResponse.items[]"))).toList(growable: false),
+      nextCursor: _requiredKey(json, "nextCursor", "PunkSearchResponse") == null ? null : _asString(_requiredKey(json, "nextCursor", "PunkSearchResponse"), "PunkSearchResponse.nextCursor"),
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "contract": contract,
+      "workspaceId": workspaceId,
+      "items": items.map((item) => item.toJson()).toList(growable: false),
+      "nextCursor": nextCursor == null ? null : nextCursor!,
+    };
+    return json;
+  }
+}
+
 class FollowConversationQuery {
   final String contract;
   final String workspaceId;
@@ -4177,6 +4641,13 @@ enum PunksProblemCode {
   slugClaimed("slug_claimed"),
   idempotencyConflict("idempotency_conflict"),
   identityConflict("identity_conflict"),
+  revisionConflict("revision_conflict"),
+  inviteInvalid("invite_invalid"),
+  inviteExpired("invite_expired"),
+  inviteExhausted("invite_exhausted"),
+  inviteRevoked("invite_revoked"),
+  inviteRoleForbidden("invite_role_forbidden"),
+  queryTooShort("query_too_short"),
   commandInProgress("command_in_progress"),
   attestationFailed("attestation_failed"),
   temporarilyUnavailable("temporarily_unavailable"),
@@ -4267,6 +4738,36 @@ class PunksProblem {
     if (retryAfterMs != null) {
       json["retryAfterMs"] = retryAfterMs!;
     }
+    return json;
+  }
+}
+
+class PunkPublicSummary {
+  final String punkId;
+  final String displayName;
+  final String? avatarUrl;
+
+  const PunkPublicSummary({
+    required this.punkId,
+    required this.displayName,
+    required this.avatarUrl,
+  });
+
+  factory PunkPublicSummary.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"punkId", "displayName", "avatarUrl"}, "PunkPublicSummary");
+    return PunkPublicSummary(
+      punkId: _asString(_requiredKey(json, "punkId", "PunkPublicSummary"), "PunkPublicSummary.punkId"),
+      displayName: _asString(_requiredKey(json, "displayName", "PunkPublicSummary"), "PunkPublicSummary.displayName"),
+      avatarUrl: _requiredKey(json, "avatarUrl", "PunkPublicSummary") == null ? null : _asString(_requiredKey(json, "avatarUrl", "PunkPublicSummary"), "PunkPublicSummary.avatarUrl"),
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "punkId": punkId,
+      "displayName": displayName,
+      "avatarUrl": avatarUrl == null ? null : avatarUrl!,
+    };
     return json;
   }
 }
@@ -5159,4 +5660,697 @@ sealed class AccountMergePlanResponse {
   }
 
   Map<String, Object?> toJson();
+}
+
+class WorkspaceMembershipMutationResponse {
+  final String contract;
+  final Workspace workspace;
+  final bool replayed;
+
+  const WorkspaceMembershipMutationResponse({
+    required this.contract,
+    required this.workspace,
+    required this.replayed,
+  });
+
+  factory WorkspaceMembershipMutationResponse.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"contract", "workspace", "replayed"}, "WorkspaceMembershipMutationResponse");
+    return WorkspaceMembershipMutationResponse(
+      contract: _expectStringConst(_requiredKey(json, "contract", "WorkspaceMembershipMutationResponse"), "workspace.membership-mutation-response@1", "WorkspaceMembershipMutationResponse.contract"),
+      workspace: Workspace.fromJson(_asMap(_requiredKey(json, "workspace", "WorkspaceMembershipMutationResponse"), "WorkspaceMembershipMutationResponse.workspace")),
+      replayed: _asBool(_requiredKey(json, "replayed", "WorkspaceMembershipMutationResponse"), "WorkspaceMembershipMutationResponse.replayed"),
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "contract": contract,
+      "workspace": workspace.toJson(),
+      "replayed": replayed,
+    };
+    return json;
+  }
+}
+
+class WorkspaceInvitationViewWorkspace {
+  final String id;
+  final String slug;
+  final String name;
+
+  const WorkspaceInvitationViewWorkspace({
+    required this.id,
+    required this.slug,
+    required this.name,
+  });
+
+  factory WorkspaceInvitationViewWorkspace.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"id", "slug", "name"}, "WorkspaceInvitationViewWorkspace");
+    return WorkspaceInvitationViewWorkspace(
+      id: _asString(_requiredKey(json, "id", "WorkspaceInvitationViewWorkspace"), "WorkspaceInvitationViewWorkspace.id"),
+      slug: _asString(_requiredKey(json, "slug", "WorkspaceInvitationViewWorkspace"), "WorkspaceInvitationViewWorkspace.slug"),
+      name: _asString(_requiredKey(json, "name", "WorkspaceInvitationViewWorkspace"), "WorkspaceInvitationViewWorkspace.name"),
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "id": id,
+      "slug": slug,
+      "name": name,
+    };
+    return json;
+  }
+}
+
+enum WorkspaceInvitationViewRole {
+  member("member"),
+  guest("guest"),
+  ;
+
+  const WorkspaceInvitationViewRole(this.value);
+
+  final String value;
+
+  factory WorkspaceInvitationViewRole.fromJson(Object? value, String path) {
+    for (final candidate in values) {
+      if (candidate.value == value) return candidate;
+    }
+    throw FormatException('$path must be a WorkspaceInvitationViewRole value');
+  }
+
+  String toJson() => value;
+}
+
+enum WorkspaceInvitationViewStatus {
+  issued("issued"),
+  revoked("revoked"),
+  expired("expired"),
+  exhausted("exhausted"),
+  ;
+
+  const WorkspaceInvitationViewStatus(this.value);
+
+  final String value;
+
+  factory WorkspaceInvitationViewStatus.fromJson(Object? value, String path) {
+    for (final candidate in values) {
+      if (candidate.value == value) return candidate;
+    }
+    throw FormatException('$path must be a WorkspaceInvitationViewStatus value');
+  }
+
+  String toJson() => value;
+}
+
+class WorkspaceInvitationView {
+  final String contract;
+  final String invitationId;
+  final WorkspaceInvitationViewWorkspace workspace;
+  final int workspaceRevision;
+  final WorkspaceInvitationViewRole role;
+  final WorkspaceInvitationViewStatus status;
+  final String issuedAt;
+  final String expiresAt;
+  final String? revokedAt;
+  final int maxUses;
+  final int uses;
+  final int usesRemaining;
+
+  const WorkspaceInvitationView({
+    required this.contract,
+    required this.invitationId,
+    required this.workspace,
+    required this.workspaceRevision,
+    required this.role,
+    required this.status,
+    required this.issuedAt,
+    required this.expiresAt,
+    required this.revokedAt,
+    required this.maxUses,
+    required this.uses,
+    required this.usesRemaining,
+  });
+
+  factory WorkspaceInvitationView.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"contract", "invitationId", "workspace", "workspaceRevision", "role", "status", "issuedAt", "expiresAt", "revokedAt", "maxUses", "uses", "usesRemaining"}, "WorkspaceInvitationView");
+    return WorkspaceInvitationView(
+      contract: _expectStringConst(_requiredKey(json, "contract", "WorkspaceInvitationView"), "workspace.invitation@1", "WorkspaceInvitationView.contract"),
+      invitationId: _asString(_requiredKey(json, "invitationId", "WorkspaceInvitationView"), "WorkspaceInvitationView.invitationId"),
+      workspace: WorkspaceInvitationViewWorkspace.fromJson(_asMap(_requiredKey(json, "workspace", "WorkspaceInvitationView"), "WorkspaceInvitationView.workspace")),
+      workspaceRevision: _asInt(_requiredKey(json, "workspaceRevision", "WorkspaceInvitationView"), "WorkspaceInvitationView.workspaceRevision"),
+      role: WorkspaceInvitationViewRole.fromJson(_requiredKey(json, "role", "WorkspaceInvitationView"), "WorkspaceInvitationView.role"),
+      status: WorkspaceInvitationViewStatus.fromJson(_requiredKey(json, "status", "WorkspaceInvitationView"), "WorkspaceInvitationView.status"),
+      issuedAt: _asString(_requiredKey(json, "issuedAt", "WorkspaceInvitationView"), "WorkspaceInvitationView.issuedAt"),
+      expiresAt: _asString(_requiredKey(json, "expiresAt", "WorkspaceInvitationView"), "WorkspaceInvitationView.expiresAt"),
+      revokedAt: _requiredKey(json, "revokedAt", "WorkspaceInvitationView") == null ? null : _asString(_requiredKey(json, "revokedAt", "WorkspaceInvitationView"), "WorkspaceInvitationView.revokedAt"),
+      maxUses: _asInt(_requiredKey(json, "maxUses", "WorkspaceInvitationView"), "WorkspaceInvitationView.maxUses"),
+      uses: _asInt(_requiredKey(json, "uses", "WorkspaceInvitationView"), "WorkspaceInvitationView.uses"),
+      usesRemaining: _asInt(_requiredKey(json, "usesRemaining", "WorkspaceInvitationView"), "WorkspaceInvitationView.usesRemaining"),
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "contract": contract,
+      "invitationId": invitationId,
+      "workspace": workspace.toJson(),
+      "workspaceRevision": workspaceRevision,
+      "role": role.toJson(),
+      "status": status.toJson(),
+      "issuedAt": issuedAt,
+      "expiresAt": expiresAt,
+      "revokedAt": revokedAt == null ? null : revokedAt!,
+      "maxUses": maxUses,
+      "uses": uses,
+      "usesRemaining": usesRemaining,
+    };
+    return json;
+  }
+}
+
+class CreateWorkspaceInvitationCommandActor {
+  final String kind;
+  final String punkId;
+
+  const CreateWorkspaceInvitationCommandActor({
+    required this.kind,
+    required this.punkId,
+  });
+
+  factory CreateWorkspaceInvitationCommandActor.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"kind", "punkId"}, "CreateWorkspaceInvitationCommandActor");
+    return CreateWorkspaceInvitationCommandActor(
+      kind: _expectStringConst(_requiredKey(json, "kind", "CreateWorkspaceInvitationCommandActor"), "punk", "CreateWorkspaceInvitationCommandActor.kind"),
+      punkId: _asString(_requiredKey(json, "punkId", "CreateWorkspaceInvitationCommandActor"), "CreateWorkspaceInvitationCommandActor.punkId"),
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "kind": kind,
+      "punkId": punkId,
+    };
+    return json;
+  }
+}
+
+enum CreateWorkspaceInvitationCommandPayloadRole {
+  member("member"),
+  guest("guest"),
+  ;
+
+  const CreateWorkspaceInvitationCommandPayloadRole(this.value);
+
+  final String value;
+
+  factory CreateWorkspaceInvitationCommandPayloadRole.fromJson(Object? value, String path) {
+    for (final candidate in values) {
+      if (candidate.value == value) return candidate;
+    }
+    throw FormatException('$path must be a CreateWorkspaceInvitationCommandPayloadRole value');
+  }
+
+  String toJson() => value;
+}
+
+class CreateWorkspaceInvitationCommandPayload {
+  final CreateWorkspaceInvitationCommandPayloadRole role;
+  final int expectedRevision;
+  final int? ttlSeconds;
+  final int? maxUses;
+
+  const CreateWorkspaceInvitationCommandPayload({
+    required this.role,
+    required this.expectedRevision,
+    this.ttlSeconds,
+    this.maxUses,
+  });
+
+  factory CreateWorkspaceInvitationCommandPayload.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"role", "expectedRevision", "ttlSeconds", "maxUses"}, "CreateWorkspaceInvitationCommandPayload");
+    return CreateWorkspaceInvitationCommandPayload(
+      role: CreateWorkspaceInvitationCommandPayloadRole.fromJson(_requiredKey(json, "role", "CreateWorkspaceInvitationCommandPayload"), "CreateWorkspaceInvitationCommandPayload.role"),
+      expectedRevision: _asInt(_requiredKey(json, "expectedRevision", "CreateWorkspaceInvitationCommandPayload"), "CreateWorkspaceInvitationCommandPayload.expectedRevision"),
+      ttlSeconds: json.containsKey("ttlSeconds") ? _asInt(json["ttlSeconds"], "CreateWorkspaceInvitationCommandPayload.ttlSeconds") : null,
+      maxUses: json.containsKey("maxUses") ? _asInt(json["maxUses"], "CreateWorkspaceInvitationCommandPayload.maxUses") : null,
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "role": role.toJson(),
+      "expectedRevision": expectedRevision,
+    };
+    if (ttlSeconds != null) {
+      json["ttlSeconds"] = ttlSeconds!;
+    }
+    if (maxUses != null) {
+      json["maxUses"] = maxUses!;
+    }
+    return json;
+  }
+}
+
+class CreateWorkspaceInvitationCommand {
+  final String contract;
+  final String commandId;
+  final String workspaceId;
+  final CreateWorkspaceInvitationCommandActor actor;
+  final CreateWorkspaceInvitationCommandPayload payload;
+
+  const CreateWorkspaceInvitationCommand({
+    required this.contract,
+    required this.commandId,
+    required this.workspaceId,
+    required this.actor,
+    required this.payload,
+  });
+
+  factory CreateWorkspaceInvitationCommand.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"contract", "commandId", "workspaceId", "actor", "payload"}, "CreateWorkspaceInvitationCommand");
+    return CreateWorkspaceInvitationCommand(
+      contract: _expectStringConst(_requiredKey(json, "contract", "CreateWorkspaceInvitationCommand"), "workspace.invite@1", "CreateWorkspaceInvitationCommand.contract"),
+      commandId: _asString(_requiredKey(json, "commandId", "CreateWorkspaceInvitationCommand"), "CreateWorkspaceInvitationCommand.commandId"),
+      workspaceId: _asString(_requiredKey(json, "workspaceId", "CreateWorkspaceInvitationCommand"), "CreateWorkspaceInvitationCommand.workspaceId"),
+      actor: CreateWorkspaceInvitationCommandActor.fromJson(_asMap(_requiredKey(json, "actor", "CreateWorkspaceInvitationCommand"), "CreateWorkspaceInvitationCommand.actor")),
+      payload: CreateWorkspaceInvitationCommandPayload.fromJson(_asMap(_requiredKey(json, "payload", "CreateWorkspaceInvitationCommand"), "CreateWorkspaceInvitationCommand.payload")),
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "contract": contract,
+      "commandId": commandId,
+      "workspaceId": workspaceId,
+      "actor": actor.toJson(),
+      "payload": payload.toJson(),
+    };
+    return json;
+  }
+}
+
+class GetWorkspaceInvitationQuery {
+  final String contract;
+  final String code;
+
+  const GetWorkspaceInvitationQuery({
+    required this.contract,
+    required this.code,
+  });
+
+  factory GetWorkspaceInvitationQuery.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"contract", "code"}, "GetWorkspaceInvitationQuery");
+    return GetWorkspaceInvitationQuery(
+      contract: _expectStringConst(_requiredKey(json, "contract", "GetWorkspaceInvitationQuery"), "workspace.invite-get@1", "GetWorkspaceInvitationQuery.contract"),
+      code: _asString(_requiredKey(json, "code", "GetWorkspaceInvitationQuery"), "GetWorkspaceInvitationQuery.code"),
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "contract": contract,
+      "code": code,
+    };
+    return json;
+  }
+}
+
+class CreateWorkspaceInvitationResponse {
+  final String contract;
+  final WorkspaceInvitationView invitation;
+  final String code;
+  final bool replayed;
+
+  const CreateWorkspaceInvitationResponse({
+    required this.contract,
+    required this.invitation,
+    required this.code,
+    required this.replayed,
+  });
+
+  factory CreateWorkspaceInvitationResponse.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"contract", "invitation", "code", "replayed"}, "CreateWorkspaceInvitationResponse");
+    return CreateWorkspaceInvitationResponse(
+      contract: _expectStringConst(_requiredKey(json, "contract", "CreateWorkspaceInvitationResponse"), "workspace.invite-response@1", "CreateWorkspaceInvitationResponse.contract"),
+      invitation: WorkspaceInvitationView.fromJson(_asMap(_requiredKey(json, "invitation", "CreateWorkspaceInvitationResponse"), "CreateWorkspaceInvitationResponse.invitation")),
+      code: _asString(_requiredKey(json, "code", "CreateWorkspaceInvitationResponse"), "CreateWorkspaceInvitationResponse.code"),
+      replayed: _asBool(_requiredKey(json, "replayed", "CreateWorkspaceInvitationResponse"), "CreateWorkspaceInvitationResponse.replayed"),
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "contract": contract,
+      "invitation": invitation.toJson(),
+      "code": code,
+      "replayed": replayed,
+    };
+    return json;
+  }
+}
+
+class RevokeWorkspaceInvitationCommandActor {
+  final String kind;
+  final String punkId;
+
+  const RevokeWorkspaceInvitationCommandActor({
+    required this.kind,
+    required this.punkId,
+  });
+
+  factory RevokeWorkspaceInvitationCommandActor.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"kind", "punkId"}, "RevokeWorkspaceInvitationCommandActor");
+    return RevokeWorkspaceInvitationCommandActor(
+      kind: _expectStringConst(_requiredKey(json, "kind", "RevokeWorkspaceInvitationCommandActor"), "punk", "RevokeWorkspaceInvitationCommandActor.kind"),
+      punkId: _asString(_requiredKey(json, "punkId", "RevokeWorkspaceInvitationCommandActor"), "RevokeWorkspaceInvitationCommandActor.punkId"),
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "kind": kind,
+      "punkId": punkId,
+    };
+    return json;
+  }
+}
+
+class RevokeWorkspaceInvitationCommandPayload {
+  final String invitationId;
+  final int expectedRevision;
+
+  const RevokeWorkspaceInvitationCommandPayload({
+    required this.invitationId,
+    required this.expectedRevision,
+  });
+
+  factory RevokeWorkspaceInvitationCommandPayload.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"invitationId", "expectedRevision"}, "RevokeWorkspaceInvitationCommandPayload");
+    return RevokeWorkspaceInvitationCommandPayload(
+      invitationId: _asString(_requiredKey(json, "invitationId", "RevokeWorkspaceInvitationCommandPayload"), "RevokeWorkspaceInvitationCommandPayload.invitationId"),
+      expectedRevision: _asInt(_requiredKey(json, "expectedRevision", "RevokeWorkspaceInvitationCommandPayload"), "RevokeWorkspaceInvitationCommandPayload.expectedRevision"),
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "invitationId": invitationId,
+      "expectedRevision": expectedRevision,
+    };
+    return json;
+  }
+}
+
+class RevokeWorkspaceInvitationCommand {
+  final String contract;
+  final String commandId;
+  final String workspaceId;
+  final RevokeWorkspaceInvitationCommandActor actor;
+  final RevokeWorkspaceInvitationCommandPayload payload;
+
+  const RevokeWorkspaceInvitationCommand({
+    required this.contract,
+    required this.commandId,
+    required this.workspaceId,
+    required this.actor,
+    required this.payload,
+  });
+
+  factory RevokeWorkspaceInvitationCommand.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"contract", "commandId", "workspaceId", "actor", "payload"}, "RevokeWorkspaceInvitationCommand");
+    return RevokeWorkspaceInvitationCommand(
+      contract: _expectStringConst(_requiredKey(json, "contract", "RevokeWorkspaceInvitationCommand"), "workspace.invite-revoke@1", "RevokeWorkspaceInvitationCommand.contract"),
+      commandId: _asString(_requiredKey(json, "commandId", "RevokeWorkspaceInvitationCommand"), "RevokeWorkspaceInvitationCommand.commandId"),
+      workspaceId: _asString(_requiredKey(json, "workspaceId", "RevokeWorkspaceInvitationCommand"), "RevokeWorkspaceInvitationCommand.workspaceId"),
+      actor: RevokeWorkspaceInvitationCommandActor.fromJson(_asMap(_requiredKey(json, "actor", "RevokeWorkspaceInvitationCommand"), "RevokeWorkspaceInvitationCommand.actor")),
+      payload: RevokeWorkspaceInvitationCommandPayload.fromJson(_asMap(_requiredKey(json, "payload", "RevokeWorkspaceInvitationCommand"), "RevokeWorkspaceInvitationCommand.payload")),
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "contract": contract,
+      "commandId": commandId,
+      "workspaceId": workspaceId,
+      "actor": actor.toJson(),
+      "payload": payload.toJson(),
+    };
+    return json;
+  }
+}
+
+class RevokeWorkspaceInvitationResponse {
+  final String contract;
+  final WorkspaceInvitationView invitation;
+  final bool replayed;
+
+  const RevokeWorkspaceInvitationResponse({
+    required this.contract,
+    required this.invitation,
+    required this.replayed,
+  });
+
+  factory RevokeWorkspaceInvitationResponse.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"contract", "invitation", "replayed"}, "RevokeWorkspaceInvitationResponse");
+    return RevokeWorkspaceInvitationResponse(
+      contract: _expectStringConst(_requiredKey(json, "contract", "RevokeWorkspaceInvitationResponse"), "workspace.invite-revoke-response@1", "RevokeWorkspaceInvitationResponse.contract"),
+      invitation: WorkspaceInvitationView.fromJson(_asMap(_requiredKey(json, "invitation", "RevokeWorkspaceInvitationResponse"), "RevokeWorkspaceInvitationResponse.invitation")),
+      replayed: _asBool(_requiredKey(json, "replayed", "RevokeWorkspaceInvitationResponse"), "RevokeWorkspaceInvitationResponse.replayed"),
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "contract": contract,
+      "invitation": invitation.toJson(),
+      "replayed": replayed,
+    };
+    return json;
+  }
+}
+
+class ClaimWorkspaceInvitationCommandActor {
+  final String kind;
+  final String punkId;
+
+  const ClaimWorkspaceInvitationCommandActor({
+    required this.kind,
+    required this.punkId,
+  });
+
+  factory ClaimWorkspaceInvitationCommandActor.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"kind", "punkId"}, "ClaimWorkspaceInvitationCommandActor");
+    return ClaimWorkspaceInvitationCommandActor(
+      kind: _expectStringConst(_requiredKey(json, "kind", "ClaimWorkspaceInvitationCommandActor"), "punk", "ClaimWorkspaceInvitationCommandActor.kind"),
+      punkId: _asString(_requiredKey(json, "punkId", "ClaimWorkspaceInvitationCommandActor"), "ClaimWorkspaceInvitationCommandActor.punkId"),
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "kind": kind,
+      "punkId": punkId,
+    };
+    return json;
+  }
+}
+
+class ClaimWorkspaceInvitationCommandPayload {
+  final String code;
+  final int expectedRevision;
+
+  const ClaimWorkspaceInvitationCommandPayload({
+    required this.code,
+    required this.expectedRevision,
+  });
+
+  factory ClaimWorkspaceInvitationCommandPayload.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"code", "expectedRevision"}, "ClaimWorkspaceInvitationCommandPayload");
+    return ClaimWorkspaceInvitationCommandPayload(
+      code: _asString(_requiredKey(json, "code", "ClaimWorkspaceInvitationCommandPayload"), "ClaimWorkspaceInvitationCommandPayload.code"),
+      expectedRevision: _asInt(_requiredKey(json, "expectedRevision", "ClaimWorkspaceInvitationCommandPayload"), "ClaimWorkspaceInvitationCommandPayload.expectedRevision"),
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "code": code,
+      "expectedRevision": expectedRevision,
+    };
+    return json;
+  }
+}
+
+class ClaimWorkspaceInvitationCommand {
+  final String contract;
+  final String commandId;
+  final String workspaceId;
+  final ClaimWorkspaceInvitationCommandActor actor;
+  final ClaimWorkspaceInvitationCommandPayload payload;
+
+  const ClaimWorkspaceInvitationCommand({
+    required this.contract,
+    required this.commandId,
+    required this.workspaceId,
+    required this.actor,
+    required this.payload,
+  });
+
+  factory ClaimWorkspaceInvitationCommand.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"contract", "commandId", "workspaceId", "actor", "payload"}, "ClaimWorkspaceInvitationCommand");
+    return ClaimWorkspaceInvitationCommand(
+      contract: _expectStringConst(_requiredKey(json, "contract", "ClaimWorkspaceInvitationCommand"), "workspace.invite-claim@1", "ClaimWorkspaceInvitationCommand.contract"),
+      commandId: _asString(_requiredKey(json, "commandId", "ClaimWorkspaceInvitationCommand"), "ClaimWorkspaceInvitationCommand.commandId"),
+      workspaceId: _asString(_requiredKey(json, "workspaceId", "ClaimWorkspaceInvitationCommand"), "ClaimWorkspaceInvitationCommand.workspaceId"),
+      actor: ClaimWorkspaceInvitationCommandActor.fromJson(_asMap(_requiredKey(json, "actor", "ClaimWorkspaceInvitationCommand"), "ClaimWorkspaceInvitationCommand.actor")),
+      payload: ClaimWorkspaceInvitationCommandPayload.fromJson(_asMap(_requiredKey(json, "payload", "ClaimWorkspaceInvitationCommand"), "ClaimWorkspaceInvitationCommand.payload")),
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "contract": contract,
+      "commandId": commandId,
+      "workspaceId": workspaceId,
+      "actor": actor.toJson(),
+      "payload": payload.toJson(),
+    };
+    return json;
+  }
+}
+
+enum ClaimWorkspaceInvitationResponseResult {
+  joined("joined"),
+  alreadyMember("already_member"),
+  ;
+
+  const ClaimWorkspaceInvitationResponseResult(this.value);
+
+  final String value;
+
+  factory ClaimWorkspaceInvitationResponseResult.fromJson(Object? value, String path) {
+    for (final candidate in values) {
+      if (candidate.value == value) return candidate;
+    }
+    throw FormatException('$path must be a ClaimWorkspaceInvitationResponseResult value');
+  }
+
+  String toJson() => value;
+}
+
+enum ClaimWorkspaceInvitationResponseWorkspaceVisibility {
+  private("private"),
+  punks("punks"),
+  public("public"),
+  ;
+
+  const ClaimWorkspaceInvitationResponseWorkspaceVisibility(this.value);
+
+  final String value;
+
+  factory ClaimWorkspaceInvitationResponseWorkspaceVisibility.fromJson(Object? value, String path) {
+    for (final candidate in values) {
+      if (candidate.value == value) return candidate;
+    }
+    throw FormatException('$path must be a ClaimWorkspaceInvitationResponseWorkspaceVisibility value');
+  }
+
+  String toJson() => value;
+}
+
+enum ClaimWorkspaceInvitationResponseWorkspaceRole {
+  owner("owner"),
+  moderator("moderator"),
+  member("member"),
+  guest("guest"),
+  ;
+
+  const ClaimWorkspaceInvitationResponseWorkspaceRole(this.value);
+
+  final String value;
+
+  factory ClaimWorkspaceInvitationResponseWorkspaceRole.fromJson(Object? value, String path) {
+    for (final candidate in values) {
+      if (candidate.value == value) return candidate;
+    }
+    throw FormatException('$path must be a ClaimWorkspaceInvitationResponseWorkspaceRole value');
+  }
+
+  String toJson() => value;
+}
+
+class ClaimWorkspaceInvitationResponseWorkspace {
+  final String id;
+  final String slug;
+  final String name;
+  final ClaimWorkspaceInvitationResponseWorkspaceVisibility visibility;
+  final ClaimWorkspaceInvitationResponseWorkspaceRole role;
+  final int revision;
+
+  const ClaimWorkspaceInvitationResponseWorkspace({
+    required this.id,
+    required this.slug,
+    required this.name,
+    required this.visibility,
+    required this.role,
+    required this.revision,
+  });
+
+  factory ClaimWorkspaceInvitationResponseWorkspace.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"id", "slug", "name", "visibility", "role", "revision"}, "ClaimWorkspaceInvitationResponseWorkspace");
+    return ClaimWorkspaceInvitationResponseWorkspace(
+      id: _asString(_requiredKey(json, "id", "ClaimWorkspaceInvitationResponseWorkspace"), "ClaimWorkspaceInvitationResponseWorkspace.id"),
+      slug: _asString(_requiredKey(json, "slug", "ClaimWorkspaceInvitationResponseWorkspace"), "ClaimWorkspaceInvitationResponseWorkspace.slug"),
+      name: _asString(_requiredKey(json, "name", "ClaimWorkspaceInvitationResponseWorkspace"), "ClaimWorkspaceInvitationResponseWorkspace.name"),
+      visibility: ClaimWorkspaceInvitationResponseWorkspaceVisibility.fromJson(_requiredKey(json, "visibility", "ClaimWorkspaceInvitationResponseWorkspace"), "ClaimWorkspaceInvitationResponseWorkspace.visibility"),
+      role: ClaimWorkspaceInvitationResponseWorkspaceRole.fromJson(_requiredKey(json, "role", "ClaimWorkspaceInvitationResponseWorkspace"), "ClaimWorkspaceInvitationResponseWorkspace.role"),
+      revision: _asInt(_requiredKey(json, "revision", "ClaimWorkspaceInvitationResponseWorkspace"), "ClaimWorkspaceInvitationResponseWorkspace.revision"),
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "id": id,
+      "slug": slug,
+      "name": name,
+      "visibility": visibility.toJson(),
+      "role": role.toJson(),
+      "revision": revision,
+    };
+    return json;
+  }
+}
+
+class ClaimWorkspaceInvitationResponse {
+  final String contract;
+  final ClaimWorkspaceInvitationResponseResult result;
+  final ClaimWorkspaceInvitationResponseWorkspace workspace;
+  final bool replayed;
+
+  const ClaimWorkspaceInvitationResponse({
+    required this.contract,
+    required this.result,
+    required this.workspace,
+    required this.replayed,
+  });
+
+  factory ClaimWorkspaceInvitationResponse.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"contract", "result", "workspace", "replayed"}, "ClaimWorkspaceInvitationResponse");
+    return ClaimWorkspaceInvitationResponse(
+      contract: _expectStringConst(_requiredKey(json, "contract", "ClaimWorkspaceInvitationResponse"), "workspace.invite-claim-response@1", "ClaimWorkspaceInvitationResponse.contract"),
+      result: ClaimWorkspaceInvitationResponseResult.fromJson(_requiredKey(json, "result", "ClaimWorkspaceInvitationResponse"), "ClaimWorkspaceInvitationResponse.result"),
+      workspace: ClaimWorkspaceInvitationResponseWorkspace.fromJson(_asMap(_requiredKey(json, "workspace", "ClaimWorkspaceInvitationResponse"), "ClaimWorkspaceInvitationResponse.workspace")),
+      replayed: _asBool(_requiredKey(json, "replayed", "ClaimWorkspaceInvitationResponse"), "ClaimWorkspaceInvitationResponse.replayed"),
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "contract": contract,
+      "result": result.toJson(),
+      "workspace": workspace.toJson(),
+      "replayed": replayed,
+    };
+    return json;
+  }
 }

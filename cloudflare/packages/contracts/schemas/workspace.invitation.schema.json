@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/workspace.invitation@1",
+  "title": "WorkspaceInvitationView",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "invitationId",
+    "workspace",
+    "workspaceRevision",
+    "role",
+    "status",
+    "issuedAt",
+    "expiresAt",
+    "revokedAt",
+    "maxUses",
+    "uses",
+    "usesRemaining"
+  ],
+  "properties": {
+    "contract": { "const": "workspace.invitation@1" },
+    "invitationId": { "type": "string", "format": "uuid" },
+    "workspace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "slug", "name"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "slug": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 48,
+          "pattern": "^[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])$"
+        },
+        "name": { "type": "string", "minLength": 1, "maxLength": 80 }
+      }
+    },
+    "workspaceRevision": { "type": "integer", "minimum": 1 },
+    "role": { "enum": ["member", "guest"] },
+    "status": { "enum": ["issued", "revoked", "expired", "exhausted"] },
+    "issuedAt": { "type": "string", "format": "date-time" },
+    "expiresAt": { "type": "string", "format": "date-time" },
+    "revokedAt": {
+      "oneOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }]
+    },
+    "maxUses": { "type": "integer", "minimum": 1, "maximum": 100 },
+    "uses": { "type": "integer", "minimum": 0, "maximum": 100 },
+    "usesRemaining": { "type": "integer", "minimum": 0, "maximum": 100 }
+  }
+}

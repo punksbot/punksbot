@@ -1,11 +1,22 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 
 import type { ConversationSummary } from "@punks/contracts";
+import { usePunksCapabilityAvailable } from "@/shared/capabilities/PunksCapabilityProvider";
 
 import { usePunksAccount, usePunksWorkspace } from "./PunksRuntime";
 import { PunksConversation } from "./PunksConversation";
+import {
+  PunksCurrentPunkName,
+  PunksIdentityPanel,
+} from "./PunksIdentityPanels";
 import type { PunksRoute } from "./routes";
+
+const LazyWorkspaceGovernanceLauncher = lazy(() =>
+  import("./IdentityGovernanceControls").then((module) => ({
+    default: module.WorkspaceGovernanceLauncher,
+  })),
+);
 
 function routeForConversation(
   workspaceSlug: string,
@@ -29,6 +40,14 @@ function WorkspaceSidebar({
   const workspace = usePunksWorkspace();
   const route = account.route;
   const [showAccountSwitch, setShowAccountSwitch] = useState(false);
+  const [identityPanel, setIdentityPanel] = useState<
+    "profile" | "search" | null
+  >(null);
+  const profileAvailable = usePunksCapabilityAvailable("punk-profile");
+  const searchAvailable = usePunksCapabilityAvailable("private-punk-search");
+  const governanceAvailable = usePunksCapabilityAvailable(
+    "identity-governance",
+  );
   const selectedConversationId =
     route?.kind === "conversation" || route?.kind === "message"
       ? route.conversationId
@@ -47,7 +66,9 @@ function WorkspaceSidebar({
           {workspace.workspace.name}
         </h1>
         <p className="mt-1 truncate text-xs text-muted-foreground">
-          {account.session?.punk.displayName ?? "Punk"}
+          <PunksCurrentPunkName
+            fallback={account.session?.punk.displayName ?? "Punk"}
+          />
         </p>
       </div>
       <nav
@@ -107,6 +128,31 @@ function WorkspaceSidebar({
         </div>
       </nav>
       <div className="m-3 space-y-2">
+        {governanceAvailable ? (
+          <Suspense fallback={null}>
+            <LazyWorkspaceGovernanceLauncher />
+          </Suspense>
+        ) : null}
+        {profileAvailable ? (
+          <button
+            className="w-full rounded-md border border-border px-3 py-2 text-left text-sm hover:bg-accent/60"
+            data-testid="punks-open-profile"
+            onClick={() => setIdentityPanel("profile")}
+            type="button"
+          >
+            Profile
+          </button>
+        ) : null}
+        {searchAvailable ? (
+          <button
+            className="w-full rounded-md border border-border px-3 py-2 text-left text-sm hover:bg-accent/60"
+            data-testid="punks-open-punk-search"
+            onClick={() => setIdentityPanel("search")}
+            type="button"
+          >
+            Find Punks
+          </button>
+        ) : null}
         <button
           aria-expanded={showAccountSwitch}
           className="w-full rounded-md border border-border px-3 py-2 text-left text-sm hover:bg-accent/60"
@@ -148,6 +194,12 @@ function WorkspaceSidebar({
           Sign out
         </button>
       </div>
+      {identityPanel !== null ? (
+        <PunksIdentityPanel
+          onClose={() => setIdentityPanel(null)}
+          panel={identityPanel}
+        />
+      ) : null}
     </aside>
   );
 }

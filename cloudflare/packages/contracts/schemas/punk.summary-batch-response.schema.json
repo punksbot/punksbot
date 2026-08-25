@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/punk.summary-batch-response@1",
+  "title": "PunkSummaryBatchResponse",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "workspaceId", "items"],
+  "properties": {
+    "contract": { "const": "punk.summary-batch-response@1" },
+    "workspaceId": { "type": "string", "format": "uuid" },
+    "items": {
+      "type": "array",
+      "maxItems": 100,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/summary" }
+    }
+  },
+  "$defs": {
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["punkId", "displayName", "avatarUrl"],
+      "properties": {
+        "punkId": { "type": "string", "format": "uuid" },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "avatarUrl": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uri",
+              "pattern": "^https://",
+              "maxLength": 2048
+            },
+            { "type": "null" }
+          ]
+        }
+      }
+    }
+  }
+}

@@ -274,6 +274,9 @@ importers:
       '@punks/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@punks/core':
+        specifier: workspace:*
+        version: link:../../packages/core
     devDependencies:
       '@biomejs/biome':
         specifier: ^2.4.6

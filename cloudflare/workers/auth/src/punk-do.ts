@@ -1,5 +1,14 @@
-import type { AuthProviderProfile, Punk } from "@punks/contracts";
+import type {
+  AuthProviderProfile,
+  Punk,
+  UpdatePunkProfileCommand,
+} from "@punks/contracts";
 import { validateContract } from "@punks/contracts";
+import {
+  canonicalJson,
+  canonicalPunkAvatarUrl,
+  canonicalPunkDisplayName,
+} from "@punks/core";
 import { DurableObject } from "cloudflare:workers";
 
 import type { AuthEnv } from "./env";
@@ -28,6 +37,15 @@ type RightsOperationRow = {
   membership_role: string | null;
   membership_revision: number | null;
 };
+type ProfileCommandRow = Record<"payload_json" | "response_json", string>;
+
+export type PunkProfileUpdateResult =
+  | { ok: true; state: Punk; replayed: boolean }
+  | {
+      ok: false;
+      code: "invalid_input" | "not_found" | "inactive" | "idempotency_conflict";
+    }
+  | { ok: false; code: "revision_conflict"; currentRevision: number };
 
 export type AccountMergeWorkspaceRole =
   | "owner"
@@ -83,6 +101,7 @@ const MAX_ACCOUNT_MERGE_RIGHTS = 256;
 const MAX_PENDING_ACCOUNT_MERGE_RIGHTS_OPERATIONS = 64;
 const MAX_TERMINAL_ACCOUNT_MERGE_RIGHTS_OPERATIONS = 256;
 const MAX_WORKSPACE_REVISION = 2_147_483_647;
+const MAX_PROFILE_COMMAND_RESULTS = 256;
 const LEGACY_SESSION_COVERAGE_MILLISECONDS = 30 * 24 * 60 * 60 * 1_000;
 const OPAQUE_UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -226,6 +245,12 @@ export class PunkDO extends DurableObject<AuthEnv> {
         )),
         state TEXT NOT NULL CHECK (state IN ('pending', 'prepared', 'deliverable')),
         expires_at TEXT NOT NULL
+      ) STRICT;
+      CREATE TABLE IF NOT EXISTS profile_command_results (
+        command_id TEXT PRIMARY KEY,
+        payload_json TEXT NOT NULL,
+        response_json TEXT NOT NULL,
+        committed_at TEXT NOT NULL
       ) STRICT
     `);
   }
@@ -368,6 +393,103 @@ export class PunkDO extends DurableObject<AuthEnv> {
       return { ok: false, code: "inactive" };
     }
     return { ok: true, state, replayed: true };
+  }
+
+  /** Private authority read used only for bounded alias resolution. */
+  readForResolution(): Punk | null {
+    const state = this.state();
+    return state !== null &&
+      validateContract("punks://contracts/punk@1", state).valid
+      ? state
+      : null;
+  }
+
+  /** Applies one self-profile command atomically at its expected revision. */
+  updateProfile(input: unknown): PunkProfileUpdateResult {
+    if (!validateContract("punks://contracts/punk.update@1", input).valid) {
+      return { ok: false, code: "invalid_input" };
+    }
+    const command = input as UpdatePunkProfileCommand;
+    let displayName: string;
+    let avatarUrl: string | null;
+    try {
+      displayName = canonicalPunkDisplayName(command.displayName);
+      avatarUrl = canonicalPunkAvatarUrl(command.avatarUrl);
+    } catch {
+      return { ok: false, code: "invalid_input" };
+    }
+    const payloadJson = canonicalJson({
+      contract: command.contract,
+      commandId: command.commandId,
+      expectedRevision: command.expectedRevision,
+      displayName,
+      avatarUrl,
+    });
+    const receipt = this.ctx.storage.sql
+      .exec<ProfileCommandRow>(
+        `SELECT payload_json, response_json
+         FROM profile_command_results WHERE command_id = ?`,
+        command.commandId,
+      )
+      .toArray()[0];
+    if (receipt !== undefined) {
+      if (receipt.payload_json !== payloadJson) {
+        return { ok: false, code: "idempotency_conflict" };
+      }
+      try {
+        const state = JSON.parse(receipt.response_json) as Punk;
+        return validateContract("punks://contracts/punk@1", state).valid
+          ? { ok: true, state, replayed: true }
+          : { ok: false, code: "inactive" };
+      } catch {
+        return { ok: false, code: "inactive" };
+      }
+    }
+
+    const current = this.state();
+    if (current === null) return { ok: false, code: "not_found" };
+    if (current.status !== "active") return { ok: false, code: "inactive" };
+    if (current.revision !== command.expectedRevision) {
+      return {
+        ok: false,
+        code: "revision_conflict",
+        currentRevision: current.revision,
+      };
+    }
+    const next: Punk = {
+      ...current,
+      displayName,
+      avatarUrl,
+      revision: current.revision + 1,
+      updatedAt: new Date().toISOString(),
+    };
+    if (!validateContract("punks://contracts/punk@1", next).valid) {
+      return { ok: false, code: "invalid_input" };
+    }
+    this.ctx.storage.transactionSync(() => {
+      this.ctx.storage.sql.exec(
+        "UPDATE punk_state SET state_json = ? WHERE singleton = 1",
+        JSON.stringify(next),
+      );
+      this.ctx.storage.sql.exec(
+        `INSERT INTO profile_command_results
+          (command_id, payload_json, response_json, committed_at)
+         VALUES (?, ?, ?, ?)`,
+        command.commandId,
+        payloadJson,
+        JSON.stringify(next),
+        next.updatedAt,
+      );
+      this.ctx.storage.sql.exec(
+        `DELETE FROM profile_command_results
+         WHERE rowid NOT IN (
+           SELECT rowid FROM profile_command_results
+           ORDER BY rowid DESC LIMIT ?
+         )`,
+        MAX_PROFILE_COMMAND_RESULTS,
+      );
+    });
+    return { ok: true, state: next, replayed: false };
   }
 
   hasIdentity(input: {

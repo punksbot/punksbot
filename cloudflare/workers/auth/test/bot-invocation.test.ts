@@ -102,10 +102,12 @@ describe("role-separated private Auth RPC entrypoints", () => {
       [
         "constructor",
         "fetch",
+        "getPunkProfile",
         "punkExists",
         "resolvePunkSummary",
         "resolveSessionCookie",
         "resolveSessionId",
+        "updatePunkProfile",
       ].sort(),
     );
     expect(

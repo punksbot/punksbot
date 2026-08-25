@@ -207,3 +207,162 @@ test("the Tauri WorkspaceSession transports a native aggregate beyond one page",
   assert.equal(listed.length, 101);
   assert.equal(listed[100].name, "Stream 101");
 });
+
+test("identity governance uses only dedicated typed IPC commands", async () => {
+  const workspaceId = "11111111-1111-4111-8111-111111111111";
+  const punkId = "22222222-2222-4222-8222-222222222222";
+  const targetPunkId = "33333333-3333-4333-8333-333333333333";
+  const invitationId = "77777777-7777-4777-8777-777777777777";
+  const code = `${workspaceId}.${"A".repeat(43)}`;
+  const invitation = {
+    contract: "workspace.invitation@1",
+    invitationId,
+    workspace: { id: workspaceId, slug: "alpha", name: "Alpha" },
+    workspaceRevision: 1,
+    role: "member",
+    status: "issued",
+    issuedAt: "2026-08-26T00:00:00.000Z",
+    expiresAt: "2026-09-02T00:00:00.000Z",
+    revokedAt: null,
+    maxUses: 1,
+    uses: 0,
+    usesRemaining: 1,
+  };
+  const governance = {
+    id: workspaceId,
+    slug: "alpha",
+    name: "Alpha",
+    visibility: "private",
+    status: "active",
+    ownerPunkId: punkId,
+    members: [
+      { punkId, role: "owner" },
+      { punkId: targetPunkId, role: "member" },
+    ],
+    revision: 1,
+    cursor: 1,
+    createdAt: "2026-08-26T00:00:00.000Z",
+    updatedAt: "2026-08-26T00:00:00.000Z",
+  };
+  handler = (command) => {
+    switch (command) {
+      case "punks_open_workspace":
+        return {
+          origin: "https://staging.punks.bot",
+          punkId,
+          workspaceId,
+          generation: 1,
+        };
+      case "punks_get_workspace_invitation":
+        return invitation;
+      case "punks_claim_workspace_invitation":
+        return {
+          contract: "workspace.invite-claim-response@1",
+          result: "joined",
+          workspace: {
+            id: workspaceId,
+            slug: "alpha",
+            name: "Alpha",
+            visibility: "private",
+            role: "member",
+            revision: 2,
+          },
+          replayed: false,
+        };
+      case "punks_get_workspace_governance":
+        return governance;
+      case "punks_create_workspace_invitation":
+        return {
+          contract: "workspace.invite-response@1",
+          invitation,
+          code,
+          replayed: false,
+        };
+      case "punks_revoke_workspace_invitation":
+        return {
+          contract: "workspace.invite-revoke-response@1",
+          invitation: {
+            ...invitation,
+            status: "revoked",
+            revokedAt: "2026-08-26T00:01:00.000Z",
+          },
+          replayed: false,
+        };
+      case "punks_set_workspace_member_role":
+      case "punks_remove_workspace_member":
+        return {
+          contract: "workspace.membership-mutation-response@1",
+          workspace: governance,
+          replayed: false,
+        };
+      default:
+        throw new Error(`Unexpected command: ${command}`);
+    }
+  };
+
+  const { TauriPunksAccountClient } = await import("./punksTauriClient.ts");
+  const client = new TauriPunksAccountClient();
+  await client.getWorkspaceInvitation(code);
+  await client.claimWorkspaceInvitation({ code, expectedRevision: 1 });
+  const session = await client.openWorkspace(workspaceId);
+  await session.getGovernance();
+  await session.createInvitation({
+    role: "member",
+    expectedRevision: 1,
+  });
+  await session.revokeInvitation({ invitationId, expectedRevision: 1 });
+  await session.setMemberRole({
+    targetPunkId,
+    role: "moderator",
+    expectedRevision: 1,
+  });
+  await session.removeMember({ targetPunkId, expectedRevision: 1 });
+
+  assert.deepEqual(
+    calls.slice(0, 2).map(({ command, args }) => ({ command, args })),
+    [
+      { command: "punks_get_workspace_invitation", args: { code } },
+      {
+        command: "punks_claim_workspace_invitation",
+        args: { input: { code, expectedRevision: 1 } },
+      },
+    ],
+  );
+  assert.deepEqual(
+    calls.slice(3).map(({ command, args }) => ({ command, args })),
+    [
+      {
+        command: "punks_get_workspace_governance",
+        args: { lease: session.lease },
+      },
+      {
+        command: "punks_create_workspace_invitation",
+        args: {
+          lease: session.lease,
+          input: { role: "member", expectedRevision: 1 },
+        },
+      },
+      {
+        command: "punks_revoke_workspace_invitation",
+        args: {
+          lease: session.lease,
+          input: { invitationId, expectedRevision: 1 },
+        },
+      },
+      {
+        command: "punks_set_workspace_member_role",
+        args: {
+          lease: session.lease,
+          input: { targetPunkId, role: "moderator", expectedRevision: 1 },
+        },
+      },
+      {
+        command: "punks_remove_workspace_member",
+        args: {
+          lease: session.lease,
+          input: { targetPunkId, expectedRevision: 1 },
+        },
+      },
+    ],
+  );
+});

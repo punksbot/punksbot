@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/workspace.invite-response@1",
+  "title": "CreateWorkspaceInvitationResponse",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "invitation", "code", "replayed"],
+  "properties": {
+    "contract": { "const": "workspace.invite-response@1" },
+    "invitation": { "$ref": "schemas/workspace.invitation.schema.json" },
+    "code": {
+      "type": "string",
+      "minLength": 80,
+      "maxLength": 80,
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\\.[A-Za-z0-9_-]{43}$"
+    },
+    "replayed": { "type": "boolean" }
+  }
+}

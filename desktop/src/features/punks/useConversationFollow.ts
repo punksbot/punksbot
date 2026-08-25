@@ -64,6 +64,12 @@ export function useConversationFollow({
         queryClient,
         queryPrefix,
         ["punks", "authors", scope.lease.workspaceId, scope.lease.generation],
+        [
+          "punks",
+          "punk-search",
+          scope.lease.workspaceId,
+          scope.lease.generation,
+        ],
         streamKey,
       );
     };

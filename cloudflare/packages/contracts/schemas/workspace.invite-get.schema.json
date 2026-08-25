@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/workspace.invite-get@1",
+  "title": "GetWorkspaceInvitationQuery",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "code"],
+  "properties": {
+    "contract": { "const": "workspace.invite-get@1" },
+    "code": {
+      "type": "string",
+      "minLength": 80,
+      "maxLength": 80,
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\\.[A-Za-z0-9_-]{43}$"
+    }
+  }
+}

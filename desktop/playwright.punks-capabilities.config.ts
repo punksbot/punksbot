@@ -5,7 +5,10 @@ const baseURL = `http://127.0.0.1:${port}`;
 
 export default defineConfig({
   testDir: "./tests/e2e",
-  testMatch: "**/capability-masking.spec.ts",
+  testMatch: [
+    "**/capability-masking.spec.ts",
+    "**/punk-profile-search.spec.ts",
+  ],
   timeout: 30_000,
   retries: 0,
   workers: 1,

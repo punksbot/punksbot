@@ -4,9 +4,9 @@ use punks_account_client::ceremony::CompiledPunksEnvironment;
 use punks_account_client::{
     AuthorReference, AuthorSummary, ClientDistribution, ClientFailure, ClientPlatform,
     DesktopCompatibility, FollowCancellation, FollowConnection, FollowDelivery, MessagePage,
-    MessageReplyTarget, MessageView, PunksAccountClient, PunksNavigationTarget,
-    ReactionMutationResult, StreamSummary, StreamView, WorkspaceLease, WorkspaceSession,
-    WorkspaceSummary,
+    MessageReplyTarget, MessageView, PunkProfile, PunkPublicSummary, PunkSearchInput,
+    PunkSearchPage, PunksAccountClient, PunksNavigationTarget, ReactionMutationResult,
+    StreamSummary, StreamView, WorkspaceLease, WorkspaceSession, WorkspaceSummary,
 };
 use serde::Deserialize;
 use tokio::sync::{Mutex, RwLock};
@@ -16,6 +16,10 @@ use crate::punks_auth_state::NativeAuthenticationRuntime;
 #[path = "punks_message_lifecycle.rs"]
 /// Tauri commands for capability-gated Message lifecycle mutations.
 pub mod punks_message_lifecycle;
+
+#[path = "punks_identity_governance.rs"]
+/// Tauri commands for capability-gated Workspace identity governance.
+pub mod punks_identity_governance;
 
 /// Native state for the single Punks Account and mounted Workspace.
 pub struct PunksDesktopClient {
@@ -109,7 +113,10 @@ impl PunksDesktopClient {
         self.account()?.activate_prepared_session(secret).await
     }
 
-    async fn session(&self, lease: &WorkspaceLease) -> Result<WorkspaceSession, ClientFailure> {
+    pub(crate) async fn session(
+        &self,
+        lease: &WorkspaceLease,
+    ) -> Result<WorkspaceSession, ClientFailure> {
         self.sessions
             .lock()
             .await
@@ -192,6 +199,38 @@ pub async fn punks_list_workspaces(
 ) -> Result<Vec<WorkspaceSummary>, ClientFailure> {
     let _transition = client.transitions.write().await;
     client.account()?.list_workspaces().await
+}
+
+#[tauri::command]
+pub async fn punks_get_punk_profile(
+    client: tauri::State<'_, PunksDesktopClient>,
+) -> Result<PunkProfile, ClientFailure> {
+    let _operation = client.transitions.read().await;
+    client.account()?.get_punk_profile().await
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UpdatePunkProfileInput {
+    expected_revision: u64,
+    display_name: String,
+    avatar_url: Option<String>,
+}
+
+#[tauri::command]
+pub async fn punks_update_punk_profile(
+    client: tauri::State<'_, PunksDesktopClient>,
+    input: UpdatePunkProfileInput,
+) -> Result<PunkProfile, ClientFailure> {
+    let _operation = client.transitions.read().await;
+    client
+        .account()?
+        .update_punk_profile(
+            input.expected_revision,
+            &input.display_name,
+            input.avatar_url.as_deref(),
+        )
+        .await
 }
 
 #[derive(Debug, Deserialize)]
@@ -345,6 +384,58 @@ pub async fn punks_resolve_authors(
         .session(&lease)
         .await?
         .resolve_authors(&authors)
+        .await
+}
+
+#[tauri::command]
+pub async fn punks_get_punk_summaries(
+    client: tauri::State<'_, PunksDesktopClient>,
+    lease: WorkspaceLease,
+    punk_ids: Vec<String>,
+) -> Result<Vec<PunkPublicSummary>, ClientFailure> {
+    let _operation = client.transitions.read().await;
+    client
+        .session(&lease)
+        .await?
+        .get_punk_summaries(&punk_ids)
+        .await
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
+pub enum PunkSearchQueryInput {
+    Prefix { value: String },
+    PunkId { punk_id: String },
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SearchPunksInput {
+    query: PunkSearchQueryInput,
+    limit: u8,
+    cursor: Option<String>,
+}
+
+#[tauri::command]
+pub async fn punks_search_punks(
+    client: tauri::State<'_, PunksDesktopClient>,
+    lease: WorkspaceLease,
+    input: SearchPunksInput,
+) -> Result<PunkSearchPage, ClientFailure> {
+    let _operation = client.transitions.read().await;
+    let query = match input.query {
+        PunkSearchQueryInput::Prefix { value } => PunkSearchInput::Prefix(value),
+        PunkSearchQueryInput::PunkId { punk_id } => PunkSearchInput::PunkId(punk_id),
+    };
+    client
+        .session(&lease)
+        .await?
+        .search_punks(query, input.limit, input.cursor.as_deref())
         .await
 }
 

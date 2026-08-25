@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/punk.update@1",
+  "title": "UpdatePunkProfileCommand",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "commandId",
+    "expectedRevision",
+    "displayName",
+    "avatarUrl"
+  ],
+  "properties": {
+    "contract": { "const": "punk.update@1" },
+    "commandId": { "type": "string", "format": "uuid" },
+    "expectedRevision": { "type": "integer", "minimum": 1 },
+    "displayName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80,
+      "pattern": "\\S"
+    },
+    "avatarUrl": {
+      "anyOf": [
+        {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://",
+          "maxLength": 2048
+        },
+        { "type": "null" }
+      ]
+    }
+  }
+}

@@ -145,6 +145,13 @@ export type { Message } from "./generated/message";
 export type { SignedNostrEvent } from "./generated/nostr.signed-event";
 export type { UnsignedNostrEvent } from "./generated/nostr.unsigned-event";
 export type { PunksProblem } from "./generated/problem";
+export type { GetPunkProfileQuery } from "./generated/punk.get";
+export type { PunkSearchResponse } from "./generated/punk.search-response";
+export type { PunkSearchQuery } from "./generated/punk.search";
+export type { PunkSummaryBatchResponse } from "./generated/punk.summary-batch-response";
+export type { PunkSummaryBatchQuery } from "./generated/punk.summary-batch";
+export type { PunkPublicSummary } from "./generated/punk.summary";
+export type { UpdatePunkProfileCommand } from "./generated/punk.update";
 export type { Punk } from "./generated/punk";
 export type { WorkspaceProjectionMessage } from "./generated/workspace.projection";
 export type {
@@ -166,8 +173,17 @@ export type {
   ListWorkspacesResponse,
   WorkspaceSummary,
 } from "./generated/workspace.list-response";
+export type { WorkspaceInvitationView } from "./generated/workspace.invitation";
+export type { CreateWorkspaceInvitationCommand } from "./generated/workspace.invite";
+export type { GetWorkspaceInvitationQuery } from "./generated/workspace.invite-get";
+export type { CreateWorkspaceInvitationResponse } from "./generated/workspace.invite-response";
+export type { RevokeWorkspaceInvitationCommand } from "./generated/workspace.invite-revoke";
+export type { RevokeWorkspaceInvitationResponse } from "./generated/workspace.invite-revoke-response";
+export type { ClaimWorkspaceInvitationCommand } from "./generated/workspace.invite-claim";
+export type { ClaimWorkspaceInvitationResponse } from "./generated/workspace.invite-claim-response";
 export type { RemoveWorkspaceMemberCommand } from "./generated/workspace.member-remove";
 export type { SetWorkspaceMemberRoleCommand } from "./generated/workspace.member-set-role";
+export type { WorkspaceMembershipMutationResponse } from "./generated/workspace.membership-mutation-response";
 export type { RenameWorkspaceCommand } from "./generated/workspace.rename";
 export type { Workspace } from "./generated/workspace";
 

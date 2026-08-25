@@ -17,8 +17,10 @@ use super::{
 };
 
 mod message_mutations;
+mod punk_profile_search;
 mod social_reads;
 mod workspace_context;
+mod workspace_governance;
 
 type ResponseFuture = Pin<Box<dyn Future<Output = Result<Value, ClientFailure>> + Send>>;
 
@@ -888,7 +890,16 @@ fn rust_replays_every_profile_operation_with_the_canonical_trace() {
     );
     let source = std::fs::read_to_string(path).unwrap();
     let corpus: OperationCorpus = serde_json::from_str(&source).unwrap();
-    assert_eq!(corpus.operations.len(), 23);
+    let profile_path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../../../cloudflare/packages/contracts/profiles/desktop-social-loop@1.json"
+    );
+    let profile_source = std::fs::read_to_string(profile_path).unwrap();
+    let profile: serde_json::Value = serde_json::from_str(&profile_source).unwrap();
+    assert_eq!(
+        corpus.operations.len(),
+        profile["operations"].as_array().unwrap().len(),
+    );
     let mut traces = Vec::new();
     for operation in &corpus.operations {
         assert!(!operation.cases.is_empty(), "{}", operation.operation);

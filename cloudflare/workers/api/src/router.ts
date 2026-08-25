@@ -22,6 +22,12 @@ import type {
   MessageReactionMutationResponse,
   PostMessageResponse,
   PostMessageCommand,
+  Punk,
+  PunkPublicSummary,
+  PunkSearchQuery,
+  PunkSearchResponse,
+  PunkSummaryBatchQuery,
+  PunkSummaryBatchResponse,
   PublishBotCommand,
   PunksWorkspaceView,
   ListConversationsResponse,
@@ -32,6 +38,7 @@ import type {
   RemoveConversationMemberCommand,
   RemoveMessageReactionCommand,
   RemoveWorkspaceMemberCommand,
+  RevokeWorkspaceInvitationCommand,
   RenameWorkspaceCommand,
   RetractMessageCommand,
   RestoreConversationCommand,
@@ -41,9 +48,13 @@ import type {
   SetWorkspaceMemberRoleCommand,
   SignedNostrEvent,
   ToggleMessageReactionCommand,
+  UpdatePunkProfileCommand,
   UpdateBotCommand,
   UpdateConversationCommand,
   Workspace,
+  ClaimWorkspaceInvitationCommand,
+  CreateWorkspaceInvitationCommand,
+  GetWorkspaceInvitationQuery,
 } from "@punks/contracts";
 import { validateContract } from "@punks/contracts";
 import {
@@ -54,12 +65,20 @@ import {
 import {
   canonicalJson,
   canonicalMessageReaction,
+  canonicalPunkAvatarUrl,
+  canonicalPunkDisplayName,
+  canonicalPunkSearchKey,
+  canonicalPunkSearchPrefix,
   decodeDirectoryCursor,
+  decodePunkSearchCursor,
   deriveOpaqueUuid,
   deriveBotInstallationId,
   encodeDirectoryCursor,
+  derivePunkSearchQueryBinding,
+  encodePunkSearchCursor,
   messageContentEnvelopeFits,
   sha256Hex,
+  PUNK_SEARCH_MAX_RESULTS,
 } from "@punks/core";
 
 import type { ApiEnv } from "./env";
@@ -71,7 +90,12 @@ import {
   problem,
   readJson,
 } from "./http";
-import type { WorkspaceExecuteResult } from "./rpc";
+import type {
+  WorkspaceExecuteResult,
+  WorkspaceInvitationClaimResult,
+  WorkspaceInvitationMutationResult,
+  WorkspaceInvitationQueryResult,
+} from "./rpc";
 import type {
   BotExecuteResult,
   BotInstallationExecuteResult,
@@ -109,6 +133,7 @@ const STAGING_RUNTIME_PROBES = [
   ["punks-bot-runtime-staging", "BOT_RUNTIME_IDENTITY"],
 ] as const;
 const DESKTOP_CAPABILITIES = DESKTOP_SOCIAL_LOOP_CAPABILITIES;
+const PUNK_SEARCH_CANDIDATE_SCAN_LIMIT = 101;
 
 function semanticVersionAtLeast(candidate: string, minimum: string): boolean {
   const parse = (value: string): readonly number[] | null => {
@@ -290,6 +315,16 @@ async function listWorkspaces(
   const session = await authenticatedPunkSession(request, env);
   if (session === null) {
     return problem(401, "unauthenticated", "Punk authentication is required");
+  }
+  try {
+    const summary = validatedResolvedPunkSummary(
+      await env.AUTH_SERVICE.resolvePunkSummary(session.punkId),
+    );
+    if (summary !== null && summary.id === session.punkId) {
+      await projectPunkSummaryBestEffort(env, summary);
+    }
+  } catch {
+    // Workspace discovery remains authoritative; the search index is eventual.
   }
   const parsed = listQuery(request);
   if (parsed instanceof Response) return parsed;
@@ -688,6 +723,659 @@ async function listStreams(
   return json(response, 200, { "cache-control": "no-store" });
 }
 
+type ResolvedPunkSummary = NonNullable<
+  Awaited<ReturnType<ApiEnv["AUTH_SERVICE"]["resolvePunkSummary"]>>
+>;
+
+function validatedResolvedPunkSummary(
+  value: unknown,
+): ResolvedPunkSummary | null {
+  if (
+    value === null ||
+    typeof value !== "object" ||
+    Array.isArray(value) ||
+    Object.keys(value).sort().join(",") !==
+      "avatarUrl,displayName,id,revision,updatedAt"
+  ) {
+    return null;
+  }
+  const summary = value as Record<string, unknown>;
+  if (
+    typeof summary.id !== "string" ||
+    !uuidPattern.test(summary.id) ||
+    !Number.isSafeInteger(summary.revision) ||
+    Number(summary.revision) < 1 ||
+    typeof summary.updatedAt !== "string" ||
+    !Number.isFinite(Date.parse(summary.updatedAt)) ||
+    new Date(Date.parse(summary.updatedAt)).toISOString() !== summary.updatedAt
+  ) {
+    return null;
+  }
+  try {
+    const displayName = canonicalPunkDisplayName(summary.displayName);
+    const avatarUrl = canonicalPunkAvatarUrl(summary.avatarUrl);
+    if (
+      displayName !== summary.displayName ||
+      avatarUrl !== summary.avatarUrl
+    ) {
+      return null;
+    }
+    const resolved = {
+      id: summary.id,
+      displayName,
+      avatarUrl,
+      revision: Number(summary.revision),
+      updatedAt: summary.updatedAt,
+    };
+    const publicView: PunkPublicSummary = {
+      punkId: resolved.id,
+      displayName: resolved.displayName,
+      avatarUrl: resolved.avatarUrl,
+    };
+    return validateContract("punks://contracts/punk.summary@1", publicView)
+      .valid
+      ? resolved
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function publicPunkSummary(summary: ResolvedPunkSummary): PunkPublicSummary {
+  return {
+    punkId: summary.id,
+    displayName: summary.displayName,
+    avatarUrl: summary.avatarUrl,
+  };
+}
+
+async function projectPunkSummaryBestEffort(
+  env: ApiEnv,
+  summary: ResolvedPunkSummary,
+): Promise<void> {
+  try {
+    await env.PROJECTION_DIRECTORY.upsertPunkProfile({
+      punkId: summary.id,
+      displayName: summary.displayName,
+      avatarUrl: summary.avatarUrl,
+      revision: summary.revision,
+      updatedAt: summary.updatedAt,
+    });
+  } catch {
+    // D1 is only an eventual candidate projection. The Account authority won.
+  }
+}
+
+async function workspaceReaderAccess(
+  env: ApiEnv,
+  workspaceId: string,
+  punkId: string,
+): Promise<WorkspaceAuthorizationResult | null> {
+  const raw = await env.WORKSPACES.getByName(workspaceId).authorize({
+    workspaceId,
+    punkId,
+    permission: "workspace.read",
+  });
+  return validateWorkspaceAuthorizationRpcResult(raw);
+}
+
+async function requireWorkspaceReader(
+  env: ApiEnv,
+  workspaceId: string,
+  punkId: string,
+): Promise<WorkspaceAuthorizationResult | Response> {
+  let access: WorkspaceAuthorizationResult | null;
+  try {
+    access = await workspaceReaderAccess(env, workspaceId, punkId);
+  } catch {
+    return problem(
+      503,
+      "temporarily_unavailable",
+      "Workspace authority is unavailable",
+      { retry: "later" },
+    );
+  }
+  if (access === null) {
+    return problem(
+      503,
+      "temporarily_unavailable",
+      "Workspace authority response is invalid",
+      { retry: "later" },
+    );
+  }
+  if (!access.ok) {
+    return access.code === "not_found"
+      ? problem(404, "not_found", "Workspace not found")
+      : problem(403, "forbidden", "Workspace access is required");
+  }
+  return access;
+}
+
+async function sameCurrentSession(
+  request: Request,
+  env: ApiEnv,
+  expected: { sessionId: string; punkId: string },
+): Promise<boolean> {
+  const current = await authenticatedPunkSession(request, env);
+  return (
+    current?.sessionId === expected.sessionId &&
+    current.punkId === expected.punkId
+  );
+}
+
+async function authorizedPunkSummary(
+  env: ApiEnv,
+  workspaceId: string,
+  requestedPunkId: string,
+): Promise<ResolvedPunkSummary | null> {
+  const rawSummary = await env.AUTH_SERVICE.resolvePunkSummary(requestedPunkId);
+  if (rawSummary === null) return null;
+  const summary = validatedResolvedPunkSummary(rawSummary);
+  if (summary === null) {
+    throw new Error("Punk authority response is invalid");
+  }
+  const access = await workspaceReaderAccess(env, workspaceId, summary.id);
+  if (access === null) {
+    throw new Error("Workspace authority response is invalid");
+  }
+  return access.ok ? summary : null;
+}
+
+async function getPunkProfile(
+  request: Request,
+  env: ApiEnv,
+): Promise<Response> {
+  const session = await authenticatedPunkSession(request, env);
+  if (session === null) {
+    return problem(401, "unauthenticated", "Punk authentication is required");
+  }
+  let profile: Punk | null;
+  try {
+    profile = await env.AUTH_SERVICE.getPunkProfile(session.punkId);
+  } catch {
+    return problem(
+      503,
+      "temporarily_unavailable",
+      "Punk profile authority is unavailable",
+      { retry: "later" },
+    );
+  }
+  if (profile === null) {
+    return problem(401, "unauthenticated", "Punk Account is unavailable");
+  }
+  if (
+    profile.id !== session.punkId ||
+    profile.status !== "active" ||
+    !validateContract("punks://contracts/punk@1", profile).valid
+  ) {
+    return problem(
+      503,
+      "temporarily_unavailable",
+      "Punk profile authority response is invalid",
+      { retry: "later" },
+    );
+  }
+  const summary = validatedResolvedPunkSummary({
+    id: profile.id,
+    displayName: profile.displayName,
+    avatarUrl: profile.avatarUrl,
+    revision: profile.revision,
+    updatedAt: profile.updatedAt,
+  });
+  if (summary === null) {
+    return problem(500, "internal", "Punk profile violated its public view");
+  }
+  await projectPunkSummaryBestEffort(env, summary);
+  if (!(await sameCurrentSession(request, env, session))) {
+    return problem(401, "unauthenticated", "Punk Session is no longer active");
+  }
+  return json(profile, 200, { "cache-control": "no-store" });
+}
+
+async function updatePunkProfile(
+  request: Request,
+  env: ApiEnv,
+): Promise<Response> {
+  const session = await authenticatedPunkSession(request, env);
+  if (session === null) {
+    return problem(401, "unauthenticated", "Punk authentication is required");
+  }
+  let body: unknown;
+  try {
+    body = await readJson(request, 16_384);
+  } catch {
+    return problem(400, "invalid_input", "Punk profile command is invalid");
+  }
+  if (!validateContract("punks://contracts/punk.update@1", body).valid) {
+    return problem(400, "invalid_input", "Punk profile command is invalid");
+  }
+  const command = body as UpdatePunkProfileCommand;
+  const invalidIdempotency = requireMatchingIdempotencyKey(
+    request,
+    command.commandId,
+  );
+  if (invalidIdempotency !== null) return invalidIdempotency;
+
+  let result: Awaited<ReturnType<ApiEnv["AUTH_SERVICE"]["updatePunkProfile"]>>;
+  try {
+    result = await env.AUTH_SERVICE.updatePunkProfile(session.punkId, command);
+  } catch {
+    return problem(
+      503,
+      "temporarily_unavailable",
+      "Punk profile authority is unavailable",
+      { retry: "later" },
+    );
+  }
+  if (!result.ok) {
+    switch (result.code) {
+      case "invalid_input":
+        return problem(400, "invalid_input", "Punk profile command is invalid");
+      case "not_found":
+        return problem(404, "not_found", "Punk profile not found");
+      case "inactive":
+        return problem(401, "unauthenticated", "Punk Account is inactive");
+      case "idempotency_conflict":
+        return problem(
+          409,
+          "idempotency_conflict",
+          "Punk profile command identity was reused",
+        );
+      case "revision_conflict":
+        return problem(
+          409,
+          "revision_conflict",
+          "Punk profile revision changed",
+          { detail: `Current revision is ${result.currentRevision}` },
+        );
+    }
+  }
+  if (
+    result.state.id !== session.punkId ||
+    result.state.status !== "active" ||
+    !validateContract("punks://contracts/punk@1", result.state).valid
+  ) {
+    return problem(
+      503,
+      "temporarily_unavailable",
+      "Punk profile authority response is invalid",
+      { retry: "later" },
+    );
+  }
+  const summary = validatedResolvedPunkSummary({
+    id: result.state.id,
+    displayName: result.state.displayName,
+    avatarUrl: result.state.avatarUrl,
+    revision: result.state.revision,
+    updatedAt: result.state.updatedAt,
+  });
+  if (summary === null) {
+    return problem(500, "internal", "Punk profile violated its public view");
+  }
+  await projectPunkSummaryBestEffort(env, summary);
+  if (!(await sameCurrentSession(request, env, session))) {
+    return problem(401, "unauthenticated", "Punk Session is no longer active");
+  }
+  return json(result.state, 200, { "cache-control": "no-store" });
+}
+
+async function getPunkSummaries(
+  request: Request,
+  env: ApiEnv,
+  workspaceId: string,
+): Promise<Response> {
+  const session = await authenticatedPunkSession(request, env);
+  if (session === null) {
+    return problem(401, "unauthenticated", "Punk authentication is required");
+  }
+  let body: unknown;
+  try {
+    body = await readJson(request);
+  } catch {
+    return problem(400, "invalid_input", "Punk summary query is invalid");
+  }
+  if (
+    !validateContract("punks://contracts/punk.summary-batch@1", body).valid ||
+    (body as PunkSummaryBatchQuery).workspaceId !== workspaceId
+  ) {
+    return problem(400, "invalid_input", "Punk summary query is invalid");
+  }
+  const requesterAccess = await requireWorkspaceReader(
+    env,
+    workspaceId,
+    session.punkId,
+  );
+  if (requesterAccess instanceof Response) return requesterAccess;
+
+  let resolved: Array<ResolvedPunkSummary | null>;
+  try {
+    resolved = await Promise.all(
+      (body as PunkSummaryBatchQuery).punkIds.map((punkId) =>
+        authorizedPunkSummary(env, workspaceId, punkId),
+      ),
+    );
+  } catch {
+    return problem(
+      503,
+      "temporarily_unavailable",
+      "Punk summary authority is unavailable",
+      { retry: "later" },
+    );
+  }
+  const unique = new Set<string>();
+  const summaries = resolved.flatMap((summary) =>
+    summary !== null && unique.add(summary.id)
+      ? [publicPunkSummary(summary)]
+      : [],
+  );
+  await Promise.all(
+    resolved.flatMap((summary) =>
+      summary === null ? [] : [projectPunkSummaryBestEffort(env, summary)],
+    ),
+  );
+  if (!(await sameCurrentSession(request, env, session))) {
+    return problem(401, "unauthenticated", "Punk Session is no longer active");
+  }
+  const currentAccess = await requireWorkspaceReader(
+    env,
+    workspaceId,
+    session.punkId,
+  );
+  if (currentAccess instanceof Response) return currentAccess;
+  const response = {
+    contract: "punk.summary-batch-response@1" as const,
+    workspaceId,
+    items: summaries,
+  };
+  if (
+    !validateContract(
+      "punks://contracts/punk.summary-batch-response@1",
+      response,
+    ).valid
+  ) {
+    return problem(500, "internal", "Punk summary response is invalid");
+  }
+  return json(response satisfies PunkSummaryBatchResponse, 200, {
+    "cache-control": "no-store",
+  });
+}
+
+function validatedPunkCandidates(
+  value: unknown,
+  prefix: string,
+  afterPunkId: string | undefined,
+): Array<{
+  punkId: string;
+  displayName: string;
+  avatarUrl: string | null;
+  revision: number;
+}> | null {
+  if (
+    !Array.isArray(value) ||
+    value.length > PUNK_SEARCH_CANDIDATE_SCAN_LIMIT
+  ) {
+    return null;
+  }
+  const candidates: Array<{
+    punkId: string;
+    displayName: string;
+    avatarUrl: string | null;
+    revision: number;
+  }> = [];
+  let previous = afterPunkId;
+  for (const candidate of value) {
+    if (
+      candidate === null ||
+      typeof candidate !== "object" ||
+      Array.isArray(candidate) ||
+      Object.keys(candidate).sort().join(",") !==
+        "avatarUrl,displayName,punkId,revision"
+    ) {
+      return null;
+    }
+    const record = candidate as Record<string, unknown>;
+    if (
+      typeof record.punkId !== "string" ||
+      !uuidPattern.test(record.punkId) ||
+      (previous !== undefined && record.punkId <= previous) ||
+      !Number.isSafeInteger(record.revision) ||
+      Number(record.revision) < 1
+    ) {
+      return null;
+    }
+    try {
+      const displayName = canonicalPunkDisplayName(record.displayName);
+      const avatarUrl = canonicalPunkAvatarUrl(record.avatarUrl);
+      if (
+        displayName !== record.displayName ||
+        avatarUrl !== record.avatarUrl ||
+        !canonicalPunkSearchKey(displayName).startsWith(prefix)
+      ) {
+        return null;
+      }
+      candidates.push({
+        punkId: record.punkId,
+        displayName,
+        avatarUrl,
+        revision: Number(record.revision),
+      });
+      previous = record.punkId;
+    } catch {
+      return null;
+    }
+  }
+  return candidates;
+}
+
+async function searchPunks(
+  request: Request,
+  env: ApiEnv,
+  workspaceId: string,
+): Promise<Response> {
+  const session = await authenticatedPunkSession(request, env);
+  if (session === null) {
+    return problem(401, "unauthenticated", "Punk authentication is required");
+  }
+  let body: unknown;
+  try {
+    body = await readJson(request);
+  } catch {
+    return problem(400, "invalid_input", "Punk search query is invalid");
+  }
+  if (
+    !validateContract("punks://contracts/punk.search@1", body).valid ||
+    (body as PunkSearchQuery).workspaceId !== workspaceId
+  ) {
+    return problem(400, "invalid_input", "Punk search query is invalid");
+  }
+  const query = body as PunkSearchQuery;
+  const requesterAccess = await requireWorkspaceReader(
+    env,
+    workspaceId,
+    session.punkId,
+  );
+  if (requesterAccess instanceof Response) return requesterAccess;
+
+  let summaries: PunkPublicSummary[] = [];
+  let nextCursor: string | null = null;
+  if (query.query.kind === "punk_id") {
+    if (query.cursor !== null || query.limit !== 1) {
+      return problem(400, "invalid_input", "Exact Punk lookup is invalid");
+    }
+    try {
+      const summary = await authorizedPunkSummary(
+        env,
+        workspaceId,
+        query.query.punkId,
+      );
+      if (summary !== null) {
+        summaries = [publicPunkSummary(summary)];
+        await projectPunkSummaryBestEffort(env, summary);
+      }
+    } catch {
+      return problem(
+        503,
+        "temporarily_unavailable",
+        "Punk search authority is unavailable",
+        { retry: "later" },
+      );
+    }
+  } else {
+    let prefix: string;
+    try {
+      prefix = canonicalPunkSearchPrefix(query.query.value);
+    } catch {
+      return problem(400, "query_too_short", "Punk search prefix is too short");
+    }
+    const cursorKey = new TextEncoder().encode(env.DIRECTORY_CURSOR_KEY);
+    let queryBinding: string;
+    try {
+      queryBinding = await derivePunkSearchQueryBinding(
+        {
+          requesterPunkId: session.punkId,
+          workspaceId,
+          prefix,
+        },
+        cursorKey,
+      );
+    } catch {
+      return problem(500, "internal", "Punk search cursor key is invalid");
+    }
+    const scope = {
+      requesterPunkId: session.punkId,
+      workspaceId,
+      queryBinding,
+      limit: query.limit,
+    };
+    let afterPunkId: string | undefined;
+    let remaining = PUNK_SEARCH_MAX_RESULTS;
+    if (query.cursor !== null) {
+      try {
+        const cursor = await decodePunkSearchCursor(
+          query.cursor,
+          scope,
+          cursorKey,
+        );
+        afterPunkId = cursor.positionPunkId;
+        remaining = cursor.remaining;
+      } catch {
+        return problem(400, "invalid_input", "Punk search cursor is invalid");
+      }
+    }
+    let rawCandidates: unknown;
+    try {
+      rawCandidates = await env.PROJECTION_DIRECTORY.searchPunkCandidates({
+        workspaceId,
+        prefix,
+        limit: PUNK_SEARCH_CANDIDATE_SCAN_LIMIT,
+        ...(afterPunkId === undefined ? {} : { afterPunkId }),
+      });
+    } catch {
+      return problem(
+        503,
+        "temporarily_unavailable",
+        "Punk search projection is unavailable",
+        { retry: "later" },
+      );
+    }
+    const candidates = validatedPunkCandidates(
+      rawCandidates,
+      prefix,
+      afterPunkId,
+    );
+    if (candidates === null) {
+      return problem(
+        503,
+        "temporarily_unavailable",
+        "Punk search projection response is invalid",
+        { retry: "later" },
+      );
+    }
+    let resolved: Array<{
+      positionPunkId: string;
+      summary: ResolvedPunkSummary;
+    }>;
+    try {
+      const fresh = await Promise.all(
+        candidates.map(async (candidate) => ({
+          positionPunkId: candidate.punkId,
+          summary: await authorizedPunkSummary(
+            env,
+            workspaceId,
+            candidate.punkId,
+          ),
+        })),
+      );
+      const seen = new Set<string>();
+      resolved = fresh.flatMap(({ positionPunkId, summary }) =>
+        summary !== null &&
+        canonicalPunkSearchKey(summary.displayName).startsWith(prefix) &&
+        seen.add(summary.id)
+          ? [{ positionPunkId, summary }]
+          : [],
+      );
+    } catch {
+      return problem(
+        503,
+        "temporarily_unavailable",
+        "Punk search authority is unavailable",
+        { retry: "later" },
+      );
+    }
+    const pageLimit = Math.min(query.limit, remaining);
+    const page = resolved.slice(0, pageLimit);
+    summaries = page.map(({ summary }) => publicPunkSummary(summary));
+    await Promise.all(
+      page.map(({ summary }) => projectPunkSummaryBestEffort(env, summary)),
+    );
+    const nextRemaining = remaining - page.length;
+    if (resolved.length > page.length && page.length > 0 && nextRemaining > 0) {
+      const positionPunkId = page.at(-1)?.positionPunkId;
+      if (positionPunkId === undefined) {
+        return problem(500, "internal", "Punk search pagination failed");
+      }
+      try {
+        nextCursor = await encodePunkSearchCursor(
+          {
+            version: 1,
+            ...scope,
+            positionPunkId,
+            remaining: nextRemaining,
+          },
+          cursorKey,
+        );
+      } catch {
+        return problem(500, "internal", "Punk search pagination failed");
+      }
+    }
+  }
+
+  if (!(await sameCurrentSession(request, env, session))) {
+    return problem(401, "unauthenticated", "Punk Session is no longer active");
+  }
+  const currentAccess = await requireWorkspaceReader(
+    env,
+    workspaceId,
+    session.punkId,
+  );
+  if (currentAccess instanceof Response) return currentAccess;
+  const response = {
+    contract: "punk.search-response@1" as const,
+    workspaceId,
+    items: summaries,
+    nextCursor,
+  };
+  if (
+    !validateContract("punks://contracts/punk.search-response@1", response)
+      .valid
+  ) {
+    return problem(500, "internal", "Punk search response is invalid");
+  }
+  return json(response as PunkSearchResponse, 200, {
+    "cache-control": "no-store",
+  });
+}
+
 async function resolveAuthors(
   request: Request,
   env: ApiEnv,
@@ -709,45 +1397,16 @@ async function resolveAuthors(
   ) {
     return problem(400, "invalid_input", "Author query is invalid");
   }
-  let rawAccess: unknown;
-  try {
-    rawAccess = await env.WORKSPACES.getByName(workspaceId).authorize({
-      workspaceId,
-      punkId: session.punkId,
-      permission: "workspace.read",
-    });
-  } catch {
-    return problem(
-      503,
-      "temporarily_unavailable",
-      "Workspace authority is unavailable",
-      { retry: "later" },
-    );
-  }
-  const access = validateWorkspaceAuthorizationRpcResult(rawAccess);
-  if (access === null) {
-    return problem(
-      503,
-      "temporarily_unavailable",
-      "Workspace authority response is invalid",
-      { retry: "later" },
-    );
-  }
-  if (!access.ok) {
-    return access.code === "not_found"
-      ? problem(404, "not_found", "Workspace not found")
-      : problem(403, "forbidden", "Workspace access is required");
-  }
+  const access = await requireWorkspaceReader(env, workspaceId, session.punkId);
+  if (access instanceof Response) return access;
 
   const query = body as ResolveAuthorsQuery;
   const authors: ResolveAuthorsResponse["authors"] = [];
   for (const author of query.authors) {
     if (author.kind === "punk") {
-      let summary: Awaited<
-        ReturnType<ApiEnv["AUTH_SERVICE"]["resolvePunkSummary"]>
-      >;
+      let summary: ResolvedPunkSummary | null;
       try {
-        summary = await env.AUTH_SERVICE.resolvePunkSummary(author.punkId);
+        summary = await authorizedPunkSummary(env, workspaceId, author.punkId);
       } catch {
         return problem(
           503,
@@ -757,6 +1416,7 @@ async function resolveAuthors(
         );
       }
       if (summary !== null && summary.id === author.punkId) {
+        await projectPunkSummaryBestEffort(env, summary);
         authors.push({
           kind: "punk",
           punkId: summary.id,
@@ -814,6 +1474,15 @@ async function resolveAuthors(
       });
     }
   }
+  if (!(await sameCurrentSession(request, env, session))) {
+    return problem(401, "unauthenticated", "Punk Session is no longer active");
+  }
+  const currentAccess = await requireWorkspaceReader(
+    env,
+    workspaceId,
+    session.punkId,
+  );
+  if (currentAccess instanceof Response) return currentAccess;
   const response: ResolveAuthorsResponse = {
     contract: "author.resolve-response@1",
     workspaceId,
@@ -952,6 +1621,18 @@ function executeFailure(
         "invalid_input",
         "Workspace transition is not allowed",
       );
+    case "revision_conflict":
+      return problem(
+        409,
+        "revision_conflict",
+        "Workspace revision changed before commit",
+      );
+    case "invite_invalid":
+    case "invite_expired":
+    case "invite_exhausted":
+    case "invite_revoked":
+    case "invite_role_forbidden":
+      return problem(409, result.code, "Workspace invitation is not usable");
     case "attestation_failed":
       return problem(
         503,
@@ -965,6 +1646,65 @@ function executeFailure(
     case "internal":
       return problem(500, "internal", "Workspace command failed");
   }
+}
+
+function invitationFailure(
+  result:
+    | Exclude<WorkspaceInvitationMutationResult, { ok: true }>
+    | Exclude<WorkspaceInvitationClaimResult, { ok: true }>
+    | Exclude<WorkspaceInvitationQueryResult, { ok: true }>,
+): Response {
+  switch (result.code) {
+    case "invalid_contract":
+      return problem(400, "invalid_input", "Invitation request is invalid");
+    case "idempotency_conflict":
+      return problem(
+        409,
+        "idempotency_conflict",
+        "Command id was reused with another invitation payload",
+      );
+    case "command_in_progress":
+      return problem(
+        409,
+        "command_in_progress",
+        "Another Workspace mutation is in progress",
+        { retry: "later", retryAfterMs: 1_000 },
+      );
+    case "not_found":
+      return problem(404, "not_found", "Workspace not found");
+    case "forbidden":
+      return problem(403, "forbidden", "Invitation action is not authorized");
+    case "revision_conflict":
+      return problem(
+        409,
+        "revision_conflict",
+        "Workspace revision changed before invitation commit",
+      );
+    case "invite_invalid":
+      return problem(404, "invite_invalid", "Invitation is invalid");
+    case "invite_expired":
+      return problem(410, "invite_expired", "Invitation has expired");
+    case "invite_exhausted":
+      return problem(409, "invite_exhausted", "Invitation has no uses left");
+    case "invite_revoked":
+      return problem(410, "invite_revoked", "Invitation was revoked");
+    case "invite_role_forbidden":
+      return problem(
+        403,
+        "invite_role_forbidden",
+        "Invitation cannot grant this Workspace role",
+      );
+    case "attestation_failed":
+      return problem(
+        503,
+        "attestation_failed",
+        "Invitation membership could not be attested",
+        { retry: "same_command", retryAfterMs: 1_000 },
+      );
+    case "internal":
+      return problem(500, "internal", "Invitation action failed");
+  }
+  return problem(500, "internal", "Invitation action failed");
 }
 
 function botExecuteFailure(
@@ -2379,6 +3119,223 @@ async function getConversation(
   );
 }
 
+function invitationWorkspaceId(code: string): string | null {
+  const separator = code.indexOf(".");
+  const workspaceId = separator < 0 ? "" : code.slice(0, separator);
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(
+    workspaceId,
+  )
+    ? workspaceId
+    : null;
+}
+
+async function getWorkspaceGovernance(
+  request: Request,
+  env: ApiEnv,
+  workspaceId: string,
+): Promise<Response> {
+  const session = await authenticatedPunkSession(request, env);
+  if (session === null) {
+    return problem(401, "unauthenticated", "Punk authentication is required");
+  }
+  const result = await env.WORKSPACES.getByName(workspaceId).query({
+    contract: "workspace.get@1",
+    workspaceId,
+  });
+  if (!result.ok) {
+    return problem(404, "not_found", "Workspace not found");
+  }
+  if (
+    !result.state.members.some((member) => member.punkId === session.punkId)
+  ) {
+    return problem(403, "forbidden", "Workspace membership is required");
+  }
+  if (!validateContract("punks://contracts/workspace@1", result.state).valid) {
+    return problem(
+      500,
+      "internal",
+      "Workspace authority violated its contract",
+    );
+  }
+  return json(result.state, 200, { "cache-control": "no-store" });
+}
+
+async function createWorkspaceInvitation(
+  request: Request,
+  env: ApiEnv,
+  workspaceId: string,
+): Promise<Response> {
+  const session = await authenticatedPunkSession(request, env);
+  if (session === null) {
+    return problem(401, "unauthenticated", "Punk authentication is required");
+  }
+  let body: unknown;
+  try {
+    body = await readJson(request);
+  } catch {
+    return problem(
+      400,
+      "invalid_input",
+      "Invitation command must be valid JSON under 64 KB",
+    );
+  }
+  if (!validateContract("punks://contracts/workspace.invite@1", body).valid) {
+    return problem(400, "invalid_input", "Invitation command is invalid");
+  }
+  const command = body as CreateWorkspaceInvitationCommand;
+  if (
+    command.workspaceId !== workspaceId ||
+    command.actor.punkId !== session.punkId
+  ) {
+    return problem(
+      403,
+      "forbidden",
+      "Invitation command actor and path must match the Session",
+    );
+  }
+  const idempotencyFailure = requireMatchingIdempotencyKey(
+    request,
+    command.commandId,
+  );
+  if (idempotencyFailure !== null) return idempotencyFailure;
+  const result = await env.WORKSPACES.getByName(workspaceId).createInvitation(
+    command,
+    { sessionId: session.sessionId, punkId: session.punkId },
+  );
+  if (!result.ok) return invitationFailure(result);
+  return json(result.response, result.response.replayed ? 200 : 201, {
+    "cache-control": "no-store",
+  });
+}
+
+async function getWorkspaceInvitation(
+  request: Request,
+  env: ApiEnv,
+  code: string,
+): Promise<Response> {
+  if ((await authenticatedPunkSession(request, env)) === null) {
+    return problem(401, "unauthenticated", "Punk authentication is required");
+  }
+  const workspaceId = invitationWorkspaceId(code);
+  if (workspaceId === null) {
+    return problem(404, "invite_invalid", "Invitation is invalid");
+  }
+  const query: GetWorkspaceInvitationQuery = {
+    contract: "workspace.invite-get@1",
+    code,
+  };
+  const result =
+    await env.WORKSPACES.getByName(workspaceId).getInvitation(query);
+  return result.ok
+    ? json(result.invitation, 200, { "cache-control": "no-store" })
+    : invitationFailure(result);
+}
+
+async function revokeWorkspaceInvitation(
+  request: Request,
+  env: ApiEnv,
+  workspaceId: string,
+  invitationId: string,
+): Promise<Response> {
+  const session = await authenticatedPunkSession(request, env);
+  if (session === null) {
+    return problem(401, "unauthenticated", "Punk authentication is required");
+  }
+  let body: unknown;
+  try {
+    body = await readJson(request);
+  } catch {
+    return problem(
+      400,
+      "invalid_input",
+      "Invitation revocation must be valid JSON under 64 KB",
+    );
+  }
+  if (
+    !validateContract("punks://contracts/workspace.invite-revoke@1", body).valid
+  ) {
+    return problem(400, "invalid_input", "Invitation revocation is invalid");
+  }
+  const command = body as RevokeWorkspaceInvitationCommand;
+  if (
+    command.workspaceId !== workspaceId ||
+    command.payload.invitationId !== invitationId ||
+    command.actor.punkId !== session.punkId
+  ) {
+    return problem(
+      403,
+      "forbidden",
+      "Invitation revocation actor and path must match the Session",
+    );
+  }
+  const idempotencyFailure = requireMatchingIdempotencyKey(
+    request,
+    command.commandId,
+  );
+  if (idempotencyFailure !== null) return idempotencyFailure;
+  const result = await env.WORKSPACES.getByName(workspaceId).revokeInvitation(
+    command,
+    { sessionId: session.sessionId, punkId: session.punkId },
+  );
+  return result.ok
+    ? json(result.response, 200, { "cache-control": "no-store" })
+    : invitationFailure(result);
+}
+
+async function claimWorkspaceInvitation(
+  request: Request,
+  env: ApiEnv,
+  code: string,
+): Promise<Response> {
+  const session = await authenticatedPunkSession(request, env);
+  if (session === null) {
+    return problem(401, "unauthenticated", "Punk authentication is required");
+  }
+  const workspaceId = invitationWorkspaceId(code);
+  if (workspaceId === null) {
+    return problem(404, "invite_invalid", "Invitation is invalid");
+  }
+  let body: unknown;
+  try {
+    body = await readJson(request);
+  } catch {
+    return problem(
+      400,
+      "invalid_input",
+      "Invitation claim must be valid JSON under 64 KB",
+    );
+  }
+  if (
+    !validateContract("punks://contracts/workspace.invite-claim@1", body).valid
+  ) {
+    return problem(400, "invalid_input", "Invitation claim is invalid");
+  }
+  const command = body as ClaimWorkspaceInvitationCommand;
+  if (
+    command.workspaceId !== workspaceId ||
+    command.payload.code !== code ||
+    command.actor.punkId !== session.punkId
+  ) {
+    return problem(
+      403,
+      "forbidden",
+      "Invitation claim actor, code and Workspace must match the Session",
+    );
+  }
+  const idempotencyFailure = requireMatchingIdempotencyKey(
+    request,
+    command.commandId,
+  );
+  if (idempotencyFailure !== null) return idempotencyFailure;
+  const result = await env.WORKSPACES.getByName(workspaceId).claimInvitation(
+    command,
+    { sessionId: session.sessionId, punkId: session.punkId },
+  );
+  return result.ok
+    ? json(result.response, 200, { "cache-control": "no-store" })
+    : invitationFailure(result);
+}
+
 async function mutateMember(
   request: Request,
   env: ApiEnv,
@@ -2386,8 +3343,8 @@ async function mutateMember(
   targetPunkId: string,
   operation: "set-role" | "remove",
 ): Promise<Response> {
-  const actorPunkId = await authenticatedPunkId(request, env);
-  if (actorPunkId === null) {
+  const session = await authenticatedPunkSession(request, env);
+  if (session === null) {
     return problem(401, "unauthenticated", "Punk authentication is required");
   }
   let body: unknown;
@@ -2413,7 +3370,7 @@ async function mutateMember(
   if (
     command.workspaceId !== workspaceId ||
     command.payload.targetPunkId !== targetPunkId ||
-    command.actor.punkId !== actorPunkId
+    command.actor.punkId !== session.punkId
   ) {
     return problem(
       403,
@@ -2443,12 +3400,16 @@ async function mutateMember(
       return problem(400, "invalid_input", "Target Punk does not exist");
     }
   }
-  const result = await env.WORKSPACES.getByName(workspaceId).execute(command);
+  const result = await env.WORKSPACES.getByName(workspaceId).executeAuthorized(
+    command,
+    { sessionId: session.sessionId, punkId: session.punkId },
+  );
   if (!result.ok) {
     return executeFailure(result);
   }
   return json(
     {
+      contract: "workspace.membership-mutation-response@1",
       workspace: result.value.state,
       replayed: result.replayed,
     },
@@ -4075,6 +5036,12 @@ export async function route(request: Request, env: ApiEnv): Promise<Response> {
   if (request.method === "POST" && path === "/api/v1/desktop/compatibility") {
     return desktopCompatibility(request, env);
   }
+  if (request.method === "GET" && path === "/api/v1/punk") {
+    return getPunkProfile(request, env);
+  }
+  if (request.method === "PATCH" && path === "/api/v1/punk") {
+    return updatePunkProfile(request, env);
+  }
   if (request.method === "GET" && path === "/api/v1/workspaces") {
     return listWorkspaces(request, env);
   }
@@ -4170,6 +5137,20 @@ export async function route(request: Request, env: ApiEnv): Promise<Response> {
       env,
       decodeURIComponent(authorResolution[1]),
     );
+  }
+
+  const punkSummaries = path.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/punks\/summaries$/,
+  );
+  if (request.method === "POST" && punkSummaries?.[1] !== undefined) {
+    return getPunkSummaries(request, env, decodeURIComponent(punkSummaries[1]));
+  }
+
+  const punkSearch = path.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/punks\/search$/,
+  );
+  if (request.method === "POST" && punkSearch?.[1] !== undefined) {
+    return searchPunks(request, env, decodeURIComponent(punkSearch[1]));
   }
 
   const conversationFollow = path.match(
@@ -4397,6 +5378,62 @@ export async function route(request: Request, env: ApiEnv): Promise<Response> {
   const get = path.match(/^\/api\/v1\/workspaces\/([^/]+)$/);
   if (request.method === "GET" && get?.[1] !== undefined) {
     return getWorkspace(request, env, get[1]);
+  }
+
+  const governance = path.match(/^\/api\/v1\/workspaces\/([^/]+)\/governance$/);
+  if (request.method === "GET" && governance?.[1] !== undefined) {
+    return getWorkspaceGovernance(
+      request,
+      env,
+      decodeURIComponent(governance[1]),
+    );
+  }
+
+  const workspaceInvitations = path.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/invitations$/,
+  );
+  if (request.method === "POST" && workspaceInvitations?.[1] !== undefined) {
+    return createWorkspaceInvitation(
+      request,
+      env,
+      decodeURIComponent(workspaceInvitations[1]),
+    );
+  }
+
+  const workspaceInvitation = path.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/invitations\/([^/]+)$/,
+  );
+  if (
+    request.method === "DELETE" &&
+    workspaceInvitation?.[1] !== undefined &&
+    workspaceInvitation[2] !== undefined
+  ) {
+    return revokeWorkspaceInvitation(
+      request,
+      env,
+      decodeURIComponent(workspaceInvitation[1]),
+      decodeURIComponent(workspaceInvitation[2]),
+    );
+  }
+
+  const invitationClaim = path.match(
+    /^\/api\/v1\/workspace-invitations\/([^/]+)\/claim$/,
+  );
+  if (request.method === "POST" && invitationClaim?.[1] !== undefined) {
+    return claimWorkspaceInvitation(
+      request,
+      env,
+      decodeURIComponent(invitationClaim[1]),
+    );
+  }
+
+  const invitation = path.match(/^\/api\/v1\/workspace-invitations\/([^/]+)$/);
+  if (request.method === "GET" && invitation?.[1] !== undefined) {
+    return getWorkspaceInvitation(
+      request,
+      env,
+      decodeURIComponent(invitation[1]),
+    );
   }
 
   const member = path.match(

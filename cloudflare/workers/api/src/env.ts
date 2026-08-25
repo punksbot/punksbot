@@ -101,6 +101,13 @@ export interface ProjectionConversationCandidate {
   updatedAt: string;
 }
 
+export interface ProjectionPunkCandidate {
+  punkId: string;
+  displayName: string;
+  avatarUrl: string | null;
+  revision: number;
+}
+
 export interface ProjectionDirectoryService {
   listWorkspaceCandidates(input: {
     punkId: string;
@@ -113,7 +120,32 @@ export interface ProjectionDirectoryService {
     limit: number;
     afterId?: string;
   }): Promise<ProjectionConversationCandidate[]>;
+  upsertPunkProfile(input: {
+    punkId: string;
+    displayName: string;
+    avatarUrl: string | null;
+    revision: number;
+    updatedAt: string;
+  }): Promise<boolean>;
+  searchPunkCandidates(input: {
+    workspaceId: string;
+    prefix: string;
+    limit: number;
+    afterPunkId?: string;
+  }): Promise<ProjectionPunkCandidate[]>;
 }
+
+export type PunkProfileUpdateResult =
+  | {
+      ok: true;
+      state: import("@punks/contracts").Punk;
+      replayed: boolean;
+    }
+  | {
+      ok: false;
+      code: "invalid_input" | "not_found" | "inactive" | "idempotency_conflict";
+    }
+  | { ok: false; code: "revision_conflict"; currentRevision: number };
 
 /** Private probe returning only the Worker version executing the RPC call. */
 export interface RuntimeIdentityService {
@@ -168,7 +200,16 @@ export interface ApiEnv extends CloudflareBindings {
       id: string;
       displayName: string;
       avatarUrl: string | null;
+      revision: number;
+      updatedAt: string;
     } | null>;
+    getPunkProfile(
+      punkId: string,
+    ): Promise<import("@punks/contracts").Punk | null>;
+    updatePunkProfile(
+      punkId: string,
+      command: unknown,
+    ): Promise<PunkProfileUpdateResult>;
   };
   BOT_INVOCATION_VERIFIER: CloudflareBindings["BOT_INVOCATION_VERIFIER"] & {
     verifyBotInvocation(

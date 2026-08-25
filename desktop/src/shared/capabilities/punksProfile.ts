@@ -9,14 +9,21 @@ export const PUNKS_MOUNTED_CAPABILITIES = DESKTOP_SOCIAL_LOOP_CAPABILITIES;
 /** Intersects environment capabilities with code actually mounted by this build. */
 export function intersectPunksCapabilities(
   environmentCapabilities: readonly string[],
-): Set<DesktopSocialLoopCapability> {
+): Set<string> {
   const enabled = new Set(environmentCapabilities);
-  return new Set(
-    PUNKS_MOUNTED_CAPABILITIES.filter((capability) => enabled.has(capability)),
-  );
+  const e2eMounted =
+    typeof window === "undefined"
+      ? undefined
+      : (
+          window as typeof window & {
+            __PUNKS_E2E_ENVIRONMENT__?: { mounted?: string[] };
+          }
+        ).__PUNKS_E2E_ENVIRONMENT__?.mounted;
+  const mounted = e2eMounted ?? PUNKS_MOUNTED_CAPABILITIES;
+  return new Set(mounted.filter((capability) => enabled.has(capability)));
 }
 
-/** T1 is atomic: a partial profile never mounts a partial Workspace. */
+/** The compiled profile is atomic: a partial reply never mounts a Workspace. */
 export function hasCompletePunksCapabilitySet(
   available: ReadonlySet<string>,
 ): boolean {

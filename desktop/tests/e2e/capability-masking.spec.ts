@@ -5,6 +5,7 @@ import type {
   ConversationSummary,
   ConversationView,
   MessageHistoryResponse,
+  Workspace,
 } from "@punks/contracts";
 import {
   exerciseNestedReply,
@@ -19,8 +20,10 @@ const PUNK_ID = "22222222-2222-4222-8222-222222222222";
 const SESSION_ID = "33333333-3333-4333-8333-333333333333";
 const CONVERSATION_ID = "44444444-4444-4444-8444-444444444444";
 const ALL_CAPABILITY_CHUNKS =
-  /PunksRuntime|punksTauriTransport|MessageLifecycleControls|punksMessageLifecycleTauri/u;
+  /PunksRuntime|punksTauriTransport|MessageLifecycleControls|punksMessageLifecycleTauri|IdentityGovernanceControls|punksIdentityGovernanceTauri/u;
 const LIFECYCLE_CHUNKS = /MessageLifecycleControls|punksMessageLifecycleTauri/u;
+const GOVERNANCE_CHUNKS =
+  /IdentityGovernanceControls|punksIdentityGovernanceTauri/u;
 
 const T1_CAPABILITIES = DESKTOP_SOCIAL_LOOP_CAPABILITIES;
 
@@ -47,6 +50,8 @@ type PunksSeed = {
     revision: number;
   }[];
   social?: PunksSocialSeed;
+  governance?: Workspace;
+  mountedCapabilities?: readonly string[];
 };
 
 function socialMessage(
@@ -112,6 +117,8 @@ async function installPunksTauriBoundary(
       sessionId,
       socialSeed,
       workspaceSeed,
+      governanceSeed,
+      mountedCapabilities,
     }) => {
       const commands: string[] = [];
       const calls: { command: string; args: Record<string, unknown> }[] = [];
@@ -123,6 +130,25 @@ async function installPunksTauriBoundary(
       let followLiveRequested = false;
       let releaseFollowLive: (() => void) | null = null;
       const socialMessages = structuredClone(socialSeed?.timeline.items ?? []);
+      let governance = structuredClone(
+        governanceSeed ?? {
+          id: workspaceSeed[0]?.id,
+          slug: workspaceSeed[0]?.slug,
+          name: workspaceSeed[0]?.name,
+          visibility: "private",
+          status: "active",
+          ownerPunkId: punkId,
+          members: [{ punkId, role: "owner" }],
+          revision: workspaceSeed[0]?.revision ?? 1,
+          cursor: workspaceSeed[0]?.revision ?? 1,
+          createdAt: "2026-08-25T10:00:00.000Z",
+          updatedAt: "2026-08-25T10:00:00.000Z",
+        },
+      );
+      let issuedInvitation: {
+        code: string;
+        invitation: Record<string, unknown>;
+      } | null = null;
       const reactionViews = new Map<
         string,
         {
@@ -143,6 +169,18 @@ async function installPunksTauriBoundary(
           releaseFollowLive?.();
         },
       });
+      if (mountedCapabilities !== undefined) {
+        Object.assign(window, {
+          __PUNKS_E2E_ENVIRONMENT__: {
+            distribution: "punks",
+            mounted: [...mountedCapabilities],
+            compatibility: {
+              compatible: compatibilitySeed.compatible,
+              capabilities: [...compatibilitySeed.capabilities],
+            },
+          },
+        });
+      }
 
       const invoke = async (
         command: string,
@@ -216,6 +254,99 @@ async function installPunksTauriBoundary(
           }
           case "punks_list_streams":
             return structuredClone(socialSeed?.streams ?? []);
+          case "punks_get_workspace_governance":
+            return structuredClone(governance);
+          case "punks_get_punk_summaries":
+            return ((args.punkIds as string[]) ?? []).map(
+              (candidate, index) => ({
+                punkId: candidate,
+                displayName: index === 0 ? "Capability Owner" : "Invited Punk",
+                avatarUrl: null,
+              }),
+            );
+          case "punks_create_workspace_invitation": {
+            const input = args.input as {
+              role: "member" | "guest";
+              expectedRevision: number;
+              maxUses?: number;
+            };
+            const code = `${governance.id}.${"A".repeat(43)}`;
+            issuedInvitation = {
+              code,
+              invitation: {
+                contract: "workspace.invitation@1",
+                invitationId: "77777777-7777-4777-8777-777777777777",
+                workspace: {
+                  id: governance.id,
+                  slug: governance.slug,
+                  name: governance.name,
+                },
+                workspaceRevision: governance.revision,
+                role: input.role,
+                status: "issued",
+                issuedAt: "2026-08-25T10:00:00.000Z",
+                expiresAt: "2026-09-01T10:00:00.000Z",
+                revokedAt: null,
+                maxUses: input.maxUses ?? 1,
+                uses: 0,
+                usesRemaining: input.maxUses ?? 1,
+              },
+            };
+            return {
+              contract: "workspace.invite-response@1",
+              ...structuredClone(issuedInvitation),
+              replayed: false,
+            };
+          }
+          case "punks_revoke_workspace_invitation": {
+            if (issuedInvitation === null) {
+              throw new Error("No invitation fixture is issued");
+            }
+            issuedInvitation.invitation.status = "revoked";
+            issuedInvitation.invitation.revokedAt = "2026-08-25T10:01:00.000Z";
+            return {
+              contract: "workspace.invite-revoke-response@1",
+              invitation: structuredClone(issuedInvitation.invitation),
+              replayed: false,
+            };
+          }
+          case "punks_set_workspace_member_role": {
+            const input = args.input as {
+              targetPunkId: string;
+              role: "moderator" | "member" | "guest";
+            };
+            governance = {
+              ...governance,
+              members: governance.members.map((member) =>
+                member.punkId === input.targetPunkId
+                  ? { ...member, role: input.role }
+                  : member,
+              ) as Workspace["members"],
+              revision: governance.revision + 1,
+              cursor: governance.cursor + 1,
+            };
+            return {
+              contract: "workspace.membership-mutation-response@1",
+              workspace: structuredClone(governance),
+              replayed: false,
+            };
+          }
+          case "punks_remove_workspace_member": {
+            const input = args.input as { targetPunkId: string };
+            governance = {
+              ...governance,
+              members: governance.members.filter(
+                (member) => member.punkId !== input.targetPunkId,
+              ) as Workspace["members"],
+              revision: governance.revision + 1,
+              cursor: governance.cursor + 1,
+            };
+            return {
+              contract: "workspace.membership-mutation-response@1",
+              workspace: structuredClone(governance),
+              replayed: false,
+            };
+          }
           case "punks_get_stream":
             if (socialSeed === undefined) {
               throw new Error("No social Stream fixture is installed");
@@ -441,6 +572,8 @@ async function installPunksTauriBoundary(
       sessionId: SESSION_ID,
       socialSeed: seed.social,
       workspaceSeed: workspaces,
+      governanceSeed: seed.governance,
+      mountedCapabilities: seed.mountedCapabilities,
     },
   );
 }
@@ -814,6 +947,98 @@ test("la boucle sociale publie un batch avant ACK et bloque les mutations avant 
 
 test("un Punk publie un Message racine avec son sujet", async ({ page }) => {
   await exerciseRootMessageSubject(page, SOCIAL_MUTATION_HARNESS);
+});
+
+test("un Propriétaire gouverne invitations et rôles par la frontière Punks", async ({
+  page,
+}) => {
+  const targetPunkId = "55555555-5555-4555-8555-555555555555";
+  const capabilities = [...T1_CAPABILITIES, "identity-governance"];
+  await installPunksTauriBoundary(page, {
+    compatible: true,
+    capabilities,
+    mountedCapabilities: capabilities,
+    governance: {
+      id: WORKSPACE_ID,
+      slug: "capability-test",
+      name: "Capability Test",
+      visibility: "private",
+      status: "active",
+      ownerPunkId: PUNK_ID,
+      members: [
+        { punkId: PUNK_ID, role: "owner" },
+        { punkId: targetPunkId, role: "member" },
+      ],
+      revision: 1,
+      cursor: 1,
+      createdAt: "2026-08-25T10:00:00.000Z",
+      updatedAt: "2026-08-25T10:00:00.000Z",
+    },
+  });
+  await page.goto("/");
+  expect(
+    await page.evaluate(
+      () =>
+        (
+          window as typeof window & {
+            __PUNKS_E2E_ENVIRONMENT__?: {
+              mounted?: string[];
+              compatibility?: { capabilities: string[] };
+            };
+          }
+        ).__PUNKS_E2E_ENVIRONMENT__,
+    ),
+  ).toMatchObject({
+    mounted: expect.arrayContaining(["identity-governance"]),
+    compatibility: {
+      capabilities: expect.arrayContaining(["identity-governance"]),
+    },
+  });
+  await page.getByTestId("punks-open-governance").click();
+  await expect(
+    page.getByRole("heading", { name: "Members and invitations" }),
+  ).toBeVisible();
+
+  await page.getByLabel("Role for Invited Punk").selectOption("moderator");
+  await expect(page.getByLabel("Role for Invited Punk")).toHaveValue(
+    "moderator",
+  );
+  await page.getByRole("button", { name: "Create invitation" }).click();
+  await expect(
+    page.getByText("Invitation ready", { exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Revoke", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Revoke", exact: true }),
+  ).toBeDisabled();
+  await page.getByRole("button", { name: "Remove", exact: true }).click();
+  await expect(page.getByLabel("Role for Invited Punk")).toHaveCount(0);
+
+  const calls = await invokedCalls(page);
+  expect(
+    calls
+      .filter(({ command }) =>
+        [
+          "punks_set_workspace_member_role",
+          "punks_create_workspace_invitation",
+          "punks_revoke_workspace_invitation",
+          "punks_remove_workspace_member",
+        ].includes(command),
+      )
+      .map(({ command }) => command),
+  ).toEqual([
+    "punks_set_workspace_member_role",
+    "punks_create_workspace_invitation",
+    "punks_revoke_workspace_invitation",
+    "punks_remove_workspace_member",
+  ]);
+  expect(
+    calls.some(({ command }) => command === "punks_get_workspace_governance"),
+  ).toBe(true);
+  expect(
+    calls.some(({ command }) => command === "punks_get_punk_summaries"),
+  ).toBe(true);
+  expect(GOVERNANCE_CHUNKS.test("IdentityGovernanceControls")).toBe(true);
 });
 
 test("une réponse reste dans le Fil du Message sélectionné", async ({

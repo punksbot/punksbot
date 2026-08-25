@@ -4,7 +4,7 @@ export interface PunksProblem {
 type: string
 title: string
 status: number
-code: ("invalid_input" | "payload_too_large" | "unauthenticated" | "forbidden" | "not_found" | "slug_claimed" | "idempotency_conflict" | "identity_conflict" | "command_in_progress" | "attestation_failed" | "temporarily_unavailable" | "internal")
+code: ("invalid_input" | "payload_too_large" | "unauthenticated" | "forbidden" | "not_found" | "slug_claimed" | "idempotency_conflict" | "identity_conflict" | "revision_conflict" | "invite_invalid" | "invite_expired" | "invite_exhausted" | "invite_revoked" | "invite_role_forbidden" | "query_too_short" | "command_in_progress" | "attestation_failed" | "temporarily_unavailable" | "internal")
 detail?: string
 correlationId: string
 retry: ("never" | "same_command" | "later")

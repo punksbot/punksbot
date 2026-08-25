@@ -10,5 +10,6 @@ punkId: string
 }
 payload: {
 targetPunkId: string
+expectedRevision?: number
 }
 }

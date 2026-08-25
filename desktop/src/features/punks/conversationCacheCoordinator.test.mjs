@@ -136,12 +136,14 @@ test("resync atomically replaces the bounded primary view without invalidating i
   unsubscribe();
 });
 
-test("terminal purge redacts active Message and author observers", () => {
+test("terminal purge redacts active Message, author and private search observers", () => {
   const queryClient = new QueryClient();
   const messagePrefix = ["punks", "messages", workspaceId, 1, conversationId];
   const messageKey = [...messagePrefix, "timeline"];
   const authorPrefix = ["punks", "authors", workspaceId, 1];
   const authorKey = [...authorPrefix, "punk:secret"];
+  const privateIdentityPrefix = ["punks", "punk-search", workspaceId, 1];
+  const privateIdentityKey = [...privateIdentityPrefix, "prefix:sec"];
   const streamKey = ["punks", "stream", workspaceId, 1, conversationId];
   queryClient.setQueryData(
     messageKey,
@@ -155,6 +157,21 @@ test("terminal purge redacts active Message and author observers", () => {
       avatarUrl: null,
     },
   ]);
+  queryClient.setQueryData(privateIdentityKey, {
+    pages: [
+      {
+        items: [
+          {
+            punkId: "11111111-1111-4111-8111-111111111111",
+            displayName: "Secret Punk",
+            avatarUrl: null,
+          },
+        ],
+        nextCursor: null,
+      },
+    ],
+    pageParams: [null],
+  });
   queryClient.setQueryData(streamKey, {
     name: "Private Stream",
     description: "Private description",
@@ -173,14 +190,22 @@ test("terminal purge redacts active Message and author observers", () => {
     queryKey: streamKey,
     enabled: false,
   });
+  const privateIdentityObserver = new QueryObserver(queryClient, {
+    queryKey: privateIdentityKey,
+    enabled: false,
+  });
   const unsubscribeMessage = messageObserver.subscribe(() => undefined);
   const unsubscribeAuthor = authorObserver.subscribe(() => undefined);
   const unsubscribeStream = streamObserver.subscribe(() => undefined);
+  const unsubscribePrivateIdentity = privateIdentityObserver.subscribe(
+    () => undefined,
+  );
 
   purgeConversationProjections(
     queryClient,
     messagePrefix,
     authorPrefix,
+    privateIdentityPrefix,
     streamKey,
   );
 
@@ -196,6 +221,10 @@ test("terminal purge redacts active Message and author observers", () => {
     [],
   );
   assert.deepEqual(authorObserver.getCurrentResult().data, []);
+  assert.deepEqual(privateIdentityObserver.getCurrentResult().data, {
+    pages: [],
+    pageParams: [],
+  });
   assert.deepEqual(streamObserver.getCurrentResult().data, {
     name: "Stream",
     description: null,
@@ -205,4 +234,5 @@ test("terminal purge redacts active Message and author observers", () => {
   unsubscribeMessage();
   unsubscribeAuthor();
   unsubscribeStream();
+  unsubscribePrivateIdentity();
 });

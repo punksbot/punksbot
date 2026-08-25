@@ -86,16 +86,21 @@ export function purgeConversationProjections(
   queryClient: QueryClient,
   messagePrefix: QueryKey,
   authorPrefix: QueryKey,
+  privateIdentityPrefix: QueryKey,
   streamKey: QueryKey,
 ): void {
   void queryClient.cancelQueries({ queryKey: messagePrefix });
   void queryClient.cancelQueries({ queryKey: authorPrefix });
+  void queryClient.cancelQueries({ queryKey: privateIdentityPrefix });
   void queryClient.cancelQueries({ queryKey: streamKey, exact: true });
   const messageViews = queryClient.getQueriesData<ConversationCache>({
     queryKey: messagePrefix,
   });
   const authorKeys = queryClient
     .getQueriesData({ queryKey: authorPrefix })
+    .map(([key]) => key);
+  const privateIdentityKeys = queryClient
+    .getQueriesData({ queryKey: privateIdentityPrefix })
     .map(([key]) => key);
   notifyManager.batch(() => {
     for (const [key, current] of messageViews) {
@@ -114,6 +119,9 @@ export function purgeConversationProjections(
       });
     }
     for (const key of authorKeys) queryClient.setQueryData(key, []);
+    for (const key of privateIdentityKeys) {
+      queryClient.setQueryData(key, { pages: [], pageParams: [] });
+    }
     queryClient.setQueryData<RedactableStreamProjection>(
       streamKey,
       (current) =>

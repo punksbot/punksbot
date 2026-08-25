@@ -8,12 +8,15 @@ import {
   PUNKS_MOUNTED_CAPABILITIES,
 } from "./punksProfile.ts";
 
-test("le candidat T1 ne monte que le profil desktop-social-loop@1", () => {
+test("le candidat monte exactement le profil desktop-social-loop@1", () => {
   assert.deepEqual(PUNKS_MOUNTED_CAPABILITIES, [
     "compatibility",
     "account-session",
     "authentication",
     "workspace-selection",
+    "punk-profile",
+    "bounded-punk-summaries",
+    "private-punk-search",
     "stream-list",
     "message-history",
     "threads",

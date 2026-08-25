@@ -20,6 +20,7 @@ export class RuntimeIdentityInvalidService extends WorkerEntrypoint {
 
 const ownerSessionId = "11111111-1111-8111-8111-111111111111";
 const otherSessionId = "22222222-2222-8222-8222-222222222222";
+const thirdSessionId = "44444444-4444-8444-8444-444444444444";
 const revocableSessionId = "33333333-3333-8333-8333-333333333333";
 const revokedSessionIds = new Set();
 const sessionResolutionHolds = new Map();
@@ -30,9 +31,63 @@ const accountMergeRightsIndexAvailability = {
   commit: true,
   abort: true,
 };
+const fixtureProfiles = new Map([
+  [
+    "00000000-0000-8000-8000-000000000001",
+    {
+      id: "00000000-0000-8000-8000-000000000001",
+      status: "active",
+      displayName: "Fixture Punk",
+      avatarUrl: null,
+      identities: [
+        {
+          provider: "github",
+          subjectHash: "a".repeat(64),
+          emailHash: "b".repeat(64),
+          verifiedEmail: null,
+          username: "fixture-punk",
+          credentialId: null,
+          linkedAt: "2026-08-20T18:00:00.000Z",
+        },
+      ],
+      mergedInto: null,
+      revision: 1,
+      createdAt: "2026-08-20T18:00:00.000Z",
+      updatedAt: "2026-08-20T18:00:00.000Z",
+    },
+  ],
+  [
+    "00000000-0000-8000-8000-000000000002",
+    {
+      id: "00000000-0000-8000-8000-000000000002",
+      status: "active",
+      displayName: "Fixture Punk",
+      avatarUrl: null,
+      identities: [
+        {
+          provider: "github",
+          subjectHash: "c".repeat(64),
+          emailHash: "d".repeat(64),
+          verifiedEmail: null,
+          username: "fixture-other",
+          credentialId: null,
+          linkedAt: "2026-08-20T18:00:00.000Z",
+        },
+      ],
+      mergedInto: null,
+      revision: 1,
+      createdAt: "2026-08-20T18:00:00.000Z",
+      updatedAt: "2026-08-20T18:00:00.000Z",
+    },
+  ],
+]);
 
 const session = (punkId) => ({
-  sessionId: punkId.endsWith("1") ? ownerSessionId : otherSessionId,
+  sessionId: punkId.endsWith("1")
+    ? ownerSessionId
+    : punkId.endsWith("2")
+      ? otherSessionId
+      : thirdSessionId,
   punkId,
   authenticatedAt: "2026-08-20T18:00:00.000Z",
   expiresAt: "2099-08-20T19:00:00.000Z",
@@ -76,6 +131,9 @@ export class PunkSessionService extends WorkerEntrypoint {
     if (cookie.includes("session-other")) {
       return session("00000000-0000-8000-8000-000000000002");
     }
+    if (cookie.includes("session-third")) {
+      return session("00000000-0000-8000-8000-000000000003");
+    }
     if (cookie.includes("session-revocable")) {
       return revocableSession();
     }
@@ -100,6 +158,9 @@ export class PunkSessionService extends WorkerEntrypoint {
     if (sessionId === otherSessionId) {
       return session("00000000-0000-8000-8000-000000000002");
     }
+    if (sessionId === thirdSessionId) {
+      return session("00000000-0000-8000-8000-000000000003");
+    }
     if (sessionId === revocableSessionId) {
       return revocableSession();
     }
@@ -109,14 +170,47 @@ export class PunkSessionService extends WorkerEntrypoint {
   punkExists(punkId) {
     return (
       punkId === "00000000-0000-8000-8000-000000000001" ||
-      punkId === "00000000-0000-8000-8000-000000000002"
+      punkId === "00000000-0000-8000-8000-000000000002" ||
+      punkId === "00000000-0000-8000-8000-000000000003"
     );
   }
 
   resolvePunkSummary(punkId) {
-    return this.punkExists(punkId)
-      ? { id: punkId, displayName: "Fixture Punk", avatarUrl: null }
-      : null;
+    const profile = fixtureProfiles.get(punkId);
+    return profile === undefined
+      ? null
+      : {
+          id: profile.id,
+          displayName: profile.displayName,
+          avatarUrl: profile.avatarUrl,
+          revision: profile.revision,
+          updatedAt: profile.updatedAt,
+        };
+  }
+
+  getPunkProfile(punkId) {
+    return structuredClone(fixtureProfiles.get(punkId) ?? null);
+  }
+
+  updatePunkProfile(punkId, command) {
+    const current = fixtureProfiles.get(punkId);
+    if (current === undefined) return { ok: false, code: "not_found" };
+    if (current.revision !== command.expectedRevision) {
+      return {
+        ok: false,
+        code: "revision_conflict",
+        currentRevision: current.revision,
+      };
+    }
+    const next = {
+      ...current,
+      displayName: command.displayName,
+      avatarUrl: command.avatarUrl,
+      revision: current.revision + 1,
+      updatedAt: new Date().toISOString(),
+    };
+    fixtureProfiles.set(punkId, next);
+    return { ok: true, state: structuredClone(next), replayed: false };
   }
 }
 

@@ -909,6 +909,8 @@ const ROUTES = {
     path: "/api/v1/desktop/compatibility",
   },
   getSession: { method: "get", path: "/api/auth/v1/session" },
+  getPunkProfile: { method: "get", path: "/api/v1/punk" },
+  updatePunkProfile: { method: "patch", path: "/api/v1/punk" },
   startDesktopAuthentication: {
     method: "post",
     path: "/api/auth/v1/desktop/start",
@@ -957,6 +959,14 @@ const ROUTES = {
   resolveAuthors: {
     method: "post",
     path: "/api/v1/workspaces/{workspaceId}/authors/resolve",
+  },
+  getPunkSummaries: {
+    method: "post",
+    path: "/api/v1/workspaces/{workspaceId}/punks/summaries",
+  },
+  searchPunks: {
+    method: "post",
+    path: "/api/v1/workspaces/{workspaceId}/punks/search",
   },
   postMessage: {
     method: "post",

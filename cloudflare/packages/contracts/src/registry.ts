@@ -108,6 +108,13 @@ import signedEvent from "../schemas/nostr.signed-event.schema.json";
 import unsignedEvent from "../schemas/nostr.unsigned-event.schema.json";
 import problem from "../schemas/problem.schema.json";
 import punk from "../schemas/punk.schema.json";
+import punkGet from "../schemas/punk.get.schema.json";
+import punkSearchResponse from "../schemas/punk.search-response.schema.json";
+import punkSearch from "../schemas/punk.search.schema.json";
+import punkSummaryBatchResponse from "../schemas/punk.summary-batch-response.schema.json";
+import punkSummaryBatch from "../schemas/punk.summary-batch.schema.json";
+import punkSummary from "../schemas/punk.summary.schema.json";
+import punkUpdate from "../schemas/punk.update.schema.json";
 import workspaceProjection from "../schemas/workspace.projection.schema.json";
 import workspaceEventV2 from "../schemas/workspace.event-v2.schema.json";
 import workspaceProjectionV2Source from "../schemas/workspace.projection-v2.schema.json";
@@ -117,8 +124,17 @@ import workspaceCreate from "../schemas/workspace.create.schema.json";
 import workspaceGet from "../schemas/workspace.get.schema.json";
 import workspaceListResponse from "../schemas/workspace.list-response.schema.json";
 import workspaceList from "../schemas/workspace.list.schema.json";
+import workspaceInvitation from "../schemas/workspace.invitation.schema.json";
+import workspaceInviteClaimResponse from "../schemas/workspace.invite-claim-response.schema.json";
+import workspaceInviteClaim from "../schemas/workspace.invite-claim.schema.json";
+import workspaceInviteGet from "../schemas/workspace.invite-get.schema.json";
+import workspaceInviteResponseSource from "../schemas/workspace.invite-response.schema.json";
+import workspaceInviteRevokeResponseSource from "../schemas/workspace.invite-revoke-response.schema.json";
+import workspaceInviteRevoke from "../schemas/workspace.invite-revoke.schema.json";
+import workspaceInvite from "../schemas/workspace.invite.schema.json";
 import workspaceMemberRemove from "../schemas/workspace.member-remove.schema.json";
 import workspaceMemberSetRole from "../schemas/workspace.member-set-role.schema.json";
+import workspaceMembershipMutationResponseSource from "../schemas/workspace.membership-mutation-response.schema.json";
 import workspaceRename from "../schemas/workspace.rename.schema.json";
 import workspace from "../schemas/workspace.schema.json";
 
@@ -130,6 +146,30 @@ const accountMergePlanCreate = {
       ...accountMergePlanCreateSource.properties.proofs,
       items: accountMergeFreshProof,
     },
+  },
+};
+
+const workspaceInviteResponse = {
+  ...workspaceInviteResponseSource,
+  properties: {
+    ...workspaceInviteResponseSource.properties,
+    invitation: workspaceInvitation,
+  },
+};
+
+const workspaceInviteRevokeResponse = {
+  ...workspaceInviteRevokeResponseSource,
+  properties: {
+    ...workspaceInviteRevokeResponseSource.properties,
+    invitation: workspaceInvitation,
+  },
+};
+
+const workspaceMembershipMutationResponse = {
+  ...workspaceMembershipMutationResponseSource,
+  properties: {
+    ...workspaceMembershipMutationResponseSource.properties,
+    workspace,
   },
 };
 
@@ -408,6 +448,13 @@ export const contractSchemas = {
   "punks://contracts/journal.segment@2": journalSegmentV2,
   "punks://contracts/problem@1": problem,
   "punks://contracts/punk@1": punk,
+  "punks://contracts/punk.get@1": punkGet,
+  "punks://contracts/punk.update@1": punkUpdate,
+  "punks://contracts/punk.summary@1": punkSummary,
+  "punks://contracts/punk.summary-batch@1": punkSummaryBatch,
+  "punks://contracts/punk.summary-batch-response@1": punkSummaryBatchResponse,
+  "punks://contracts/punk.search@1": punkSearch,
+  "punks://contracts/punk.search-response@1": punkSearchResponse,
   "punks://contracts/bot@1": bot,
   "punks://contracts/bot.publish@1": botPublish,
   "punks://contracts/bot.update@1": botUpdate,
@@ -521,8 +568,20 @@ export const contractSchemas = {
   "punks://contracts/workspace.get@1": workspaceGet,
   "punks://contracts/workspace.list@1": workspaceList,
   "punks://contracts/workspace.list-response@1": workspaceListResponse,
+  "punks://contracts/workspace.invitation@1": workspaceInvitation,
+  "punks://contracts/workspace.invite@1": workspaceInvite,
+  "punks://contracts/workspace.invite-get@1": workspaceInviteGet,
+  "punks://contracts/workspace.invite-response@1": workspaceInviteResponse,
+  "punks://contracts/workspace.invite-revoke@1": workspaceInviteRevoke,
+  "punks://contracts/workspace.invite-revoke-response@1":
+    workspaceInviteRevokeResponse,
+  "punks://contracts/workspace.invite-claim@1": workspaceInviteClaim,
+  "punks://contracts/workspace.invite-claim-response@1":
+    workspaceInviteClaimResponse,
   "punks://contracts/workspace.member-remove@1": workspaceMemberRemove,
   "punks://contracts/workspace.member-set-role@1": workspaceMemberSetRole,
+  "punks://contracts/workspace.membership-mutation-response@1":
+    workspaceMembershipMutationResponse,
   "punks://contracts/workspace.rename@1": workspaceRename,
   "punks://contracts/nostr.unsigned-event@1": unsignedEvent,
   "punks://contracts/nostr.signed-event@1": signedEvent,

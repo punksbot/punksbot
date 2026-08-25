@@ -471,7 +471,7 @@ describe("Punks Workspace API", () => {
     );
     const createdBody = (await created.json()) as { workspace: { id: string } };
     const workspaceId = createdBody.workspace.id;
-    const missingPunkId = "00000000-0000-8000-8000-000000000003";
+    const missingPunkId = "00000000-0000-8000-8000-000000000004";
     const command = {
       contract: "workspace.member-set-role@1",
       commandId: "9f9accd8-bb81-42bb-a3a1-a0158536947f",

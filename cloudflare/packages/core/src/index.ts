@@ -228,6 +228,20 @@ export {
   type MessageSearchCursorScope,
 } from "./message-search-cursor";
 export {
+  canonicalPunkAvatarUrl,
+  canonicalPunkDisplayName,
+  canonicalPunkSearchKey,
+  canonicalPunkSearchPrefix,
+  decodePunkSearchCursor,
+  derivePunkSearchQueryBinding,
+  encodePunkSearchCursor,
+  PUNK_SEARCH_MAX_PAGE_SIZE,
+  PUNK_SEARCH_MAX_RESULTS,
+  PUNK_SEARCH_MIN_PREFIX_SCALARS,
+  type PunkSearchCursor,
+  type PunkSearchCursorScope,
+} from "./punk-search";
+export {
   encodeMessageContentEnvelope,
   MESSAGE_CONTENT_ENVELOPE_MAX_BYTES,
   messageContentEnvelopeFits,
@@ -265,6 +279,8 @@ export {
 export {
   decideCreateWorkspace,
   decideCreateWorkspaceV2,
+  decideClaimWorkspaceInvitation,
+  decideClaimWorkspaceInvitationV2,
   decideRemoveWorkspaceMember,
   decideRemoveWorkspaceMemberV2,
   decideRenameWorkspace,

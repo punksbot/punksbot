@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/punk.search-response@1",
+  "title": "PunkSearchResponse",
+  "$comment": "No total count, match metadata, hidden candidate coordinate or inaccessible summary may cross this response. Every item is freshly authorized against the Account and Workspace authorities after candidate lookup.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "workspaceId", "items", "nextCursor"],
+  "properties": {
+    "contract": { "const": "punk.search-response@1" },
+    "workspaceId": { "type": "string", "format": "uuid" },
+    "items": {
+      "type": "array",
+      "maxItems": 20,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/summary" }
+    },
+    "nextCursor": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 50,
+          "maxLength": 1024,
+          "pattern": "^psc1\\.[A-Za-z0-9_-]{16}\\.[A-Za-z0-9_-]+$"
+        },
+        { "type": "null" }
+      ]
+    }
+  },
+  "$defs": {
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["punkId", "displayName", "avatarUrl"],
+      "properties": {
+        "punkId": { "type": "string", "format": "uuid" },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "avatarUrl": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uri",
+              "pattern": "^https://",
+              "maxLength": 2048
+            },
+            { "type": "null" }
+          ]
+        }
+      }
+    }
+  }
+}

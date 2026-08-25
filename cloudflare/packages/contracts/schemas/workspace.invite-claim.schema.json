@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/workspace.invite-claim@1",
+  "title": "ClaimWorkspaceInvitationCommand",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "commandId", "workspaceId", "actor", "payload"],
+  "properties": {
+    "contract": { "const": "workspace.invite-claim@1" },
+    "commandId": { "type": "string", "format": "uuid" },
+    "workspaceId": { "type": "string", "format": "uuid" },
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "punkId"],
+      "properties": {
+        "kind": { "const": "punk" },
+        "punkId": { "type": "string", "format": "uuid" }
+      }
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "expectedRevision"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 80,
+          "maxLength": 80,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\\.[A-Za-z0-9_-]{43}$"
+        },
+        "expectedRevision": { "type": "integer", "minimum": 1 }
+      }
+    }
+  }
+}

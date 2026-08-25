@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/punk.search@1",
+  "title": "PunkSearchQuery",
+  "$comment": "Prefix search is non-enumerable: the runtime normalizes and requires at least three Unicode letters or digits, caps each page at 20 and the complete cursor chain at 40 summaries, and binds the encrypted continuation to Punk, Workspace, normalized query and limit. Exact punkId lookup returns at most one currently authorized summary and never emits a cursor.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "workspaceId", "query", "limit", "cursor"],
+  "properties": {
+    "contract": { "const": "punk.search@1" },
+    "workspaceId": { "type": "string", "format": "uuid" },
+    "query": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "value"],
+          "properties": {
+            "kind": { "const": "prefix" },
+            "value": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 80,
+              "pattern": "\\S"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "punkId"],
+          "properties": {
+            "kind": { "const": "punk_id" },
+            "punkId": { "type": "string", "format": "uuid" }
+          }
+        }
+      ]
+    },
+    "limit": { "type": "integer", "minimum": 1, "maximum": 20 },
+    "cursor": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 50,
+          "maxLength": 1024,
+          "pattern": "^psc1\\.[A-Za-z0-9_-]{16}\\.[A-Za-z0-9_-]+$"
+        },
+        { "type": "null" }
+      ]
+    }
+  }
+}

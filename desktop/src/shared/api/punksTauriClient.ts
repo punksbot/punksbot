@@ -6,9 +6,18 @@ import type {
   MessageHistoryResponse,
   MessageReactionMutationResponse,
   MessageView,
+  Punk,
+  PunkPublicSummary,
+  PunkSearchResponse,
   ResolveAuthorsQuery,
   ResolveAuthorsResponse,
   WorkspaceSummary,
+  ClaimWorkspaceInvitationResponse,
+  CreateWorkspaceInvitationResponse,
+  RevokeWorkspaceInvitationResponse,
+  Workspace,
+  WorkspaceInvitationView,
+  WorkspaceMembershipMutationResponse,
 } from "@punks/contracts";
 import { PunksDesktopFailure } from "./punksFailure";
 import { invokePunks, requireContract } from "./punksTauriTransport";
@@ -27,9 +36,17 @@ import type {
   ReactionInput,
   RestoreMessageInput,
   RetractMessageInput,
+  PunkSearchInput,
+  PunkSearchPage,
   ThreadPageInput,
+  UpdatePunkProfileInput,
   WorkspaceIdentity,
   WorkspaceLease,
+  ClaimWorkspaceInvitationInput,
+  CreateWorkspaceInvitationInput,
+  RemoveWorkspaceMemberInput,
+  RevokeWorkspaceInvitationInput,
+  SetWorkspaceMemberRoleInput,
 } from "./punksClient";
 
 const authenticationMethods = new Set<AuthenticationMethod>([
@@ -193,6 +210,49 @@ class TauriWorkspaceSession implements PunksWorkspaceSession {
     );
   }
 
+  async getGovernance(): Promise<Workspace> {
+    const { getWorkspaceGovernance } = await import(
+      "./punksIdentityGovernanceTauri"
+    );
+    return getWorkspaceGovernance(this.lease);
+  }
+
+  async createInvitation(
+    input: CreateWorkspaceInvitationInput,
+  ): Promise<CreateWorkspaceInvitationResponse> {
+    const { createWorkspaceInvitation } = await import(
+      "./punksIdentityGovernanceTauri"
+    );
+    return createWorkspaceInvitation(this.lease, input);
+  }
+
+  async revokeInvitation(
+    input: RevokeWorkspaceInvitationInput,
+  ): Promise<RevokeWorkspaceInvitationResponse> {
+    const { revokeWorkspaceInvitation } = await import(
+      "./punksIdentityGovernanceTauri"
+    );
+    return revokeWorkspaceInvitation(this.lease, input);
+  }
+
+  async setMemberRole(
+    input: SetWorkspaceMemberRoleInput,
+  ): Promise<WorkspaceMembershipMutationResponse> {
+    const { setWorkspaceMemberRole } = await import(
+      "./punksIdentityGovernanceTauri"
+    );
+    return setWorkspaceMemberRole(this.lease, input);
+  }
+
+  async removeMember(
+    input: RemoveWorkspaceMemberInput,
+  ): Promise<WorkspaceMembershipMutationResponse> {
+    const { removeWorkspaceMember } = await import(
+      "./punksIdentityGovernanceTauri"
+    );
+    return removeWorkspaceMember(this.lease, input);
+  }
+
   resolveAuthors(
     authors: ResolveAuthorsQuery["authors"],
   ): Promise<ResolveAuthorsResponse["authors"]> {
@@ -200,6 +260,42 @@ class TauriWorkspaceSession implements PunksWorkspaceSession {
       lease: this.lease,
       authors,
     });
+  }
+
+  async getPunkSummaries(punkIds: string[]): Promise<PunkPublicSummary[]> {
+    const items = await invokePunks<PunkPublicSummary[]>(
+      "punks_get_punk_summaries",
+      { lease: this.lease, punkIds },
+    );
+    return requireContract<{
+      contract: "punk.summary-batch-response@1";
+      workspaceId: string;
+      items: PunkPublicSummary[];
+    }>("punks://contracts/punk.summary-batch-response@1", {
+      contract: "punk.summary-batch-response@1",
+      workspaceId: this.lease.workspaceId,
+      items,
+    }).items;
+  }
+
+  async searchPunks(input: {
+    query: PunkSearchInput;
+    limit: number;
+    cursor: string | null;
+  }): Promise<PunkSearchPage> {
+    const page = await invokePunks<PunkSearchPage>("punks_search_punks", {
+      lease: this.lease,
+      input,
+    });
+    const response = requireContract<PunkSearchResponse>(
+      "punks://contracts/punk.search-response@1",
+      {
+        contract: "punk.search-response@1",
+        workspaceId: this.lease.workspaceId,
+        ...page,
+      },
+    );
+    return { items: response.items, nextCursor: response.nextCursor };
   }
 
   async followConversation(
@@ -283,6 +379,36 @@ export class TauriPunksAccountClient implements PunksAccountClient {
   async getAccountSessionState(): Promise<AccountSessionStateView> {
     return requireAccountSessionStateView(
       await invokePunks("punks_get_account_session_state"),
+    );
+  }
+
+  async getWorkspaceInvitation(code: string): Promise<WorkspaceInvitationView> {
+    const { getWorkspaceInvitation } = await import(
+      "./punksIdentityGovernanceTauri"
+    );
+    return getWorkspaceInvitation(code);
+  }
+
+  async claimWorkspaceInvitation(
+    input: ClaimWorkspaceInvitationInput,
+  ): Promise<ClaimWorkspaceInvitationResponse> {
+    const { claimWorkspaceInvitation } = await import(
+      "./punksIdentityGovernanceTauri"
+    );
+    return claimWorkspaceInvitation(input);
+  }
+
+  async getPunkProfile(): Promise<Punk> {
+    return requireContract<Punk>(
+      "punks://contracts/punk@1",
+      await invokePunks("punks_get_punk_profile"),
+    );
+  }
+
+  async updatePunkProfile(input: UpdatePunkProfileInput): Promise<Punk> {
+    return requireContract<Punk>(
+      "punks://contracts/punk@1",
+      await invokePunks("punks_update_punk_profile", { input }),
     );
   }
 

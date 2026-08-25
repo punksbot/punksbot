@@ -24,7 +24,8 @@
       "required": ["targetPunkId", "role"],
       "properties": {
         "targetPunkId": { "type": "string", "format": "uuid" },
-        "role": { "enum": ["owner", "moderator", "member", "guest"] }
+        "role": { "enum": ["owner", "moderator", "member", "guest"] },
+        "expectedRevision": { "type": "integer", "minimum": 1 }
       }
     }
   }

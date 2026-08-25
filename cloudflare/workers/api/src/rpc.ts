@@ -36,6 +36,13 @@ import type {
   DeliverBotActionResult,
   BotActionAdmission,
   BotWakeOffer,
+  ClaimWorkspaceInvitationCommand,
+  ClaimWorkspaceInvitationResponse,
+  CreateWorkspaceInvitationCommand,
+  CreateWorkspaceInvitationResponse,
+  RevokeWorkspaceInvitationCommand,
+  RevokeWorkspaceInvitationResponse,
+  WorkspaceInvitationView,
 } from "@punks/contracts";
 import type { WorkspacePermission, WorkspaceRole } from "@punks/core";
 import type { BoundedMessageState, MessageContentVersion } from "@punks/core";
@@ -44,7 +51,48 @@ export type WorkspaceCommand =
   | CreateWorkspaceCommand
   | RenameWorkspaceCommand
   | SetWorkspaceMemberRoleCommand
-  | RemoveWorkspaceMemberCommand;
+  | RemoveWorkspaceMemberCommand
+  | ClaimWorkspaceInvitationCommand;
+
+export interface WorkspaceMutationAuthorization {
+  sessionId: string;
+  punkId: string;
+}
+
+export type WorkspaceInvitationMutationCommand =
+  | CreateWorkspaceInvitationCommand
+  | RevokeWorkspaceInvitationCommand;
+
+export type WorkspaceInvitationMutationResponse =
+  | CreateWorkspaceInvitationResponse
+  | RevokeWorkspaceInvitationResponse;
+
+export type WorkspaceInvitationFailureCode =
+  | "invalid_contract"
+  | "idempotency_conflict"
+  | "command_in_progress"
+  | "not_found"
+  | "forbidden"
+  | "revision_conflict"
+  | "invite_invalid"
+  | "invite_expired"
+  | "invite_exhausted"
+  | "invite_revoked"
+  | "invite_role_forbidden"
+  | "attestation_failed"
+  | "internal";
+
+export type WorkspaceInvitationMutationResult =
+  | { ok: true; response: WorkspaceInvitationMutationResponse }
+  | { ok: false; code: WorkspaceInvitationFailureCode };
+
+export type WorkspaceInvitationQueryResult =
+  | { ok: true; invitation: WorkspaceInvitationView }
+  | { ok: false; code: "invalid_contract" | "invite_invalid" | "not_found" };
+
+export type WorkspaceInvitationClaimResult =
+  | { ok: true; response: ClaimWorkspaceInvitationResponse }
+  | { ok: false; code: WorkspaceInvitationFailureCode };
 
 export type BotCommand = PublishBotCommand | UpdateBotCommand;
 
@@ -351,6 +399,12 @@ export type WorkspaceExecuteResult =
         | "not_found"
         | "forbidden"
         | "invalid_transition"
+        | "revision_conflict"
+        | "invite_invalid"
+        | "invite_expired"
+        | "invite_exhausted"
+        | "invite_revoked"
+        | "invite_role_forbidden"
         | "attestation_failed"
         | "internal";
     };

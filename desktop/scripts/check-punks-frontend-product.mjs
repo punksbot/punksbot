@@ -66,6 +66,22 @@ const LAZY_CAPABILITY_CHUNKS = [
       "Save edit",
     ],
   },
+  {
+    capability: "identity-governance",
+    fileName:
+      /^(?:IdentityGovernanceControls|punksIdentityGovernanceTauri)-[A-Za-z0-9_-]+\.js$/u,
+    eagerMarkers: [
+      "punks_get_workspace_governance",
+      "punks_create_workspace_invitation",
+      "punks_get_workspace_invitation",
+      "punks_claim_workspace_invitation",
+      "punks_revoke_workspace_invitation",
+      "punks_set_workspace_member_role",
+      "punks_remove_workspace_member",
+      "Members and invitations",
+      "Accept invitation",
+    ],
+  },
 ];
 
 function fail(message) {

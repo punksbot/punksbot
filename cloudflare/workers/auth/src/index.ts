@@ -11,6 +11,7 @@ import {
   type AccountMergePlan,
   type AccountMergePlanResponse,
   type AuthSession,
+  type Punk,
   validateContract,
 } from "@punks/contracts";
 import { canonicalJson, deriveOpaqueUuid, sha256Hex } from "@punks/core";
@@ -19,6 +20,7 @@ import type {
   AccountMergeRightsChangeInput,
   AccountMergeWorkspaceRole,
   CommitAccountMergeRightsChangeInput,
+  PunkProfileUpdateResult,
 } from "./punk-do";
 
 export { AuthTransactionDO } from "./auth-transaction-do";
@@ -353,10 +355,58 @@ export class PunkSessionService extends WorkerEntrypoint<AuthEnv> {
     return (await this.env.PUNKS.getByName(punkId).query()).ok;
   }
 
+  async getPunkProfile(punkId: string): Promise<Punk | null> {
+    if (!uuidPattern.test(punkId)) return null;
+    try {
+      const result = await this.env.PUNKS.getByName(punkId).query();
+      if (
+        !result.ok ||
+        result.state.id !== punkId ||
+        !validateContract("punks://contracts/punk@1", result.state).valid
+      ) {
+        return null;
+      }
+      return result.state as unknown as Punk;
+    } catch {
+      return null;
+    }
+  }
+
+  async updatePunkProfile(
+    punkId: string,
+    command: unknown,
+  ): Promise<PunkProfileUpdateResult> {
+    if (!uuidPattern.test(punkId)) {
+      return { ok: false, code: "invalid_input" };
+    }
+    try {
+      const result =
+        await this.env.PUNKS.getByName(punkId).updateProfile(command);
+      if (result.ok) {
+        if (
+          result.state.id !== punkId ||
+          !validateContract("punks://contracts/punk@1", result.state).valid
+        ) {
+          return { ok: false, code: "inactive" };
+        }
+        return {
+          ok: true,
+          state: result.state as unknown as Punk,
+          replayed: result.replayed,
+        };
+      }
+      return result as PunkProfileUpdateResult;
+    } catch {
+      return { ok: false, code: "inactive" };
+    }
+  }
+
   async resolvePunkSummary(punkId: string): Promise<{
     id: string;
     displayName: string;
     avatarUrl: string | null;
+    revision: number;
+    updatedAt: string;
   } | null> {
     if (
       !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
@@ -365,14 +415,43 @@ export class PunkSessionService extends WorkerEntrypoint<AuthEnv> {
     ) {
       return null;
     }
-    const result = await this.env.PUNKS.getByName(punkId).query();
-    return result.ok
-      ? {
-          id: result.state.id,
-          displayName: result.state.displayName,
-          avatarUrl: result.state.avatarUrl,
-        }
-      : null;
+    const seen = new Set<string>();
+    let currentId = punkId;
+    for (let hop = 0; hop < 2; hop += 1) {
+      if (seen.has(currentId)) return null;
+      seen.add(currentId);
+      let state: Punk | null;
+      try {
+        const raw =
+          await this.env.PUNKS.getByName(currentId).readForResolution();
+        state =
+          raw !== null &&
+          validateContract("punks://contracts/punk@1", raw).valid
+            ? (raw as unknown as Punk)
+            : null;
+      } catch {
+        return null;
+      }
+      if (state === null || state.id !== currentId) return null;
+      if (state.status === "active") {
+        return {
+          id: state.id,
+          displayName: state.displayName,
+          avatarUrl: state.avatarUrl,
+          revision: state.revision,
+          updatedAt: state.updatedAt,
+        };
+      }
+      if (
+        state.status !== "merged" ||
+        state.mergedInto === null ||
+        !uuidPattern.test(state.mergedInto)
+      ) {
+        return null;
+      }
+      currentId = state.mergedInto;
+    }
+    return null;
   }
 }
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import validationCorpusJson from "../../contracts/conformance/desktop-social-loop-validation.json";
 import operationCorpusJson from "../../contracts/conformance/desktop-social-loop-operations.json";
+import desktopProfile from "../../contracts/profiles/desktop-social-loop@1.json";
 import {
   compareNormalizedTrace,
   normalizeSemanticTrace,
@@ -30,13 +31,15 @@ describe("corpus commun desktop-social-loop@1", () => {
     expect(run.traces.length).toBeGreaterThan(0);
   });
 
-  it("matrice exhaustive : les 23 opérations produisent la trace canonique complète", () => {
+  it("matrice exhaustive : chaque opération produit la trace canonique complète", () => {
     const run = runOperationCorpus();
     expect(run.divergences).toEqual([]);
     expect(new Set(run.traces.map(({ operation }) => operation))).toEqual(
       new Set(operationCorpusJson.operations.map(({ operation }) => operation)),
     );
-    expect(operationCorpusJson.operations).toHaveLength(23);
+    expect(operationCorpusJson.operations).toHaveLength(
+      desktopProfile.operations.length,
+    );
     for (const trace of run.traces) {
       expect(Object.keys(trace).sort()).toEqual([
         "ack",

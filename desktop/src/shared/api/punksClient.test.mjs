@@ -680,3 +680,67 @@ test("fake FOLLOW applies one batch and becomes live only after confirmation", a
   await follow.confirmBatch(6);
   assert.deepEqual(await follow.nextDelivery(), { kind: "became_live" });
 });
+
+test("fake identity governance preserves the native role and invitation semantics", async () => {
+  const governanceSeed = structuredClone(seed);
+  governanceSeed.compatibility.capabilities.push("identity-governance");
+  const targetPunkId = "33333333-3333-4333-8333-333333333333";
+  governanceSeed.governance = {
+    [workspaceId]: {
+      id: workspaceId,
+      slug: "alpha",
+      name: "Alpha",
+      visibility: "private",
+      status: "active",
+      ownerPunkId: punkId,
+      members: [
+        { punkId, role: "owner" },
+        { punkId: targetPunkId, role: "member" },
+      ],
+      revision: 1,
+      cursor: 1,
+      createdAt: "2026-08-26T00:00:00.000Z",
+      updatedAt: "2026-08-26T00:00:00.000Z",
+    },
+  };
+  const account = createFakePunksAccountClient(governanceSeed);
+  await account.checkCompatibility();
+  const workspace = await account.openWorkspace(workspaceId);
+
+  const created = await workspace.createInvitation({
+    role: "guest",
+    expectedRevision: 1,
+    maxUses: 1,
+  });
+  assert.equal(created.invitation.role, "guest");
+  assert.deepEqual(
+    await account.getWorkspaceInvitation(created.code),
+    created.invitation,
+  );
+  assert.equal(
+    (
+      await account.claimWorkspaceInvitation({
+        code: created.code,
+        expectedRevision: 1,
+      })
+    ).result,
+    "already_member",
+  );
+
+  const promoted = await workspace.setMemberRole({
+    targetPunkId,
+    role: "moderator",
+    expectedRevision: 1,
+  });
+  assert.equal(promoted.workspace.revision, 2);
+  const removed = await workspace.removeMember({
+    targetPunkId,
+    expectedRevision: 2,
+  });
+  assert.equal(removed.workspace.members.length, 1);
+  const revoked = await workspace.revokeInvitation({
+    invitationId: created.invitation.invitationId,
+    expectedRevision: 3,
+  });
+  assert.equal(revoked.invitation.status, "revoked");
+});

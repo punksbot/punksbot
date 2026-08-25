@@ -1,4 +1,5 @@
 import type {
+  ClaimWorkspaceInvitationCommand,
   CreateWorkspaceCommand,
   RemoveWorkspaceMemberCommand,
   RenameWorkspaceCommand,
@@ -55,7 +56,9 @@ export type WorkspaceDomainErrorCode =
   | "already_exists"
   | "not_found"
   | "forbidden"
-  | "invalid_transition";
+  | "invalid_transition"
+  | "revision_conflict"
+  | "invite_role_forbidden";
 
 export class WorkspaceDomainError extends Error {
   constructor(
@@ -315,6 +318,15 @@ export function decideSetWorkspaceMemberRole(
     command.actor.punkId,
     "members.manage",
   );
+  if (
+    command.payload.expectedRevision !== undefined &&
+    command.payload.expectedRevision !== current.revision
+  ) {
+    throw new WorkspaceDomainError(
+      "revision_conflict",
+      "Workspace revision changed before role assignment",
+    );
+  }
   const existingIndex = current.members.findIndex(
     (member) => member.punkId === command.payload.targetPunkId,
   );
@@ -407,6 +419,113 @@ export async function decideSetWorkspaceMemberRoleV2(
   );
 }
 
+/**
+ * Admits the authenticated claimant at the role promised by a stateful
+ * invitation. Invitation validity and consumption remain the WorkspaceDO's
+ * responsibility; this decision owns only the authoritative membership fact.
+ */
+export function decideClaimWorkspaceInvitation(
+  current: Workspace | null,
+  command: ClaimWorkspaceInvitationCommand,
+  promisedRole: "member" | "guest",
+  context: WorkspaceDecisionContext,
+): WorkspaceDecision {
+  if (
+    current === null ||
+    current.id !== command.workspaceId ||
+    command.workspaceId !== context.workspaceId
+  ) {
+    throw new WorkspaceDomainError("not_found", "Workspace does not exist");
+  }
+  if (current.revision !== command.payload.expectedRevision) {
+    throw new WorkspaceDomainError(
+      "revision_conflict",
+      "Workspace revision changed before invitation claim",
+    );
+  }
+  if (promisedRole !== "member" && promisedRole !== "guest") {
+    throw new WorkspaceDomainError(
+      "invite_role_forbidden",
+      "Invitation cannot promise this Workspace role",
+    );
+  }
+  if (
+    current.members.some((member) => member.punkId === command.actor.punkId)
+  ) {
+    throw new WorkspaceDomainError(
+      "invalid_transition",
+      "Punk is already a Workspace member",
+    );
+  }
+
+  const nextState: Workspace = {
+    ...current,
+    members: [
+      ...current.members,
+      { punkId: command.actor.punkId, role: promisedRole },
+    ] as Workspace["members"],
+    revision: current.revision + 1,
+    cursor: context.cursor,
+    updatedAt: context.now.toISOString(),
+  };
+  return {
+    nextState,
+    event: {
+      created_at: Math.floor(context.now.getTime() / 1000),
+      kind: PUNKS_EVENT_KINDS.workspaceMemberRoleSet,
+      tags: [
+        ...eventTags(
+          context.workspaceId,
+          context.cursor,
+          command.commandId,
+          command.contract,
+          command.actor.punkId,
+        ),
+        ["target", "punk", command.actor.punkId],
+      ],
+      content: canonicalJson({
+        previousRole: null,
+        role: promisedRole,
+        schemaVersion: 1,
+        targetPunkId: command.actor.punkId,
+        workspace: nextState,
+      }),
+    },
+  };
+}
+
+/** Builds the bounded V2 membership delta for one invitation claim. */
+export async function decideClaimWorkspaceInvitationV2(
+  current: Workspace | null,
+  command: ClaimWorkspaceInvitationCommand,
+  promisedRole: "member" | "guest",
+  context: WorkspaceDecisionContext,
+): Promise<WorkspaceDecisionV2> {
+  const decision = decideClaimWorkspaceInvitation(
+    current,
+    command,
+    promisedRole,
+    context,
+  );
+  return workspaceDecisionV2(
+    decision,
+    context,
+    {
+      type: "member-upserted",
+      targetPunkId: command.actor.punkId,
+      previousRole: null,
+      role: promisedRole,
+    },
+    [
+      {
+        punkId: command.actor.punkId,
+        present: true,
+        role: promisedRole,
+      },
+    ],
+  );
+}
+
 export function decideRemoveWorkspaceMember(
   current: Workspace | null,
   command: RemoveWorkspaceMemberCommand,
@@ -421,6 +540,15 @@ export function decideRemoveWorkspaceMember(
     command.actor.punkId,
     "members.manage",
   );
+  if (
+    command.payload.expectedRevision !== undefined &&
+    command.payload.expectedRevision !== current.revision
+  ) {
+    throw new WorkspaceDomainError(
+      "revision_conflict",
+      "Workspace revision changed before member removal",
+    );
+  }
   if (command.payload.targetPunkId === current.ownerPunkId) {
     throw new WorkspaceDomainError(
       "invalid_transition",

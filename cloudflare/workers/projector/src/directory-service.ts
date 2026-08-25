@@ -1,4 +1,10 @@
 import { WorkerEntrypoint } from "cloudflare:workers";
+import {
+  canonicalPunkAvatarUrl,
+  canonicalPunkDisplayName,
+  canonicalPunkSearchKey,
+  canonicalPunkSearchPrefix,
+} from "@punks/core";
 
 import type { ProjectionShardEnv } from "./shards";
 import { projectionDatabase } from "./shards";
@@ -36,6 +42,18 @@ export interface ConversationCandidate {
   updatedAt: string;
 }
 
+/** Eventual candidate only; API callers must reauthorize the summary. */
+export interface PunkProfileCandidate {
+  punkId: string;
+  displayName: string;
+  avatarUrl: string | null;
+  revision: number;
+}
+
+interface PunkProfileProjection extends PunkProfileCandidate {
+  updatedAt: string;
+}
+
 interface WorkspaceCandidateRow {
   workspace_id: string;
   slug: string;
@@ -61,6 +79,15 @@ interface ConversationCandidateRow {
   updated_at: string;
 }
 
+interface PunkProfileRow {
+  punk_id: string;
+  display_name: string;
+  search_key: string;
+  avatar_url: string | null;
+  revision: number;
+  updated_at: string;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -76,6 +103,56 @@ function validAfterId(value: unknown): value is string | undefined {
   );
 }
 
+function canonicalTimestamp(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const milliseconds = Date.parse(value);
+  return (
+    Number.isFinite(milliseconds) &&
+    new Date(milliseconds).toISOString() === value
+  );
+}
+
+function exactKeys(value: object, keys: readonly string[]): boolean {
+  return Object.keys(value).sort().join(",") === [...keys].sort().join(",");
+}
+
+function punkProfileProjection(value: unknown): PunkProfileProjection | null {
+  if (
+    !isRecord(value) ||
+    !exactKeys(value, [
+      "avatarUrl",
+      "displayName",
+      "punkId",
+      "revision",
+      "updatedAt",
+    ]) ||
+    typeof value.punkId !== "string" ||
+    !OPAQUE_UUID.test(value.punkId) ||
+    !Number.isSafeInteger(value.revision) ||
+    Number(value.revision) < 1 ||
+    Number(value.revision) > 2_147_483_647 ||
+    !canonicalTimestamp(value.updatedAt)
+  ) {
+    return null;
+  }
+  try {
+    const displayName = canonicalPunkDisplayName(value.displayName);
+    const avatarUrl = canonicalPunkAvatarUrl(value.avatarUrl);
+    if (displayName !== value.displayName || avatarUrl !== value.avatarUrl) {
+      return null;
+    }
+    return {
+      punkId: value.punkId,
+      displayName,
+      avatarUrl,
+      revision: Number(value.revision),
+      updatedAt: value.updatedAt,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function shardBindings(env: ProjectionShardEnv): readonly D1Database[] {
   return [
     env.PROJECTION_DB_0,
@@ -83,6 +160,136 @@ function shardBindings(env: ProjectionShardEnv): readonly D1Database[] {
     env.PROJECTION_DB_2,
     env.PROJECTION_DB_3,
   ];
+}
+
+/** Replicates the eventual profile candidate to every fixed D1 shard. */
+export async function upsertPunkProfile(
+  env: ProjectionShardEnv,
+  input: unknown,
+): Promise<boolean> {
+  const profile = punkProfileProjection(input);
+  if (profile === null) return false;
+  const databases = shardBindings(env);
+  const current = await Promise.all(
+    databases.map(async (database) => {
+      const row = await database
+        .prepare(
+          `SELECT punk_id, display_name, search_key, avatar_url, revision,
+                  updated_at
+           FROM punk_profile_projection WHERE punk_id = ?`,
+        )
+        .bind(profile.punkId)
+        .first<PunkProfileRow>();
+      return row;
+    }),
+  );
+  const searchKey = canonicalPunkSearchKey(profile.displayName);
+  if (
+    current.some(
+      (row) =>
+        row !== null &&
+        row.revision === profile.revision &&
+        (row.display_name !== profile.displayName ||
+          row.search_key !== searchKey ||
+          row.avatar_url !== profile.avatarUrl ||
+          row.updated_at !== profile.updatedAt),
+    )
+  ) {
+    return false;
+  }
+  await Promise.all(
+    databases.map(async (database, index) => {
+      const row = current[index] ?? null;
+      if (row !== null && row.revision >= profile.revision) return;
+      await database
+        .prepare(
+          `INSERT INTO punk_profile_projection
+             (punk_id, display_name, search_key, avatar_url, revision, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(punk_id) DO UPDATE SET
+             display_name = excluded.display_name,
+             search_key = excluded.search_key,
+             avatar_url = excluded.avatar_url,
+             revision = excluded.revision,
+             updated_at = excluded.updated_at
+           WHERE excluded.revision > punk_profile_projection.revision`,
+        )
+        .bind(
+          profile.punkId,
+          profile.displayName,
+          searchKey,
+          profile.avatarUrl,
+          profile.revision,
+          profile.updatedAt,
+        )
+        .run();
+    }),
+  );
+  return true;
+}
+
+/**
+ * Returns bounded eventual candidates already joined to a present membership.
+ * The caller still has to reauthorize each Account and Workspace coordinate.
+ */
+export async function searchPunkCandidates(
+  env: ProjectionShardEnv,
+  input: unknown,
+): Promise<PunkProfileCandidate[]> {
+  if (
+    !isRecord(input) ||
+    !exactKeys(
+      input,
+      input.afterPunkId === undefined
+        ? ["limit", "prefix", "workspaceId"]
+        : ["afterPunkId", "limit", "prefix", "workspaceId"],
+    ) ||
+    typeof input.workspaceId !== "string" ||
+    !OPAQUE_UUID.test(input.workspaceId) ||
+    typeof input.prefix !== "string" ||
+    !validLimit(input.limit) ||
+    !validAfterId(input.afterPunkId)
+  ) {
+    return [];
+  }
+  let prefix: string;
+  try {
+    prefix = canonicalPunkSearchPrefix(input.prefix);
+  } catch {
+    return [];
+  }
+  if (prefix !== input.prefix) return [];
+  const afterPunkId = input.afterPunkId ?? null;
+  const result = await projectionDatabase(env, input.workspaceId)
+    .prepare(
+      `SELECT profile.punk_id, profile.display_name, profile.search_key,
+              profile.avatar_url, profile.revision, profile.updated_at
+       FROM punk_profile_projection AS profile
+       JOIN workspace_member_projection AS member
+         ON member.punk_id = profile.punk_id
+        AND member.workspace_id = ?
+        AND member.present = 1
+       WHERE profile.search_key >= ?
+         AND profile.search_key < ?
+         AND (? IS NULL OR profile.punk_id > ?)
+       ORDER BY profile.punk_id
+       LIMIT ?`,
+    )
+    .bind(
+      input.workspaceId,
+      prefix,
+      `${prefix}\u{10ffff}`,
+      afterPunkId,
+      afterPunkId,
+      input.limit,
+    )
+    .all<PunkProfileRow>();
+  return result.results.map((row) => ({
+    punkId: row.punk_id,
+    displayName: row.display_name,
+    avatarUrl: row.avatar_url,
+    revision: row.revision,
+  }));
 }
 
 /**
@@ -225,5 +432,13 @@ export class ProjectionDirectoryService extends WorkerEntrypoint<ProjectionDirec
 
   listConversationCandidates(input: unknown): Promise<ConversationCandidate[]> {
     return listConversationCandidates(this.env, input);
+  }
+
+  upsertPunkProfile(input: unknown): Promise<boolean> {
+    return upsertPunkProfile(this.env, input);
+  }
+
+  searchPunkCandidates(input: unknown): Promise<PunkProfileCandidate[]> {
+    return searchPunkCandidates(this.env, input);
   }
 }

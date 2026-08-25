@@ -18,6 +18,14 @@ export class ProjectionDirectoryService extends WorkerEntrypoint {
   listConversationCandidates() {
     return [];
   }
+
+  upsertPunkProfile() {
+    return true;
+  }
+
+  searchPunkCandidates() {
+    return [];
+  }
 }
 
 export default {

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/workspace.membership-mutation-response@1",
+  "title": "WorkspaceMembershipMutationResponse",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "workspace", "replayed"],
+  "properties": {
+    "contract": { "const": "workspace.membership-mutation-response@1" },
+    "workspace": { "$ref": "schemas/workspace.schema.json" },
+    "replayed": { "type": "boolean" }
+  }
+}

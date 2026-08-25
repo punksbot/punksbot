@@ -23,7 +23,8 @@
       "additionalProperties": false,
       "required": ["targetPunkId"],
       "properties": {
-        "targetPunkId": { "type": "string", "format": "uuid" }
+        "targetPunkId": { "type": "string", "format": "uuid" },
+        "expectedRevision": { "type": "integer", "minimum": 1 }
       }
     }
   }

@@ -21,7 +21,12 @@
     "displayName": { "type": "string", "minLength": 1, "maxLength": 80 },
     "avatarUrl": {
       "anyOf": [
-        { "type": "string", "format": "uri", "maxLength": 2048 },
+        {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://",
+          "maxLength": 2048
+        },
         { "type": "null" }
       ]
     },

@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/workspace.invite-claim-response@1",
+  "title": "ClaimWorkspaceInvitationResponse",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "result", "workspace", "replayed"],
+  "properties": {
+    "contract": { "const": "workspace.invite-claim-response@1" },
+    "result": { "enum": ["joined", "already_member"] },
+    "workspace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "slug", "name", "visibility", "role", "revision"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "slug": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 48,
+          "pattern": "^[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])$"
+        },
+        "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "visibility": { "enum": ["private", "punks", "public"] },
+        "role": { "enum": ["owner", "moderator", "member", "guest"] },
+        "revision": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "replayed": { "type": "boolean" }
+  }
+}

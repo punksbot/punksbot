@@ -5,6 +5,7 @@ import type {
 } from "@punks/contracts";
 import { validateContract } from "@punks/contracts";
 import operationCorpus from "../../../packages/contracts/conformance/desktop-social-loop-operations.json";
+import desktopProfile from "../../../packages/contracts/profiles/desktop-social-loop@1.json";
 import followCorpus from "../../../packages/contracts/conformance/desktop-social-loop-follow.json";
 import validationCorpus from "../../../packages/contracts/conformance/desktop-social-loop-validation.json";
 import { env, SELF } from "cloudflare:test";
@@ -81,8 +82,10 @@ describe("corpus commun desktop-social-loop@1 sous workerd", () => {
     ).toBe("suppressed");
   });
 
-  it("rejoue indépendamment les contrats de chacune des 23 opérations", () => {
-    expect(operationCorpus.operations).toHaveLength(23);
+  it("rejoue indépendamment les contrats de chaque opération", () => {
+    expect(operationCorpus.operations).toHaveLength(
+      desktopProfile.operations.length,
+    );
     for (const operation of operationCorpus.operations) {
       for (const testCase of operation.cases) {
         const actual = observeBackendScenario({

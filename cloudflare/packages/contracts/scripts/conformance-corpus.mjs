@@ -1,6 +1,7 @@
 const UUID = "00000000-0000-8000-8000-000000000001";
 const DATE = "2026-08-22T12:00:00.000Z";
 const HISTORY_CURSOR = `mhc1.cGF5bG9hZA.${"A".repeat(43)}`;
+const PUNK_SEARCH_CURSOR = `psc1.${"A".repeat(16)}.${"A".repeat(43)}`;
 const SECRET = "secret-conformance-8f31c0a6-ne-doit-jamais-apparaitre";
 
 function externalName(reference) {
@@ -32,6 +33,8 @@ function stringSample(schema, path) {
   if (schema.format === "uri") return "https://punks.example/conformance";
   const pattern = schema.pattern ?? "";
   if (pattern.includes("mhc1")) return HISTORY_CURSOR;
+  if (pattern.includes("psc1")) return PUNK_SEARCH_CURSOR;
+  if (pattern.includes("[0-9a-f]{64}")) return "a".repeat(64);
   if (pattern.includes("[0-9]+\\.[0-9]+")) return "1.0.0";
   if (pattern.includes("https?://")) return "https://punks.example";
   if (pattern.includes("/(?!")) return "/conformance";

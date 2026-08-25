@@ -4,6 +4,8 @@ import { beforeAll, describe, expect, it } from "vitest";
 import {
   listConversationCandidates,
   listWorkspaceCandidates,
+  searchPunkCandidates,
+  upsertPunkProfile,
 } from "../src/directory-service";
 import { projectionDatabase } from "../src/shards";
 
@@ -222,5 +224,89 @@ describe("ProjectionDirectoryService candidates", () => {
         limit: 102,
       }),
     ).resolves.toEqual([]);
+  });
+
+  it("projects only current Workspace members matching a constrained prefix", async () => {
+    const firstPunkId = "a0000000-0000-4000-8000-000000000001";
+    const secondPunkId = "b0000000-0000-4000-8000-000000000002";
+    const hiddenPunkId = "c0000000-0000-4000-8000-000000000003";
+    for (const [candidatePunkId, displayName] of [
+      [firstPunkId, "Marc"],
+      [secondPunkId, "Marie"],
+      [hiddenPunkId, "Marina"],
+    ] as const) {
+      await expect(
+        upsertPunkProfile(testEnv, {
+          punkId: candidatePunkId,
+          displayName,
+          avatarUrl: null,
+          revision: 1,
+          updatedAt: "2026-08-25T12:00:00.000Z",
+        }),
+      ).resolves.toBe(true);
+    }
+    for (const candidatePunkId of [firstPunkId, secondPunkId]) {
+      await database
+        .prepare(
+          `INSERT INTO workspace_member_projection
+           (workspace_id, punk_id, role, last_cursor, updated_at, present)
+           VALUES (?, ?, 'member', 2, ?, 1)`,
+        )
+        .bind(workspaceId, candidatePunkId, "2026-08-25T12:00:00.000Z")
+        .run();
+    }
+
+    await expect(
+      searchPunkCandidates(testEnv, {
+        workspaceId,
+        prefix: "mar",
+        limit: 10,
+      }),
+    ).resolves.toEqual([
+      {
+        punkId: firstPunkId,
+        displayName: "Marc",
+        avatarUrl: null,
+        revision: 1,
+      },
+      {
+        punkId: secondPunkId,
+        displayName: "Marie",
+        avatarUrl: null,
+        revision: 1,
+      },
+    ]);
+    await expect(
+      searchPunkCandidates(testEnv, {
+        workspaceId,
+        prefix: "mar",
+        limit: 10,
+        afterPunkId: firstPunkId,
+      }),
+    ).resolves.toEqual([expect.objectContaining({ punkId: secondPunkId })]);
+  });
+
+  it("keeps profile projection revisions monotone and rejects divergence", async () => {
+    const candidatePunkId = "d0000000-0000-4000-8000-000000000004";
+    const initial = {
+      punkId: candidatePunkId,
+      displayName: "Nora",
+      avatarUrl: null,
+      revision: 1,
+      updatedAt: "2026-08-25T12:00:00.000Z",
+    };
+
+    await expect(upsertPunkProfile(testEnv, initial)).resolves.toBe(true);
+    await expect(
+      upsertPunkProfile(testEnv, { ...initial, displayName: "Divergent" }),
+    ).resolves.toBe(false);
+    await expect(
+      upsertPunkProfile(testEnv, {
+        ...initial,
+        displayName: "Nora Updated",
+        revision: 2,
+        updatedAt: "2026-08-25T12:01:00.000Z",
+      }),
+    ).resolves.toBe(true);
   });
 });

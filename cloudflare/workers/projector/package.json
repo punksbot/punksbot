@@ -15,7 +15,8 @@
   },
   "dependencies": {
     "@noble/curves": "^2.3.0",
-    "@punks/contracts": "workspace:*"
+    "@punks/contracts": "workspace:*",
+    "@punks/core": "workspace:*"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.6",
