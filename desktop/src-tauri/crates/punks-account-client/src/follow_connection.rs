@@ -70,6 +70,7 @@ impl WorkspaceSession {
         after_cursor: u64,
     ) -> Result<FollowConnection, ClientFailure> {
         validate_uuid(conversation_id, "conversationId")?;
+        let _operation = self.operations.read().await;
         self.assert_current().await?;
         #[cfg(not(test))]
         let Transport::Http(transport) = &self.inner.transport;
@@ -125,12 +126,22 @@ impl WorkspaceSession {
         if let Some(cookie) = transport.jar.cookies(&transport.origin) {
             request.headers_mut().insert(COOKIE, cookie);
         }
-        let (socket, response) = connect_async(request).await.map_err(|_| {
-            ClientFailure::new(
-                FailureKind::Transport,
-                "Punks FOLLOW connection could not be opened",
-            )
-        })?;
+        let cancellation = self.cancellation.clone();
+        let (socket, response) = tokio::select! {
+            biased;
+            _ = cancellation.cancelled() => {
+                return Err(ClientFailure::new(
+                    FailureKind::Cancelled,
+                    "Punks FOLLOW connection was cancelled",
+                ));
+            }
+            result = connect_async(request) => result.map_err(|_| {
+                ClientFailure::new(
+                    FailureKind::Transport,
+                    "Punks FOLLOW connection could not be opened",
+                )
+            })?,
+        };
         record_network_request("FOLLOW", &websocket_url, response.status().as_u16());
         if response
             .headers()
@@ -163,11 +174,18 @@ impl FollowConnection {
         loop {
             self.session.assert_current().await?;
             let cancellation = self.cancellation.0.clone();
+            let workspace_cancellation = self.session.cancellation.clone();
             let next = tokio::select! {
                 _ = cancellation.cancelled() => {
                     return Err(ClientFailure::new(
                         FailureKind::Cancelled,
                         "Punks FOLLOW was cancelled",
+                    ));
+                }
+                _ = workspace_cancellation.cancelled() => {
+                    return Err(ClientFailure::new(
+                        FailureKind::Cancelled,
+                        "Punks Workspace FOLLOW was cancelled",
                     ));
                 }
                 next = self.socket.next() => next,
@@ -252,10 +270,28 @@ impl FollowConnection {
                 "Punks FOLLOW ACK could not be encoded",
             )
         })?;
-        self.socket
-            .send(Message::Text(text.into()))
-            .await
-            .map_err(|_| ClientFailure::new(FailureKind::Transport, "Punks FOLLOW ACK failed"))?;
+        let cancellation = self.cancellation.0.clone();
+        let workspace_cancellation = self.session.cancellation.clone();
+        tokio::select! {
+            biased;
+            _ = cancellation.cancelled() => {
+                return Err(ClientFailure::new(
+                    FailureKind::Cancelled,
+                    "Punks FOLLOW was cancelled",
+                ));
+            }
+            _ = workspace_cancellation.cancelled() => {
+                return Err(ClientFailure::new(
+                    FailureKind::Cancelled,
+                    "Punks Workspace FOLLOW was cancelled",
+                ));
+            }
+            result = self.socket.send(Message::Text(text.into())) => {
+                result.map_err(|_| {
+                    ClientFailure::new(FailureKind::Transport, "Punks FOLLOW ACK failed")
+                })?;
+            }
+        }
         self.session.assert_current().await?;
         self.state = confirmation.state;
         Ok(())

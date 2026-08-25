@@ -213,6 +213,78 @@ describe("PunksAccountClient", () => {
     });
   });
 
+  it("prefers durable Workspace identity over a UUID-shaped slug", async () => {
+    const collisionDirectory: ListWorkspacesResponse = {
+      contract: "workspace.list-response@1",
+      items: [
+        {
+          id: secondWorkspaceId,
+          slug: "durable-target",
+          name: "Durable target",
+          visibility: "private",
+          role: "member",
+          revision: 1,
+        },
+        {
+          id: workspaceId,
+          slug: secondWorkspaceId,
+          name: "UUID-shaped slug",
+          visibility: "private",
+          role: "owner",
+          revision: 1,
+        },
+      ],
+      nextCursor: null,
+    };
+    const fetchStub: typeof globalThis.fetch = async (input) => {
+      const path = new URL(String(input)).pathname;
+      if (path === "/api/v1/desktop/compatibility") {
+        return Response.json(compatibility);
+      }
+      if (path === "/api/auth/v1/session") {
+        return Response.json({ session });
+      }
+      if (path === "/api/v1/workspaces") {
+        return Response.json(collisionDirectory);
+      }
+      throw new Error(`Unexpected request: ${path}`);
+    };
+    const account = createHttpPunksAccountClient({
+      baseUrl: origin,
+      fetch: fetchStub,
+      clientVersion: "0.6.0",
+      distribution: "development",
+      platform: "macos-arm64",
+    });
+    await account.checkCompatibility();
+    await account.getSession();
+    await account.listWorkspaces();
+
+    await expect(
+      account.resolveWorkspace({
+        kind: "id",
+        workspaceId: secondWorkspaceId,
+      }),
+    ).resolves.toMatchObject({
+      id: secondWorkspaceId,
+      slug: "durable-target",
+    });
+    await expect(
+      account.resolveWorkspace({
+        kind: "slug",
+        workspaceSlug: secondWorkspaceId,
+      }),
+    ).resolves.toMatchObject({
+      id: workspaceId,
+      slug: secondWorkspaceId,
+    });
+    await expect(
+      account.openWorkspace(secondWorkspaceId),
+    ).resolves.toMatchObject({
+      lease: { workspaceId: secondWorkspaceId },
+    });
+  });
+
   it("invalidates an old lease before I/O when another Workspace opens", async () => {
     const requests: Array<{ url: URL; init?: RequestInit }> = [];
     let directoryCalls = 0;

@@ -134,3 +134,34 @@ test("semantic authentication methods use only their dedicated typed IPC command
     { command: "punks_sign_out", args: {} },
   ]);
 });
+
+test("Workspace resolution sends an explicit durable-id or slug identity", async () => {
+  handler = (command) => {
+    if (command === "punks_resolve_workspace") return null;
+    throw new Error(`Unexpected command: ${command}`);
+  };
+  const { TauriPunksAccountClient } = await import("./punksTauriClient.ts");
+  const client = new TauriPunksAccountClient();
+
+  await client.resolveWorkspace({
+    kind: "id",
+    workspaceId: "11111111-1111-4111-8111-111111111111",
+  });
+  await client.resolveWorkspace({ kind: "slug", workspaceSlug: "alpha" });
+
+  assert.deepEqual(calls, [
+    {
+      command: "punks_resolve_workspace",
+      args: {
+        identity: {
+          kind: "id",
+          workspaceId: "11111111-1111-4111-8111-111111111111",
+        },
+      },
+    },
+    {
+      command: "punks_resolve_workspace",
+      args: { identity: { kind: "slug", workspaceSlug: "alpha" } },
+    },
+  ]);
+});

@@ -203,6 +203,49 @@ test("fake profile enforces the same generation-bound WorkspaceSession", async (
   await assert.rejects(first.listStreams(), { kind: "stale_workspace" });
 });
 
+test("fake Workspace resolution keeps durable ids distinct from UUID-shaped slugs", async () => {
+  const collisionSeed = structuredClone(seed);
+  collisionSeed.workspaces = [
+    {
+      id: secondWorkspaceId,
+      slug: "durable-target",
+      name: "Durable target",
+      visibility: "private",
+      role: "member",
+      revision: 1,
+    },
+    {
+      id: workspaceId,
+      slug: secondWorkspaceId,
+      name: "UUID-shaped slug",
+      visibility: "private",
+      role: "owner",
+      revision: 1,
+    },
+  ];
+  const account = createFakePunksAccountClient(collisionSeed);
+  await account.checkCompatibility();
+
+  assert.equal(
+    (
+      await account.resolveWorkspace({
+        kind: "id",
+        workspaceId: secondWorkspaceId,
+      })
+    )?.id,
+    secondWorkspaceId,
+  );
+  assert.equal(
+    (
+      await account.resolveWorkspace({
+        kind: "slug",
+        workspaceSlug: secondWorkspaceId,
+      })
+    )?.id,
+    workspaceId,
+  );
+});
+
 test("fake profile requires Compatibility before mounting a Workspace", async () => {
   const account = createFakePunksAccountClient(seed);
 

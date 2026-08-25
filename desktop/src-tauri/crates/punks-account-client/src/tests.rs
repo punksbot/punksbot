@@ -16,6 +16,8 @@ use super::{
     ClientPlatform, FailureKind, FollowPhase, FollowServerFrame, FollowState, PunksAccountClient,
 };
 
+mod workspace_context;
+
 type ResponseFuture = Pin<Box<dyn Future<Output = Result<Value, ClientFailure>> + Send>>;
 
 const ORIGIN: &str = "https://staging.punks.bot";
@@ -254,10 +256,9 @@ async fn pending_response_is_rejected_after_generation_changes() {
     started_rx.await.unwrap();
 
     client.open_workspace(SECOND_WORKSPACE_ID).await.unwrap();
-    let _ = release_tx.send(());
-
     let failure = pending.await.unwrap().unwrap_err();
-    assert_eq!(failure.kind, FailureKind::StaleWorkspace);
+    assert_eq!(failure.kind, FailureKind::Cancelled);
+    assert!(release_tx.send(()).is_err());
 }
 
 #[tokio::test]

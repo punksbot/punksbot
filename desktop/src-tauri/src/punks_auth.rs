@@ -150,7 +150,13 @@ async fn start_authentication(
     purpose: Option<PendingAuthPurpose>,
     authorization_id: Option<String>,
 ) -> Result<CeremonyPhaseView, ClientFailure> {
-    let _transition = client.transitions.lock().await;
+    if intent == PendingAuthIntent::SwitchAccount {
+        client.account()?.cancel_workspace_operations().await;
+    }
+    let _transition = client.transitions.write().await;
+    if intent == PendingAuthIntent::SwitchAccount {
+        client.invalidate_workspace_context().await?;
+    }
     cancel_existing_flow(client, store).await?;
     let active = store.load_active_session().map_err(|_| store_failure())?;
     match (intent, active.is_some()) {
@@ -561,7 +567,7 @@ pub async fn punks_get_account_session_state(
     client: tauri::State<'_, PunksDesktopClient>,
     store: tauri::State<'_, Arc<KeyringSessionPersistence>>,
 ) -> Result<AccountSessionStateView, ClientFailure> {
-    let _transition = client.transitions.lock().await;
+    let _transition = client.transitions.write().await;
     let _ = flush_revocations(&client, &store).await?;
     if let Some(renewal) = store.reread_renewal().map_err(|_| store_failure())? {
         return Ok(AccountSessionStateView::SignedOut {
@@ -777,7 +783,7 @@ pub async fn punks_resume_interrupted_authentication(
     client: tauri::State<'_, PunksDesktopClient>,
     store: tauri::State<'_, Arc<KeyringSessionPersistence>>,
 ) -> Result<CeremonyPhaseView, ClientFailure> {
-    let _transition = client.transitions.lock().await;
+    let _transition = client.transitions.write().await;
     if let Some(renewal) = store.reread_renewal().map_err(|_| store_failure())? {
         return finish_pending_renewal(&client, &store, renewal).await;
     }
@@ -790,7 +796,7 @@ pub async fn punks_cancel_authentication(
     client: tauri::State<'_, PunksDesktopClient>,
     store: tauri::State<'_, Arc<KeyringSessionPersistence>>,
 ) -> Result<CeremonyPhaseView, ClientFailure> {
-    let _transition = client.transitions.lock().await;
+    let _transition = client.transitions.write().await;
     if store
         .reread_renewal()
         .map_err(|_| store_failure())?
@@ -834,7 +840,7 @@ pub async fn punks_renew_account_session(
     client: tauri::State<'_, PunksDesktopClient>,
     store: tauri::State<'_, Arc<KeyringSessionPersistence>>,
 ) -> Result<CeremonyPhaseView, ClientFailure> {
-    let _transition = client.transitions.lock().await;
+    let _transition = client.transitions.write().await;
     if let Some(renewal) = store.reread_renewal().map_err(|_| store_failure())? {
         return finish_pending_renewal(&client, &store, renewal).await;
     }
@@ -907,7 +913,8 @@ pub async fn punks_sign_out(
     client: tauri::State<'_, PunksDesktopClient>,
     store: tauri::State<'_, Arc<KeyringSessionPersistence>>,
 ) -> Result<String, ClientFailure> {
-    let _transition = client.transitions.lock().await;
+    client.account()?.cancel_workspace_operations().await;
+    let _transition = client.transitions.write().await;
     let pending = store
         .load_pending_auth_flow()
         .map_err(|_| store_failure())?;
@@ -940,7 +947,7 @@ pub(crate) async fn handle_auth_completion(
 ) -> Result<(), String> {
     let client = app.state::<PunksDesktopClient>();
     let store = app.state::<Arc<KeyringSessionPersistence>>();
-    let _transition = client.transitions.lock().await;
+    let _transition = client.transitions.write().await;
     let flow = store
         .load_pending_auth_flow()
         .map_err(|_| "secure authentication state unavailable".to_string())?

@@ -78,8 +78,6 @@ impl WorkspaceSession {
         }
         self.assert_current().await?;
         let response = self
-            .inner
-            .transport
             .request(
                 Method::POST,
                 format!(

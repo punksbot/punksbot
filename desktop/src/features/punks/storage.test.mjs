@@ -30,7 +30,7 @@ test("Punks persistence keeps preferences, last Workspace and route coordinates 
   local.savePreferences({ theme: "dark", reducedMotion: true });
   local.saveLastWorkspaceId(workspaceId);
   local.saveRouteCoordinates({
-    workspaceSlug: "alpha",
+    workspaceId,
     conversationId,
     messageId,
   });
@@ -41,7 +41,7 @@ test("Punks persistence keeps preferences, last Workspace and route coordinates 
   });
   assert.equal(local.loadLastWorkspaceId(), workspaceId);
   assert.deepEqual(local.loadRouteCoordinates(), {
-    workspaceSlug: "alpha",
+    workspaceId,
     conversationId,
     messageId,
   });

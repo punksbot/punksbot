@@ -20,7 +20,7 @@ pub async fn punks_edit_message(
     lease: WorkspaceLease,
     input: EditMessageInput,
 ) -> Result<MessageMutationResponse, ClientFailure> {
-    let _transition = client.transitions.lock().await;
+    let _operation = client.transitions.read().await;
     client
         .session(&lease)
         .await?
@@ -50,7 +50,7 @@ pub async fn punks_retract_message(
     lease: WorkspaceLease,
     input: RetractMessageInput,
 ) -> Result<MessageMutationResponse, ClientFailure> {
-    let _transition = client.transitions.lock().await;
+    let _operation = client.transitions.read().await;
     client
         .session(&lease)
         .await?
@@ -78,7 +78,7 @@ pub async fn punks_restore_message(
     lease: WorkspaceLease,
     input: RestoreMessageInput,
 ) -> Result<MessageMutationResponse, ClientFailure> {
-    let _transition = client.transitions.lock().await;
+    let _operation = client.transitions.read().await;
     client
         .session(&lease)
         .await?

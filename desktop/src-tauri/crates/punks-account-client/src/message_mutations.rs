@@ -54,8 +54,6 @@ impl WorkspaceSession {
         self.assert_current().await?;
         let command_id = uuid::Uuid::new_v4().to_string();
         let response = self
-            .inner
-            .transport
             .request(
                 Method::POST,
                 format!(
@@ -111,8 +109,6 @@ impl WorkspaceSession {
         self.assert_current().await?;
         let command_id = uuid::Uuid::new_v4().to_string();
         let response = self
-            .inner
-            .transport
             .request(
                 Method::PATCH,
                 format!(
@@ -198,8 +194,6 @@ impl WorkspaceSession {
         self.assert_current().await?;
         let command_id = uuid::Uuid::new_v4().to_string();
         let response = self
-            .inner
-            .transport
             .request(
                 Method::POST,
                 format!(
@@ -273,8 +267,6 @@ impl WorkspaceSession {
             "message.reaction-remove@1"
         };
         let response = self
-            .inner
-            .transport
             .request(
                 Method::POST,
                 format!(

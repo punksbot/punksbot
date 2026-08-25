@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 
 import type { ConversationSummary } from "@punks/contracts";
 
@@ -27,6 +28,7 @@ function WorkspaceSidebar({
   const account = usePunksAccount();
   const workspace = usePunksWorkspace();
   const route = account.route;
+  const [showAccountSwitch, setShowAccountSwitch] = useState(false);
   const selectedConversationId =
     route?.kind === "conversation" || route?.kind === "message"
       ? route.conversationId
@@ -104,14 +106,48 @@ function WorkspaceSidebar({
           ))}
         </div>
       </nav>
-      <button
-        className="m-3 rounded-md border border-border px-3 py-2 text-left text-sm hover:bg-accent/60"
-        data-testid="punks-sign-out"
-        onClick={() => void account.logout()}
-        type="button"
-      >
-        Sign out
-      </button>
+      <div className="m-3 space-y-2">
+        <button
+          aria-expanded={showAccountSwitch}
+          className="w-full rounded-md border border-border px-3 py-2 text-left text-sm hover:bg-accent/60"
+          data-testid="punks-switch-account"
+          onClick={() => setShowAccountSwitch((visible) => !visible)}
+          type="button"
+        >
+          Switch Account
+        </button>
+        {showAccountSwitch ? (
+          <fieldset
+            aria-label="Account switch methods"
+            className="grid grid-cols-3 gap-1"
+          >
+            <legend className="sr-only">Account switch methods</legend>
+            {(["google", "github", "passkey"] as const).map((method) => (
+              <button
+                className="rounded-md border border-border px-2 py-1.5 text-xs hover:bg-accent/60"
+                key={method}
+                onClick={() => {
+                  setShowAccountSwitch(false);
+                  void account.switchAccount(method);
+                }}
+                type="button"
+              >
+                {method === "github"
+                  ? "GitHub"
+                  : `${method[0]?.toUpperCase()}${method.slice(1)}`}
+              </button>
+            ))}
+          </fieldset>
+        ) : null}
+        <button
+          className="w-full rounded-md border border-border px-3 py-2 text-left text-sm hover:bg-accent/60"
+          data-testid="punks-sign-out"
+          onClick={() => void account.logout()}
+          type="button"
+        >
+          Sign out
+        </button>
+      </div>
     </aside>
   );
 }

@@ -14,7 +14,7 @@ export type PunksLocalPreferences = {
 };
 
 export type PunksRouteCoordinates = {
-  workspaceSlug?: string;
+  workspaceId?: string;
   conversationId?: string;
   messageId?: string;
 };
@@ -36,9 +36,22 @@ export type PunksStorageScope = {
   punkId: string;
 };
 
+/** Compares the origin-and-Punk boundary without flattening it to a string. */
+export function samePunksStorageScope(
+  left: PunksStorageScope | null,
+  right: PunksStorageScope | null,
+): boolean {
+  return (
+    left === right ||
+    (left !== null &&
+      right !== null &&
+      left.origin === right.origin &&
+      left.punkId === right.punkId)
+  );
+}
+
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
-const SLUG = /^[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])?$/u;
 
 function parseJson<T>(storage: PunksKeyValueStorage, key: string): T | null {
   try {
@@ -79,15 +92,15 @@ function isRouteCoordinates(value: unknown): value is PunksRouteCoordinates {
   const record = value as Record<string, unknown>;
   if (
     Object.keys(record).some(
-      (key) => !["workspaceSlug", "conversationId", "messageId"].includes(key),
+      (key) => !["workspaceId", "conversationId", "messageId"].includes(key),
     )
   ) {
     return false;
   }
   return (
-    (record.workspaceSlug === undefined ||
-      (typeof record.workspaceSlug === "string" &&
-        SLUG.test(record.workspaceSlug))) &&
+    (record.workspaceId === undefined ||
+      (typeof record.workspaceId === "string" &&
+        UUID.test(record.workspaceId))) &&
     (record.conversationId === undefined ||
       (typeof record.conversationId === "string" &&
         UUID.test(record.conversationId))) &&
@@ -105,6 +118,14 @@ function safeWrite(
     storage.setItem(key, JSON.stringify(value));
   } catch {
     // Preferences are best effort and must never block a Punks read or write.
+  }
+}
+
+function safeRemove(storage: PunksKeyValueStorage, key: string): void {
+  try {
+    storage.removeItem(key);
+  } catch {
+    // Local storage can be unavailable in a locked-down WebView.
   }
 }
 
@@ -140,6 +161,9 @@ export function createPunksLocalStore(
         safeWrite(storage, keys.lastWorkspace, workspaceId);
       }
     },
+    clearLastWorkspaceId(): void {
+      safeRemove(storage, keys.lastWorkspace);
+    },
     loadRouteCoordinates(): PunksRouteCoordinates {
       const value = parseJson<unknown>(storage, keys.route);
       return isRouteCoordinates(value) ? value : {};
@@ -149,14 +173,11 @@ export function createPunksLocalStore(
         safeWrite(storage, keys.route, coordinates);
       }
     },
+    clearRouteCoordinates(): void {
+      safeRemove(storage, keys.route);
+    },
     removeAll(): void {
-      try {
-        for (const key of Object.values(keys)) {
-          storage.removeItem(key);
-        }
-      } catch {
-        // Local storage can be unavailable in a locked-down WebView.
-      }
+      for (const key of Object.values(keys)) safeRemove(storage, key);
     },
   };
 }

@@ -32,6 +32,7 @@ export type {
   CancellableOperation,
   HttpPunksAccountClientOptions,
   PunksAccountClient,
+  WorkspaceIdentity,
   WorkspaceLease,
   WorkspaceSession,
   WorkspaceThreadOptions,
@@ -460,7 +461,8 @@ export function createHttpPunksAccountClient(
     new URL(path.replace(/^\/+/, ""), `${origin}/`);
   let compatibility: DesktopCompatibilityResponse | null = null;
   let currentSession: AuthSession | null = null;
-  let knownWorkspaces = new Map<string, WorkspaceSummary>();
+  let knownWorkspacesById = new Map<string, WorkspaceSummary>();
+  let knownWorkspaceIdsBySlug = new Map<string, string>();
   let generation = 0;
   let activeLease: WorkspaceLease | null = null;
 
@@ -567,11 +569,11 @@ export function createHttpPunksAccountClient(
       items.push(...response.items);
       cursor = acceptNextDirectoryCursor(seenCursors, response.nextCursor);
     } while (cursor !== null);
-    knownWorkspaces = new Map(
-      items.flatMap((workspace) => [
-        [workspace.id, workspace],
-        [workspace.slug, workspace],
-      ]),
+    knownWorkspacesById = new Map(
+      items.map((workspace) => [workspace.id, workspace]),
+    );
+    knownWorkspaceIdsBySlug = new Map(
+      items.map((workspace) => [workspace.slug, workspace.id]),
     );
     return items;
   };
@@ -624,11 +626,17 @@ export function createHttpPunksAccountClient(
       return session;
     },
     listWorkspaces,
-    async resolveWorkspace(idOrSlug, options = {}) {
-      const cached = knownWorkspaces.get(idOrSlug);
+    async resolveWorkspace(identity, options = {}) {
+      const resolveCached = () =>
+        identity.kind === "id"
+          ? knownWorkspacesById.get(identity.workspaceId)
+          : knownWorkspacesById.get(
+              knownWorkspaceIdsBySlug.get(identity.workspaceSlug) ?? "",
+            );
+      const cached = resolveCached();
       if (cached !== undefined) return cached;
       await listWorkspaces(options);
-      return knownWorkspaces.get(idOrSlug) ?? null;
+      return resolveCached() ?? null;
     },
     async openWorkspace(workspaceId, options = {}) {
       assertCompatible();
@@ -637,8 +645,8 @@ export function createHttpPunksAccountClient(
       activeLease = null;
       const session = currentSession ?? (await account.getSession(options));
       const workspace =
-        knownWorkspaces.get(workspaceId) ??
-        (await account.resolveWorkspace(workspaceId, options));
+        knownWorkspacesById.get(workspaceId) ??
+        (await account.resolveWorkspace({ kind: "id", workspaceId }, options));
       if (generation !== openingGeneration) {
         throw staleWorkspaceProblem();
       }

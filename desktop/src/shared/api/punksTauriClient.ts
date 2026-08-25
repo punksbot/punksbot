@@ -30,6 +30,7 @@ import type {
   RestoreMessageInput,
   RetractMessageInput,
   ThreadPageInput,
+  WorkspaceIdentity,
   WorkspaceLease,
 } from "./punksClient";
 
@@ -373,8 +374,10 @@ export class TauriPunksAccountClient implements PunksAccountClient {
     ).items;
   }
 
-  resolveWorkspace(idOrSlug: string): Promise<WorkspaceSummary | null> {
-    return invokePunks("punks_resolve_workspace", { idOrSlug });
+  resolveWorkspace(
+    identity: WorkspaceIdentity,
+  ): Promise<WorkspaceSummary | null> {
+    return invokePunks("punks_resolve_workspace", { identity });
   }
 
   validateNavigation(url: string): Promise<PunksNavigationTarget> {

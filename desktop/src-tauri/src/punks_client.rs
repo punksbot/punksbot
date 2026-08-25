@@ -8,7 +8,7 @@ use punks_account_client::{
     StreamView, WorkspaceLease, WorkspaceSession, WorkspaceSummary,
 };
 use serde::Deserialize;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
 
 use crate::punks_auth_state::NativeAuthenticationRuntime;
 
@@ -19,7 +19,7 @@ pub mod punks_message_lifecycle;
 /// Native state for the single Punks Account and mounted Workspace.
 pub struct PunksDesktopClient {
     account: Result<PunksAccountClient, ClientFailure>,
-    pub(crate) transitions: Mutex<()>,
+    pub(crate) transitions: RwLock<()>,
     sessions: Mutex<HashMap<u64, WorkspaceSession>>,
     follows: Mutex<HashMap<String, FollowEntry>>,
     pub(crate) authentication: Mutex<NativeAuthenticationRuntime>,
@@ -54,7 +54,7 @@ impl PunksDesktopClient {
                         current_platform(),
                     )
                 }),
-            transitions: Mutex::new(()),
+            transitions: RwLock::new(()),
             sessions: Mutex::new(HashMap::new()),
             follows: Mutex::new(HashMap::new()),
             authentication: Mutex::new(NativeAuthenticationRuntime::new(origin)),
@@ -70,7 +70,7 @@ impl PunksDesktopClient {
                 ClientDistribution::Development,
                 current_platform(),
             ),
-            transitions: Mutex::new(()),
+            transitions: RwLock::new(()),
             sessions: Mutex::new(HashMap::new()),
             follows: Mutex::new(HashMap::new()),
             authentication: Mutex::new(NativeAuthenticationRuntime::new(origin)),
@@ -79,6 +79,15 @@ impl PunksDesktopClient {
 
     pub(crate) fn account(&self) -> Result<&PunksAccountClient, ClientFailure> {
         self.account.as_ref().map_err(Clone::clone)
+    }
+
+    /// Cancels the mounted Workspace while retaining Compatibility and the
+    /// active Account Session needed to authorize an explicit Account switch.
+    pub(crate) async fn invalidate_workspace_context(&self) -> Result<(), ClientFailure> {
+        self.account()?.clear_workspace_session().await;
+        self.cancel_follows().await;
+        self.sessions.lock().await.clear();
+        Ok(())
     }
 
     /// Invalidates all native Punks state before a logout or Account switch
@@ -161,7 +170,7 @@ fn current_platform() -> ClientPlatform {
 pub async fn punks_check_compatibility(
     client: tauri::State<'_, PunksDesktopClient>,
 ) -> Result<DesktopCompatibility, ClientFailure> {
-    let _transition = client.transitions.lock().await;
+    let _transition = client.transitions.write().await;
     client.account()?.check_compatibility().await
 }
 
@@ -180,17 +189,45 @@ pub fn punks_validate_navigation(
 pub async fn punks_list_workspaces(
     client: tauri::State<'_, PunksDesktopClient>,
 ) -> Result<Vec<WorkspaceSummary>, ClientFailure> {
-    let _transition = client.transitions.lock().await;
+    let _transition = client.transitions.write().await;
     client.account()?.list_workspaces().await
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
+/// Explicit identity namespace used to resolve an authorized Workspace.
+pub enum WorkspaceIdentityInput {
+    /// Durable Workspace UUID used by leases and storage.
+    Id { workspace_id: String },
+    /// Mutable canonical slug used only by product routes.
+    Slug { workspace_slug: String },
 }
 
 #[tauri::command]
 pub async fn punks_resolve_workspace(
     client: tauri::State<'_, PunksDesktopClient>,
-    id_or_slug: String,
+    identity: WorkspaceIdentityInput,
 ) -> Result<Option<WorkspaceSummary>, ClientFailure> {
-    let _transition = client.transitions.lock().await;
-    client.account()?.resolve_workspace(&id_or_slug).await
+    let _transition = client.transitions.write().await;
+    match identity {
+        WorkspaceIdentityInput::Id { workspace_id } => {
+            client
+                .account()?
+                .resolve_workspace_by_id(&workspace_id)
+                .await
+        }
+        WorkspaceIdentityInput::Slug { workspace_slug } => {
+            client
+                .account()?
+                .resolve_workspace_by_slug(&workspace_slug)
+                .await
+        }
+    }
 }
 
 #[tauri::command]
@@ -198,7 +235,8 @@ pub async fn punks_open_workspace(
     client: tauri::State<'_, PunksDesktopClient>,
     workspace_id: String,
 ) -> Result<WorkspaceLease, ClientFailure> {
-    let _transition = client.transitions.lock().await;
+    client.account()?.cancel_workspace_operations().await;
+    let _transition = client.transitions.write().await;
     client.cancel_follows().await;
     client.sessions.lock().await.clear();
     let session = client.account()?.open_workspace(&workspace_id).await?;
@@ -213,10 +251,11 @@ pub async fn punks_close_workspace(
     client: tauri::State<'_, PunksDesktopClient>,
     lease: WorkspaceLease,
 ) -> Result<(), ClientFailure> {
-    let _transition = client.transitions.lock().await;
+    client.account()?.cancel_workspace_operations().await;
+    let _transition = client.transitions.write().await;
     let session = client.session(&lease).await?;
-    client.cancel_follows().await;
     session.close().await;
+    client.cancel_follows().await;
     client.sessions.lock().await.remove(&lease.generation);
     Ok(())
 }
@@ -226,7 +265,7 @@ pub async fn punks_list_streams(
     client: tauri::State<'_, PunksDesktopClient>,
     lease: WorkspaceLease,
 ) -> Result<Vec<StreamSummary>, ClientFailure> {
-    let _transition = client.transitions.lock().await;
+    let _operation = client.transitions.read().await;
     client.session(&lease).await?.list_streams().await
 }
 
@@ -236,7 +275,7 @@ pub async fn punks_get_stream(
     lease: WorkspaceLease,
     conversation_id: String,
 ) -> Result<StreamView, ClientFailure> {
-    let _transition = client.transitions.lock().await;
+    let _operation = client.transitions.read().await;
     client
         .session(&lease)
         .await?
@@ -258,7 +297,7 @@ pub async fn punks_get_timeline(
     lease: WorkspaceLease,
     input: MessagePageInput,
 ) -> Result<MessagePage, ClientFailure> {
-    let _transition = client.transitions.lock().await;
+    let _operation = client.transitions.read().await;
     client
         .session(&lease)
         .await?
@@ -281,7 +320,7 @@ pub async fn punks_get_thread(
     lease: WorkspaceLease,
     input: ThreadPageInput,
 ) -> Result<MessagePage, ClientFailure> {
-    let _transition = client.transitions.lock().await;
+    let _operation = client.transitions.read().await;
     client
         .session(&lease)
         .await?
@@ -300,7 +339,7 @@ pub async fn punks_resolve_authors(
     lease: WorkspaceLease,
     authors: Vec<AuthorReference>,
 ) -> Result<Vec<AuthorSummary>, ClientFailure> {
-    let _transition = client.transitions.lock().await;
+    let _operation = client.transitions.read().await;
     client
         .session(&lease)
         .await?
@@ -315,7 +354,7 @@ pub async fn punks_follow_conversation(
     conversation_id: String,
     after_cursor: u64,
 ) -> Result<String, ClientFailure> {
-    let _transition = client.transitions.lock().await;
+    let _operation = client.transitions.read().await;
     let connection = client
         .session(&lease)
         .await?
@@ -392,7 +431,7 @@ pub async fn punks_post_message(
     lease: WorkspaceLease,
     input: PostTextInput,
 ) -> Result<MessageView, ClientFailure> {
-    let _transition = client.transitions.lock().await;
+    let _operation = client.transitions.read().await;
     client
         .session(&lease)
         .await?
@@ -419,7 +458,7 @@ pub async fn punks_add_reaction(
     lease: WorkspaceLease,
     input: ReactionInput,
 ) -> Result<ReactionMutationResult, ClientFailure> {
-    let _transition = client.transitions.lock().await;
+    let _operation = client.transitions.read().await;
     client
         .session(&lease)
         .await?
@@ -433,7 +472,7 @@ pub async fn punks_remove_reaction(
     lease: WorkspaceLease,
     input: ReactionInput,
 ) -> Result<ReactionMutationResult, ClientFailure> {
-    let _transition = client.transitions.lock().await;
+    let _operation = client.transitions.read().await;
     client
         .session(&lease)
         .await?

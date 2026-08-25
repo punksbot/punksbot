@@ -15,7 +15,6 @@ import {
   PunksDesktopFailure,
   type AccountSessionStateView,
   type AuthenticationMethod,
-  type CeremonyPhaseView,
   type PunksAccountClient,
 } from "@/shared/api/punksClient";
 import type {
@@ -23,6 +22,7 @@ import type {
   DesktopCompatibilityResponse,
   WorkspaceSummary,
 } from "@punks/contracts";
+import { PunksUnavailableScreen } from "@/shared/capabilities/PunksCapabilityProvider";
 
 import {
   canonicalPunksPath,
@@ -31,6 +31,7 @@ import {
 } from "./routes";
 import {
   createPunksLocalStore,
+  samePunksStorageScope,
   type PunksLocalPreferences,
   type PunksStorageScope,
 } from "./storage";
@@ -38,9 +39,17 @@ import {
   PunksWorkspaceScopeManager,
   type PunksWorkspaceScope,
 } from "./workspaceScope";
+import { PunksAccountSwitching } from "./PunksAccountSwitching";
+import { PunksRuntimeError } from "./PunksRuntimeError";
 import { PunksShell } from "./PunksShell";
+import { PunksSignedOut } from "./PunksSignedOut";
 
-export type PunksBootstrapStatus = "loading" | "signed_out" | "ready" | "error";
+export type PunksBootstrapStatus =
+  | "loading"
+  | "signed_out"
+  | "switching_account"
+  | "ready"
+  | "error";
 
 type BootstrapState = {
   status: PunksBootstrapStatus;
@@ -59,9 +68,10 @@ export type PunksAccountRuntime = {
   session: AuthSession | null;
   workspaces: WorkspaceSummary[];
   route: PunksRoute | null;
-  navigate(route: PunksRoute, replace?: boolean): void;
+  navigate(route: PunksRoute, replace?: boolean): Promise<boolean>;
   localStore: ReturnType<typeof createPunksLocalStore> | null;
   scopeManager: PunksWorkspaceScopeManager;
+  switchAccount(provider: AuthenticationMethod): Promise<void>;
   logout(): Promise<void>;
   refresh(): Promise<void>;
   preferences: PunksLocalPreferences;
@@ -87,8 +97,7 @@ function navigatePunks(route: PunksRoute, replace = false): void {
 
 function isSessionExpired(error: unknown): boolean {
   return (
-    error instanceof PunksDesktopFailure &&
-    (error.kind === "session_expired" || error.kind === "problem")
+    error instanceof PunksDesktopFailure && error.kind === "session_expired"
   );
 }
 
@@ -105,11 +114,8 @@ function workspaceForRoute(
 ): WorkspaceSummary | null {
   if (route.kind === "home") return null;
   return (
-    workspaces.find(
-      (workspace) =>
-        workspace.slug === route.workspaceSlug ||
-        workspace.id === route.workspaceSlug,
-    ) ?? null
+    workspaces.find((workspace) => workspace.slug === route.workspaceSlug) ??
+    null
   );
 }
 
@@ -127,231 +133,6 @@ function PunksCompatibilityGate({
       <div className="max-w-md px-6 text-center">
         <h1 className="text-message font-semibold">Nothing here</h1>
         <p className="mt-2 text-sm">{message}</p>
-      </div>
-    </div>
-  );
-}
-
-function PunksUnavailableScreen() {
-  return (
-    <div
-      className="flex min-h-dvh w-full items-center justify-center bg-app text-muted-foreground"
-      data-testid="unavailable-terminal"
-    >
-      <div className="max-w-md px-6 text-center">
-        <h1 className="text-message font-semibold">Nothing here</h1>
-        <p className="mt-2 text-sm">
-          Nothing is available at this address in this version of the app.
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function PunksSignedOut({
-  client,
-  accountState,
-  onStarted,
-}: {
-  client: PunksAccountClient;
-  accountState: Extract<AccountSessionStateView, { state: "signed_out" }>;
-  onStarted: () => Promise<void>;
-}) {
-  const [busy, setBusy] = useState<string | null>(null);
-  const [failure, setFailure] = useState<unknown>(null);
-  const [authentication, setAuthentication] = useState<CeremonyPhaseView>(
-    accountState.authentication,
-  );
-  const [resumeAvailable, setResumeAvailable] = useState(
-    accountState.resumeAvailable,
-  );
-  const [polling, setPolling] = useState(false);
-
-  useEffect(() => {
-    if (polling) return;
-    setAuthentication(accountState.authentication);
-    setResumeAvailable(accountState.resumeAvailable);
-  }, [accountState, polling]);
-
-  useEffect(() => {
-    if (!polling) return;
-    let active = true;
-    let timer: number | undefined;
-    let attempts = 0;
-
-    const poll = async () => {
-      try {
-        const state = await client.getAccountSessionState();
-        if (!active) return;
-        setAuthentication(state.authentication);
-        setResumeAvailable(state.resumeAvailable);
-        if (
-          state.state === "authenticated" ||
-          state.authentication.phase === "confirmed"
-        ) {
-          setPolling(false);
-          await onStarted();
-          return;
-        }
-        if (
-          state.authentication.phase === "cancelled" ||
-          state.authentication.phase === "expired" ||
-          state.authentication.phase === "failed"
-        ) {
-          setPolling(false);
-          return;
-        }
-        attempts += 1;
-        if (attempts >= 800) {
-          setFailure(new Error("Desktop authentication status timed out"));
-          setPolling(false);
-          return;
-        }
-        timer = window.setTimeout(() => void poll(), 750);
-      } catch (error) {
-        if (!active) return;
-        setFailure(error);
-        setPolling(false);
-      }
-    };
-
-    void poll();
-    return () => {
-      active = false;
-      if (timer !== undefined) window.clearTimeout(timer);
-    };
-  }, [client, onStarted, polling]);
-
-  const continueAfter = async (phase: CeremonyPhaseView) => {
-    setAuthentication(phase);
-    setResumeAvailable(false);
-    if (phase.phase === "confirmed") {
-      await onStarted();
-    } else if (
-      phase.phase !== "cancelled" &&
-      phase.phase !== "expired" &&
-      phase.phase !== "failed"
-    ) {
-      setPolling(true);
-    }
-  };
-
-  const start = async (provider: AuthenticationMethod) => {
-    setBusy(provider);
-    setFailure(null);
-    try {
-      await continueAfter(await client.startSignIn(provider));
-    } catch (error) {
-      setFailure(error);
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const resume = async () => {
-    setBusy("resume");
-    setFailure(null);
-    try {
-      await continueAfter(await client.resumeInterruptedAuthentication());
-    } catch (error) {
-      setFailure(error);
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const cancel = async () => {
-    setBusy("cancel");
-    setFailure(null);
-    setPolling(false);
-    try {
-      const phase = await client.cancelAuthentication();
-      setAuthentication(phase);
-      setResumeAvailable(false);
-    } catch (error) {
-      setFailure(error);
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const canCancel =
-    resumeAvailable ||
-    !["idle", "cancelled", "expired", "failed", "confirmed"].includes(
-      authentication.phase,
-    );
-
-  return (
-    <div
-      className="flex min-h-dvh items-center justify-center bg-app text-foreground"
-      data-testid="punks-signed-out"
-    >
-      <div className="w-full max-w-sm rounded-xl border border-border bg-background p-6 shadow-sm">
-        <h1 className="text-xl font-semibold">Sign in to Punks Bot</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Continue in your system browser to authorize this desktop session.
-        </p>
-        <div className="mt-5 flex flex-wrap gap-2">
-          <button
-            className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground"
-            data-testid="punks-sign-in-google"
-            disabled={busy !== null || polling}
-            onClick={() => void start("google")}
-            type="button"
-          >
-            {busy === "google" ? "Opening…" : "Google"}
-          </button>
-          <button
-            className="rounded-md border border-border px-3 py-2 text-sm"
-            data-testid="punks-sign-in-github"
-            disabled={busy !== null || polling}
-            onClick={() => void start("github")}
-            type="button"
-          >
-            {busy === "github" ? "Opening…" : "GitHub"}
-          </button>
-          <button
-            className="rounded-md border border-border px-3 py-2 text-sm"
-            data-testid="punks-sign-in-passkey"
-            disabled={busy !== null || polling}
-            onClick={() => void start("passkey")}
-            type="button"
-          >
-            {busy === "passkey" ? "Opening…" : "Passkey"}
-          </button>
-        </div>
-        {resumeAvailable && !polling ? (
-          <button
-            className="mt-3 rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground"
-            data-testid="punks-finish-sign-in"
-            disabled={busy !== null}
-            onClick={() => void resume()}
-            type="button"
-          >
-            Finish sign-in
-          </button>
-        ) : null}
-        {canCancel ? (
-          <button
-            className="mt-3 ml-2 rounded-md border border-border px-3 py-2 text-sm"
-            data-testid="punks-cancel-sign-in"
-            disabled={busy !== null}
-            onClick={() => void cancel()}
-            type="button"
-          >
-            Cancel
-          </button>
-        ) : null}
-        {polling ? (
-          <p className="mt-3 text-sm text-muted-foreground">
-            Finish authorization in your system browser…
-          </p>
-        ) : null}
-        {failure ? (
-          <p className="mt-3 text-sm text-destructive" role="alert">
-            The sign-in ceremony could not be started.
-          </p>
-        ) : null}
       </div>
     </div>
   );
@@ -388,11 +169,19 @@ function PunksAccountProvider({
     error: null,
   });
   const [scopeManager] = useState(() => new PunksWorkspaceScopeManager());
+  const bootstrapGeneration = useRef(0);
+  const navigationGeneration = useRef(0);
 
   const refresh = useCallback(async () => {
+    const generation = bootstrapGeneration.current + 1;
+    bootstrapGeneration.current = generation;
+    navigationGeneration.current += 1;
     setState((current) => ({ ...current, status: "loading", error: null }));
+    await scopeManager.invalidate();
+    if (bootstrapGeneration.current !== generation) return;
     try {
       const accountSessionState = await client.getAccountSessionState();
+      if (bootstrapGeneration.current !== generation) return;
       if (accountSessionState.state === "signed_out") {
         setState({
           status: "signed_out",
@@ -405,6 +194,7 @@ function PunksAccountProvider({
         return;
       }
       const workspaces = await client.listWorkspaces();
+      if (bootstrapGeneration.current !== generation) return;
       setState({
         status: "ready",
         compatibility,
@@ -414,7 +204,9 @@ function PunksAccountProvider({
         error: null,
       });
     } catch (error) {
+      if (bootstrapGeneration.current !== generation) return;
       if (isSessionExpired(error)) {
+        navigatePunks({ kind: "home" }, true);
         setState((current) => ({
           ...current,
           status: "signed_out",
@@ -431,13 +223,16 @@ function PunksAccountProvider({
         setState((current) => ({ ...current, status: "error", error }));
       }
     }
-  }, [client, compatibility]);
+  }, [client, compatibility, scopeManager]);
 
   useEffect(() => {
     void refresh();
-  }, [refresh]);
-
-  useEffect(() => () => void scopeManager.invalidate(), [scopeManager]);
+    return () => {
+      bootstrapGeneration.current += 1;
+      navigationGeneration.current += 1;
+      void scopeManager.invalidate().catch(() => undefined);
+    };
+  }, [refresh, scopeManager]);
 
   const renewalInFlight = useRef(false);
   useEffect(() => {
@@ -471,10 +266,9 @@ function PunksAccountProvider({
     return createPunksLocalStore(window.localStorage, scope);
   }, [state.compatibility, state.session]);
   const [preferences, setPreferences] = useState<PunksLocalPreferences>({});
-  const restoredRouteScope = useRef<string | null>(null);
 
   useEffect(() => {
-    if (localStore !== null) setPreferences(localStore.loadPreferences());
+    setPreferences(localStore?.loadPreferences() ?? {});
   }, [localStore]);
 
   const savePreferences = useCallback(
@@ -485,9 +279,59 @@ function PunksAccountProvider({
     [localStore],
   );
 
+  const switchAccount = useCallback(
+    async (provider: AuthenticationMethod) => {
+      const generation = bootstrapGeneration.current + 1;
+      bootstrapGeneration.current = generation;
+      navigationGeneration.current += 1;
+      setState((current) => ({
+        ...current,
+        status: "loading",
+        accountSessionState: null,
+        session: null,
+        workspaces: [],
+        error: null,
+      }));
+      try {
+        await scopeManager.invalidate();
+        if (bootstrapGeneration.current !== generation) return;
+        navigatePunks({ kind: "home" }, true);
+        const phase = await client.startAccountSwitch(provider);
+        if (bootstrapGeneration.current !== generation) return;
+        setState({
+          status: "switching_account",
+          compatibility,
+          accountSessionState: {
+            state: "signed_out",
+            authentication: phase,
+            resumeAvailable: false,
+          },
+          session: null,
+          workspaces: [],
+          error: null,
+        });
+      } catch (error) {
+        if (bootstrapGeneration.current !== generation) return;
+        setState((current) => ({ ...current, status: "error", error }));
+      }
+    },
+    [client, compatibility, scopeManager],
+  );
+
   const logout = useCallback(async () => {
+    bootstrapGeneration.current += 1;
+    navigationGeneration.current += 1;
+    setState((current) => ({
+      ...current,
+      status: "loading",
+      accountSessionState: null,
+      session: null,
+      workspaces: [],
+      error: null,
+    }));
     try {
       await scopeManager.invalidate();
+      navigatePunks({ kind: "home" }, true);
       await client.signOut();
     } catch (error) {
       setState((current) => ({
@@ -515,7 +359,9 @@ function PunksAccountProvider({
   }, [client, scopeManager]);
 
   const navigate = useCallback(
-    (next: PunksRoute, replace = false) => {
+    async (next: PunksRoute, replace = false): Promise<boolean> => {
+      const generation = navigationGeneration.current + 1;
+      navigationGeneration.current = generation;
       let url: string;
       try {
         url = canonicalPunksUrl(
@@ -523,70 +369,22 @@ function PunksAccountProvider({
           state.compatibility?.origin ?? window.location.origin,
         );
       } catch {
-        return;
+        return false;
       }
       const validateNavigation = client.validateNavigation;
       if (validateNavigation !== undefined) {
-        void validateNavigation
-          .call(client, url)
-          .then(() => navigatePunks(next, replace))
-          .catch(() => undefined);
-        return;
+        try {
+          await validateNavigation.call(client, url);
+        } catch {
+          return false;
+        }
       }
+      if (navigationGeneration.current !== generation) return false;
       navigatePunks(next, replace);
+      return true;
     },
     [client, state.compatibility],
   );
-
-  useEffect(() => {
-    if (
-      state.status !== "ready" ||
-      state.compatibility === null ||
-      state.session === null ||
-      localStore === null ||
-      route === null
-    ) {
-      return;
-    }
-    const scopeKey = `${state.compatibility.origin}:${state.session.punkId}`;
-    if (restoredRouteScope.current === scopeKey) return;
-    restoredRouteScope.current = scopeKey;
-    if (route.kind !== "home") return;
-
-    const saved = localStore.loadRouteCoordinates();
-    if (saved.workspaceSlug === undefined) return;
-    const workspace = state.workspaces.find(
-      (candidate) =>
-        candidate.slug === saved.workspaceSlug ||
-        candidate.id === saved.workspaceSlug,
-    );
-    if (workspace === undefined) return;
-
-    const restored: PunksRoute =
-      saved.conversationId === undefined
-        ? { kind: "workspace", workspaceSlug: workspace.slug }
-        : saved.messageId === undefined
-          ? {
-              kind: "conversation",
-              workspaceSlug: workspace.slug,
-              conversationId: saved.conversationId,
-            }
-          : {
-              kind: "message",
-              workspaceSlug: workspace.slug,
-              conversationId: saved.conversationId,
-              messageId: saved.messageId,
-            };
-    navigate(restored, true);
-  }, [
-    localStore,
-    navigate,
-    route,
-    state.compatibility,
-    state.session,
-    state.status,
-    state.workspaces,
-  ]);
 
   const value: PunksAccountRuntime = {
     client,
@@ -599,6 +397,7 @@ function PunksAccountProvider({
     navigate,
     localStore,
     scopeManager,
+    switchAccount,
     logout,
     refresh,
     preferences,
@@ -628,12 +427,14 @@ function PunksWorkspaceProvider({
 
   useEffect(() => {
     let current = true;
+    let openedScope: PunksWorkspaceScope | null = null;
     setState({ phase: "opening" });
     void account.scopeManager
       .open(account.client, workspaceId)
       .then((scope) => {
+        openedScope = scope;
         if (!current) {
-          void account.scopeManager.invalidate();
+          void account.scopeManager.close(scope).catch(() => undefined);
           return;
         }
         account.localStore?.saveLastWorkspaceId(workspaceId);
@@ -644,7 +445,11 @@ function PunksWorkspaceProvider({
       });
     return () => {
       current = false;
-      void account.scopeManager.invalidate();
+      if (openedScope === null) {
+        void account.scopeManager.invalidate().catch(() => undefined);
+      } else {
+        void account.scopeManager.close(openedScope).catch(() => undefined);
+      }
     };
   }, [account.client, account.localStore, account.scopeManager, workspaceId]);
 
@@ -669,18 +474,98 @@ function PunksWorkspaceProvider({
 
 function PunksWorkspaceRouter() {
   const account = usePunksAccount();
+  const scopeManager = account.scopeManager;
   const route = account.route;
   const [resolvedWorkspace, setResolvedWorkspace] =
     useState<WorkspaceSummary | null>(null);
   const [routeResolutionPending, setRouteResolutionPending] = useState(false);
+  const [restoredAccountScope, setRestoredAccountScope] =
+    useState<PunksStorageScope | null>(null);
+
+  const accountScope = useMemo<PunksStorageScope | null>(
+    () =>
+      account.compatibility === null || account.session === null
+        ? null
+        : {
+            origin: account.compatibility.origin,
+            punkId: account.session.punkId,
+          },
+    [account.compatibility, account.session],
+  );
+  const routeRestored = samePunksStorageScope(
+    restoredAccountScope,
+    accountScope,
+  );
+
+  useEffect(() => {
+    if (
+      accountScope === null ||
+      routeRestored ||
+      account.localStore === null ||
+      route === null
+    ) {
+      return;
+    }
+    let active = true;
+    const reconcileAndRestore = async () => {
+      const lastWorkspaceId = account.localStore?.loadLastWorkspaceId();
+      if (
+        lastWorkspaceId !== null &&
+        !account.workspaces.some(
+          (workspace) => workspace.id === lastWorkspaceId,
+        )
+      ) {
+        account.localStore?.clearLastWorkspaceId();
+      }
+
+      const saved = account.localStore?.loadRouteCoordinates() ?? {};
+      const savedWorkspace =
+        saved.workspaceId === undefined
+          ? undefined
+          : account.workspaces.find(
+              (workspace) => workspace.id === saved.workspaceId,
+            );
+      if (saved.workspaceId !== undefined && savedWorkspace === undefined) {
+        account.localStore?.clearRouteCoordinates();
+      } else if (route.kind === "home" && savedWorkspace !== undefined) {
+        const restored: PunksRoute =
+          saved.conversationId === undefined
+            ? { kind: "workspace", workspaceSlug: savedWorkspace.slug }
+            : saved.messageId === undefined
+              ? {
+                  kind: "conversation",
+                  workspaceSlug: savedWorkspace.slug,
+                  conversationId: saved.conversationId,
+                }
+              : {
+                  kind: "message",
+                  workspaceSlug: savedWorkspace.slug,
+                  conversationId: saved.conversationId,
+                  messageId: saved.messageId,
+                };
+        await account.navigate(restored, true);
+      }
+      if (active) setRestoredAccountScope(accountScope);
+    };
+    void reconcileAndRestore();
+    return () => {
+      active = false;
+    };
+  }, [
+    account.localStore,
+    account.navigate,
+    account.workspaces,
+    accountScope,
+    routeRestored,
+    route,
+  ]);
 
   const directWorkspace = route
     ? workspaceForRoute(route, account.workspaces)
     : null;
   const routeResolvedWorkspace =
     route !== null && resolvedWorkspace !== null && route.kind !== "home"
-      ? resolvedWorkspace.slug === route.workspaceSlug ||
-        resolvedWorkspace.id === route.workspaceSlug
+      ? resolvedWorkspace.slug === route.workspaceSlug
         ? resolvedWorkspace
         : null
       : null;
@@ -707,19 +592,25 @@ function PunksWorkspaceRouter() {
     }
     let active = true;
     setRouteResolutionPending(true);
-    void account.client
-      .resolveWorkspace(route.workspaceSlug)
-      .then((workspace) => {
-        if (!active) return;
-        setRouteResolutionPending(false);
-        if (workspace !== null) {
-          setResolvedWorkspace(workspace);
-          account.navigate(routeWithWorkspaceSlug(route, workspace.slug), true);
-        }
-      })
-      .catch(() => {
-        if (active) setRouteResolutionPending(false);
+    void (async () => {
+      await scopeManager.invalidate();
+      if (!active) return;
+      const workspace = await account.client.resolveWorkspace({
+        kind: "slug",
+        workspaceSlug: route.workspaceSlug,
       });
+      if (!active) return;
+      setRouteResolutionPending(false);
+      if (workspace !== null) {
+        setResolvedWorkspace(workspace);
+        await account.navigate(
+          routeWithWorkspaceSlug(route, workspace.slug),
+          true,
+        );
+      }
+    })().catch(() => {
+      if (active) setRouteResolutionPending(false);
+    });
     return () => {
       active = false;
     };
@@ -729,6 +620,7 @@ function PunksWorkspaceRouter() {
     account.status,
     directWorkspace,
     route,
+    scopeManager,
   ]);
 
   useEffect(() => {
@@ -740,16 +632,24 @@ function PunksWorkspaceRouter() {
     ) {
       return;
     }
-    account.navigate(routeWithWorkspaceSlug(route, directWorkspace.slug), true);
+    void account.navigate(
+      routeWithWorkspaceSlug(route, directWorkspace.slug),
+      true,
+    );
   }, [account.navigate, directWorkspace, route]);
 
   useEffect(() => {
-    if (route !== null && account.localStore !== null) {
+    if (
+      route !== null &&
+      account.localStore !== null &&
+      routeRestored &&
+      (route.kind === "home" || selectedWorkspace !== null)
+    ) {
       account.localStore.saveRouteCoordinates(
         route.kind === "home"
           ? {}
           : {
-              workspaceSlug: route.workspaceSlug,
+              workspaceId: selectedWorkspace?.id,
               ...(route.kind === "conversation" || route.kind === "message"
                 ? { conversationId: route.conversationId }
                 : {}),
@@ -759,9 +659,12 @@ function PunksWorkspaceRouter() {
             },
       );
     }
-  }, [account.localStore, route]);
+  }, [account.localStore, routeRestored, route, selectedWorkspace]);
 
   if (route === null) return <PunksUnavailableScreen />;
+  if (!routeRestored) {
+    return <PunksCompatibilityGate message="Restoring Workspace…" />;
+  }
   if (account.workspaces.length === 0) return <PunksNoWorkspace />;
   if (routeResolutionPending || selectedWorkspace === undefined) {
     return <PunksCompatibilityGate message="Resolving Workspace…" />;
@@ -817,6 +720,19 @@ function PunksAccountGate({ client }: { client: PunksAccountClient }) {
   if (account.status === "loading") {
     return <PunksCompatibilityGate message="Checking Punks compatibility…" />;
   }
+  if (account.status === "switching_account") {
+    const accountState = account.accountSessionState;
+    if (accountState === null || accountState.state !== "signed_out") {
+      return <PunksCompatibilityGate />;
+    }
+    return (
+      <PunksAccountSwitching
+        accountState={accountState}
+        client={client}
+        onFinished={account.refresh}
+      />
+    );
+  }
   if (account.status === "signed_out") {
     const accountState = account.accountSessionState;
     if (accountState === null || accountState.state !== "signed_out") {
@@ -830,7 +746,9 @@ function PunksAccountGate({ client }: { client: PunksAccountClient }) {
       />
     );
   }
-  if (account.status === "error") return <PunksCompatibilityGate />;
+  if (account.status === "error") {
+    return <PunksRuntimeError onRetry={account.refresh} />;
+  }
   return <PunksWorkspaceRouter />;
 }
 

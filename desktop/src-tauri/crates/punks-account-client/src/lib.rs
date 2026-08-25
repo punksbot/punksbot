@@ -7,8 +7,9 @@ use std::{
 
 use reqwest::{cookie::Jar, Client, Method};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
-use tokio::sync::Mutex;
+use serde_json::{json, Value};
+use tokio::sync::{Mutex, RwLock};
+use tokio_util::sync::CancellationToken;
 
 use validation::{directory_path, parse_origin, validate_history_cursor, validate_uuid};
 
@@ -301,9 +302,12 @@ pub struct WorkspaceLease {
 struct AccountState {
     compatibility: Option<DesktopCompatibility>,
     session: Option<AccountSession>,
-    workspaces: HashMap<String, WorkspaceSummary>,
+    workspaces_by_id: HashMap<String, WorkspaceSummary>,
+    workspace_ids_by_slug: HashMap<String, String>,
     generation: u64,
     active_lease: Option<WorkspaceLease>,
+    active_cancellation: Option<CancellationToken>,
+    active_operations: Option<Arc<RwLock<()>>>,
 }
 
 struct AccountInner {
@@ -322,6 +326,16 @@ pub struct PunksAccountClient {
 }
 
 impl PunksAccountClient {
+    fn invalidate_workspace_state(state: &mut AccountState) -> Option<Arc<RwLock<()>>> {
+        if let Some(cancellation) = state.active_cancellation.take() {
+            cancellation.cancel();
+        }
+        let active_operations = state.active_operations.take();
+        state.active_lease = None;
+        state.generation = state.generation.saturating_add(1);
+        active_operations
+    }
+
     /// Builds an Account client with a private cookie jar pinned to one origin.
     pub fn new(
         origin: &str,
@@ -478,31 +492,39 @@ impl PunksAccountClient {
                 break;
             }
         }
-        let mut state = self.inner.state.lock().await;
-        state.workspaces.clear();
+        let mut workspaces_by_id = HashMap::new();
+        let mut workspace_ids_by_slug = HashMap::new();
         for workspace in &items {
-            state
-                .workspaces
-                .insert(workspace.id.clone(), workspace.clone());
-            state
-                .workspaces
-                .insert(workspace.slug.clone(), workspace.clone());
+            validate_uuid(&workspace.id, "workspaceId")?;
+            if workspaces_by_id
+                .insert(workspace.id.clone(), workspace.clone())
+                .is_some()
+                || workspace_ids_by_slug
+                    .insert(workspace.slug.clone(), workspace.id.clone())
+                    .is_some()
+            {
+                return Err(ClientFailure::contract("workspace.list-response@1"));
+            }
         }
+        let mut state = self.inner.state.lock().await;
+        state.workspaces_by_id = workspaces_by_id;
+        state.workspace_ids_by_slug = workspace_ids_by_slug;
         Ok(items)
     }
 
-    /// Resolves a cached Workspace UUID or slug, refreshing the directory once.
-    pub async fn resolve_workspace(
+    /// Resolves a durable Workspace UUID, refreshing the authorized directory once.
+    pub async fn resolve_workspace_by_id(
         &self,
-        id_or_slug: &str,
+        workspace_id: &str,
     ) -> Result<Option<WorkspaceSummary>, ClientFailure> {
+        validate_uuid(workspace_id, "workspaceId")?;
         if let Some(workspace) = self
             .inner
             .state
             .lock()
             .await
-            .workspaces
-            .get(id_or_slug)
+            .workspaces_by_id
+            .get(workspace_id)
             .cloned()
         {
             return Ok(Some(workspace));
@@ -513,9 +535,28 @@ impl PunksAccountClient {
             .state
             .lock()
             .await
-            .workspaces
-            .get(id_or_slug)
+            .workspaces_by_id
+            .get(workspace_id)
             .cloned())
+    }
+
+    /// Resolves a canonical route slug without conflating it with a durable UUID.
+    pub async fn resolve_workspace_by_slug(
+        &self,
+        workspace_slug: &str,
+    ) -> Result<Option<WorkspaceSummary>, ClientFailure> {
+        let resolve_cached = |state: &AccountState| {
+            state
+                .workspace_ids_by_slug
+                .get(workspace_slug)
+                .and_then(|workspace_id| state.workspaces_by_id.get(workspace_id))
+                .cloned()
+        };
+        if let Some(workspace) = resolve_cached(&*self.inner.state.lock().await) {
+            return Ok(Some(workspace));
+        }
+        self.list_workspaces().await?;
+        Ok(resolve_cached(&*self.inner.state.lock().await))
     }
 
     /// Opens the only active Workspace and invalidates every older generation.
@@ -525,12 +566,14 @@ impl PunksAccountClient {
     ) -> Result<WorkspaceSession, ClientFailure> {
         validate_uuid(workspace_id, "workspaceId")?;
         self.require_compatible().await?;
-        let (opening_generation, cached_session) = {
+        let (opening_generation, cached_session, previous_operations) = {
             let mut state = self.inner.state.lock().await;
-            state.generation = state.generation.saturating_add(1);
-            state.active_lease = None;
-            (state.generation, state.session.clone())
+            let previous_operations = Self::invalidate_workspace_state(&mut state);
+            (state.generation, state.session.clone(), previous_operations)
         };
+        if let Some(previous_operations) = previous_operations {
+            let _closed = previous_operations.write().await;
+        }
         let session = match cached_session {
             Some(session) => session,
             None => self.get_session().await?,
@@ -538,7 +581,7 @@ impl PunksAccountClient {
         if self.inner.state.lock().await.generation != opening_generation {
             return Err(ClientFailure::stale_workspace());
         }
-        let workspace = self.resolve_workspace(workspace_id).await?;
+        let workspace = self.resolve_workspace_by_id(workspace_id).await?;
         if workspace.as_ref().map(|value| value.id.as_str()) != Some(workspace_id) {
             return Err(ClientFailure::new(
                 FailureKind::Problem,
@@ -555,10 +598,16 @@ impl PunksAccountClient {
             workspace_id: workspace_id.to_owned(),
             generation: opening_generation,
         };
+        let cancellation = CancellationToken::new();
+        let operations = Arc::new(RwLock::new(()));
         state.active_lease = Some(lease.clone());
+        state.active_cancellation = Some(cancellation.clone());
+        state.active_operations = Some(Arc::clone(&operations));
         Ok(WorkspaceSession {
             inner: Arc::clone(&self.inner),
             lease,
+            cancellation,
+            operations,
         })
     }
 
@@ -586,6 +635,8 @@ impl PunksAccountClient {
 pub struct WorkspaceSession {
     inner: Arc<AccountInner>,
     lease: WorkspaceLease,
+    cancellation: CancellationToken,
+    operations: Arc<RwLock<()>>,
 }
 
 impl WorkspaceSession {
@@ -596,10 +647,45 @@ impl WorkspaceSession {
 
     /// Invalidates this session when it is still the active generation.
     pub async fn close(&self) {
-        let mut state = self.inner.state.lock().await;
-        if state.active_lease.as_ref() == Some(&self.lease) {
-            state.active_lease = None;
-            state.generation = state.generation.saturating_add(1);
+        self.cancellation.cancel();
+        let active_operations = {
+            let mut state = self.inner.state.lock().await;
+            if state.active_lease.as_ref() == Some(&self.lease) {
+                PunksAccountClient::invalidate_workspace_state(&mut state)
+            } else {
+                None
+            }
+        };
+        if let Some(active_operations) = active_operations {
+            let _closed = active_operations.write().await;
+        }
+    }
+
+    pub(crate) async fn request(
+        &self,
+        method: Method,
+        path: String,
+        body: Option<Value>,
+        safety: RequestSafety,
+    ) -> Result<Value, ClientFailure> {
+        let _operation = self.operations.read().await;
+        self.assert_current().await?;
+        let cancellation = self.cancellation.clone();
+        tokio::select! {
+            biased;
+            _ = cancellation.cancelled() => Err(ClientFailure::new(
+                if matches!(safety, RequestSafety::Mutation) {
+                    FailureKind::Ambiguous
+                } else {
+                    FailureKind::Cancelled
+                },
+                if matches!(safety, RequestSafety::Mutation) {
+                    "Punks mutation was cancelled with an ambiguous result"
+                } else {
+                    "Punks Workspace operation was cancelled"
+                },
+            )),
+            result = self.inner.transport.request(method, path, body, safety) => result,
         }
     }
 
@@ -617,8 +703,6 @@ impl WorkspaceSession {
             );
             let path = directory_path(&base, cursor.as_deref())?;
             let response = self
-                .inner
-                .transport
                 .request(Method::GET, path, None, RequestSafety::Read)
                 .await?;
             self.assert_current().await?;
@@ -651,8 +735,6 @@ impl WorkspaceSession {
         validate_uuid(conversation_id, "conversationId")?;
         self.assert_current().await?;
         let response = self
-            .inner
-            .transport
             .request(
                 Method::GET,
                 format!(
@@ -731,8 +813,6 @@ impl WorkspaceSession {
             format!("?{}", query.join("&"))
         };
         let response = self
-            .inner
-            .transport
             .request(
                 Method::GET,
                 format!(

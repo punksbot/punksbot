@@ -42,12 +42,15 @@ impl PunksAccountClient {
         secret: &super::ceremony::SessionSecret,
     ) -> Result<(), ClientFailure> {
         self.require_compatible().await?;
-        {
+        let active_operations = {
             let mut state = self.inner.state.lock().await;
             state.session = None;
-            state.workspaces.clear();
-            state.active_lease = None;
-            state.generation = state.generation.saturating_add(1);
+            state.workspaces_by_id.clear();
+            state.workspace_ids_by_slug.clear();
+            Self::invalidate_workspace_state(&mut state)
+        };
+        if let Some(active_operations) = active_operations {
+            let _closed = active_operations.write().await;
         }
         self.clear_session_cookie();
         self.install_session_secret(secret)
@@ -57,14 +60,36 @@ impl PunksAccountClient {
     /// retaining the already-proven distribution compatibility. This lets a
     /// signed-out Punk start a fresh ceremony without remounting a Workspace.
     pub async fn clear_account_session(&self) {
-        {
+        let active_operations = {
             let mut state = self.inner.state.lock().await;
             state.session = None;
-            state.workspaces.clear();
-            state.active_lease = None;
-            state.generation = state.generation.saturating_add(1);
+            state.workspaces_by_id.clear();
+            state.workspace_ids_by_slug.clear();
+            Self::invalidate_workspace_state(&mut state)
+        };
+        if let Some(active_operations) = active_operations {
+            let _closed = active_operations.write().await;
         }
         self.clear_session_cookie();
+    }
+
+    /// Cancels the active Workspace generation while retaining the Account Session.
+    pub async fn clear_workspace_session(&self) {
+        let active_operations = {
+            let mut state = self.inner.state.lock().await;
+            Self::invalidate_workspace_state(&mut state)
+        };
+        if let Some(active_operations) = active_operations {
+            let _closed = active_operations.write().await;
+        }
+    }
+
+    /// Signals every in-flight Workspace operation without changing Account state.
+    pub async fn cancel_workspace_operations(&self) {
+        let cancellation = self.inner.state.lock().await.active_cancellation.clone();
+        if let Some(cancellation) = cancellation {
+            cancellation.cancel();
+        }
     }
 
     /// Validates a renderer navigation against this client's configured
@@ -114,16 +139,20 @@ impl PunksAccountClient {
     }
 
     /// Invalidates the current Account and every generation-bound Workspace.
-    /// This is synchronous with respect to the state mutex: a later I/O call
-    /// cannot pass `assert_current` after this method returns.
+    /// No later I/O can pass `assert_current`, and this waits for every
+    /// cancelled operation to release its generation before returning.
     pub async fn invalidate(&self) {
-        let mut state = self.inner.state.lock().await;
-        state.compatibility = None;
-        state.session = None;
-        state.workspaces.clear();
-        state.active_lease = None;
-        state.generation = state.generation.saturating_add(1);
-        drop(state);
+        let active_operations = {
+            let mut state = self.inner.state.lock().await;
+            state.compatibility = None;
+            state.session = None;
+            state.workspaces_by_id.clear();
+            state.workspace_ids_by_slug.clear();
+            Self::invalidate_workspace_state(&mut state)
+        };
+        if let Some(active_operations) = active_operations {
+            let _closed = active_operations.write().await;
+        }
         self.clear_session_cookie();
     }
 

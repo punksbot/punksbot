@@ -39,6 +39,11 @@ export interface WorkspaceLease {
   generation: number;
 }
 
+/** Explicit namespace for a durable Workspace ID or mutable route slug. */
+export type WorkspaceIdentity =
+  | { kind: "id"; workspaceId: string }
+  | { kind: "slug"; workspaceSlug: string };
+
 /** Arguments accepted by a Workspace timeline read. */
 export interface WorkspaceTimelineOptions extends CancellableOperation {
   conversationId: string;
@@ -84,7 +89,7 @@ export interface PunksAccountClient {
   getSession(options?: CancellableOperation): Promise<AuthSession>;
   listWorkspaces(options?: CancellableOperation): Promise<WorkspaceSummary[]>;
   resolveWorkspace(
-    idOrSlug: string,
+    identity: WorkspaceIdentity,
     options?: CancellableOperation,
   ): Promise<WorkspaceSummary | null>;
   openWorkspace(

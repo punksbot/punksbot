@@ -34,6 +34,14 @@ function accountFixture() {
   };
 }
 
+function deferred() {
+  let resolve;
+  const promise = new Promise((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
 test("switching Workspace invalidates callbacks, closes FOLLOW and clears the scoped QueryClient", async () => {
   const account = accountFixture();
   const manager = new PunksWorkspaceScopeManager();
@@ -77,4 +85,131 @@ test("a close invalidates the generation before native cleanup resolves", async 
   assert.equal(manager.isCurrent(scope), false);
   await pending;
   assert.equal(account.sessions[0].closed, true);
+});
+
+test("a new Workspace waits for the previous teardown before starting native I/O", async () => {
+  const teardown = deferred();
+  const openedWorkspaceIds = [];
+  let generation = 0;
+  const account = {
+    async openWorkspace(workspaceId) {
+      openedWorkspaceIds.push(workspaceId);
+      generation += 1;
+      return {
+        lease: {
+          origin,
+          punkId,
+          workspaceId,
+          generation,
+        },
+        async close() {
+          if (workspaceId === firstWorkspaceId) await teardown.promise;
+        },
+      };
+    },
+  };
+  const manager = new PunksWorkspaceScopeManager();
+  await manager.open(account, firstWorkspaceId);
+
+  const invalidation = manager.invalidate();
+  const opening = manager.open(account, secondWorkspaceId);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.deepEqual(openedWorkspaceIds, [firstWorkspaceId]);
+  teardown.resolve();
+  await invalidation;
+  const second = await opening;
+  assert.deepEqual(openedWorkspaceIds, [firstWorkspaceId, secondWorkspaceId]);
+  assert.equal(manager.isCurrent(second), true);
+});
+
+test("a superseded Workspace opening cannot replace the latest request", async () => {
+  const firstOpening = deferred();
+  const openedWorkspaceIds = [];
+  let generation = 0;
+  const account = {
+    async openWorkspace(workspaceId) {
+      openedWorkspaceIds.push(workspaceId);
+      if (workspaceId === firstWorkspaceId) await firstOpening.promise;
+      generation += 1;
+      const session = {
+        lease: {
+          origin,
+          punkId,
+          workspaceId,
+          generation,
+        },
+        closed: false,
+        async close() {
+          session.closed = true;
+        },
+      };
+      return session;
+    },
+  };
+  const manager = new PunksWorkspaceScopeManager();
+  const first = manager.open(account, firstWorkspaceId);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const second = manager.open(account, secondWorkspaceId);
+  firstOpening.resolve();
+
+  await assert.rejects(first, { kind: "stale_workspace" });
+  const current = await second;
+  assert.deepEqual(openedWorkspaceIds, [firstWorkspaceId, secondWorkspaceId]);
+  assert.equal(current.lease.workspaceId, secondWorkspaceId);
+  assert.equal(manager.isCurrent(current), true);
+});
+
+test("a rejected native close blocks the next Workspace I/O", async () => {
+  const openedWorkspaceIds = [];
+  let generation = 0;
+  const account = {
+    async openWorkspace(workspaceId) {
+      openedWorkspaceIds.push(workspaceId);
+      generation += 1;
+      return {
+        lease: { origin, punkId, workspaceId, generation },
+        async close() {
+          if (workspaceId === firstWorkspaceId) {
+            throw new Error("native Workspace close failed");
+          }
+        },
+      };
+    },
+  };
+  const manager = new PunksWorkspaceScopeManager();
+  await manager.open(account, firstWorkspaceId);
+
+  await assert.rejects(manager.open(account, secondWorkspaceId), {
+    message: "native Workspace close failed",
+  });
+  assert.deepEqual(openedWorkspaceIds, [firstWorkspaceId]);
+});
+
+test("a cleanup-caught close failure is retried before remount I/O", async () => {
+  const openedWorkspaceIds = [];
+  let generation = 0;
+  let closeAttempts = 0;
+  const account = {
+    async openWorkspace(workspaceId) {
+      openedWorkspaceIds.push(workspaceId);
+      generation += 1;
+      return {
+        lease: { origin, punkId, workspaceId, generation },
+        async close() {
+          closeAttempts += 1;
+          throw new Error("persistent native close failure");
+        },
+      };
+    },
+  };
+  const manager = new PunksWorkspaceScopeManager();
+  const first = await manager.open(account, firstWorkspaceId);
+  await manager.close(first).catch(() => undefined);
+
+  await assert.rejects(manager.open(account, secondWorkspaceId), {
+    message: "persistent native close failure",
+  });
+  assert.equal(closeAttempts, 2);
+  assert.deepEqual(openedWorkspaceIds, [firstWorkspaceId]);
 });

@@ -15,6 +15,14 @@ type PunksSeed = {
   compatible: boolean;
   capabilities: readonly string[];
   compatibilityFailures?: number;
+  workspaces?: readonly {
+    id: string;
+    slug: string;
+    name: string;
+    visibility: "open" | "private" | "hidden";
+    role: "owner" | "moderator" | "member";
+    revision: number;
+  }[];
 };
 
 async function installPunksTauriBoundary(
@@ -24,14 +32,34 @@ async function installPunksTauriBoundary(
     capabilities: T1_CAPABILITIES,
   },
 ) {
+  const workspaces = seed.workspaces ?? [
+    {
+      id: WORKSPACE_ID,
+      slug: "capability-test",
+      name: "Capability Test",
+      visibility: "private" as const,
+      role: "owner" as const,
+      revision: 1,
+    },
+  ];
   await page.addInitScript(
-    ({ compatibilitySeed, origin, punkId, sessionId, workspaceId }) => {
+    ({ compatibilitySeed, origin, punkId, sessionId, workspaceSeed }) => {
       const commands: string[] = [];
+      const calls: { command: string; args: Record<string, unknown> }[] = [];
       let compatibilityFailures = compatibilitySeed.compatibilityFailures ?? 0;
-      Object.assign(window, { __PUNKS_CAPABILITY_COMMANDS__: commands });
+      let generation = 0;
+      let switchStarted = false;
+      Object.assign(window, {
+        __PUNKS_CAPABILITY_COMMANDS__: commands,
+        __PUNKS_CAPABILITY_CALLS__: calls,
+      });
 
-      const invoke = async (command: string): Promise<unknown> => {
+      const invoke = async (
+        command: string,
+        args: Record<string, unknown> = {},
+      ): Promise<unknown> => {
         commands.push(command);
+        calls.push({ command, args: structuredClone(args) });
         switch (command) {
           case "punks_check_compatibility":
             if (compatibilityFailures > 0) {
@@ -52,6 +80,17 @@ async function installPunksTauriBoundary(
               capabilities: [...compatibilitySeed.capabilities],
             };
           case "punks_get_account_session_state":
+            if (switchStarted) {
+              return {
+                state: "signed_out",
+                authentication: {
+                  phase: "started",
+                  intent: "switch_account",
+                  method: "github",
+                },
+                resumeAvailable: false,
+              };
+            }
             return {
               state: "authenticated",
               authentication: { phase: "idle" },
@@ -70,27 +109,35 @@ async function installPunksTauriBoundary(
               },
             };
           case "punks_list_workspaces":
-            return [
-              {
-                id: workspaceId,
-                slug: "capability-test",
-                name: "Capability Test",
-                visibility: "private",
-                role: "owner",
-                revision: 1,
-              },
-            ];
-          case "punks_open_workspace":
+            return structuredClone(workspaceSeed);
+          case "punks_validate_navigation":
+            return {
+              kind: "workspace",
+              path: new URL(String(args.url)).pathname,
+            };
+          case "punks_open_workspace": {
+            generation += 1;
             return {
               origin,
               punkId,
-              workspaceId,
-              generation: 1,
+              workspaceId: String(args.workspaceId),
+              generation,
             };
+          }
           case "punks_list_streams":
             return [];
           case "punks_close_workspace":
             return null;
+          case "punks_start_account_switch":
+            switchStarted = true;
+            return {
+              phase: "started",
+              intent: "switch_account",
+              method: String(args.provider),
+            };
+          case "punks_cancel_authentication":
+            switchStarted = false;
+            return { phase: "cancelled" };
           default:
             throw new Error(`Unexpected Punks command: ${command}`);
         }
@@ -112,7 +159,7 @@ async function installPunksTauriBoundary(
       origin: ORIGIN,
       punkId: PUNK_ID,
       sessionId: SESSION_ID,
-      workspaceId: WORKSPACE_ID,
+      workspaceSeed: workspaces,
     },
   );
 }
@@ -125,6 +172,22 @@ async function invokedCommands(page: Page): Promise<string[]> {
           __PUNKS_CAPABILITY_COMMANDS__?: string[];
         }
       ).__PUNKS_CAPABILITY_COMMANDS__ ?? [],
+  );
+}
+
+async function invokedCalls(
+  page: Page,
+): Promise<{ command: string; args: Record<string, unknown> }[]> {
+  return page.evaluate(
+    () =>
+      (
+        window as typeof window & {
+          __PUNKS_CAPABILITY_CALLS__?: {
+            command: string;
+            args: Record<string, unknown>;
+          }[];
+        }
+      ).__PUNKS_CAPABILITY_CALLS__ ?? [],
   );
 }
 
@@ -288,4 +351,73 @@ test("une panne de compatibilité reste un état runtime récupérable", async (
     "punks_open_workspace",
     "punks_list_streams",
   ]);
+});
+
+test("changer de Workspace ferme l'ancienne génération avant la nouvelle I/O", async ({
+  page,
+}) => {
+  const secondWorkspaceId = "44444444-4444-4444-8444-444444444444";
+  await installPunksTauriBoundary(page, {
+    compatible: true,
+    capabilities: T1_CAPABILITIES,
+    workspaces: [
+      {
+        id: WORKSPACE_ID,
+        slug: "capability-test",
+        name: "Capability Test",
+        visibility: "private",
+        role: "owner",
+        revision: 1,
+      },
+      {
+        id: secondWorkspaceId,
+        slug: "second",
+        name: "Second Workspace",
+        visibility: "private",
+        role: "member",
+        revision: 1,
+      },
+    ],
+  });
+  await page.goto("/");
+  await expect(page.getByTestId("punks-workspace-shell")).toBeVisible();
+
+  await page.getByTestId("punks-workspace-second").click();
+  await expect(
+    page.getByRole("heading", { name: "Second Workspace" }).first(),
+  ).toBeVisible();
+
+  const calls = await invokedCalls(page);
+  const closeIndex = calls.findIndex(
+    ({ command }) => command === "punks_close_workspace",
+  );
+  const secondOpenIndex = calls.findIndex(
+    ({ command, args }) =>
+      command === "punks_open_workspace" &&
+      args.workspaceId === secondWorkspaceId,
+  );
+  expect(closeIndex).toBeGreaterThan(-1);
+  expect(secondOpenIndex).toBeGreaterThan(closeIndex);
+  expect(
+    calls.filter(({ command }) => command === "punks_open_workspace"),
+  ).toHaveLength(2);
+});
+
+test("changer de Compte ferme le Workspace avant la cérémonie", async ({
+  page,
+}) => {
+  await installPunksTauriBoundary(page);
+  await page.goto("/");
+  await expect(page.getByTestId("punks-workspace-shell")).toBeVisible();
+
+  await page.getByRole("button", { name: "Switch Account" }).click();
+  await page.getByRole("button", { name: "GitHub" }).click();
+  await expect(page.getByTestId("punks-account-switching")).toBeVisible();
+  await expect(page.getByTestId("punks-workspace-shell")).toHaveCount(0);
+
+  const commands = await invokedCommands(page);
+  const closeIndex = commands.indexOf("punks_close_workspace");
+  const switchIndex = commands.indexOf("punks_start_account_switch");
+  expect(closeIndex).toBeGreaterThan(-1);
+  expect(switchIndex).toBeGreaterThan(closeIndex);
 });

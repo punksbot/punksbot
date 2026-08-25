@@ -26,6 +26,10 @@ import type {
 } from "./punksAuthentication";
 import { PunksDesktopFailure } from "./punksFailure";
 import { canonicalPunksReaction } from "./punksReaction";
+import {
+  resolveWorkspaceIdentity,
+  type WorkspaceIdentity,
+} from "./punksWorkspaceIdentity";
 
 export { PunksDesktopFailure } from "./punksFailure";
 export type { PunksFailureKind } from "./punksFailure";
@@ -36,6 +40,7 @@ export type {
   CeremonyPhaseView,
   IdentityLinkProvider,
 } from "./punksAuthentication";
+export type { WorkspaceIdentity } from "./punksWorkspaceIdentity";
 
 export type WorkspaceLease = {
   origin: string;
@@ -157,7 +162,9 @@ export interface PunksAccountClient {
   renewAccountSession(): Promise<CeremonyPhaseView>;
   signOut(): Promise<"revoked" | "queued">;
   listWorkspaces(): Promise<WorkspaceSummary[]>;
-  resolveWorkspace(idOrSlug: string): Promise<WorkspaceSummary | null>;
+  resolveWorkspace(
+    identity: WorkspaceIdentity,
+  ): Promise<WorkspaceSummary | null>;
   openWorkspace(workspaceId: string): Promise<PunksWorkspaceSession>;
   /** Native envelope validation; test clients may omit this boundary. */
   validateNavigation?(url: string): Promise<PunksNavigationTarget>;
@@ -362,16 +369,10 @@ export function createFakePunksAccountClient(
       assertCompatible();
       return structuredClone(seed.workspaces);
     },
-    async resolveWorkspace(idOrSlug) {
+    async resolveWorkspace(identity) {
       assertCompatible();
-      return (
-        structuredClone(
-          seed.workspaces.find(
-            (workspace) =>
-              workspace.id === idOrSlug || workspace.slug === idOrSlug,
-          ),
-        ) ?? null
-      );
+      const workspace = resolveWorkspaceIdentity(seed.workspaces, identity);
+      return workspace === undefined ? null : structuredClone(workspace);
     },
     async openWorkspace(workspaceId) {
       assertCompatible();
