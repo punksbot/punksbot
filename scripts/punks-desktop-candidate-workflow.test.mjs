@@ -415,6 +415,17 @@ function validateWorkflow(workflow) {
     "libwebkit2gtk-4.1-dev",
     "pkg-config",
   ]);
+  const setupPlaywright = workflowStep(gates, "setup_playwright");
+  requireRun(setupPlaywright, [
+    "pnpm --dir desktop exec playwright install chromium",
+  ]);
+  invariant(
+    gates.steps.indexOf(workflowStep(gates, "install")) <
+      gates.steps.indexOf(setupPlaywright) &&
+      gates.steps.indexOf(setupPlaywright) <
+        gates.steps.indexOf(workflowStep(gates, "run_gates")),
+    "Playwright installation must precede the public capability gate",
+  );
   requireRun(workflowStep(gates, "run_gates"), [
     "scripts/punks-desktop-candidate-workflow.test.mjs",
     "scripts/candidate/*.test.mjs",
@@ -422,7 +433,7 @@ function validateWorkflow(workflow) {
     "pnpm cloudflare:check",
     "pnpm --dir desktop check:punks-candidate",
     "pnpm --dir desktop check:punks-product",
-    "pnpm --dir desktop check:punks-capabilities",
+    "pnpm --dir desktop test:e2e:punks-capabilities",
     "node scripts/check-punks-rust.mjs",
     'tauri_config="$(jq -c . desktop/src-tauri/tauri.punks.conf.json)"',
     'export TAURI_CONFIG="$tauri_config"',
@@ -1063,11 +1074,18 @@ const mutations = [
     change(workflow) {
       const step = workflowStep(workflow.jobs.gates, "run_gates");
       step.run = step.run.replace(
-        "pnpm --dir desktop check:punks-capabilities",
+        "pnpm --dir desktop test:e2e:punks-capabilities",
         "true",
       );
     },
-    error: /check:punks-capabilities/,
+    error: /test:e2e:punks-capabilities/,
+  },
+  {
+    name: "Playwright Chromium setup is removed",
+    change(workflow) {
+      workflowStep(workflow.jobs.gates, "setup_playwright").run = "true";
+    },
+    error: /setup_playwright misses/,
   },
   {
     name: "build loses OIDC permission",

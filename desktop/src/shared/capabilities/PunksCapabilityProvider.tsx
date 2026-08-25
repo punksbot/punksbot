@@ -1,9 +1,11 @@
 import type { DesktopCompatibilityResponse } from "@punks/contracts";
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -19,19 +21,27 @@ export { PUNKS_MOUNTED_CAPABILITIES } from "./punksProfile";
 type PunksCapabilityAvailability = {
   resolved: boolean;
   clientBlocked: boolean;
+  runtimeFailed: boolean;
   compatibility: DesktopCompatibilityResponse | null;
   available: ReadonlySet<string>;
+};
+
+type PunksCapabilityContextValue = PunksCapabilityAvailability & {
+  retry(): void;
 };
 
 const UNRESOLVED: PunksCapabilityAvailability = {
   resolved: false,
   clientBlocked: false,
+  runtimeFailed: false,
   compatibility: null,
   available: new Set(),
 };
 
-const PunksCapabilityContext =
-  createContext<PunksCapabilityAvailability>(UNRESOLVED);
+const PunksCapabilityContext = createContext<PunksCapabilityContextValue>({
+  ...UNRESOLVED,
+  retry: () => undefined,
+});
 
 export function PunksCapabilityProvider({
   client,
@@ -42,16 +52,19 @@ export function PunksCapabilityProvider({
 }) {
   const [availability, setAvailability] =
     useState<PunksCapabilityAvailability>(UNRESOLVED);
-
-  useEffect(() => {
-    let active = true;
+  const requestGeneration = useRef(0);
+  const resolve = useCallback(() => {
+    const generation = requestGeneration.current + 1;
+    requestGeneration.current = generation;
+    setAvailability(UNRESOLVED);
     void client
       .checkCompatibility()
       .then((compatibility) => {
-        if (!active) return;
+        if (requestGeneration.current !== generation) return;
         setAvailability({
           resolved: true,
           clientBlocked: !compatibility.compatible,
+          runtimeFailed: false,
           compatibility,
           available: intersectPunksCapabilities(
             compatibility.compatible ? compatibility.capabilities : [],
@@ -59,27 +72,37 @@ export function PunksCapabilityProvider({
         });
       })
       .catch(() => {
-        if (!active) return;
+        if (requestGeneration.current !== generation) return;
         setAvailability({
           resolved: true,
-          clientBlocked: true,
+          clientBlocked: false,
+          runtimeFailed: true,
           compatibility: null,
           available: new Set(),
         });
       });
-    return () => {
-      active = false;
-    };
   }, [client]);
 
+  useEffect(() => {
+    resolve();
+    return () => {
+      requestGeneration.current += 1;
+    };
+  }, [resolve]);
+
+  const value = useMemo(
+    () => ({ ...availability, retry: resolve }),
+    [availability, resolve],
+  );
+
   return (
-    <PunksCapabilityContext.Provider value={availability}>
+    <PunksCapabilityContext.Provider value={value}>
       {children}
     </PunksCapabilityContext.Provider>
   );
 }
 
-export function usePunksCapabilityAvailability(): PunksCapabilityAvailability {
+export function usePunksCapabilityAvailability(): PunksCapabilityContextValue {
   return useContext(PunksCapabilityContext);
 }
 

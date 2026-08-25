@@ -1,27 +1,17 @@
 import { expect, test, type Page } from "@playwright/test";
+import { DESKTOP_SOCIAL_LOOP_CAPABILITIES } from "@punks/contracts/desktop-profile";
 
 const ORIGIN = "http://127.0.0.1:4174";
 const WORKSPACE_ID = "11111111-1111-4111-8111-111111111111";
 const PUNK_ID = "22222222-2222-4222-8222-222222222222";
 const SESSION_ID = "33333333-3333-4333-8333-333333333333";
 
-const T1_CAPABILITIES = [
-  "compatibility",
-  "account-session",
-  "authentication",
-  "workspace-selection",
-  "stream-list",
-  "message-history",
-  "threads",
-  "bounded-authors",
-  "conversation-follow",
-  "message-post",
-  "unicode-reactions",
-] as const;
+const T1_CAPABILITIES = DESKTOP_SOCIAL_LOOP_CAPABILITIES;
 
 type PunksSeed = {
   compatible: boolean;
   capabilities: readonly string[];
+  compatibilityFailures?: number;
 };
 
 async function installPunksTauriBoundary(
@@ -34,12 +24,20 @@ async function installPunksTauriBoundary(
   await page.addInitScript(
     ({ compatibilitySeed, origin, punkId, sessionId, workspaceId }) => {
       const commands: string[] = [];
+      let compatibilityFailures = compatibilitySeed.compatibilityFailures ?? 0;
       Object.assign(window, { __PUNKS_CAPABILITY_COMMANDS__: commands });
 
       const invoke = async (command: string): Promise<unknown> => {
         commands.push(command);
         switch (command) {
           case "punks_check_compatibility":
+            if (compatibilityFailures > 0) {
+              compatibilityFailures -= 1;
+              throw {
+                kind: "transport",
+                message: "temporary compatibility transport failure",
+              };
+            }
             return {
               contract: "desktop.compatibility-response@1",
               compatible: compatibilitySeed.compatible,
@@ -227,6 +225,7 @@ test("une réponse compatible mais incomplète échoue fermée", async ({
   await expect(page.getByTestId("unavailable-terminal")).toBeVisible();
   await expect(page.getByTestId("punks-workspace-shell")).toHaveCount(0);
   expect(await invokedCommands(page)).toEqual(["punks_check_compatibility"]);
+  expect((await loadedResources(page)).join("\n")).not.toMatch(/PunksRuntime/u);
 });
 
 test("une incompatibilité bloque avant tout montage de Workspace", async ({
@@ -245,4 +244,33 @@ test("une incompatibilité bloque avant tout montage de Workspace", async ({
   );
   await expect(page.getByTestId("punks-workspace-shell")).toHaveCount(0);
   expect(await invokedCommands(page)).toEqual(["punks_check_compatibility"]);
+  expect((await loadedResources(page)).join("\n")).not.toMatch(/PunksRuntime/u);
+});
+
+test("une panne de compatibilité reste un état runtime récupérable", async ({
+  page,
+}) => {
+  await installPunksTauriBoundary(page, {
+    compatible: true,
+    capabilities: T1_CAPABILITIES,
+    compatibilityFailures: 1,
+  });
+  await page.goto("/");
+
+  const error = page.getByTestId("punks-capability-error");
+  await expect(error).toBeVisible();
+  await expect(page.getByTestId("client-incompatible-gate")).toHaveCount(0);
+  await expect(page.getByTestId("punks-workspace-shell")).toHaveCount(0);
+  expect(await invokedCommands(page)).toEqual(["punks_check_compatibility"]);
+
+  await error.getByRole("button", { name: "Try again" }).click();
+  await expect(page.getByTestId("punks-workspace-shell")).toBeVisible();
+  expect(await invokedCommands(page)).toEqual([
+    "punks_check_compatibility",
+    "punks_check_compatibility",
+    "punks_get_session",
+    "punks_list_workspaces",
+    "punks_open_workspace",
+    "punks_list_streams",
+  ]);
 });

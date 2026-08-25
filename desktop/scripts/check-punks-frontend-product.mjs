@@ -29,6 +29,11 @@ const FORBIDDEN_DIST_MARKERS = [
 ];
 const LAZY_CAPABILITY_CHUNKS = [
   {
+    capability: "desktop-social-loop",
+    fileName: /^PunksRuntime-[A-Za-z0-9_-]+\.js$/u,
+    eagerMarkers: ["punks-workspace-shell"],
+  },
+  {
     capability: "message-lifecycle",
     fileName:
       /^(?:MessageLifecycleControls|punksMessageLifecycleTauri)-[A-Za-z0-9_-]+\.js$/u,

@@ -361,6 +361,39 @@ test("dist mode accepts an isolated capability chunk not referenced by HTML", ()
   }
 });
 
+test("dist mode rejects the social runtime in the eager entry", () => {
+  const root = createSourceFixture();
+  createValidDist(root);
+  write(
+    root,
+    "dist/assets/app-a1.js",
+    `console.info("Punks frontend");\nconst shell = "punks-workspace-shell";\nvoid shell;\n`,
+  );
+  try {
+    const result = runChecker(root, "--dist");
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /unavailable capability desktop-social-loop/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("dist mode accepts the isolated social runtime chunk", () => {
+  const root = createSourceFixture();
+  createValidDist(root);
+  write(
+    root,
+    "dist/assets/PunksRuntime-a1.js",
+    `export const shell = "punks-workspace-shell";\n`,
+  );
+  try {
+    const result = runChecker(root, "--dist");
+    assert.equal(result.status, 0, result.stderr);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 for (const [extension, contents] of [
   ["js", `export const extra = true;\n`],
   ["css", `.extra { display: block; }\n`],

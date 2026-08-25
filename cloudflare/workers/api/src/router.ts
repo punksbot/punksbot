@@ -49,6 +49,7 @@ import { validateContract } from "@punks/contracts";
 import {
   DESKTOP_SOCIAL_LOOP_CAPABILITIES,
   DESKTOP_SOCIAL_LOOP_PROFILE_ID,
+  DESKTOP_SOCIAL_LOOP_REGISTRY_VERSION,
 } from "@punks/contracts/desktop-profile";
 import {
   canonicalJson,
@@ -202,7 +203,7 @@ async function desktopCompatibility(
     contract: "desktop.compatibility-response@1",
     compatible,
     profile: DESKTOP_PROFILE,
-    registryVersion: 1,
+    registryVersion: DESKTOP_SOCIAL_LOOP_REGISTRY_VERSION,
     minimumClientVersion: DESKTOP_MINIMUM_CLIENT_VERSION,
     environment:
       environment === "staging"
