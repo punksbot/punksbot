@@ -1,6 +1,11 @@
+use std::collections::HashSet;
+
 use serde::{Deserialize, Serialize};
 
-use crate::MessageView;
+use crate::{
+    message_mutations::canonical_reaction, social_validation::validate_message_view_runtime,
+    validate_uuid, ClientFailure, MessageView,
+};
 
 /// Typed `punks.follow.v1` server frame.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -212,6 +217,116 @@ pub struct FollowReduction {
 pub struct FollowConfirmation {
     pub state: FollowState,
     pub ack: Option<FollowAck>,
+}
+
+fn invalid_follow_frame() -> ClientFailure {
+    ClientFailure::contract("conversation.follow-server-frame@1")
+}
+
+/// Validates the closed FOLLOW contract and its authorized scope before IPC.
+pub(crate) fn validate_follow_frame(
+    frame: &FollowServerFrame,
+    workspace_id: &str,
+    conversation_id: &str,
+) -> Result<(), ClientFailure> {
+    match frame {
+        FollowServerFrame::Accepted {
+            schema_version,
+            resume_after_cursor,
+            target_high_water_cursor,
+        } => {
+            if *schema_version != 1 || target_high_water_cursor < resume_after_cursor {
+                return Err(invalid_follow_frame());
+            }
+        }
+        FollowServerFrame::Ready { schema_version, .. }
+        | FollowServerFrame::ResyncRequired { schema_version, .. } => {
+            if *schema_version != 1 {
+                return Err(invalid_follow_frame());
+            }
+        }
+        FollowServerFrame::ConversationUnavailable {
+            schema_version,
+            cursor,
+            ..
+        } => {
+            if *schema_version != 1 || *cursor < 1 {
+                return Err(invalid_follow_frame());
+            }
+        }
+        FollowServerFrame::Changes {
+            schema_version,
+            from_exclusive_cursor,
+            through_cursor,
+            messages,
+            thread_patches,
+            reaction_patches,
+            reaction_collection_patches,
+        } => {
+            if *schema_version != 1
+                || *through_cursor <= *from_exclusive_cursor
+                || messages.len() > 100
+                || thread_patches.len() > 100
+                || reaction_patches.len() > 100
+                || reaction_collection_patches.len() > 100
+            {
+                return Err(invalid_follow_frame());
+            }
+
+            let mut message_ids = HashSet::with_capacity(messages.len());
+            for message in messages {
+                validate_message_view_runtime(message, workspace_id, conversation_id)?;
+                if message.cursor <= *from_exclusive_cursor
+                    || message.cursor > *through_cursor
+                    || !message_ids.insert(message.id.as_str())
+                {
+                    return Err(invalid_follow_frame());
+                }
+            }
+
+            let mut thread_message_ids = HashSet::with_capacity(thread_patches.len());
+            for patch in thread_patches {
+                validate_uuid(&patch.message_id, "messageId")?;
+                if patch.revision < 1
+                    || patch.cursor <= *from_exclusive_cursor
+                    || patch.cursor > *through_cursor
+                    || !thread_message_ids.insert(patch.message_id.as_str())
+                {
+                    return Err(invalid_follow_frame());
+                }
+            }
+
+            let mut reaction_keys = HashSet::with_capacity(reaction_patches.len());
+            for patch in reaction_patches {
+                validate_uuid(&patch.message_id, "messageId")?;
+                let canonical = canonical_reaction(&patch.reaction)?;
+                if canonical != patch.reaction
+                    || patch.count > 2_147_483_647
+                    || patch.cursor <= *from_exclusive_cursor
+                    || patch.cursor > *through_cursor
+                    || !reaction_keys.insert((patch.message_id.as_str(), patch.reaction.as_str()))
+                {
+                    return Err(invalid_follow_frame());
+                }
+            }
+
+            let mut collection_message_ids =
+                HashSet::with_capacity(reaction_collection_patches.len());
+            for patch in reaction_collection_patches {
+                validate_uuid(&patch.message_id, "messageId")?;
+                if !matches!(
+                    patch.visibility.as_str(),
+                    "visible" | "temporarily-hidden" | "permanently-hidden"
+                ) || patch.cursor <= *from_exclusive_cursor
+                    || patch.cursor > *through_cursor
+                    || !collection_message_ids.insert(patch.message_id.as_str())
+                {
+                    return Err(invalid_follow_frame());
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 fn resync(

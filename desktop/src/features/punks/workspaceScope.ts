@@ -161,6 +161,25 @@ export class PunksWorkspaceScopeManager {
     return result;
   }
 
+  /**
+   * Runs an operation that returns an owned resource. If the generation turns
+   * stale while the resource is opening, ownership never escapes this method:
+   * the resource is closed before the stale result is reported.
+   */
+  async runResource<T>(
+    scope: PunksWorkspaceScope,
+    operation: () => Promise<T>,
+    close: (resource: T) => Promise<void>,
+  ): Promise<T> {
+    if (!this.isCurrent(scope)) throw staleScope();
+    const resource = await operation();
+    if (!this.isCurrent(scope)) {
+      await close(resource);
+      throw staleScope();
+    }
+    return resource;
+  }
+
   registerFollow(scope: PunksWorkspaceScope, follow: PunksFollow): () => void {
     if (!this.isCurrent(scope)) {
       void follow.close().catch(() => undefined);

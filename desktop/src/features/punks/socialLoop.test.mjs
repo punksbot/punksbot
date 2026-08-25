@@ -126,6 +126,37 @@ test("pages merge into one deduplicated timeline without duplicating Messages", 
   assert.equal(reduced.state.history.nextCursor, null);
 });
 
+test("a snapshot rejects non-monotone created cursors instead of sorting a broken page", () => {
+  assert.throws(
+    () =>
+      createConversationCache(
+        page([message(replyId, 3), message(rootId, 2)], 3),
+      ),
+    /violated its closed scope/u,
+  );
+});
+
+test("pagination rejects a divergent Message at the same revision and cursor", () => {
+  const initial = createConversationCache(page([message(rootId, 4)], 4));
+  const divergent = reduceConversationPage(
+    initial,
+    page(
+      [
+        message(rootId, 4, {
+          content: "same coordinates, different content",
+        }),
+      ],
+      4,
+    ),
+    "append",
+  );
+
+  assert.deepEqual(divergent, {
+    kind: "resync-required",
+    reason: "cursor_divergence",
+  });
+});
+
 test("absolute thread patches survive pagination for Messages not yet loaded", () => {
   const olderRootId = "66666666-6666-4666-8666-666666666666";
   const initial = createConversationCache(
@@ -214,6 +245,40 @@ test("a FOLLOW batch updates Messages, thread counters and reaction counts atomi
     cursor: 6,
   });
   assert.equal(reduced.state.appliedCursor, 6);
+});
+
+test("a FOLLOW batch rejects conflicting absolute patches at one cursor", () => {
+  const initial = createConversationCache(page([message(rootId, 4)], 4));
+  const reduced = applyConversationBatch(initial, {
+    schemaVersion: 1,
+    type: "changes",
+    fromExclusiveCursor: 4,
+    throughCursor: 5,
+    messages: [],
+    threadPatches: [],
+    reactionPatches: [
+      {
+        messageId: rootId,
+        reaction: "👍",
+        count: 1,
+        reactedByPunk: false,
+        cursor: 5,
+      },
+      {
+        messageId: rootId,
+        reaction: "👍",
+        count: 2,
+        reactedByPunk: false,
+        cursor: 5,
+      },
+    ],
+    reactionCollectionPatches: [],
+  });
+
+  assert.deepEqual(reduced, {
+    kind: "resync-required",
+    reason: "protocol_violation",
+  });
 });
 
 test("the same batch is idempotent, while a gap requires a bounded resync", () => {

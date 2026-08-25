@@ -1,15 +1,31 @@
 import { expect, test, type Page } from "@playwright/test";
 import { DESKTOP_SOCIAL_LOOP_CAPABILITIES } from "@punks/contracts/desktop-profile";
+import type {
+  ConversationFollowServerFrame,
+  ConversationSummary,
+  ConversationView,
+  MessageHistoryResponse,
+} from "@punks/contracts";
 
 const ORIGIN = "http://127.0.0.1:4174";
 const WORKSPACE_ID = "11111111-1111-4111-8111-111111111111";
 const PUNK_ID = "22222222-2222-4222-8222-222222222222";
 const SESSION_ID = "33333333-3333-4333-8333-333333333333";
+const CONVERSATION_ID = "44444444-4444-4444-8444-444444444444";
 const ALL_CAPABILITY_CHUNKS =
   /PunksRuntime|punksTauriTransport|MessageLifecycleControls|punksMessageLifecycleTauri/u;
 const LIFECYCLE_CHUNKS = /MessageLifecycleControls|punksMessageLifecycleTauri/u;
 
 const T1_CAPABILITIES = DESKTOP_SOCIAL_LOOP_CAPABILITIES;
+
+type ChangesFrame = Extract<ConversationFollowServerFrame, { type: "changes" }>;
+
+type PunksSocialSeed = {
+  streams: readonly ConversationSummary[];
+  stream: ConversationView;
+  timeline: MessageHistoryResponse;
+  followBatch?: ChangesFrame;
+};
 
 type PunksSeed = {
   compatible: boolean;
@@ -23,7 +39,46 @@ type PunksSeed = {
     role: "owner" | "moderator" | "member";
     revision: number;
   }[];
+  social?: PunksSocialSeed;
 };
+
+function socialMessage(
+  id: string,
+  cursor: number,
+  content: string,
+): MessageHistoryResponse["items"][number] {
+  return {
+    id,
+    workspaceId: WORKSPACE_ID,
+    conversationId: CONVERSATION_ID,
+    author: { kind: "punk", punkId: PUNK_ID },
+    messageType: "stream-message",
+    status: "active",
+    content,
+    topic: null,
+    mentionedPunkIds: [],
+    mediaIds: [],
+    parentMessageId: null,
+    threadRootMessageId: id,
+    threadDepth: 0,
+    broadcast: false,
+    replyCount: 0,
+    descendantCount: 0,
+    lastReplyAt: null,
+    currentVersion: 1,
+    retractionKind: null,
+    retractedAt: null,
+    eraseAfter: null,
+    publicReason: null,
+    erasedAt: null,
+    revision: 1,
+    createdCursor: cursor,
+    cursor,
+    createdAt: "2026-08-25T10:00:00.000Z",
+    updatedAt: "2026-08-25T10:00:00.000Z",
+    editedAt: null,
+  };
+}
 
 async function installPunksTauriBoundary(
   page: Page,
@@ -43,15 +98,30 @@ async function installPunksTauriBoundary(
     },
   ];
   await page.addInitScript(
-    ({ compatibilitySeed, origin, punkId, sessionId, workspaceSeed }) => {
+    ({
+      compatibilitySeed,
+      origin,
+      punkId,
+      sessionId,
+      socialSeed,
+      workspaceSeed,
+    }) => {
       const commands: string[] = [];
       const calls: { command: string; args: Record<string, unknown> }[] = [];
       let compatibilityFailures = compatibilitySeed.compatibilityFailures ?? 0;
       let generation = 0;
       let switchStarted = false;
+      let followBatchDelivered = false;
+      let followLiveDelivered = false;
+      let followLiveRequested = false;
+      let releaseFollowLive: (() => void) | null = null;
       Object.assign(window, {
         __PUNKS_CAPABILITY_COMMANDS__: commands,
         __PUNKS_CAPABILITY_CALLS__: calls,
+        __PUNKS_RELEASE_FOLLOW__: () => {
+          followLiveRequested = true;
+          releaseFollowLive?.();
+        },
       });
 
       const invoke = async (
@@ -125,7 +195,65 @@ async function installPunksTauriBoundary(
             };
           }
           case "punks_list_streams":
-            return [];
+            return structuredClone(socialSeed?.streams ?? []);
+          case "punks_get_stream":
+            if (socialSeed === undefined) {
+              throw new Error("No social Stream fixture is installed");
+            }
+            return structuredClone(socialSeed.stream);
+          case "punks_get_timeline":
+            if (socialSeed === undefined) {
+              throw new Error("No social timeline fixture is installed");
+            }
+            return structuredClone(socialSeed.timeline);
+          case "punks_resolve_authors":
+            return (
+              (args.authors as readonly (
+                | { kind: "punk"; punkId: string }
+                | { kind: "bot"; installationId: string }
+              )[]) ?? []
+            ).map((author) =>
+              author.kind === "punk"
+                ? {
+                    kind: "punk",
+                    punkId: author.punkId,
+                    displayName: "Capability Test Punk",
+                    avatarUrl: null,
+                  }
+                : {
+                    kind: "bot",
+                    installationId: author.installationId,
+                    displayName: "Capability Test Bot",
+                    avatarUrl: null,
+                  },
+            );
+          case "punks_follow_conversation":
+            return "follow-operation";
+          case "punks_follow_next":
+            if (socialSeed?.followBatch && !followBatchDelivered) {
+              followBatchDelivered = true;
+              return {
+                kind: "apply_batch",
+                frame: structuredClone(socialSeed.followBatch),
+              };
+            }
+            if (!followLiveDelivered) {
+              if (followLiveRequested) {
+                followLiveDelivered = true;
+                return { kind: "became_live" };
+              }
+              return new Promise((resolve) => {
+                releaseFollowLive = () => {
+                  followLiveDelivered = true;
+                  releaseFollowLive = null;
+                  resolve({ kind: "became_live" });
+                };
+              });
+            }
+            return new Promise(() => undefined);
+          case "punks_confirm_follow_batch":
+          case "punks_close_follow":
+            return null;
           case "punks_close_workspace":
             return null;
           case "punks_start_account_switch":
@@ -159,6 +287,7 @@ async function installPunksTauriBoundary(
       origin: ORIGIN,
       punkId: PUNK_ID,
       sessionId: SESSION_ID,
+      socialSeed: seed.social,
       workspaceSeed: workspaces,
     },
   );
@@ -420,4 +549,95 @@ test("changer de Compte ferme le Workspace avant la cérémonie", async ({
   const switchIndex = commands.indexOf("punks_start_account_switch");
   expect(closeIndex).toBeGreaterThan(-1);
   expect(switchIndex).toBeGreaterThan(closeIndex);
+});
+
+test("la boucle sociale publie un batch avant ACK et bloque les mutations avant live", async ({
+  page,
+}) => {
+  const initialMessageId = "55555555-5555-4555-8555-555555555555";
+  const liveMessageId = "66666666-6666-4666-8666-666666666666";
+  const streamSummary: ConversationSummary = {
+    id: CONVERSATION_ID,
+    workspaceId: WORKSPACE_ID,
+    name: "Social Loop",
+    type: "stream",
+    visibility: "private",
+    description: null,
+    topic: "FOLLOW",
+    purpose: "Exercise the bounded social loop",
+    topicRequired: false,
+    ttlSeconds: null,
+    ttlDeadline: null,
+    revision: 1,
+    cursor: 1,
+    updatedAt: "2026-08-25T10:00:00.000Z",
+  };
+  await installPunksTauriBoundary(page, {
+    compatible: true,
+    capabilities: T1_CAPABILITIES,
+    social: {
+      streams: [streamSummary],
+      stream: {
+        ...streamSummary,
+        maxMembers: null,
+        status: "active",
+        createdAt: "2026-08-25T10:00:00.000Z",
+        archivedAt: null,
+      },
+      timeline: {
+        workspaceId: WORKSPACE_ID,
+        conversationId: CONVERSATION_ID,
+        highWaterCursor: 1,
+        order: "createdCursor-ascending",
+        items: [socialMessage(initialMessageId, 1, "Initial snapshot")],
+        nextCursor: null,
+      },
+      followBatch: {
+        schemaVersion: 1,
+        type: "changes",
+        fromExclusiveCursor: 1,
+        throughCursor: 2,
+        messages: [socialMessage(liveMessageId, 2, "FOLLOW batch")],
+        threadPatches: [],
+        reactionPatches: [],
+        reactionCollectionPatches: [],
+      },
+    },
+  });
+  await page.goto("/");
+  await page.getByTestId(`punks-stream-${CONVERSATION_ID}`).click();
+
+  await expect(
+    page.getByRole("heading", { name: "Social Loop" }),
+  ).toBeVisible();
+  await expect(page.getByText("FOLLOW batch", { exact: true })).toBeVisible();
+  const composer = page.getByTestId("punks-message-composer");
+  await expect(composer).toBeDisabled();
+  await expect(
+    page.getByTestId("punks-follow-connecting").first(),
+  ).toBeVisible();
+  const beforeLive = await invokedCommands(page);
+  expect(beforeLive.indexOf("punks_confirm_follow_batch")).toBeGreaterThan(
+    beforeLive.indexOf("punks_follow_next"),
+  );
+
+  await page.evaluate(() => {
+    (
+      window as typeof window & {
+        __PUNKS_RELEASE_FOLLOW__?: () => void;
+      }
+    ).__PUNKS_RELEASE_FOLLOW__?.();
+  });
+
+  await expect(page.getByTestId("punks-follow-live").first()).toBeVisible();
+  await expect(composer).toBeEnabled();
+
+  const unavailableTargetId = "77777777-7777-4777-8777-777777777777";
+  await page.goto(
+    `/w/capability-test/conversations/${CONVERSATION_ID}/messages/${unavailableTargetId}`,
+  );
+  await expect(
+    page.getByTestId("punks-message-target-unavailable"),
+  ).toBeVisible();
+  expect(await invokedCommands(page)).not.toContain("punks_get_thread");
 });

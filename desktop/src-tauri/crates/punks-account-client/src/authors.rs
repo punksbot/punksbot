@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -46,6 +48,46 @@ impl AuthorSummary {
             Self::Punk { display_name, .. } | Self::Bot { display_name, .. } => display_name,
         }
     }
+
+    fn key(&self) -> (&'static str, &str) {
+        match self {
+            Self::Punk { punk_id, .. } => ("punk", punk_id),
+            Self::Bot {
+                installation_id, ..
+            } => ("bot", installation_id),
+        }
+    }
+
+    fn validate(&self) -> Result<(), ClientFailure> {
+        let (_, id) = self.key();
+        validate_uuid(
+            id,
+            match self {
+                Self::Punk { .. } => "punkId",
+                Self::Bot { .. } => "installationId",
+            },
+        )?;
+        let display_name = self.display_name();
+        if display_name.is_empty() || display_name.chars().count() > 120 {
+            return Err(ClientFailure::contract("author.resolve-response@1"));
+        }
+        let avatar_url = match self {
+            Self::Punk { avatar_url, .. } | Self::Bot { avatar_url, .. } => avatar_url,
+        };
+        if avatar_url.as_ref().is_some_and(|avatar_url| {
+            avatar_url.len() > 2_048 || url::Url::parse(avatar_url).is_err()
+        }) {
+            return Err(ClientFailure::contract("author.resolve-response@1"));
+        }
+        Ok(())
+    }
+}
+
+fn author_reference_key(author: &AuthorReference) -> (&'static str, &str) {
+    match author {
+        AuthorReference::Punk { punk_id } => ("punk", punk_id),
+        AuthorReference::Bot { installation_id } => ("bot", installation_id),
+    }
 }
 
 #[derive(Deserialize)]
@@ -68,12 +110,16 @@ impl WorkspaceSession {
                 "Author resolver requires between 1 and 100 references",
             ));
         }
+        let mut requested = HashSet::with_capacity(authors.len());
         for author in authors {
             match author {
                 AuthorReference::Punk { punk_id } => validate_uuid(punk_id, "punkId")?,
                 AuthorReference::Bot { installation_id } => {
                     validate_uuid(installation_id, "installationId")?
                 }
+            }
+            if !requested.insert(author_reference_key(author)) {
+                return Err(ClientFailure::contract("author.resolve@1"));
             }
         }
         self.assert_current().await?;
@@ -97,8 +143,17 @@ impl WorkspaceSession {
         self.assert_current().await?;
         if response.contract != "author.resolve-response@1"
             || response.workspace_id != self.lease.workspace_id
+            || response.authors.len() > 100
         {
             return Err(ClientFailure::contract("author.resolve-response@1"));
+        }
+        let mut returned = HashSet::with_capacity(response.authors.len());
+        for author in &response.authors {
+            author.validate()?;
+            let key = author.key();
+            if !requested.contains(&key) || !returned.insert(key) {
+                return Err(ClientFailure::contract("author.resolve-response@1"));
+            }
         }
         Ok(response.authors)
     }

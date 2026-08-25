@@ -320,7 +320,7 @@ impl WorkspaceSession {
     }
 }
 
-fn canonical_reaction(reaction: &str) -> Result<String, ClientFailure> {
+pub(crate) fn canonical_reaction(reaction: &str) -> Result<String, ClientFailure> {
     if reaction
         .chars()
         .any(|character| matches!(character, '\r' | '\n' | '\u{2028}' | '\u{2029}'))

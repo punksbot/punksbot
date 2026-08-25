@@ -88,6 +88,77 @@ function canonical(value: unknown): string {
   return JSON.stringify(value);
 }
 
+function hasDuplicateKeys<T>(
+  values: readonly T[],
+  keyFor: (value: T) => string,
+): boolean {
+  const seen = new Set<string>();
+  for (const value of values) {
+    const key = keyFor(value);
+    if (seen.has(key)) return true;
+    seen.add(key);
+  }
+  return false;
+}
+
+function pageMatchesClosedRuntime(
+  page: MessageHistoryResponse,
+  threadRootMessageId?: string,
+): boolean {
+  if (
+    page.order !== "createdCursor-ascending" ||
+    !Number.isSafeInteger(page.highWaterCursor) ||
+    page.highWaterCursor < 1 ||
+    page.items.length > 100 ||
+    hasDuplicateKeys(page.items, (message) => message.id)
+  ) {
+    return false;
+  }
+  let previousCreatedCursor = 0;
+  for (const message of page.items) {
+    if (
+      !Number.isSafeInteger(message.createdCursor) ||
+      !Number.isSafeInteger(message.cursor) ||
+      !Number.isSafeInteger(message.revision) ||
+      message.createdCursor <= previousCreatedCursor ||
+      message.createdCursor > page.highWaterCursor ||
+      message.cursor < message.createdCursor ||
+      message.revision < 1 ||
+      (threadRootMessageId !== undefined &&
+        message.threadRootMessageId !== threadRootMessageId)
+    ) {
+      return false;
+    }
+    previousCreatedCursor = message.createdCursor;
+  }
+  return true;
+}
+
+function messagesDiverge(
+  existing: readonly MessageView[],
+  incoming: readonly MessageView[],
+): boolean {
+  const existingById = new Map(
+    existing.map((message) => [message.id, message]),
+  );
+  return incoming.some((message) => {
+    const previous = existingById.get(message.id);
+    if (previous === undefined) return false;
+    if (
+      (message.revision > previous.revision &&
+        message.cursor < previous.cursor) ||
+      (message.revision < previous.revision && message.cursor > previous.cursor)
+    ) {
+      return true;
+    }
+    return (
+      message.revision === previous.revision &&
+      message.cursor === previous.cursor &&
+      canonical(message) !== canonical(previous)
+    );
+  });
+}
+
 function shouldReplaceMessage(
   existing: MessageView | undefined,
   incoming: MessageView,
@@ -276,6 +347,7 @@ function reducePageState(
   mode: "append" | "replace",
 ): ConversationReduction {
   if (
+    !pageMatchesClosedRuntime(page, state.threadRootMessageId) ||
     page.workspaceId !== state.history.workspaceId ||
     page.conversationId !== state.history.conversationId ||
     !messagesMatchScope(
@@ -299,6 +371,9 @@ function reducePageState(
     page.nextCursor !== null &&
     page.nextCursor === state.history.nextCursor
   ) {
+    return { kind: "resync-required", reason: "cursor_divergence" };
+  }
+  if (messagesDiverge(state.history.items, page.items)) {
     return { kind: "resync-required", reason: "cursor_divergence" };
   }
   const merged = mergeMessages(
@@ -366,7 +441,21 @@ function applyBatchState(
     return { kind: "resync-required", reason: "cursor_gap" };
   }
   if (
+    frame.schemaVersion !== 1 ||
     frame.throughCursor <= frame.fromExclusiveCursor ||
+    frame.messages.length > 100 ||
+    frame.threadPatches.length > 100 ||
+    frame.reactionPatches.length > 100 ||
+    frame.reactionCollectionPatches.length > 100 ||
+    hasDuplicateKeys(frame.messages, (message) => message.id) ||
+    hasDuplicateKeys(frame.threadPatches, (patch) => patch.messageId) ||
+    hasDuplicateKeys(frame.reactionPatches, (patch) =>
+      reactionKey(patch.messageId, patch.reaction),
+    ) ||
+    hasDuplicateKeys(
+      frame.reactionCollectionPatches,
+      (patch) => patch.messageId,
+    ) ||
     !messagesMatchScope(
       frame.messages,
       state.history.workspaceId,
@@ -445,6 +534,7 @@ export function reduceConversation(
 ): ConversationReduction {
   if (action.type === "snapshot") {
     if (
+      !pageMatchesClosedRuntime(action.page, action.threadRootMessageId) ||
       !messagesMatchScope(
         action.page.items,
         action.page.workspaceId,

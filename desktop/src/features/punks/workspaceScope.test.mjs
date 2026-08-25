@@ -160,6 +160,33 @@ test("a superseded Workspace opening cannot replace the latest request", async (
   assert.equal(manager.isCurrent(current), true);
 });
 
+test("a resource opened by an obsolete generation is closed before rejection", async () => {
+  const account = accountFixture();
+  const manager = new PunksWorkspaceScopeManager();
+  const first = await manager.open(account, firstWorkspaceId);
+  const opened = deferred();
+  let resourceClosed = false;
+  const pending = manager.runResource(
+    first,
+    async () => {
+      await opened.promise;
+      return {
+        async close() {
+          resourceClosed = true;
+        },
+      };
+    },
+    (resource) => resource.close(),
+  );
+
+  const second = await manager.open(account, secondWorkspaceId);
+  opened.resolve();
+
+  await assert.rejects(pending, { kind: "stale_workspace" });
+  assert.equal(resourceClosed, true);
+  assert.equal(manager.isCurrent(second), true);
+});
+
 test("a rejected native close blocks the next Workspace I/O", async () => {
   const openedWorkspaceIds = [];
   let generation = 0;

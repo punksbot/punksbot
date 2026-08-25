@@ -165,3 +165,45 @@ test("Workspace resolution sends an explicit durable-id or slug identity", async
     },
   ]);
 });
+
+test("the Tauri WorkspaceSession admits an aggregated directory beyond one page", async () => {
+  const workspaceId = "11111111-1111-4111-8111-111111111111";
+  const punkId = "22222222-2222-4222-8222-222222222222";
+  const streams = Array.from({ length: 101 }, (_, index) => ({
+    id: `00000000-0000-4000-8000-${index.toString(16).padStart(12, "0")}`,
+    workspaceId,
+    name: `Stream ${index + 1}`,
+    type: "stream",
+    visibility: "private",
+    description: null,
+    topic: null,
+    purpose: null,
+    topicRequired: false,
+    ttlSeconds: null,
+    ttlDeadline: null,
+    revision: 1,
+    cursor: index + 1,
+    updatedAt: "2026-08-25T10:00:00.000Z",
+  }));
+  handler = (command) => {
+    if (command === "punks_open_workspace") {
+      return {
+        origin: "https://staging.punks.bot",
+        punkId,
+        workspaceId,
+        generation: 1,
+      };
+    }
+    if (command === "punks_list_streams") return streams;
+    throw new Error(`Unexpected command: ${command}`);
+  };
+  const { TauriPunksAccountClient } = await import("./punksTauriClient.ts");
+  const session = await new TauriPunksAccountClient().openWorkspace(
+    workspaceId,
+  );
+
+  const listed = await session.listStreams();
+
+  assert.equal(listed.length, 101);
+  assert.equal(listed[100].name, "Stream 101");
+});

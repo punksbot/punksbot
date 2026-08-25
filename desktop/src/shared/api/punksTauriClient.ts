@@ -47,6 +47,20 @@ const authenticationIntents = new Set([
   "link_github",
   "register_passkey",
 ]);
+const CONTRACT_DIRECTORY_PAGE_SIZE = 100;
+
+function contractDirectoryPages<T>(items: readonly T[]): readonly T[][] {
+  if (items.length === 0) return [[]];
+  const pages: T[][] = [];
+  for (
+    let offset = 0;
+    offset < items.length;
+    offset += CONTRACT_DIRECTORY_PAGE_SIZE
+  ) {
+    pages.push(items.slice(offset, offset + CONTRACT_DIRECTORY_PAGE_SIZE));
+  }
+  return pages;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -171,15 +185,18 @@ class TauriWorkspaceSession implements PunksWorkspaceSession {
       "punks_list_streams",
       { lease: this.lease },
     );
-    return requireContract<ListConversationsResponse>(
-      "punks://contracts/conversation.list-response@1",
-      {
-        contract: "conversation.list-response@1",
-        workspaceId: this.lease.workspaceId,
-        items,
-        nextCursor: null,
-      },
-    ).items;
+    for (const page of contractDirectoryPages(items)) {
+      requireContract<ListConversationsResponse>(
+        "punks://contracts/conversation.list-response@1",
+        {
+          contract: "conversation.list-response@1",
+          workspaceId: this.lease.workspaceId,
+          items: page,
+          nextCursor: null,
+        },
+      );
+    }
+    return items;
   }
 
   async getStream(conversationId: string): Promise<ConversationView> {
@@ -368,10 +385,17 @@ export class TauriPunksAccountClient implements PunksAccountClient {
     const items = await invokePunks<WorkspaceSummary[]>(
       "punks_list_workspaces",
     );
-    return requireContract<ListWorkspacesResponse>(
-      "punks://contracts/workspace.list-response@1",
-      { contract: "workspace.list-response@1", items, nextCursor: null },
-    ).items;
+    for (const page of contractDirectoryPages(items)) {
+      requireContract<ListWorkspacesResponse>(
+        "punks://contracts/workspace.list-response@1",
+        {
+          contract: "workspace.list-response@1",
+          items: page,
+          nextCursor: null,
+        },
+      );
+    }
+    return items;
   }
 
   resolveWorkspace(

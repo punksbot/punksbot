@@ -3,7 +3,6 @@ import {
   Suspense,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -16,35 +15,27 @@ import {
 
 import type { MessageView } from "@punks/contracts";
 
-import {
-  PunksDesktopFailure,
-  type PunksFollowDelivery,
-} from "@/shared/api/punksClient";
+import { PunksDesktopFailure } from "@/shared/api/punksClient";
 import { canonicalPunksReaction } from "@/shared/api/punksReaction";
 import { usePunksCapabilityAvailable } from "@/shared/capabilities/PunksCapabilityProvider";
 
 import {
-  applyConversationBatch,
   applyConversationMessage,
   applyConversationReaction,
   createConversationCache,
-  reduceConversationPage,
   reactionForCaches,
-  replaceConversationPage,
   type ConversationCache,
 } from "./socialLoop";
+import { commitConversationPage } from "./conversationCacheCoordinator";
 import { ConversationMessageRow } from "./PunksConversationMessageRow";
 import { ConversationStatusBanner } from "./PunksConversationStatusBanner";
 import { ConversationThreadPanel } from "./PunksConversationThreadPanel";
-import { actorKey, type FollowStatus } from "./PunksConversationTypes";
-import {
-  failureStatus,
-  pumpFollow,
-  sameQueryKey,
-} from "./PunksConversationHelpers";
+import { actorKey } from "./PunksConversationTypes";
+import { failureStatus } from "./PunksConversationHelpers";
 import { mutationErrorMessage } from "./punksMutationErrors";
 import { usePunksAccount, usePunksWorkspace } from "./PunksRuntime";
 import type { PunksRoute } from "./routes";
+import { useConversationFollow } from "./useConversationFollow";
 
 type AuthorActor = MessageView["author"];
 type AuthorActors = [AuthorActor, ...AuthorActor[]];
@@ -65,243 +56,6 @@ type MessageKey = readonly [
   string,
   ...unknown[],
 ];
-
-function useConversationFollow({
-  conversationId,
-  historyReady,
-  queryKey,
-  queryPrefix,
-  resyncToken,
-  streamKey,
-  streamStatus,
-}: {
-  conversationId: string;
-  historyReady: boolean;
-  queryKey: MessageKey;
-  queryPrefix: MessageKey;
-  resyncToken: number;
-  streamKey: readonly unknown[];
-  streamStatus: "active" | "archived" | "access-lost" | "unknown";
-}): FollowStatus {
-  const { scope, manager } = usePunksWorkspace();
-  const queryClient = useQueryClient();
-  const [status, setStatus] = useState<FollowStatus>("loading");
-  const scopeKey = `${scope.lease.workspaceId}:${scope.lease.generation}:${conversationId}`;
-  const cursorRef = useRef<{ scopeKey: string; cursor: number | null }>({
-    scopeKey,
-    cursor: null,
-  });
-  const terminalScopeRef = useRef<string | null>(null);
-
-  if (cursorRef.current.scopeKey !== scopeKey) {
-    cursorRef.current = { scopeKey, cursor: null };
-  }
-  if (terminalScopeRef.current !== scopeKey) {
-    terminalScopeRef.current = null;
-  }
-
-  useEffect(() => {
-    const purgeConversationViews = () => {
-      queryClient.removeQueries({ queryKey: queryPrefix });
-      queryClient.removeQueries({
-        queryKey: [
-          "punks",
-          "authors",
-          scope.lease.workspaceId,
-          scope.lease.generation,
-        ],
-      });
-    };
-
-    if (!historyReady) {
-      if (streamStatus === "archived" || streamStatus === "access-lost") {
-        purgeConversationViews();
-      }
-      setStatus((current) =>
-        terminalScopeRef.current === scopeKey &&
-        (current === "archived" || current === "unavailable")
-          ? current
-          : "loading",
-      );
-      return;
-    }
-
-    let active = true;
-    let unregisterAbort: () => void = () => undefined;
-    let removeFollow: () => void = () => undefined;
-    const controller = new AbortController();
-    unregisterAbort = manager.registerAbortController(scope, controller);
-    setStatus("connecting");
-
-    const replaceAfterResync = async (): Promise<void> => {
-      if (!active || controller.signal.aborted) return;
-      setStatus("resyncing");
-      const page = await manager.run(scope, () =>
-        scope.session.getTimeline({ conversationId, limit: 100 }),
-      );
-      if (!active || controller.signal.aborted) return;
-      const current = queryClient.getQueryData<ConversationCache>(queryKey);
-      notifyManager.batch(() => {
-        queryClient.setQueryData(
-          queryKey,
-          replaceConversationPage(page, current?.threadRootMessageId),
-        );
-        queryClient.invalidateQueries({ queryKey: queryPrefix });
-        queryClient.invalidateQueries({ queryKey: streamKey });
-      });
-      cursorRef.current.cursor = page.highWaterCursor;
-    };
-
-    const applyBatch = async (
-      frame: Extract<PunksFollowDelivery, { kind: "apply_batch" }>["frame"],
-    ): Promise<boolean> => {
-      const current = queryClient.getQueryData<ConversationCache>(queryKey);
-      if (current === undefined) {
-        await replaceAfterResync();
-        return false;
-      }
-      const reduction = applyConversationBatch(current, frame);
-      if (reduction.kind === "resync-required") {
-        await replaceAfterResync();
-        return false;
-      }
-      // A thread cache is another bounded view of the same Conversation. It
-      // receives the same atomic batch when its cursor is contiguous; a page
-      // opened later is simply refetched instead of being patched partially.
-      const threadUpdates: Array<
-        readonly [readonly unknown[], ConversationCache]
-      > = [];
-      const threadResyncs: Array<readonly unknown[]> = [];
-      for (const [key, cached] of queryClient.getQueriesData<ConversationCache>(
-        {
-          queryKey: queryPrefix,
-        },
-      )) {
-        if (cached === undefined || sameQueryKey(key, queryKey)) continue;
-        const threadReduction = applyConversationBatch(cached, frame);
-        if (threadReduction.kind === "applied") {
-          threadUpdates.push([key, threadReduction.state]);
-        } else if (threadReduction.kind === "resync-required") {
-          threadResyncs.push(key);
-        }
-      }
-      notifyManager.batch(() => {
-        if (reduction.kind === "applied") {
-          queryClient.setQueryData(queryKey, reduction.state);
-        }
-        for (const [key, state] of threadUpdates) {
-          queryClient.setQueryData(key, state);
-        }
-        for (const key of threadResyncs) {
-          queryClient.invalidateQueries({ queryKey: key });
-        }
-      });
-      return true;
-    };
-
-    const run = async (): Promise<void> => {
-      try {
-        if (resyncToken > 0) await replaceAfterResync();
-        if (!active || controller.signal.aborted || !manager.isCurrent(scope)) {
-          return;
-        }
-        if (cursorRef.current.cursor === null) {
-          const current = queryClient.getQueryData<ConversationCache>(queryKey);
-          cursorRef.current.cursor = current?.history.highWaterCursor ?? 0;
-        }
-        let restartFollow = true;
-        while (
-          restartFollow &&
-          active &&
-          !controller.signal.aborted &&
-          manager.isCurrent(scope)
-        ) {
-          restartFollow = false;
-          const follow = await manager.run(scope, () =>
-            scope.session.followConversation(
-              conversationId,
-              cursorRef.current.cursor ?? 0,
-            ),
-          );
-          if (!active || controller.signal.aborted) {
-            await follow.close();
-            return;
-          }
-          removeFollow = manager.registerFollow(scope, follow);
-          await pumpFollow(
-            follow,
-            () =>
-              active && !controller.signal.aborted && manager.isCurrent(scope),
-            async (delivery) => {
-              if (delivery.kind === "apply_batch") {
-                const applied = await applyBatch(delivery.frame);
-                if (!applied) {
-                  restartFollow = true;
-                  return false;
-                }
-                await follow.confirmBatch(delivery.frame.throughCursor);
-                return true;
-              }
-              if (delivery.kind === "became_live") {
-                setStatus("live");
-                return true;
-              }
-              if (delivery.kind === "resync") {
-                await replaceAfterResync();
-                restartFollow = true;
-                return false;
-              }
-              terminalScopeRef.current = scopeKey;
-              purgeConversationViews();
-              setStatus("archived");
-              return false;
-            },
-          );
-          removeFollow();
-          removeFollow = () => undefined;
-        }
-      } catch (error) {
-        if (!active || !manager.isCurrent(scope)) return;
-        if (
-          error instanceof PunksDesktopFailure &&
-          (error.kind === "stale_workspace" || error.kind === "cancelled")
-        ) {
-          return;
-        }
-        const nextStatus = failureStatus(error);
-        if (nextStatus === "unavailable") {
-          terminalScopeRef.current = scopeKey;
-          purgeConversationViews();
-        }
-        setStatus(nextStatus);
-      } finally {
-        removeFollow();
-      }
-    };
-
-    void run();
-    return () => {
-      active = false;
-      controller.abort();
-      unregisterAbort();
-      removeFollow();
-    };
-  }, [
-    conversationId,
-    historyReady,
-    manager,
-    queryClient,
-    queryKey,
-    queryPrefix,
-    scope,
-    scopeKey,
-    resyncToken,
-    streamKey,
-    streamStatus,
-  ]);
-
-  return status;
-}
 
 export function PunksConversation({
   conversationId,
@@ -373,8 +127,7 @@ export function PunksConversation({
   const targetMessage = history?.history.items.find(
     (message) => message.id === messageId,
   );
-  const threadRootMessageId =
-    targetMessage?.threadRootMessageId ?? messageId ?? null;
+  const threadRootMessageId = targetMessage?.threadRootMessageId ?? null;
   const threadKey = useMemo(
     () => [
       "punks",
@@ -523,14 +276,12 @@ export function PunksConversation({
           cursor: current.history.nextCursor ?? undefined,
         }),
       );
-      const reduced = reduceConversationPage(current, page, "append");
+      const reduced = commitConversationPage(queryClient, historyKey, page);
       if (reduced.kind !== "applied") {
         setPaginationError(
           "The timeline changed while it was loading; refresh required.",
         );
         setResyncToken((value) => value + 1);
-      } else {
-        queryClient.setQueryData(historyKey, reduced.state);
       }
     } catch (error) {
       const nextStatus = failureStatus(error);
@@ -568,10 +319,8 @@ export function PunksConversation({
           cursor: current.history.nextCursor ?? undefined,
         }),
       );
-      const reduced = reduceConversationPage(current, page, "append");
-      if (reduced.kind === "applied") {
-        queryClient.setQueryData(threadKey, reduced.state);
-      } else {
+      const reduced = commitConversationPage(queryClient, threadKey, page);
+      if (reduced.kind !== "applied") {
         setResyncToken((value) => value + 1);
       }
     } catch (error) {
@@ -764,6 +513,22 @@ export function PunksConversation({
             <ConversationStatusBanner status={followStatus} />
           </div>
         </header>
+
+        {messageId !== null && targetMessage === undefined ? (
+          <p
+            className="rounded-md border border-border p-3 text-sm text-muted-foreground"
+            data-testid={
+              history.history.nextCursor === null
+                ? "punks-message-target-unavailable"
+                : "punks-message-target-pending"
+            }
+            role="status"
+          >
+            {history.history.nextCursor === null
+              ? "This Message is not available in the authorized Stream history."
+              : "Load older Messages to locate this Message in the authorized Stream history."}
+          </p>
+        ) : null}
 
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.45fr)]">
           <div className="space-y-3" data-testid="punks-message-list">

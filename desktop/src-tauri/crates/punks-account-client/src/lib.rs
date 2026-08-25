@@ -8,6 +8,7 @@ use std::{
 use reqwest::{cookie::Jar, Client, Method};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use social_validation::{validate_message_page_runtime, validate_stream_summary};
 use tokio::sync::{Mutex, RwLock};
 use tokio_util::sync::CancellationToken;
 
@@ -34,6 +35,7 @@ mod native_auth;
 mod promotion_audit;
 mod semantic_trace;
 mod session;
+mod social_validation;
 mod transport;
 mod validation;
 
@@ -693,6 +695,7 @@ impl WorkspaceSession {
     pub async fn list_streams(&self) -> Result<Vec<StreamSummary>, ClientFailure> {
         self.assert_current().await?;
         let mut items = Vec::new();
+        let mut seen_stream_ids = HashSet::new();
         let mut seen_cursors = HashSet::new();
         let mut cursor: Option<String> = None;
         loop {
@@ -710,10 +713,20 @@ impl WorkspaceSession {
             self.assert_current().await?;
             if page.contract != "conversation.list-response@1"
                 || page.workspace_id != self.lease.workspace_id
+                || page.items.len() > 100
             {
                 return Err(ClientFailure::contract("conversation.list-response@1"));
             }
+            for stream in &page.items {
+                validate_stream_summary(stream, &self.lease.workspace_id)?;
+                if !seen_stream_ids.insert(stream.id.clone()) {
+                    return Err(ClientFailure::contract("conversation.list-response@1"));
+                }
+            }
             items.extend(page.items);
+            if let Some(next_cursor) = &page.next_cursor {
+                validation::validate_directory_cursor(next_cursor)?;
+            }
             if page
                 .next_cursor
                 .as_ref()
@@ -751,6 +764,7 @@ impl WorkspaceSession {
         if envelope.conversation.workspace_id != self.lease.workspace_id
             || envelope.conversation.id != conversation_id
             || envelope.conversation.stream_type != "stream"
+            || !matches!(envelope.conversation.status.as_str(), "active" | "archived")
         {
             return Err(ClientFailure::contract("conversation.view@1"));
         }
@@ -835,6 +849,12 @@ impl WorkspaceSession {
         if let Some(next_cursor) = &page.next_cursor {
             validate_history_cursor(next_cursor)?;
         }
+        validate_message_page_runtime(
+            &page,
+            &self.lease.workspace_id,
+            conversation_id,
+            thread_root_message_id,
+        )?;
         Ok(page)
     }
 }

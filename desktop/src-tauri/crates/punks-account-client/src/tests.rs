@@ -16,6 +16,7 @@ use super::{
     ClientPlatform, FailureKind, FollowPhase, FollowServerFrame, FollowState, PunksAccountClient,
 };
 
+mod social_reads;
 mod workspace_context;
 
 type ResponseFuture = Pin<Box<dyn Future<Output = Result<Value, ClientFailure>> + Send>>;

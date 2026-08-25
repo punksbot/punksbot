@@ -12,6 +12,7 @@ use tokio_tungstenite::{
 };
 use tokio_util::sync::CancellationToken;
 
+use crate::follow::validate_follow_frame;
 use crate::{
     promotion_audit::record_network_request, reduce_follow_frame, validate_uuid, ClientFailure,
     ClientResyncReason, ConversationUnavailableReason, FailureKind, FollowEffect,
@@ -47,6 +48,7 @@ pub enum FollowDelivery {
 /// Native WebSocket owned by exactly one generation-bound WorkspaceSession.
 pub struct FollowConnection {
     session: WorkspaceSession,
+    conversation_id: String,
     socket: WebSocketStream<MaybeTlsStream<TcpStream>>,
     state: FollowState,
     cancellation: FollowCancellation,
@@ -157,6 +159,7 @@ impl WorkspaceSession {
         self.assert_current().await?;
         Ok(FollowConnection {
             session: self.clone(),
+            conversation_id: conversation_id.to_owned(),
             socket,
             state: FollowState::new(after_cursor),
             cancellation: FollowCancellation(CancellationToken::new()),
@@ -229,6 +232,11 @@ impl FollowConnection {
                     "Punks FOLLOW frame violated its contract",
                 )
             })?;
+            validate_follow_frame(
+                &frame,
+                &self.session.lease().workspace_id,
+                &self.conversation_id,
+            )?;
             let reduction = reduce_follow_frame(&self.state, frame);
             self.state = reduction.state;
             self.session.assert_current().await?;
