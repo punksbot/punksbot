@@ -1,0 +1,136 @@
+import assert from "node:assert/strict";
+import { after, before, beforeEach, test } from "node:test";
+
+import { JSDOM } from "jsdom";
+
+const dom = new JSDOM("<!doctype html><html><body></body></html>", {
+  url: "http://localhost",
+});
+let response;
+let handler;
+let calls;
+
+before(() => {
+  Object.assign(globalThis, { window: dom.window });
+  dom.window.__TAURI_INTERNALS__ = {
+    invoke: async (command, args) => {
+      calls.push({ command, args });
+      return structuredClone(
+        handler === undefined ? response : handler(command, args),
+      );
+    },
+  };
+});
+
+beforeEach(() => {
+  calls = [];
+  handler = undefined;
+  response = undefined;
+});
+
+after(() => dom.window.close());
+
+test("Account session state rejects every field outside the sanitized view", async () => {
+  const { TauriPunksAccountClient } = await import("./punksTauriClient.ts");
+  response = {
+    state: "signed_out",
+    authentication: { phase: "idle" },
+    resumeAvailable: false,
+    cookie: "must-never-cross-ipc",
+  };
+
+  await assert.rejects(new TauriPunksAccountClient().getAccountSessionState(), {
+    kind: "contract_violation",
+  });
+});
+
+test("semantic authentication methods use only their dedicated typed IPC commands", async () => {
+  const session = {
+    sessionId: "11111111-1111-4111-8111-111111111111",
+    punkId: "22222222-2222-4222-8222-222222222222",
+    authenticatedAt: "2026-08-25T10:00:00.000Z",
+    expiresAt: "2026-09-25T10:00:00.000Z",
+    recentReauthUntil: null,
+    punk: {
+      id: "22222222-2222-4222-8222-222222222222",
+      displayName: "Typed IPC Punk",
+      avatarUrl: null,
+    },
+  };
+  handler = (command, args) => {
+    switch (command) {
+      case "punks_get_account_session_state":
+        return {
+          state: "authenticated",
+          session,
+          authentication: { phase: "idle" },
+          resumeAvailable: false,
+        };
+      case "punks_start_sign_in":
+        return { phase: "started", intent: "sign_in", method: args.provider };
+      case "punks_start_account_switch":
+        return {
+          phase: "started",
+          intent: "switch_account",
+          method: args.provider,
+        };
+      case "punks_start_reauthentication":
+        return {
+          phase: "started",
+          intent: "reauthenticate",
+          method: args.method,
+        };
+      case "punks_start_identity_link":
+        return {
+          phase: "started",
+          intent: `link_${args.provider}`,
+          method: args.provider,
+        };
+      case "punks_start_passkey_registration":
+        return {
+          phase: "started",
+          intent: "register_passkey",
+          method: "passkey",
+        };
+      case "punks_resume_interrupted_authentication":
+        return { phase: "ready" };
+      case "punks_cancel_authentication":
+        return { phase: "cancelled" };
+      case "punks_renew_account_session":
+        return { phase: "idle" };
+      case "punks_sign_out":
+        return "queued";
+      default:
+        throw new Error(`Unexpected command: ${command}`);
+    }
+  };
+
+  const { TauriPunksAccountClient } = await import("./punksTauriClient.ts");
+  const client = new TauriPunksAccountClient();
+  await client.getAccountSessionState();
+  await client.startSignIn("passkey");
+  await client.startAccountSwitch("github");
+  await client.startReauthentication("google", "account_merge");
+  await client.startIdentityLink("github");
+  await client.startPasskeyRegistration();
+  await client.resumeInterruptedAuthentication();
+  await client.cancelAuthentication();
+  await client.renewAccountSession();
+  assert.equal(await client.signOut(), "queued");
+
+  assert.deepEqual(calls, [
+    { command: "punks_get_account_session_state", args: {} },
+    { command: "punks_start_sign_in", args: { provider: "passkey" } },
+    { command: "punks_start_account_switch", args: { provider: "github" } },
+    {
+      command: "punks_start_reauthentication",
+      args: { method: "google", purpose: "account_merge" },
+    },
+    { command: "punks_start_identity_link", args: { provider: "github" } },
+    { command: "punks_start_passkey_registration", args: {} },
+    { command: "punks_resume_interrupted_authentication", args: {} },
+    { command: "punks_cancel_authentication", args: {} },
+    { command: "punks_renew_account_session", args: {} },
+    { command: "punks_sign_out", args: {} },
+  ]);
+});

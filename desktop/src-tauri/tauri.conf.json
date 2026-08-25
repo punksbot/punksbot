@@ -46,7 +46,7 @@
     },
     "deep-link": {
       "desktop": {
-        "schemes": ["buzz", "punks"]
+        "schemes": ["buzz"]
       }
     }
   },

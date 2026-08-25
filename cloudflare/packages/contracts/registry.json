@@ -214,24 +214,46 @@
       "kind": "response"
     },
     {
-      "id": "punks://contracts/auth.desktop-start@1",
-      "file": "schemas/auth.desktop-start.schema.json",
-      "kind": "command"
+      "id": "punks://contracts/desktop-auth.start@1",
+      "file": "schemas/desktop-auth.start.schema.json",
+      "kind": "service",
+      "generationTargets": ["typescript", "rust", "dart", "openapi"]
     },
     {
-      "id": "punks://contracts/auth.desktop-start-response@1",
-      "file": "schemas/auth.desktop-start-response.schema.json",
-      "kind": "response"
+      "id": "punks://contracts/desktop-auth.status@1",
+      "file": "schemas/desktop-auth.status.schema.json",
+      "kind": "service",
+      "generationTargets": ["typescript", "rust", "dart", "openapi"]
     },
     {
-      "id": "punks://contracts/auth.desktop-delivery@1",
-      "file": "schemas/auth.desktop-delivery.schema.json",
-      "kind": "command"
+      "id": "punks://contracts/desktop-auth.claim@1",
+      "file": "schemas/desktop-auth.claim.schema.json",
+      "kind": "service",
+      "generationTargets": ["typescript", "rust", "dart", "openapi"]
     },
     {
-      "id": "punks://contracts/auth.desktop-session-response@1",
-      "file": "schemas/auth.desktop-session-response.schema.json",
-      "kind": "response"
+      "id": "punks://contracts/desktop-auth.confirm@1",
+      "file": "schemas/desktop-auth.confirm.schema.json",
+      "kind": "service",
+      "generationTargets": ["typescript", "rust", "dart", "openapi"]
+    },
+    {
+      "id": "punks://contracts/desktop-auth.cancel@1",
+      "file": "schemas/desktop-auth.cancel.schema.json",
+      "kind": "service",
+      "generationTargets": ["typescript", "rust", "dart", "openapi"]
+    },
+    {
+      "id": "punks://contracts/desktop-session.renew@1",
+      "file": "schemas/desktop-session.renew.schema.json",
+      "kind": "service",
+      "generationTargets": ["typescript", "rust", "dart", "openapi"]
+    },
+    {
+      "id": "punks://contracts/desktop-session.revoke@1",
+      "file": "schemas/desktop-session.revoke.schema.json",
+      "kind": "service",
+      "generationTargets": ["typescript", "rust", "dart", "openapi"]
     },
     {
       "id": "punks://contracts/auth.provider-profile@1",

@@ -50,10 +50,43 @@ export type { CompleteBotWakeCommand } from "./generated/bot-wake.complete";
 export type { BotWakeTerminalReceiptArchive } from "./generated/bot-wake.receipt-archive";
 export type { StartAuthResponse } from "./generated/auth.start-response";
 export type { StartAuthCommand } from "./generated/auth.start";
-export type { StartDesktopAuthResponse } from "./generated/auth.desktop-start-response";
-export type { StartDesktopAuthCommand } from "./generated/auth.desktop-start";
-export type { DeliverDesktopSessionCommand } from "./generated/auth.desktop-delivery";
-export type { DesktopSessionResponse } from "./generated/auth.desktop-session-response";
+export type {
+  DesktopAuthStartExchange,
+  DesktopAuthStartRequest,
+  DesktopAuthStartResponse,
+} from "./generated/desktop-auth.start";
+export type {
+  DesktopAuthStatusExchange,
+  DesktopAuthStatusRequest,
+  DesktopAuthStatusResponse,
+} from "./generated/desktop-auth.status";
+export type {
+  DesktopAuthClaimExchange,
+  DesktopAuthClaimRequest,
+  DesktopAuthClaimResponse,
+} from "./generated/desktop-auth.claim";
+export type {
+  DesktopAuthConfirmExchange,
+  DesktopAuthConfirmRequest,
+  DesktopAuthConfirmResponse,
+} from "./generated/desktop-auth.confirm";
+export type {
+  DesktopAuthCancelExchange,
+  DesktopAuthCancelRequest,
+  DesktopAuthCancelResponse,
+} from "./generated/desktop-auth.cancel";
+export type {
+  DesktopSessionRenewExchange,
+  DesktopSessionRenewPrepareRequest,
+  DesktopSessionRenewPreparedResponse,
+  DesktopSessionRenewConfirmRequest,
+  DesktopSessionRenewConfirmedResponse,
+} from "./generated/desktop-session.renew";
+export type {
+  DesktopSessionRevokeExchange,
+  DesktopSessionRevokeRequest,
+  DesktopSessionRevokeResponse,
+} from "./generated/desktop-session.revoke";
 export type { DesktopCompatibilityQuery } from "./generated/desktop.compatibility";
 export type { DesktopCompatibilityResponse } from "./generated/desktop.compatibility-response";
 export type { ArchiveConversationCommand } from "./generated/conversation.archive";

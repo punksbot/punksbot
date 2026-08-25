@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/desktop-auth.start@1",
+  "title": "DesktopAuthStartExchange",
+  "oneOf": [
+    { "$ref": "#/$defs/request" },
+    { "$ref": "#/$defs/response" }
+  ],
+  "$defs": {
+    "request": {
+      "title": "DesktopAuthStartRequest",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract",
+        "message",
+        "intent",
+        "method",
+        "verifierCommitment"
+      ],
+      "properties": {
+        "contract": { "const": "desktop-auth.start@1" },
+        "message": { "const": "request" },
+        "intent": {
+          "enum": [
+            "sign_in",
+            "switch_account",
+            "reauthenticate",
+            "link_google",
+            "link_github",
+            "register_passkey"
+          ]
+        },
+        "method": { "enum": ["google", "github", "passkey"] },
+        "verifierCommitment": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{43}$"
+        },
+        "purpose": {
+          "enum": ["link_google", "link_github", "register_passkey"]
+        },
+        "authorizationId": { "type": "string", "format": "uuid" }
+      }
+    },
+    "response": {
+      "title": "DesktopAuthStartResponse",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract",
+        "message",
+        "flowId",
+        "phase",
+        "intent",
+        "method",
+        "browserUrl",
+        "createdAt",
+        "expiresAt"
+      ],
+      "properties": {
+        "contract": { "const": "desktop-auth.start@1" },
+        "message": { "const": "response" },
+        "flowId": { "type": "string", "format": "uuid" },
+        "phase": { "const": "started" },
+        "intent": {
+          "enum": [
+            "sign_in",
+            "switch_account",
+            "reauthenticate",
+            "link_google",
+            "link_github",
+            "register_passkey"
+          ]
+        },
+        "method": { "enum": ["google", "github", "passkey"] },
+        "browserUrl": { "type": "string", "format": "uri", "maxLength": 2048 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "expiresAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}

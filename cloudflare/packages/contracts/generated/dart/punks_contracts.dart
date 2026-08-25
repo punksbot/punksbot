@@ -283,103 +283,1311 @@ class AuthSession {
   }
 }
 
-enum StartAuthCommandProvider {
+enum DesktopAuthStartExchangeRequestIntent {
+  signIn("sign_in"),
+  switchAccount("switch_account"),
+  reauthenticate("reauthenticate"),
+  linkGoogle("link_google"),
+  linkGithub("link_github"),
+  registerPasskey("register_passkey"),
+  ;
+
+  const DesktopAuthStartExchangeRequestIntent(this.value);
+
+  final String value;
+
+  factory DesktopAuthStartExchangeRequestIntent.fromJson(Object? value, String path) {
+    for (final candidate in values) {
+      if (candidate.value == value) return candidate;
+    }
+    throw FormatException('$path must be a DesktopAuthStartExchangeRequestIntent value');
+  }
+
+  String toJson() => value;
+}
+
+enum DesktopAuthStartExchangeRequestMethod {
   google("google"),
   github("github"),
+  passkey("passkey"),
   ;
 
-  const StartAuthCommandProvider(this.value);
+  const DesktopAuthStartExchangeRequestMethod(this.value);
 
   final String value;
 
-  factory StartAuthCommandProvider.fromJson(Object? value, String path) {
+  factory DesktopAuthStartExchangeRequestMethod.fromJson(Object? value, String path) {
     for (final candidate in values) {
       if (candidate.value == value) return candidate;
     }
-    throw FormatException('$path must be a StartAuthCommandProvider value');
+    throw FormatException('$path must be a DesktopAuthStartExchangeRequestMethod value');
   }
 
   String toJson() => value;
 }
 
-enum StartAuthCommandIntent {
-  signIn("sign_in"),
-  reauthenticate("reauthenticate"),
-  link("link"),
+enum DesktopAuthStartExchangeRequestPurpose {
+  linkGoogle("link_google"),
+  linkGithub("link_github"),
+  registerPasskey("register_passkey"),
   ;
 
-  const StartAuthCommandIntent(this.value);
+  const DesktopAuthStartExchangeRequestPurpose(this.value);
 
   final String value;
 
-  factory StartAuthCommandIntent.fromJson(Object? value, String path) {
+  factory DesktopAuthStartExchangeRequestPurpose.fromJson(Object? value, String path) {
     for (final candidate in values) {
       if (candidate.value == value) return candidate;
     }
-    throw FormatException('$path must be a StartAuthCommandIntent value');
+    throw FormatException('$path must be a DesktopAuthStartExchangeRequestPurpose value');
   }
 
   String toJson() => value;
 }
 
-class StartAuthCommand {
+class DesktopAuthStartExchangeRequest extends DesktopAuthStartExchange {
   final String contract;
-  final StartAuthCommandProvider provider;
-  final StartAuthCommandIntent intent;
-  final String returnTo;
+  final String message;
+  final DesktopAuthStartExchangeRequestIntent intent;
+  final DesktopAuthStartExchangeRequestMethod method;
+  final String verifierCommitment;
+  final DesktopAuthStartExchangeRequestPurpose? purpose;
+  final String? authorizationId;
 
-  const StartAuthCommand({
+  const DesktopAuthStartExchangeRequest({
     required this.contract,
-    required this.provider,
+    required this.message,
     required this.intent,
-    required this.returnTo,
-  });
+    required this.method,
+    required this.verifierCommitment,
+    this.purpose,
+    this.authorizationId,
+  }) : super();
 
-  factory StartAuthCommand.fromJson(Map<String, Object?> json) {
-    _rejectUnknownKeys(json, const {"contract", "provider", "intent", "returnTo"}, "StartAuthCommand");
-    return StartAuthCommand(
-      contract: _expectStringConst(_requiredKey(json, "contract", "StartAuthCommand"), "auth.start@1", "StartAuthCommand.contract"),
-      provider: StartAuthCommandProvider.fromJson(_requiredKey(json, "provider", "StartAuthCommand"), "StartAuthCommand.provider"),
-      intent: StartAuthCommandIntent.fromJson(_requiredKey(json, "intent", "StartAuthCommand"), "StartAuthCommand.intent"),
-      returnTo: _asString(_requiredKey(json, "returnTo", "StartAuthCommand"), "StartAuthCommand.returnTo"),
+  factory DesktopAuthStartExchangeRequest.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"contract", "message", "intent", "method", "verifierCommitment", "purpose", "authorizationId"}, "DesktopAuthStartExchangeRequest");
+    return DesktopAuthStartExchangeRequest(
+      contract: _expectStringConst(_requiredKey(json, "contract", "DesktopAuthStartExchangeRequest"), "desktop-auth.start@1", "DesktopAuthStartExchangeRequest.contract"),
+      message: _expectStringConst(_requiredKey(json, "message", "DesktopAuthStartExchangeRequest"), "request", "DesktopAuthStartExchangeRequest.message"),
+      intent: DesktopAuthStartExchangeRequestIntent.fromJson(_requiredKey(json, "intent", "DesktopAuthStartExchangeRequest"), "DesktopAuthStartExchangeRequest.intent"),
+      method: DesktopAuthStartExchangeRequestMethod.fromJson(_requiredKey(json, "method", "DesktopAuthStartExchangeRequest"), "DesktopAuthStartExchangeRequest.method"),
+      verifierCommitment: _asString(_requiredKey(json, "verifierCommitment", "DesktopAuthStartExchangeRequest"), "DesktopAuthStartExchangeRequest.verifierCommitment"),
+      purpose: json.containsKey("purpose") ? DesktopAuthStartExchangeRequestPurpose.fromJson(json["purpose"], "DesktopAuthStartExchangeRequest.purpose") : null,
+      authorizationId: json.containsKey("authorizationId") ? _asString(json["authorizationId"], "DesktopAuthStartExchangeRequest.authorizationId") : null,
     );
   }
 
+  @override
   Map<String, Object?> toJson() {
     final json = <String, Object?>{
       "contract": contract,
-      "provider": provider.toJson(),
+      "message": message,
       "intent": intent.toJson(),
-      "returnTo": returnTo,
+      "method": method.toJson(),
+      "verifierCommitment": verifierCommitment,
     };
+    if (purpose != null) {
+      json["purpose"] = purpose!.toJson();
+    }
+    if (authorizationId != null) {
+      json["authorizationId"] = authorizationId!;
+    }
     return json;
   }
 }
 
-class StartAuthResponse {
-  final String authorizationUrl;
+enum DesktopAuthStartExchangeResponseIntent {
+  signIn("sign_in"),
+  switchAccount("switch_account"),
+  reauthenticate("reauthenticate"),
+  linkGoogle("link_google"),
+  linkGithub("link_github"),
+  registerPasskey("register_passkey"),
+  ;
+
+  const DesktopAuthStartExchangeResponseIntent(this.value);
+
+  final String value;
+
+  factory DesktopAuthStartExchangeResponseIntent.fromJson(Object? value, String path) {
+    for (final candidate in values) {
+      if (candidate.value == value) return candidate;
+    }
+    throw FormatException('$path must be a DesktopAuthStartExchangeResponseIntent value');
+  }
+
+  String toJson() => value;
+}
+
+enum DesktopAuthStartExchangeResponseMethod {
+  google("google"),
+  github("github"),
+  passkey("passkey"),
+  ;
+
+  const DesktopAuthStartExchangeResponseMethod(this.value);
+
+  final String value;
+
+  factory DesktopAuthStartExchangeResponseMethod.fromJson(Object? value, String path) {
+    for (final candidate in values) {
+      if (candidate.value == value) return candidate;
+    }
+    throw FormatException('$path must be a DesktopAuthStartExchangeResponseMethod value');
+  }
+
+  String toJson() => value;
+}
+
+class DesktopAuthStartExchangeResponse extends DesktopAuthStartExchange {
+  final String contract;
+  final String message;
+  final String flowId;
+  final String phase;
+  final DesktopAuthStartExchangeResponseIntent intent;
+  final DesktopAuthStartExchangeResponseMethod method;
+  final String browserUrl;
+  final String createdAt;
   final String expiresAt;
 
-  const StartAuthResponse({
-    required this.authorizationUrl,
+  const DesktopAuthStartExchangeResponse({
+    required this.contract,
+    required this.message,
+    required this.flowId,
+    required this.phase,
+    required this.intent,
+    required this.method,
+    required this.browserUrl,
+    required this.createdAt,
     required this.expiresAt,
-  });
+  }) : super();
 
-  factory StartAuthResponse.fromJson(Map<String, Object?> json) {
-    _rejectUnknownKeys(json, const {"authorizationUrl", "expiresAt"}, "StartAuthResponse");
-    return StartAuthResponse(
-      authorizationUrl: _asString(_requiredKey(json, "authorizationUrl", "StartAuthResponse"), "StartAuthResponse.authorizationUrl"),
-      expiresAt: _asString(_requiredKey(json, "expiresAt", "StartAuthResponse"), "StartAuthResponse.expiresAt"),
+  factory DesktopAuthStartExchangeResponse.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"contract", "message", "flowId", "phase", "intent", "method", "browserUrl", "createdAt", "expiresAt"}, "DesktopAuthStartExchangeResponse");
+    return DesktopAuthStartExchangeResponse(
+      contract: _expectStringConst(_requiredKey(json, "contract", "DesktopAuthStartExchangeResponse"), "desktop-auth.start@1", "DesktopAuthStartExchangeResponse.contract"),
+      message: _expectStringConst(_requiredKey(json, "message", "DesktopAuthStartExchangeResponse"), "response", "DesktopAuthStartExchangeResponse.message"),
+      flowId: _asString(_requiredKey(json, "flowId", "DesktopAuthStartExchangeResponse"), "DesktopAuthStartExchangeResponse.flowId"),
+      phase: _expectStringConst(_requiredKey(json, "phase", "DesktopAuthStartExchangeResponse"), "started", "DesktopAuthStartExchangeResponse.phase"),
+      intent: DesktopAuthStartExchangeResponseIntent.fromJson(_requiredKey(json, "intent", "DesktopAuthStartExchangeResponse"), "DesktopAuthStartExchangeResponse.intent"),
+      method: DesktopAuthStartExchangeResponseMethod.fromJson(_requiredKey(json, "method", "DesktopAuthStartExchangeResponse"), "DesktopAuthStartExchangeResponse.method"),
+      browserUrl: _asString(_requiredKey(json, "browserUrl", "DesktopAuthStartExchangeResponse"), "DesktopAuthStartExchangeResponse.browserUrl"),
+      createdAt: _asString(_requiredKey(json, "createdAt", "DesktopAuthStartExchangeResponse"), "DesktopAuthStartExchangeResponse.createdAt"),
+      expiresAt: _asString(_requiredKey(json, "expiresAt", "DesktopAuthStartExchangeResponse"), "DesktopAuthStartExchangeResponse.expiresAt"),
     );
   }
 
+  @override
   Map<String, Object?> toJson() {
     final json = <String, Object?>{
-      "authorizationUrl": authorizationUrl,
+      "contract": contract,
+      "message": message,
+      "flowId": flowId,
+      "phase": phase,
+      "intent": intent.toJson(),
+      "method": method.toJson(),
+      "browserUrl": browserUrl,
+      "createdAt": createdAt,
       "expiresAt": expiresAt,
     };
     return json;
   }
+}
+
+sealed class DesktopAuthStartExchange {
+  const DesktopAuthStartExchange();
+
+  factory DesktopAuthStartExchange.fromJson(Map<String, Object?> json) {
+    switch (json["message"]) {
+      case "request":
+        return DesktopAuthStartExchangeRequest.fromJson(json);
+      case "response":
+        return DesktopAuthStartExchangeResponse.fromJson(json);
+      default:
+        throw FormatException('DesktopAuthStartExchange.message has no matching variant');
+    }
+  }
+
+  Map<String, Object?> toJson();
+}
+
+class DesktopAuthStatusExchangeRequest extends DesktopAuthStatusExchange {
+  final String contract;
+  final String message;
+  final String flowId;
+  final String verifierCommitment;
+
+  const DesktopAuthStatusExchangeRequest({
+    required this.contract,
+    required this.message,
+    required this.flowId,
+    required this.verifierCommitment,
+  }) : super();
+
+  factory DesktopAuthStatusExchangeRequest.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"contract", "message", "flowId", "verifierCommitment"}, "DesktopAuthStatusExchangeRequest");
+    return DesktopAuthStatusExchangeRequest(
+      contract: _expectStringConst(_requiredKey(json, "contract", "DesktopAuthStatusExchangeRequest"), "desktop-auth.status@1", "DesktopAuthStatusExchangeRequest.contract"),
+      message: _expectStringConst(_requiredKey(json, "message", "DesktopAuthStatusExchangeRequest"), "request", "DesktopAuthStatusExchangeRequest.message"),
+      flowId: _asString(_requiredKey(json, "flowId", "DesktopAuthStatusExchangeRequest"), "DesktopAuthStatusExchangeRequest.flowId"),
+      verifierCommitment: _asString(_requiredKey(json, "verifierCommitment", "DesktopAuthStatusExchangeRequest"), "DesktopAuthStatusExchangeRequest.verifierCommitment"),
+    );
+  }
+
+  @override
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "contract": contract,
+      "message": message,
+      "flowId": flowId,
+      "verifierCommitment": verifierCommitment,
+    };
+    return json;
+  }
+}
+
+enum DesktopAuthStatusExchangeResponsePhase {
+  started("started"),
+  browserComplete("browser_complete"),
+  ready("ready"),
+  delivering("delivering"),
+  confirmed("confirmed"),
+  cancelled("cancelled"),
+  expired("expired"),
+  ;
+
+  const DesktopAuthStatusExchangeResponsePhase(this.value);
+
+  final String value;
+
+  factory DesktopAuthStatusExchangeResponsePhase.fromJson(Object? value, String path) {
+    for (final candidate in values) {
+      if (candidate.value == value) return candidate;
+    }
+    throw FormatException('$path must be a DesktopAuthStatusExchangeResponsePhase value');
+  }
+
+  String toJson() => value;
+}
+
+enum DesktopAuthStatusExchangeResponseResult {
+  success("success"),
+  humanActionRequired("human_action_required"),
+  securityFailure("security_failure"),
+  transientInterruption("transient_interruption"),
+  ;
+
+  const DesktopAuthStatusExchangeResponseResult(this.value);
+
+  final String value;
+
+  factory DesktopAuthStatusExchangeResponseResult.fromJson(Object? value, String path) {
+    for (final candidate in values) {
+      if (candidate.value == value) return candidate;
+    }
+    throw FormatException('$path must be a DesktopAuthStatusExchangeResponseResult value');
+  }
+
+  String toJson() => value;
+}
+
+class DesktopAuthStatusExchangeDecision {
+  final bool oldSessionUsable;
+  final bool revokePreparedSession;
+  final bool destroyWorkspaceContext;
+  final bool retrySameRequest;
+  final bool freshHumanActionRequired;
+
+  const DesktopAuthStatusExchangeDecision({
+    required this.oldSessionUsable,
+    required this.revokePreparedSession,
+    required this.destroyWorkspaceContext,
+    required this.retrySameRequest,
+    required this.freshHumanActionRequired,
+  });
+
+  factory DesktopAuthStatusExchangeDecision.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"oldSessionUsable", "revokePreparedSession", "destroyWorkspaceContext", "retrySameRequest", "freshHumanActionRequired"}, "DesktopAuthStatusExchangeDecision");
+    return DesktopAuthStatusExchangeDecision(
+      oldSessionUsable: _asBool(_requiredKey(json, "oldSessionUsable", "DesktopAuthStatusExchangeDecision"), "DesktopAuthStatusExchangeDecision.oldSessionUsable"),
+      revokePreparedSession: _asBool(_requiredKey(json, "revokePreparedSession", "DesktopAuthStatusExchangeDecision"), "DesktopAuthStatusExchangeDecision.revokePreparedSession"),
+      destroyWorkspaceContext: _asBool(_requiredKey(json, "destroyWorkspaceContext", "DesktopAuthStatusExchangeDecision"), "DesktopAuthStatusExchangeDecision.destroyWorkspaceContext"),
+      retrySameRequest: _asBool(_requiredKey(json, "retrySameRequest", "DesktopAuthStatusExchangeDecision"), "DesktopAuthStatusExchangeDecision.retrySameRequest"),
+      freshHumanActionRequired: _asBool(_requiredKey(json, "freshHumanActionRequired", "DesktopAuthStatusExchangeDecision"), "DesktopAuthStatusExchangeDecision.freshHumanActionRequired"),
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "oldSessionUsable": oldSessionUsable,
+      "revokePreparedSession": revokePreparedSession,
+      "destroyWorkspaceContext": destroyWorkspaceContext,
+      "retrySameRequest": retrySameRequest,
+      "freshHumanActionRequired": freshHumanActionRequired,
+    };
+    return json;
+  }
+}
+
+class DesktopAuthStatusExchangeResponse extends DesktopAuthStatusExchange {
+  final String contract;
+  final String message;
+  final String flowId;
+  final DesktopAuthStatusExchangeResponsePhase phase;
+  final bool terminal;
+  final String expiresAt;
+  final DesktopAuthStatusExchangeResponseResult result;
+  final DesktopAuthStatusExchangeDecision decision;
+
+  const DesktopAuthStatusExchangeResponse({
+    required this.contract,
+    required this.message,
+    required this.flowId,
+    required this.phase,
+    required this.terminal,
+    required this.expiresAt,
+    required this.result,
+    required this.decision,
+  }) : super();
+
+  factory DesktopAuthStatusExchangeResponse.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"contract", "message", "flowId", "phase", "terminal", "expiresAt", "result", "decision"}, "DesktopAuthStatusExchangeResponse");
+    return DesktopAuthStatusExchangeResponse(
+      contract: _expectStringConst(_requiredKey(json, "contract", "DesktopAuthStatusExchangeResponse"), "desktop-auth.status@1", "DesktopAuthStatusExchangeResponse.contract"),
+      message: _expectStringConst(_requiredKey(json, "message", "DesktopAuthStatusExchangeResponse"), "response", "DesktopAuthStatusExchangeResponse.message"),
+      flowId: _asString(_requiredKey(json, "flowId", "DesktopAuthStatusExchangeResponse"), "DesktopAuthStatusExchangeResponse.flowId"),
+      phase: DesktopAuthStatusExchangeResponsePhase.fromJson(_requiredKey(json, "phase", "DesktopAuthStatusExchangeResponse"), "DesktopAuthStatusExchangeResponse.phase"),
+      terminal: _asBool(_requiredKey(json, "terminal", "DesktopAuthStatusExchangeResponse"), "DesktopAuthStatusExchangeResponse.terminal"),
+      expiresAt: _asString(_requiredKey(json, "expiresAt", "DesktopAuthStatusExchangeResponse"), "DesktopAuthStatusExchangeResponse.expiresAt"),
+      result: DesktopAuthStatusExchangeResponseResult.fromJson(_requiredKey(json, "result", "DesktopAuthStatusExchangeResponse"), "DesktopAuthStatusExchangeResponse.result"),
+      decision: DesktopAuthStatusExchangeDecision.fromJson(_asMap(_requiredKey(json, "decision", "DesktopAuthStatusExchangeResponse"), "DesktopAuthStatusExchangeResponse.decision")),
+    );
+  }
+
+  @override
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "contract": contract,
+      "message": message,
+      "flowId": flowId,
+      "phase": phase.toJson(),
+      "terminal": terminal,
+      "expiresAt": expiresAt,
+      "result": result.toJson(),
+      "decision": decision.toJson(),
+    };
+    return json;
+  }
+}
+
+sealed class DesktopAuthStatusExchange {
+  const DesktopAuthStatusExchange();
+
+  factory DesktopAuthStatusExchange.fromJson(Map<String, Object?> json) {
+    switch (json["message"]) {
+      case "request":
+        return DesktopAuthStatusExchangeRequest.fromJson(json);
+      case "response":
+        return DesktopAuthStatusExchangeResponse.fromJson(json);
+      default:
+        throw FormatException('DesktopAuthStatusExchange.message has no matching variant');
+    }
+  }
+
+  Map<String, Object?> toJson();
+}
+
+class DesktopAuthClaimExchangeRequest extends DesktopAuthClaimExchange {
+  final String contract;
+  final String message;
+  final String deliveryKind;
+  final String flowId;
+  final String verifier;
+
+  const DesktopAuthClaimExchangeRequest({
+    required this.contract,
+    required this.message,
+    required this.deliveryKind,
+    required this.flowId,
+    required this.verifier,
+  }) : super();
+
+  factory DesktopAuthClaimExchangeRequest.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"contract", "message", "deliveryKind", "flowId", "verifier"}, "DesktopAuthClaimExchangeRequest");
+    return DesktopAuthClaimExchangeRequest(
+      contract: _expectStringConst(_requiredKey(json, "contract", "DesktopAuthClaimExchangeRequest"), "desktop-auth.claim@1", "DesktopAuthClaimExchangeRequest.contract"),
+      message: _expectStringConst(_requiredKey(json, "message", "DesktopAuthClaimExchangeRequest"), "request", "DesktopAuthClaimExchangeRequest.message"),
+      deliveryKind: _expectStringConst(_requiredKey(json, "deliveryKind", "DesktopAuthClaimExchangeRequest"), "request", "DesktopAuthClaimExchangeRequest.deliveryKind"),
+      flowId: _asString(_requiredKey(json, "flowId", "DesktopAuthClaimExchangeRequest"), "DesktopAuthClaimExchangeRequest.flowId"),
+      verifier: _asString(_requiredKey(json, "verifier", "DesktopAuthClaimExchangeRequest"), "DesktopAuthClaimExchangeRequest.verifier"),
+    );
+  }
+
+  @override
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "contract": contract,
+      "message": message,
+      "deliveryKind": deliveryKind,
+      "flowId": flowId,
+      "verifier": verifier,
+    };
+    return json;
+  }
+}
+
+class DesktopAuthClaimExchangeSessionPunk {
+  final String id;
+  final String displayName;
+  final String? avatarUrl;
+
+  const DesktopAuthClaimExchangeSessionPunk({
+    required this.id,
+    required this.displayName,
+    required this.avatarUrl,
+  });
+
+  factory DesktopAuthClaimExchangeSessionPunk.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"id", "displayName", "avatarUrl"}, "DesktopAuthClaimExchangeSessionPunk");
+    return DesktopAuthClaimExchangeSessionPunk(
+      id: _asString(_requiredKey(json, "id", "DesktopAuthClaimExchangeSessionPunk"), "DesktopAuthClaimExchangeSessionPunk.id"),
+      displayName: _asString(_requiredKey(json, "displayName", "DesktopAuthClaimExchangeSessionPunk"), "DesktopAuthClaimExchangeSessionPunk.displayName"),
+      avatarUrl: _requiredKey(json, "avatarUrl", "DesktopAuthClaimExchangeSessionPunk") == null ? null : _asString(_requiredKey(json, "avatarUrl", "DesktopAuthClaimExchangeSessionPunk"), "DesktopAuthClaimExchangeSessionPunk.avatarUrl"),
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "id": id,
+      "displayName": displayName,
+      "avatarUrl": avatarUrl == null ? null : avatarUrl!,
+    };
+    return json;
+  }
+}
+
+class DesktopAuthClaimExchangeSession {
+  final String sessionId;
+  final String punkId;
+  final String authenticatedAt;
+  final String expiresAt;
+  final String? recentReauthUntil;
+  final DesktopAuthClaimExchangeSessionPunk punk;
+
+  const DesktopAuthClaimExchangeSession({
+    required this.sessionId,
+    required this.punkId,
+    required this.authenticatedAt,
+    required this.expiresAt,
+    required this.recentReauthUntil,
+    required this.punk,
+  });
+
+  factory DesktopAuthClaimExchangeSession.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"sessionId", "punkId", "authenticatedAt", "expiresAt", "recentReauthUntil", "punk"}, "DesktopAuthClaimExchangeSession");
+    return DesktopAuthClaimExchangeSession(
+      sessionId: _asString(_requiredKey(json, "sessionId", "DesktopAuthClaimExchangeSession"), "DesktopAuthClaimExchangeSession.sessionId"),
+      punkId: _asString(_requiredKey(json, "punkId", "DesktopAuthClaimExchangeSession"), "DesktopAuthClaimExchangeSession.punkId"),
+      authenticatedAt: _asString(_requiredKey(json, "authenticatedAt", "DesktopAuthClaimExchangeSession"), "DesktopAuthClaimExchangeSession.authenticatedAt"),
+      expiresAt: _asString(_requiredKey(json, "expiresAt", "DesktopAuthClaimExchangeSession"), "DesktopAuthClaimExchangeSession.expiresAt"),
+      recentReauthUntil: _requiredKey(json, "recentReauthUntil", "DesktopAuthClaimExchangeSession") == null ? null : _asString(_requiredKey(json, "recentReauthUntil", "DesktopAuthClaimExchangeSession"), "DesktopAuthClaimExchangeSession.recentReauthUntil"),
+      punk: DesktopAuthClaimExchangeSessionPunk.fromJson(_asMap(_requiredKey(json, "punk", "DesktopAuthClaimExchangeSession"), "DesktopAuthClaimExchangeSession.punk")),
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "sessionId": sessionId,
+      "punkId": punkId,
+      "authenticatedAt": authenticatedAt,
+      "expiresAt": expiresAt,
+      "recentReauthUntil": recentReauthUntil == null ? null : recentReauthUntil!,
+      "punk": punk.toJson(),
+    };
+    return json;
+  }
+}
+
+class DesktopAuthClaimExchangeCapability {
+  final String token;
+  final String expiresAt;
+
+  const DesktopAuthClaimExchangeCapability({
+    required this.token,
+    required this.expiresAt,
+  });
+
+  factory DesktopAuthClaimExchangeCapability.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"token", "expiresAt"}, "DesktopAuthClaimExchangeCapability");
+    return DesktopAuthClaimExchangeCapability(
+      token: _asString(_requiredKey(json, "token", "DesktopAuthClaimExchangeCapability"), "DesktopAuthClaimExchangeCapability.token"),
+      expiresAt: _asString(_requiredKey(json, "expiresAt", "DesktopAuthClaimExchangeCapability"), "DesktopAuthClaimExchangeCapability.expiresAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "token": token,
+      "expiresAt": expiresAt,
+    };
+    return json;
+  }
+}
+
+class DesktopAuthClaimExchangeSessionResponse extends DesktopAuthClaimExchange {
+  final String contract;
+  final String message;
+  final String flowId;
+  final String phase;
+  final String deliveryKind;
+  final String deliveryId;
+  final DesktopAuthClaimExchangeSession session;
+  final DesktopAuthClaimExchangeCapability revokeCapability;
+  final String deliveryExpiresAt;
+
+  const DesktopAuthClaimExchangeSessionResponse({
+    required this.contract,
+    required this.message,
+    required this.flowId,
+    required this.phase,
+    required this.deliveryKind,
+    required this.deliveryId,
+    required this.session,
+    required this.revokeCapability,
+    required this.deliveryExpiresAt,
+  }) : super();
+
+  factory DesktopAuthClaimExchangeSessionResponse.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"contract", "message", "flowId", "phase", "deliveryKind", "deliveryId", "session", "revokeCapability", "deliveryExpiresAt"}, "DesktopAuthClaimExchangeSessionResponse");
+    return DesktopAuthClaimExchangeSessionResponse(
+      contract: _expectStringConst(_requiredKey(json, "contract", "DesktopAuthClaimExchangeSessionResponse"), "desktop-auth.claim@1", "DesktopAuthClaimExchangeSessionResponse.contract"),
+      message: _expectStringConst(_requiredKey(json, "message", "DesktopAuthClaimExchangeSessionResponse"), "response", "DesktopAuthClaimExchangeSessionResponse.message"),
+      flowId: _asString(_requiredKey(json, "flowId", "DesktopAuthClaimExchangeSessionResponse"), "DesktopAuthClaimExchangeSessionResponse.flowId"),
+      phase: _expectStringConst(_requiredKey(json, "phase", "DesktopAuthClaimExchangeSessionResponse"), "delivering", "DesktopAuthClaimExchangeSessionResponse.phase"),
+      deliveryKind: _expectStringConst(_requiredKey(json, "deliveryKind", "DesktopAuthClaimExchangeSessionResponse"), "session", "DesktopAuthClaimExchangeSessionResponse.deliveryKind"),
+      deliveryId: _asString(_requiredKey(json, "deliveryId", "DesktopAuthClaimExchangeSessionResponse"), "DesktopAuthClaimExchangeSessionResponse.deliveryId"),
+      session: DesktopAuthClaimExchangeSession.fromJson(_asMap(_requiredKey(json, "session", "DesktopAuthClaimExchangeSessionResponse"), "DesktopAuthClaimExchangeSessionResponse.session")),
+      revokeCapability: DesktopAuthClaimExchangeCapability.fromJson(_asMap(_requiredKey(json, "revokeCapability", "DesktopAuthClaimExchangeSessionResponse"), "DesktopAuthClaimExchangeSessionResponse.revokeCapability")),
+      deliveryExpiresAt: _asString(_requiredKey(json, "deliveryExpiresAt", "DesktopAuthClaimExchangeSessionResponse"), "DesktopAuthClaimExchangeSessionResponse.deliveryExpiresAt"),
+    );
+  }
+
+  @override
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "contract": contract,
+      "message": message,
+      "flowId": flowId,
+      "phase": phase,
+      "deliveryKind": deliveryKind,
+      "deliveryId": deliveryId,
+      "session": session.toJson(),
+      "revokeCapability": revokeCapability.toJson(),
+      "deliveryExpiresAt": deliveryExpiresAt,
+    };
+    return json;
+  }
+}
+
+enum DesktopAuthClaimExchangeAuthorizationTargetMethod {
+  linkGoogle("link_google"),
+  linkGithub("link_github"),
+  registerPasskey("register_passkey"),
+  ;
+
+  const DesktopAuthClaimExchangeAuthorizationTargetMethod(this.value);
+
+  final String value;
+
+  factory DesktopAuthClaimExchangeAuthorizationTargetMethod.fromJson(Object? value, String path) {
+    for (final candidate in values) {
+      if (candidate.value == value) return candidate;
+    }
+    throw FormatException('$path must be a DesktopAuthClaimExchangeAuthorizationTargetMethod value');
+  }
+
+  String toJson() => value;
+}
+
+class DesktopAuthClaimExchangeAuthorization {
+  final String authorizationId;
+  final String sessionId;
+  final String punkId;
+  final String intent;
+  final DesktopAuthClaimExchangeAuthorizationTargetMethod targetMethod;
+  final String handoffId;
+  final String expiresAt;
+
+  const DesktopAuthClaimExchangeAuthorization({
+    required this.authorizationId,
+    required this.sessionId,
+    required this.punkId,
+    required this.intent,
+    required this.targetMethod,
+    required this.handoffId,
+    required this.expiresAt,
+  });
+
+  factory DesktopAuthClaimExchangeAuthorization.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"authorizationId", "sessionId", "punkId", "intent", "targetMethod", "handoffId", "expiresAt"}, "DesktopAuthClaimExchangeAuthorization");
+    return DesktopAuthClaimExchangeAuthorization(
+      authorizationId: _asString(_requiredKey(json, "authorizationId", "DesktopAuthClaimExchangeAuthorization"), "DesktopAuthClaimExchangeAuthorization.authorizationId"),
+      sessionId: _asString(_requiredKey(json, "sessionId", "DesktopAuthClaimExchangeAuthorization"), "DesktopAuthClaimExchangeAuthorization.sessionId"),
+      punkId: _asString(_requiredKey(json, "punkId", "DesktopAuthClaimExchangeAuthorization"), "DesktopAuthClaimExchangeAuthorization.punkId"),
+      intent: _expectStringConst(_requiredKey(json, "intent", "DesktopAuthClaimExchangeAuthorization"), "reauthenticate", "DesktopAuthClaimExchangeAuthorization.intent"),
+      targetMethod: DesktopAuthClaimExchangeAuthorizationTargetMethod.fromJson(_requiredKey(json, "targetMethod", "DesktopAuthClaimExchangeAuthorization"), "DesktopAuthClaimExchangeAuthorization.targetMethod"),
+      handoffId: _asString(_requiredKey(json, "handoffId", "DesktopAuthClaimExchangeAuthorization"), "DesktopAuthClaimExchangeAuthorization.handoffId"),
+      expiresAt: _asString(_requiredKey(json, "expiresAt", "DesktopAuthClaimExchangeAuthorization"), "DesktopAuthClaimExchangeAuthorization.expiresAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "authorizationId": authorizationId,
+      "sessionId": sessionId,
+      "punkId": punkId,
+      "intent": intent,
+      "targetMethod": targetMethod.toJson(),
+      "handoffId": handoffId,
+      "expiresAt": expiresAt,
+    };
+    return json;
+  }
+}
+
+class DesktopAuthClaimExchangeReauthorizationResponse extends DesktopAuthClaimExchange {
+  final String contract;
+  final String message;
+  final String flowId;
+  final String phase;
+  final String deliveryKind;
+  final String deliveryId;
+  final DesktopAuthClaimExchangeAuthorization authorization;
+  final String deliveryExpiresAt;
+
+  const DesktopAuthClaimExchangeReauthorizationResponse({
+    required this.contract,
+    required this.message,
+    required this.flowId,
+    required this.phase,
+    required this.deliveryKind,
+    required this.deliveryId,
+    required this.authorization,
+    required this.deliveryExpiresAt,
+  }) : super();
+
+  factory DesktopAuthClaimExchangeReauthorizationResponse.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"contract", "message", "flowId", "phase", "deliveryKind", "deliveryId", "authorization", "deliveryExpiresAt"}, "DesktopAuthClaimExchangeReauthorizationResponse");
+    return DesktopAuthClaimExchangeReauthorizationResponse(
+      contract: _expectStringConst(_requiredKey(json, "contract", "DesktopAuthClaimExchangeReauthorizationResponse"), "desktop-auth.claim@1", "DesktopAuthClaimExchangeReauthorizationResponse.contract"),
+      message: _expectStringConst(_requiredKey(json, "message", "DesktopAuthClaimExchangeReauthorizationResponse"), "response", "DesktopAuthClaimExchangeReauthorizationResponse.message"),
+      flowId: _asString(_requiredKey(json, "flowId", "DesktopAuthClaimExchangeReauthorizationResponse"), "DesktopAuthClaimExchangeReauthorizationResponse.flowId"),
+      phase: _expectStringConst(_requiredKey(json, "phase", "DesktopAuthClaimExchangeReauthorizationResponse"), "delivering", "DesktopAuthClaimExchangeReauthorizationResponse.phase"),
+      deliveryKind: _expectStringConst(_requiredKey(json, "deliveryKind", "DesktopAuthClaimExchangeReauthorizationResponse"), "reauthorization", "DesktopAuthClaimExchangeReauthorizationResponse.deliveryKind"),
+      deliveryId: _asString(_requiredKey(json, "deliveryId", "DesktopAuthClaimExchangeReauthorizationResponse"), "DesktopAuthClaimExchangeReauthorizationResponse.deliveryId"),
+      authorization: DesktopAuthClaimExchangeAuthorization.fromJson(_asMap(_requiredKey(json, "authorization", "DesktopAuthClaimExchangeReauthorizationResponse"), "DesktopAuthClaimExchangeReauthorizationResponse.authorization")),
+      deliveryExpiresAt: _asString(_requiredKey(json, "deliveryExpiresAt", "DesktopAuthClaimExchangeReauthorizationResponse"), "DesktopAuthClaimExchangeReauthorizationResponse.deliveryExpiresAt"),
+    );
+  }
+
+  @override
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "contract": contract,
+      "message": message,
+      "flowId": flowId,
+      "phase": phase,
+      "deliveryKind": deliveryKind,
+      "deliveryId": deliveryId,
+      "authorization": authorization.toJson(),
+      "deliveryExpiresAt": deliveryExpiresAt,
+    };
+    return json;
+  }
+}
+
+sealed class DesktopAuthClaimExchange {
+  const DesktopAuthClaimExchange();
+
+  factory DesktopAuthClaimExchange.fromJson(Map<String, Object?> json) {
+    switch (json["deliveryKind"]) {
+      case "request":
+        return DesktopAuthClaimExchangeRequest.fromJson(json);
+      case "session":
+        return DesktopAuthClaimExchangeSessionResponse.fromJson(json);
+      case "reauthorization":
+        return DesktopAuthClaimExchangeReauthorizationResponse.fromJson(json);
+      default:
+        throw FormatException('DesktopAuthClaimExchange.deliveryKind has no matching variant');
+    }
+  }
+
+  Map<String, Object?> toJson();
+}
+
+class DesktopAuthConfirmExchangeRequest extends DesktopAuthConfirmExchange {
+  final String contract;
+  final String message;
+  final String flowId;
+  final String verifier;
+  final String deliveryId;
+
+  const DesktopAuthConfirmExchangeRequest({
+    required this.contract,
+    required this.message,
+    required this.flowId,
+    required this.verifier,
+    required this.deliveryId,
+  }) : super();
+
+  factory DesktopAuthConfirmExchangeRequest.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"contract", "message", "flowId", "verifier", "deliveryId"}, "DesktopAuthConfirmExchangeRequest");
+    return DesktopAuthConfirmExchangeRequest(
+      contract: _expectStringConst(_requiredKey(json, "contract", "DesktopAuthConfirmExchangeRequest"), "desktop-auth.confirm@1", "DesktopAuthConfirmExchangeRequest.contract"),
+      message: _expectStringConst(_requiredKey(json, "message", "DesktopAuthConfirmExchangeRequest"), "request", "DesktopAuthConfirmExchangeRequest.message"),
+      flowId: _asString(_requiredKey(json, "flowId", "DesktopAuthConfirmExchangeRequest"), "DesktopAuthConfirmExchangeRequest.flowId"),
+      verifier: _asString(_requiredKey(json, "verifier", "DesktopAuthConfirmExchangeRequest"), "DesktopAuthConfirmExchangeRequest.verifier"),
+      deliveryId: _asString(_requiredKey(json, "deliveryId", "DesktopAuthConfirmExchangeRequest"), "DesktopAuthConfirmExchangeRequest.deliveryId"),
+    );
+  }
+
+  @override
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "contract": contract,
+      "message": message,
+      "flowId": flowId,
+      "verifier": verifier,
+      "deliveryId": deliveryId,
+    };
+    return json;
+  }
+}
+
+class DesktopAuthConfirmExchangeResponse extends DesktopAuthConfirmExchange {
+  final String contract;
+  final String message;
+  final String flowId;
+  final String phase;
+  final String sessionId;
+  final String confirmedAt;
+
+  const DesktopAuthConfirmExchangeResponse({
+    required this.contract,
+    required this.message,
+    required this.flowId,
+    required this.phase,
+    required this.sessionId,
+    required this.confirmedAt,
+  }) : super();
+
+  factory DesktopAuthConfirmExchangeResponse.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"contract", "message", "flowId", "phase", "sessionId", "confirmedAt"}, "DesktopAuthConfirmExchangeResponse");
+    return DesktopAuthConfirmExchangeResponse(
+      contract: _expectStringConst(_requiredKey(json, "contract", "DesktopAuthConfirmExchangeResponse"), "desktop-auth.confirm@1", "DesktopAuthConfirmExchangeResponse.contract"),
+      message: _expectStringConst(_requiredKey(json, "message", "DesktopAuthConfirmExchangeResponse"), "response", "DesktopAuthConfirmExchangeResponse.message"),
+      flowId: _asString(_requiredKey(json, "flowId", "DesktopAuthConfirmExchangeResponse"), "DesktopAuthConfirmExchangeResponse.flowId"),
+      phase: _expectStringConst(_requiredKey(json, "phase", "DesktopAuthConfirmExchangeResponse"), "confirmed", "DesktopAuthConfirmExchangeResponse.phase"),
+      sessionId: _asString(_requiredKey(json, "sessionId", "DesktopAuthConfirmExchangeResponse"), "DesktopAuthConfirmExchangeResponse.sessionId"),
+      confirmedAt: _asString(_requiredKey(json, "confirmedAt", "DesktopAuthConfirmExchangeResponse"), "DesktopAuthConfirmExchangeResponse.confirmedAt"),
+    );
+  }
+
+  @override
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "contract": contract,
+      "message": message,
+      "flowId": flowId,
+      "phase": phase,
+      "sessionId": sessionId,
+      "confirmedAt": confirmedAt,
+    };
+    return json;
+  }
+}
+
+sealed class DesktopAuthConfirmExchange {
+  const DesktopAuthConfirmExchange();
+
+  factory DesktopAuthConfirmExchange.fromJson(Map<String, Object?> json) {
+    switch (json["message"]) {
+      case "request":
+        return DesktopAuthConfirmExchangeRequest.fromJson(json);
+      case "response":
+        return DesktopAuthConfirmExchangeResponse.fromJson(json);
+      default:
+        throw FormatException('DesktopAuthConfirmExchange.message has no matching variant');
+    }
+  }
+
+  Map<String, Object?> toJson();
+}
+
+class DesktopAuthCancelExchangeRequest extends DesktopAuthCancelExchange {
+  final String contract;
+  final String message;
+  final String flowId;
+  final String verifier;
+
+  const DesktopAuthCancelExchangeRequest({
+    required this.contract,
+    required this.message,
+    required this.flowId,
+    required this.verifier,
+  }) : super();
+
+  factory DesktopAuthCancelExchangeRequest.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"contract", "message", "flowId", "verifier"}, "DesktopAuthCancelExchangeRequest");
+    return DesktopAuthCancelExchangeRequest(
+      contract: _expectStringConst(_requiredKey(json, "contract", "DesktopAuthCancelExchangeRequest"), "desktop-auth.cancel@1", "DesktopAuthCancelExchangeRequest.contract"),
+      message: _expectStringConst(_requiredKey(json, "message", "DesktopAuthCancelExchangeRequest"), "request", "DesktopAuthCancelExchangeRequest.message"),
+      flowId: _asString(_requiredKey(json, "flowId", "DesktopAuthCancelExchangeRequest"), "DesktopAuthCancelExchangeRequest.flowId"),
+      verifier: _asString(_requiredKey(json, "verifier", "DesktopAuthCancelExchangeRequest"), "DesktopAuthCancelExchangeRequest.verifier"),
+    );
+  }
+
+  @override
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "contract": contract,
+      "message": message,
+      "flowId": flowId,
+      "verifier": verifier,
+    };
+    return json;
+  }
+}
+
+class DesktopAuthCancelExchangeResponse extends DesktopAuthCancelExchange {
+  final String contract;
+  final String message;
+  final String flowId;
+  final String phase;
+  final String cancelledAt;
+
+  const DesktopAuthCancelExchangeResponse({
+    required this.contract,
+    required this.message,
+    required this.flowId,
+    required this.phase,
+    required this.cancelledAt,
+  }) : super();
+
+  factory DesktopAuthCancelExchangeResponse.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"contract", "message", "flowId", "phase", "cancelledAt"}, "DesktopAuthCancelExchangeResponse");
+    return DesktopAuthCancelExchangeResponse(
+      contract: _expectStringConst(_requiredKey(json, "contract", "DesktopAuthCancelExchangeResponse"), "desktop-auth.cancel@1", "DesktopAuthCancelExchangeResponse.contract"),
+      message: _expectStringConst(_requiredKey(json, "message", "DesktopAuthCancelExchangeResponse"), "response", "DesktopAuthCancelExchangeResponse.message"),
+      flowId: _asString(_requiredKey(json, "flowId", "DesktopAuthCancelExchangeResponse"), "DesktopAuthCancelExchangeResponse.flowId"),
+      phase: _expectStringConst(_requiredKey(json, "phase", "DesktopAuthCancelExchangeResponse"), "cancelled", "DesktopAuthCancelExchangeResponse.phase"),
+      cancelledAt: _asString(_requiredKey(json, "cancelledAt", "DesktopAuthCancelExchangeResponse"), "DesktopAuthCancelExchangeResponse.cancelledAt"),
+    );
+  }
+
+  @override
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "contract": contract,
+      "message": message,
+      "flowId": flowId,
+      "phase": phase,
+      "cancelledAt": cancelledAt,
+    };
+    return json;
+  }
+}
+
+sealed class DesktopAuthCancelExchange {
+  const DesktopAuthCancelExchange();
+
+  factory DesktopAuthCancelExchange.fromJson(Map<String, Object?> json) {
+    switch (json["message"]) {
+      case "request":
+        return DesktopAuthCancelExchangeRequest.fromJson(json);
+      case "response":
+        return DesktopAuthCancelExchangeResponse.fromJson(json);
+      default:
+        throw FormatException('DesktopAuthCancelExchange.message has no matching variant');
+    }
+  }
+
+  Map<String, Object?> toJson();
+}
+
+class DesktopSessionRenewExchangePrepareRequest extends DesktopSessionRenewExchange {
+  final String contract;
+  final String message;
+  final String action;
+  final String commandId;
+
+  const DesktopSessionRenewExchangePrepareRequest({
+    required this.contract,
+    required this.message,
+    required this.action,
+    required this.commandId,
+  }) : super();
+
+  factory DesktopSessionRenewExchangePrepareRequest.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"contract", "message", "action", "commandId"}, "DesktopSessionRenewExchangePrepareRequest");
+    return DesktopSessionRenewExchangePrepareRequest(
+      contract: _expectStringConst(_requiredKey(json, "contract", "DesktopSessionRenewExchangePrepareRequest"), "desktop-session.renew@1", "DesktopSessionRenewExchangePrepareRequest.contract"),
+      message: _expectStringConst(_requiredKey(json, "message", "DesktopSessionRenewExchangePrepareRequest"), "request", "DesktopSessionRenewExchangePrepareRequest.message"),
+      action: _expectStringConst(_requiredKey(json, "action", "DesktopSessionRenewExchangePrepareRequest"), "prepare", "DesktopSessionRenewExchangePrepareRequest.action"),
+      commandId: _asString(_requiredKey(json, "commandId", "DesktopSessionRenewExchangePrepareRequest"), "DesktopSessionRenewExchangePrepareRequest.commandId"),
+    );
+  }
+
+  @override
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "contract": contract,
+      "message": message,
+      "action": action,
+      "commandId": commandId,
+    };
+    return json;
+  }
+}
+
+class DesktopSessionRenewExchangeSessionPunk {
+  final String id;
+  final String displayName;
+  final String? avatarUrl;
+
+  const DesktopSessionRenewExchangeSessionPunk({
+    required this.id,
+    required this.displayName,
+    required this.avatarUrl,
+  });
+
+  factory DesktopSessionRenewExchangeSessionPunk.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"id", "displayName", "avatarUrl"}, "DesktopSessionRenewExchangeSessionPunk");
+    return DesktopSessionRenewExchangeSessionPunk(
+      id: _asString(_requiredKey(json, "id", "DesktopSessionRenewExchangeSessionPunk"), "DesktopSessionRenewExchangeSessionPunk.id"),
+      displayName: _asString(_requiredKey(json, "displayName", "DesktopSessionRenewExchangeSessionPunk"), "DesktopSessionRenewExchangeSessionPunk.displayName"),
+      avatarUrl: _requiredKey(json, "avatarUrl", "DesktopSessionRenewExchangeSessionPunk") == null ? null : _asString(_requiredKey(json, "avatarUrl", "DesktopSessionRenewExchangeSessionPunk"), "DesktopSessionRenewExchangeSessionPunk.avatarUrl"),
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "id": id,
+      "displayName": displayName,
+      "avatarUrl": avatarUrl == null ? null : avatarUrl!,
+    };
+    return json;
+  }
+}
+
+class DesktopSessionRenewExchangeSession {
+  final String sessionId;
+  final String punkId;
+  final String authenticatedAt;
+  final String expiresAt;
+  final String? recentReauthUntil;
+  final DesktopSessionRenewExchangeSessionPunk punk;
+
+  const DesktopSessionRenewExchangeSession({
+    required this.sessionId,
+    required this.punkId,
+    required this.authenticatedAt,
+    required this.expiresAt,
+    required this.recentReauthUntil,
+    required this.punk,
+  });
+
+  factory DesktopSessionRenewExchangeSession.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"sessionId", "punkId", "authenticatedAt", "expiresAt", "recentReauthUntil", "punk"}, "DesktopSessionRenewExchangeSession");
+    return DesktopSessionRenewExchangeSession(
+      sessionId: _asString(_requiredKey(json, "sessionId", "DesktopSessionRenewExchangeSession"), "DesktopSessionRenewExchangeSession.sessionId"),
+      punkId: _asString(_requiredKey(json, "punkId", "DesktopSessionRenewExchangeSession"), "DesktopSessionRenewExchangeSession.punkId"),
+      authenticatedAt: _asString(_requiredKey(json, "authenticatedAt", "DesktopSessionRenewExchangeSession"), "DesktopSessionRenewExchangeSession.authenticatedAt"),
+      expiresAt: _asString(_requiredKey(json, "expiresAt", "DesktopSessionRenewExchangeSession"), "DesktopSessionRenewExchangeSession.expiresAt"),
+      recentReauthUntil: _requiredKey(json, "recentReauthUntil", "DesktopSessionRenewExchangeSession") == null ? null : _asString(_requiredKey(json, "recentReauthUntil", "DesktopSessionRenewExchangeSession"), "DesktopSessionRenewExchangeSession.recentReauthUntil"),
+      punk: DesktopSessionRenewExchangeSessionPunk.fromJson(_asMap(_requiredKey(json, "punk", "DesktopSessionRenewExchangeSession"), "DesktopSessionRenewExchangeSession.punk")),
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "sessionId": sessionId,
+      "punkId": punkId,
+      "authenticatedAt": authenticatedAt,
+      "expiresAt": expiresAt,
+      "recentReauthUntil": recentReauthUntil == null ? null : recentReauthUntil!,
+      "punk": punk.toJson(),
+    };
+    return json;
+  }
+}
+
+class DesktopSessionRenewExchangeCapability {
+  final String token;
+  final String expiresAt;
+
+  const DesktopSessionRenewExchangeCapability({
+    required this.token,
+    required this.expiresAt,
+  });
+
+  factory DesktopSessionRenewExchangeCapability.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"token", "expiresAt"}, "DesktopSessionRenewExchangeCapability");
+    return DesktopSessionRenewExchangeCapability(
+      token: _asString(_requiredKey(json, "token", "DesktopSessionRenewExchangeCapability"), "DesktopSessionRenewExchangeCapability.token"),
+      expiresAt: _asString(_requiredKey(json, "expiresAt", "DesktopSessionRenewExchangeCapability"), "DesktopSessionRenewExchangeCapability.expiresAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "token": token,
+      "expiresAt": expiresAt,
+    };
+    return json;
+  }
+}
+
+class DesktopSessionRenewExchangePreparedResponse extends DesktopSessionRenewExchange {
+  final String contract;
+  final String message;
+  final String action;
+  final String commandId;
+  final String rotationId;
+  final DesktopSessionRenewExchangeSession session;
+  final DesktopSessionRenewExchangeCapability revokeCapability;
+  final String confirmBy;
+
+  const DesktopSessionRenewExchangePreparedResponse({
+    required this.contract,
+    required this.message,
+    required this.action,
+    required this.commandId,
+    required this.rotationId,
+    required this.session,
+    required this.revokeCapability,
+    required this.confirmBy,
+  }) : super();
+
+  factory DesktopSessionRenewExchangePreparedResponse.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"contract", "message", "action", "commandId", "rotationId", "session", "revokeCapability", "confirmBy"}, "DesktopSessionRenewExchangePreparedResponse");
+    return DesktopSessionRenewExchangePreparedResponse(
+      contract: _expectStringConst(_requiredKey(json, "contract", "DesktopSessionRenewExchangePreparedResponse"), "desktop-session.renew@1", "DesktopSessionRenewExchangePreparedResponse.contract"),
+      message: _expectStringConst(_requiredKey(json, "message", "DesktopSessionRenewExchangePreparedResponse"), "response", "DesktopSessionRenewExchangePreparedResponse.message"),
+      action: _expectStringConst(_requiredKey(json, "action", "DesktopSessionRenewExchangePreparedResponse"), "prepared", "DesktopSessionRenewExchangePreparedResponse.action"),
+      commandId: _asString(_requiredKey(json, "commandId", "DesktopSessionRenewExchangePreparedResponse"), "DesktopSessionRenewExchangePreparedResponse.commandId"),
+      rotationId: _asString(_requiredKey(json, "rotationId", "DesktopSessionRenewExchangePreparedResponse"), "DesktopSessionRenewExchangePreparedResponse.rotationId"),
+      session: DesktopSessionRenewExchangeSession.fromJson(_asMap(_requiredKey(json, "session", "DesktopSessionRenewExchangePreparedResponse"), "DesktopSessionRenewExchangePreparedResponse.session")),
+      revokeCapability: DesktopSessionRenewExchangeCapability.fromJson(_asMap(_requiredKey(json, "revokeCapability", "DesktopSessionRenewExchangePreparedResponse"), "DesktopSessionRenewExchangePreparedResponse.revokeCapability")),
+      confirmBy: _asString(_requiredKey(json, "confirmBy", "DesktopSessionRenewExchangePreparedResponse"), "DesktopSessionRenewExchangePreparedResponse.confirmBy"),
+    );
+  }
+
+  @override
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "contract": contract,
+      "message": message,
+      "action": action,
+      "commandId": commandId,
+      "rotationId": rotationId,
+      "session": session.toJson(),
+      "revokeCapability": revokeCapability.toJson(),
+      "confirmBy": confirmBy,
+    };
+    return json;
+  }
+}
+
+class DesktopSessionRenewExchangeConfirmRequest extends DesktopSessionRenewExchange {
+  final String contract;
+  final String message;
+  final String action;
+  final String commandId;
+  final String rotationId;
+
+  const DesktopSessionRenewExchangeConfirmRequest({
+    required this.contract,
+    required this.message,
+    required this.action,
+    required this.commandId,
+    required this.rotationId,
+  }) : super();
+
+  factory DesktopSessionRenewExchangeConfirmRequest.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"contract", "message", "action", "commandId", "rotationId"}, "DesktopSessionRenewExchangeConfirmRequest");
+    return DesktopSessionRenewExchangeConfirmRequest(
+      contract: _expectStringConst(_requiredKey(json, "contract", "DesktopSessionRenewExchangeConfirmRequest"), "desktop-session.renew@1", "DesktopSessionRenewExchangeConfirmRequest.contract"),
+      message: _expectStringConst(_requiredKey(json, "message", "DesktopSessionRenewExchangeConfirmRequest"), "request", "DesktopSessionRenewExchangeConfirmRequest.message"),
+      action: _expectStringConst(_requiredKey(json, "action", "DesktopSessionRenewExchangeConfirmRequest"), "confirm", "DesktopSessionRenewExchangeConfirmRequest.action"),
+      commandId: _asString(_requiredKey(json, "commandId", "DesktopSessionRenewExchangeConfirmRequest"), "DesktopSessionRenewExchangeConfirmRequest.commandId"),
+      rotationId: _asString(_requiredKey(json, "rotationId", "DesktopSessionRenewExchangeConfirmRequest"), "DesktopSessionRenewExchangeConfirmRequest.rotationId"),
+    );
+  }
+
+  @override
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "contract": contract,
+      "message": message,
+      "action": action,
+      "commandId": commandId,
+      "rotationId": rotationId,
+    };
+    return json;
+  }
+}
+
+class DesktopSessionRenewExchangeConfirmedResponse extends DesktopSessionRenewExchange {
+  final String contract;
+  final String message;
+  final String action;
+  final String commandId;
+  final String rotationId;
+  final String sessionId;
+  final String confirmedAt;
+
+  const DesktopSessionRenewExchangeConfirmedResponse({
+    required this.contract,
+    required this.message,
+    required this.action,
+    required this.commandId,
+    required this.rotationId,
+    required this.sessionId,
+    required this.confirmedAt,
+  }) : super();
+
+  factory DesktopSessionRenewExchangeConfirmedResponse.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"contract", "message", "action", "commandId", "rotationId", "sessionId", "confirmedAt"}, "DesktopSessionRenewExchangeConfirmedResponse");
+    return DesktopSessionRenewExchangeConfirmedResponse(
+      contract: _expectStringConst(_requiredKey(json, "contract", "DesktopSessionRenewExchangeConfirmedResponse"), "desktop-session.renew@1", "DesktopSessionRenewExchangeConfirmedResponse.contract"),
+      message: _expectStringConst(_requiredKey(json, "message", "DesktopSessionRenewExchangeConfirmedResponse"), "response", "DesktopSessionRenewExchangeConfirmedResponse.message"),
+      action: _expectStringConst(_requiredKey(json, "action", "DesktopSessionRenewExchangeConfirmedResponse"), "confirmed", "DesktopSessionRenewExchangeConfirmedResponse.action"),
+      commandId: _asString(_requiredKey(json, "commandId", "DesktopSessionRenewExchangeConfirmedResponse"), "DesktopSessionRenewExchangeConfirmedResponse.commandId"),
+      rotationId: _asString(_requiredKey(json, "rotationId", "DesktopSessionRenewExchangeConfirmedResponse"), "DesktopSessionRenewExchangeConfirmedResponse.rotationId"),
+      sessionId: _asString(_requiredKey(json, "sessionId", "DesktopSessionRenewExchangeConfirmedResponse"), "DesktopSessionRenewExchangeConfirmedResponse.sessionId"),
+      confirmedAt: _asString(_requiredKey(json, "confirmedAt", "DesktopSessionRenewExchangeConfirmedResponse"), "DesktopSessionRenewExchangeConfirmedResponse.confirmedAt"),
+    );
+  }
+
+  @override
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "contract": contract,
+      "message": message,
+      "action": action,
+      "commandId": commandId,
+      "rotationId": rotationId,
+      "sessionId": sessionId,
+      "confirmedAt": confirmedAt,
+    };
+    return json;
+  }
+}
+
+sealed class DesktopSessionRenewExchange {
+  const DesktopSessionRenewExchange();
+
+  factory DesktopSessionRenewExchange.fromJson(Map<String, Object?> json) {
+    switch (json["action"]) {
+      case "prepare":
+        return DesktopSessionRenewExchangePrepareRequest.fromJson(json);
+      case "prepared":
+        return DesktopSessionRenewExchangePreparedResponse.fromJson(json);
+      case "confirm":
+        return DesktopSessionRenewExchangeConfirmRequest.fromJson(json);
+      case "confirmed":
+        return DesktopSessionRenewExchangeConfirmedResponse.fromJson(json);
+      default:
+        throw FormatException('DesktopSessionRenewExchange.action has no matching variant');
+    }
+  }
+
+  Map<String, Object?> toJson();
+}
+
+class DesktopSessionRevokeExchangeRequest extends DesktopSessionRevokeExchange {
+  final String contract;
+  final String message;
+  final String capability;
+
+  const DesktopSessionRevokeExchangeRequest({
+    required this.contract,
+    required this.message,
+    required this.capability,
+  }) : super();
+
+  factory DesktopSessionRevokeExchangeRequest.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"contract", "message", "capability"}, "DesktopSessionRevokeExchangeRequest");
+    return DesktopSessionRevokeExchangeRequest(
+      contract: _expectStringConst(_requiredKey(json, "contract", "DesktopSessionRevokeExchangeRequest"), "desktop-session.revoke@1", "DesktopSessionRevokeExchangeRequest.contract"),
+      message: _expectStringConst(_requiredKey(json, "message", "DesktopSessionRevokeExchangeRequest"), "request", "DesktopSessionRevokeExchangeRequest.message"),
+      capability: _asString(_requiredKey(json, "capability", "DesktopSessionRevokeExchangeRequest"), "DesktopSessionRevokeExchangeRequest.capability"),
+    );
+  }
+
+  @override
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "contract": contract,
+      "message": message,
+      "capability": capability,
+    };
+    return json;
+  }
+}
+
+class DesktopSessionRevokeExchangeResponse extends DesktopSessionRevokeExchange {
+  final String contract;
+  final String message;
+  final bool revoked;
+  final bool expired;
+
+  const DesktopSessionRevokeExchangeResponse({
+    required this.contract,
+    required this.message,
+    required this.revoked,
+    required this.expired,
+  }) : super();
+
+  factory DesktopSessionRevokeExchangeResponse.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"contract", "message", "revoked", "expired"}, "DesktopSessionRevokeExchangeResponse");
+    return DesktopSessionRevokeExchangeResponse(
+      contract: _expectStringConst(_requiredKey(json, "contract", "DesktopSessionRevokeExchangeResponse"), "desktop-session.revoke@1", "DesktopSessionRevokeExchangeResponse.contract"),
+      message: _expectStringConst(_requiredKey(json, "message", "DesktopSessionRevokeExchangeResponse"), "response", "DesktopSessionRevokeExchangeResponse.message"),
+      revoked: _expectBoolConst(_requiredKey(json, "revoked", "DesktopSessionRevokeExchangeResponse"), true, "DesktopSessionRevokeExchangeResponse.revoked"),
+      expired: _asBool(_requiredKey(json, "expired", "DesktopSessionRevokeExchangeResponse"), "DesktopSessionRevokeExchangeResponse.expired"),
+    );
+  }
+
+  @override
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "contract": contract,
+      "message": message,
+      "revoked": revoked,
+      "expired": expired,
+    };
+    return json;
+  }
+}
+
+sealed class DesktopSessionRevokeExchange {
+  const DesktopSessionRevokeExchange();
+
+  factory DesktopSessionRevokeExchange.fromJson(Map<String, Object?> json) {
+    switch (json["message"]) {
+      case "request":
+        return DesktopSessionRevokeExchangeRequest.fromJson(json);
+      case "response":
+        return DesktopSessionRevokeExchangeResponse.fromJson(json);
+      default:
+        throw FormatException('DesktopSessionRevokeExchange.message has no matching variant');
+    }
+  }
+
+  Map<String, Object?> toJson();
 }
 
 class ListWorkspacesQuery {

@@ -12,10 +12,13 @@ import accountMergePlanResponseSource from "../schemas/account-merge.plan-respon
 import accountMergePlan from "../schemas/account-merge.plan.schema.json";
 import authStartResponse from "../schemas/auth.start-response.schema.json";
 import authStart from "../schemas/auth.start.schema.json";
-import authDesktopStartResponse from "../schemas/auth.desktop-start-response.schema.json";
-import authDesktopStart from "../schemas/auth.desktop-start.schema.json";
-import authDesktopDelivery from "../schemas/auth.desktop-delivery.schema.json";
-import authDesktopSessionResponse from "../schemas/auth.desktop-session-response.schema.json";
+import desktopAuthCancel from "../schemas/desktop-auth.cancel.schema.json";
+import desktopAuthClaim from "../schemas/desktop-auth.claim.schema.json";
+import desktopAuthConfirm from "../schemas/desktop-auth.confirm.schema.json";
+import desktopAuthStart from "../schemas/desktop-auth.start.schema.json";
+import desktopAuthStatus from "../schemas/desktop-auth.status.schema.json";
+import desktopSessionRenew from "../schemas/desktop-session.renew.schema.json";
+import desktopSessionRevoke from "../schemas/desktop-session.revoke.schema.json";
 import authorResolveResponse from "../schemas/author.resolve-response.schema.json";
 import authorResolve from "../schemas/author.resolve.schema.json";
 import botActionAdmission from "../schemas/bot-action.admission.schema.json";
@@ -447,11 +450,13 @@ export const contractSchemas = {
   "punks://contracts/bot-runtime.reaction-result@1": botRuntimeReactionResult,
   "punks://contracts/auth.start@1": authStart,
   "punks://contracts/auth.start-response@1": authStartResponse,
-  "punks://contracts/auth.desktop-start@1": authDesktopStart,
-  "punks://contracts/auth.desktop-start-response@1": authDesktopStartResponse,
-  "punks://contracts/auth.desktop-delivery@1": authDesktopDelivery,
-  "punks://contracts/auth.desktop-session-response@1":
-    authDesktopSessionResponse,
+  "punks://contracts/desktop-auth.start@1": desktopAuthStart,
+  "punks://contracts/desktop-auth.status@1": desktopAuthStatus,
+  "punks://contracts/desktop-auth.claim@1": desktopAuthClaim,
+  "punks://contracts/desktop-auth.confirm@1": desktopAuthConfirm,
+  "punks://contracts/desktop-auth.cancel@1": desktopAuthCancel,
+  "punks://contracts/desktop-session.renew@1": desktopSessionRenew,
+  "punks://contracts/desktop-session.revoke@1": desktopSessionRevoke,
   "punks://contracts/auth.provider-profile@1": authProviderProfile,
   "punks://contracts/auth.passkey-options@1": authPasskeyOptions,
   "punks://contracts/auth.passkey-finish@1": authPasskeyFinish,

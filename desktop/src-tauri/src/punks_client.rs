@@ -1,20 +1,15 @@
 use std::{collections::HashMap, sync::Arc};
 
 use punks_account_client::{
-    ceremony::{
-        logout_local_first, Ceremony, CeremonyPhase, QuarantineJar, RenewalPolicy, RevocationQueue,
-        SessionMetadata, SessionPersistence, SystemClock,
-    },
-    desktop_auth::DesktopAuthClient,
-    AccountSession, AuthorReference, AuthorSummary, ClientDistribution, ClientFailure,
-    ClientPlatform, DesktopCompatibility, FollowCancellation, FollowConnection, FollowDelivery,
-    MessagePage, MessageView, PunksAccountClient, PunksNavigationTarget, ReactionMutationResult,
-    StreamSummary, StreamView, WorkspaceLease, WorkspaceSession, WorkspaceSummary,
+    AuthorReference, AuthorSummary, ClientDistribution, ClientFailure, ClientPlatform,
+    DesktopCompatibility, FollowCancellation, FollowConnection, FollowDelivery, MessagePage,
+    MessageView, PunksAccountClient, PunksNavigationTarget, ReactionMutationResult, StreamSummary,
+    StreamView, WorkspaceLease, WorkspaceSession, WorkspaceSummary,
 };
 use serde::Deserialize;
 use tokio::sync::Mutex;
 
-use crate::punks_session_store::KeyringSessionPersistence;
+use crate::punks_auth_state::NativeAuthenticationRuntime;
 
 #[path = "punks_message_lifecycle.rs"]
 /// Tauri commands for capability-gated Message lifecycle mutations.
@@ -23,69 +18,10 @@ pub mod punks_message_lifecycle;
 /// Native state for the single Punks Account and mounted Workspace.
 pub struct PunksDesktopClient {
     account: Result<PunksAccountClient, ClientFailure>,
-    transitions: Mutex<()>,
+    pub(crate) transitions: Mutex<()>,
     sessions: Mutex<HashMap<u64, WorkspaceSession>>,
     follows: Mutex<HashMap<String, FollowEntry>>,
-    /// Cérémonie de connexion desktop (issue #54) : états, quarantaine et
-    /// jeton d'installation — le cookie ne franchit jamais cette frontière.
-    ceremony: Mutex<CeremonyDriver>,
-}
-
-/// Vue IPC de la phase de cérémonie : aucune donnée sensible.
-#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case", tag = "phase")]
-pub enum CeremonyPhaseView {
-    Idle,
-    Started { provider: String },
-    BrowserComplete,
-    Ready,
-    Delivering,
-    Confirmed { session_id: String },
-    Cancelled,
-    Expired,
-    Failed { code: String },
-}
-
-/// Pilote de cérémonie : machine à états + quarantaine + client desktop.
-pub struct CeremonyDriver {
-    pub ceremony: Ceremony,
-    pub quarantine: QuarantineJar,
-    pub desktop_auth: Result<DesktopAuthClient, ClientFailure>,
-}
-
-/// File durable de révocations distantes en attente.
-pub struct DurableRevocationQueue {
-    directory: std::path::PathBuf,
-}
-
-impl DurableRevocationQueue {
-    pub fn new(directory: std::path::PathBuf) -> Self {
-        Self { directory }
-    }
-}
-
-impl RevocationQueue for DurableRevocationQueue {
-    fn enqueue(
-        &self,
-        pending: punks_account_client::ceremony::PendingRevocation,
-    ) -> Result<(), String> {
-        std::fs::create_dir_all(&self.directory).map_err(|e| e.to_string())?;
-        let path = self
-            .directory
-            .join(format!("{}.revocation.json", pending.session_id));
-        if path.exists() {
-            return Ok(());
-        }
-        let body = serde_json::json!({
-            "sessionId": pending.session_id,
-            "queuedAtSeconds": pending
-                .queued_at
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0),
-        });
-        std::fs::write(path, body.to_string()).map_err(|e| e.to_string())
-    }
+    pub(crate) authentication: Mutex<NativeAuthenticationRuntime>,
 }
 
 struct FollowEntry {
@@ -101,15 +37,6 @@ impl PunksDesktopClient {
             Some("production") => ClientDistribution::Production,
             _ => ClientDistribution::Development,
         };
-        let environment = match option_env!("PUNKS_DISTRIBUTION") {
-            Some("production") => "production",
-            Some("staging") => "staging",
-            _ => "local",
-        };
-        let installation_identity =
-            crate::punks_session_store::load_or_create_installation_identity().map_err(|message| {
-                ClientFailure::native(punks_account_client::FailureKind::Transport, message)
-            });
         Self {
             account: PunksAccountClient::new(
                 origin,
@@ -120,38 +47,30 @@ impl PunksDesktopClient {
             transitions: Mutex::new(()),
             sessions: Mutex::new(HashMap::new()),
             follows: Mutex::new(HashMap::new()),
-            ceremony: Mutex::new(CeremonyDriver {
-                ceremony: Ceremony::new(Arc::new(SystemClock)),
-                quarantine: QuarantineJar::new(),
-                desktop_auth: installation_identity
-                    .and_then(|identity| DesktopAuthClient::new(origin, environment, identity)),
-            }),
+            authentication: Mutex::new(NativeAuthenticationRuntime::new(origin)),
         }
     }
 
-    fn account(&self) -> Result<&PunksAccountClient, ClientFailure> {
+    pub(crate) fn account(&self) -> Result<&PunksAccountClient, ClientFailure> {
         self.account.as_ref().map_err(Clone::clone)
     }
 
     /// Invalidates all native Punks state before a logout or Account switch
     /// can perform any further social I/O.
-    async fn invalidate_local(&self) -> Result<(), ClientFailure> {
-        let _transition = self.transitions.lock().await;
+    pub(crate) async fn invalidate_for_sign_out(&self) -> Result<(), ClientFailure> {
         self.cancel_follows().await;
         self.sessions.lock().await.clear();
-        self.account()?.invalidate().await;
-        let mut ceremony = self.ceremony.lock().await;
-        if matches!(
-            ceremony.ceremony.phase(),
-            CeremonyPhase::Started { .. }
-                | CeremonyPhase::BrowserComplete { .. }
-                | CeremonyPhase::Ready
-                | CeremonyPhase::Delivering
-        ) {
-            let _ = ceremony.ceremony.cancel();
-        }
-        ceremony.quarantine.discard();
+        self.account()?.clear_account_session().await;
         Ok(())
+    }
+
+    pub(crate) async fn activate_prepared_session(
+        &self,
+        secret: &punks_account_client::ceremony::SessionSecret,
+    ) -> Result<(), ClientFailure> {
+        self.cancel_follows().await;
+        self.sessions.lock().await.clear();
+        self.account()?.activate_prepared_session(secret).await
     }
 
     async fn session(&self, lease: &WorkspaceLease) -> Result<WorkspaceSession, ClientFailure> {
@@ -164,7 +83,7 @@ impl PunksDesktopClient {
             .ok_or_else(ClientFailure::stale_workspace)
     }
 
-    async fn cancel_follows(&self) {
+    pub(crate) async fn cancel_follows(&self) {
         let entries = self
             .follows
             .lock()
@@ -192,26 +111,6 @@ impl PunksDesktopClient {
     }
 }
 
-fn phase_view(phase: &CeremonyPhase) -> CeremonyPhaseView {
-    match phase {
-        CeremonyPhase::Idle => CeremonyPhaseView::Idle,
-        CeremonyPhase::Started { provider, .. } => CeremonyPhaseView::Started {
-            provider: provider.clone(),
-        },
-        CeremonyPhase::BrowserComplete { .. } => CeremonyPhaseView::BrowserComplete,
-        CeremonyPhase::Ready => CeremonyPhaseView::Ready,
-        CeremonyPhase::Delivering => CeremonyPhaseView::Delivering,
-        CeremonyPhase::Confirmed { session_id } => CeremonyPhaseView::Confirmed {
-            session_id: session_id.clone(),
-        },
-        CeremonyPhase::Cancelled => CeremonyPhaseView::Cancelled,
-        CeremonyPhase::Expired => CeremonyPhaseView::Expired,
-        CeremonyPhase::Failed { reason } => CeremonyPhaseView::Failed {
-            code: reason.code().to_string(),
-        },
-    }
-}
-
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 fn current_platform() -> ClientPlatform {
     ClientPlatform::MacosArm64
@@ -232,353 +131,12 @@ fn current_platform() -> ClientPlatform {
     ClientPlatform::WindowsX64
 }
 
-// ── Cérémonie de connexion desktop (issue #54) ─────────────────────────────
-
-/// Démarre la cérémonie et ouvre le navigateur système vers l'URL
-/// d'autorisation (PKCE/state/verifier détenus par le Worker, ADR 0042).
-#[tauri::command]
-pub async fn punks_ceremony_start(
-    app: tauri::AppHandle,
-    client: tauri::State<'_, PunksDesktopClient>,
-    provider: String,
-) -> Result<CeremonyPhaseView, ClientFailure> {
-    let _transition = client.transitions.lock().await;
-    let mut driver = client.ceremony.lock().await;
-    let auth = driver.desktop_auth.as_ref().map_err(Clone::clone)?;
-    let started = auth.start(&provider).await?;
-    driver.ceremony.start(&provider).map_err(|message| {
-        ClientFailure::native(
-            punks_account_client::FailureKind::ContractViolation,
-            message,
-        )
-    })?;
-    // Le navigateur système est ouvert vers l'autorisation ; le secret de
-    // session ne transite jamais par le WebView.
-    use tauri_plugin_opener::OpenerExt;
-    app.opener()
-        .open_url(started.authorization_url.clone(), None::<&str>)
-        .map_err(|_| {
-            ClientFailure::native(
-                punks_account_client::FailureKind::Transport,
-                "navigateur système indisponible",
-            )
-        })?;
-    Ok(phase_view(driver.ceremony.phase()))
-}
-
-/// Phase publique de la cérémonie — sans aucune donnée sensible.
-#[tauri::command]
-pub async fn punks_ceremony_status(
-    client: tauri::State<'_, PunksDesktopClient>,
-) -> Result<CeremonyPhaseView, ClientFailure> {
-    let driver = client.ceremony.lock().await;
-    Ok(phase_view(driver.ceremony.phase()))
-}
-
-/// Annulation explicite : la cérémonie se ferme sans créer de session.
-#[tauri::command]
-pub async fn punks_ceremony_cancel(
-    client: tauri::State<'_, PunksDesktopClient>,
-) -> Result<CeremonyPhaseView, ClientFailure> {
-    let _transition = client.transitions.lock().await;
-    let mut driver = client.ceremony.lock().await;
-    driver.ceremony.cancel().map_err(|message| {
-        ClientFailure::native(
-            punks_account_client::FailureKind::ContractViolation,
-            message,
-        )
-    })?;
-    driver.quarantine.discard();
-    Ok(phase_view(driver.ceremony.phase()))
-}
-
-/// Reçoit un deeplink `punks://session` : l'environnement du lien doit
-/// correspondre à la distribution compilée, puis la livraison à usage unique
-/// est consommée, validée en quarantaine, persistée et confirmée.
-pub async fn handle_session_deeplink(app: tauri::AppHandle, url: &str) -> Result<(), String> {
-    let parsed = tauri::Url::parse(url).map_err(|_| "deeplink Punks invalide".to_string())?;
-    if parsed.scheme() != "punks" || parsed.host_str() != Some("session") {
-        return Err("seul punks://session est pris en charge".to_string());
-    }
-    let params: std::collections::HashMap<String, String> = parsed
-        .query_pairs()
-        .map(|(k, v)| (k.to_string(), v.to_string()))
-        .collect();
-    let delivery_token = params.get("delivery").cloned().unwrap_or_default();
-    let environment = params.get("environment").cloned().unwrap_or_default();
-    if delivery_token.is_empty() {
-        return Err("deeplink sans livraison".to_string());
-    }
-    use tauri::Manager;
-    let client = app.state::<PunksDesktopClient>();
-    let persistence = app.state::<std::sync::Arc<KeyringSessionPersistence>>();
-    let expected = expected_environment();
-    let _transition = client.transitions.lock().await;
-    browser_complete_driver(
-        &client.ceremony,
-        &environment,
-        &delivery_token,
-        &expected,
-        persistence.inner().as_ref(),
-    )
-    .await
-    .map(|_| ())
-    .map_err(|failure| failure.message)
-}
-
-fn expected_environment() -> String {
-    match option_env!("PUNKS_DISTRIBUTION") {
-        Some("production") => "production".to_string(),
-        Some("staging") => "staging".to_string(),
-        _ => "local".to_string(),
-    }
-}
-
-async fn browser_complete_driver(
-    ceremony_lock: &Mutex<CeremonyDriver>,
-    environment: &str,
-    delivery_token: &str,
-    expected_environment: &str,
-    persistence: &KeyringSessionPersistence,
-) -> Result<CeremonyPhaseView, ClientFailure> {
-    let mut driver = ceremony_lock.lock().await;
-    let expected = expected_environment;
-    if let Err(reason) = driver.ceremony.browser_complete(&environment, &expected) {
-        driver.ceremony.fail(reason.clone());
-        return Err(ClientFailure::native(
-            punks_account_client::FailureKind::ContractViolation,
-            reason.code(),
-        ));
-    }
-    if let Err(reason) = driver.ceremony.begin_delivery() {
-        driver.ceremony.fail(reason.clone());
-        return Err(ClientFailure::native(
-            punks_account_client::FailureKind::ContractViolation,
-            reason.code(),
-        ));
-    }
-    let auth = match &driver.desktop_auth {
-        Ok(auth) => auth.clone(),
-        Err(failure) => return Err(failure.clone()),
-    };
-    let delivered = match auth.deliver(&delivery_token).await {
-        Ok(delivered) => delivered,
-        Err(failure) => {
-            driver.quarantine.discard();
-            driver
-                .ceremony
-                .fail(punks_account_client::ceremony::CeremonyFailure::ProviderError);
-            return Err(failure);
-        }
-    };
-    // Quarantaine : le cookie livré vit isolé jusqu'à validation réussie,
-    // puis est transféré par propriété vers la persistance OS.
-    driver.quarantine.deposit(delivered.cookie);
-    let Some(quarantined) = driver.quarantine.take_secret() else {
-        driver
-            .ceremony
-            .fail(punks_account_client::ceremony::CeremonyFailure::ValidationFailed);
-        return Err(ClientFailure::native(
-            punks_account_client::FailureKind::ContractViolation,
-            "quarantaine vide",
-        ));
-    };
-    let validated = match auth.validate(&quarantined).await {
-        Ok(validated) => validated,
-        Err(failure) => {
-            driver
-                .ceremony
-                .fail(punks_account_client::ceremony::CeremonyFailure::ValidationFailed);
-            return Err(failure);
-        }
-    };
-    if let Err(reason) = driver.ceremony.quarantine_validated() {
-        driver.ceremony.fail(reason.clone());
-        return Err(ClientFailure::native(
-            punks_account_client::FailureKind::ContractViolation,
-            reason.code(),
-        ));
-    }
-    let metadata = SessionMetadata {
-        session_id: validated.session_id.clone(),
-        punk_id: validated.punk_id.clone(),
-        expires_at: validated.expires_at,
-        last_renewed_at: None,
-    };
-    if persistence.persist(&quarantined, &metadata).is_err() {
-        driver
-            .ceremony
-            .fail(punks_account_client::ceremony::CeremonyFailure::ValidationFailed);
-        return Err(ClientFailure::native(
-            punks_account_client::FailureKind::Transport,
-            "stockage sécurisé OS indisponible",
-        ));
-    }
-    driver
-        .ceremony
-        .confirm(&validated.session_id)
-        .map_err(|reason| {
-            ClientFailure::native(
-                punks_account_client::FailureKind::ContractViolation,
-                reason.code(),
-            )
-        })?;
-    Ok(phase_view(driver.ceremony.phase()))
-}
-
-/// Renouvellement glissant : 30 jours, seuil de 7 jours, une fois par 24 h.
-#[tauri::command]
-pub async fn punks_session_renew(
-    client: tauri::State<'_, PunksDesktopClient>,
-    persistence: tauri::State<'_, std::sync::Arc<KeyringSessionPersistence>>,
-) -> Result<CeremonyPhaseView, ClientFailure> {
-    let _transition = client.transitions.lock().await;
-    let driver = client.ceremony.lock().await;
-    let auth = match &driver.desktop_auth {
-        Ok(auth) => auth.clone(),
-        Err(failure) => return Err(failure.clone()),
-    };
-    let (secret, metadata) = persistence
-        .load()
-        .map_err(|_| {
-            ClientFailure::native(
-                punks_account_client::FailureKind::Transport,
-                "stockage sécurisé OS indisponible",
-            )
-        })?
-        .ok_or_else(|| {
-            ClientFailure::native(
-                punks_account_client::FailureKind::ContractViolation,
-                "aucune session persistée",
-            )
-        })?;
-    let policy = RenewalPolicy;
-    if !policy.should_renew(
-        std::time::SystemTime::now(),
-        metadata.expires_at,
-        metadata.last_renewed_at,
-    ) {
-        return Ok(phase_view(driver.ceremony.phase()));
-    }
-    let renewed = auth.renew(&secret).await?;
-    let new_metadata = SessionMetadata {
-        session_id: renewed.session_id,
-        punk_id: renewed.punk_id,
-        expires_at: renewed.expires_at,
-        last_renewed_at: Some(std::time::SystemTime::now()),
-    };
-    persistence
-        .persist(&renewed.cookie, &new_metadata)
-        .map_err(|_| {
-            ClientFailure::native(
-                punks_account_client::FailureKind::Transport,
-                "stockage sécurisé OS indisponible",
-            )
-        })?;
-    // The renewed secret must replace the in-memory jar as well; otherwise a
-    // later Workspace request would continue using the pre-renewal cookie.
-    client.account()?.install_session_secret(&renewed.cookie)?;
-    Ok(phase_view(driver.ceremony.phase()))
-}
-
-/// Déconnexion local-first : l'état local meurt d'abord, puis la révocation
-/// distante part immédiatement ou reste en file durable.
-#[tauri::command]
-pub async fn punks_logout(
-    app: tauri::AppHandle,
-    client: tauri::State<'_, PunksDesktopClient>,
-    persistence: tauri::State<'_, std::sync::Arc<KeyringSessionPersistence>>,
-) -> Result<String, ClientFailure> {
-    // Local invalidation is deliberately first: FOLLOWs, Workspace leases,
-    // query bodies and callbacks are dead before persistence or remote
-    // revocation is touched.
-    client.invalidate_local().await?;
-    let _transition = client.transitions.lock().await;
-    let loaded = persistence.load().map_err(|_| {
-        ClientFailure::native(
-            punks_account_client::FailureKind::Transport,
-            "stockage sécurisé OS indisponible",
-        )
-    })?;
-    let queue = DurableRevocationQueue::new(revocation_directory(&app));
-    match loaded {
-        Some((secret, metadata)) => {
-            let driver = client.ceremony.lock().await;
-            let revoke = async {
-                match driver.desktop_auth.as_ref() {
-                    Ok(auth) => auth.revoke(&secret).await.map(|_| ()).map_err(|_| ()),
-                    Err(_) => Err(()),
-                }
-            };
-            let outcome = logout_local_first(persistence.as_ref(), &queue, &metadata, revoke)
-                .await
-                .map_err(|_| {
-                    ClientFailure::native(
-                        punks_account_client::FailureKind::Transport,
-                        "déconnexion locale impossible",
-                    )
-                })?;
-            match outcome {
-                punks_account_client::ceremony::LogoutOutcome::Revoked => Ok("revoked".to_string()),
-                punks_account_client::ceremony::LogoutOutcome::Queued => Ok("queued".to_string()),
-            }
-        }
-        None => {
-            // Sans session persistée, la déconnexion reste local-first totale.
-            persistence.destroy().map_err(|_| {
-                ClientFailure::native(
-                    punks_account_client::FailureKind::Transport,
-                    "stockage sécurisé OS indisponible",
-                )
-            })?;
-            Ok("revoked".to_string())
-        }
-    }
-}
-
-fn revocation_directory(app: &tauri::AppHandle) -> std::path::PathBuf {
-    use tauri::Manager;
-    app.path()
-        .app_data_dir()
-        .unwrap_or_else(|_| std::path::PathBuf::from("."))
-        .join("punks-revocations")
-}
-
 #[tauri::command]
 pub async fn punks_check_compatibility(
     client: tauri::State<'_, PunksDesktopClient>,
 ) -> Result<DesktopCompatibility, ClientFailure> {
     let _transition = client.transitions.lock().await;
     client.account()?.check_compatibility().await
-}
-
-#[tauri::command]
-pub async fn punks_get_session(
-    client: tauri::State<'_, PunksDesktopClient>,
-    persistence: tauri::State<'_, std::sync::Arc<KeyringSessionPersistence>>,
-) -> Result<AccountSession, ClientFailure> {
-    let _transition = client.transitions.lock().await;
-    let loaded = persistence.load().map_err(|_| {
-        ClientFailure::native(
-            punks_account_client::FailureKind::Transport,
-            "stockage sécurisé OS indisponible",
-        )
-    })?;
-    match loaded {
-        Some((secret, metadata)) => {
-            let result = client.account()?.restore_session(&secret, &metadata).await;
-            if matches!(
-                result.as_ref().err().map(|failure| failure.kind),
-                Some(punks_account_client::FailureKind::SessionExpired)
-            ) {
-                // A revoked or mixed-up persisted cookie must not be retried
-                // forever, and its contents never cross the IPC boundary.
-                let _ = persistence.destroy();
-            }
-            result
-        }
-        None => client.account()?.get_session().await,
-    }
 }
 
 /// Native navigation envelope.  The expected origin comes from the compiled

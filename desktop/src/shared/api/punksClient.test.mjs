@@ -93,10 +93,107 @@ const seed = {
   messages: {},
 };
 
+test("fake Account client exposes sanitized state and starts passkey sign-in", async () => {
+  const signInSeed = structuredClone(seed);
+  signInSeed.accountSessionState = {
+    state: "signed_out",
+    authentication: { phase: "idle" },
+    resumeAvailable: false,
+  };
+  const account = createFakePunksAccountClient(signInSeed);
+  await account.checkCompatibility();
+
+  assert.deepEqual(await account.getAccountSessionState(), {
+    state: "signed_out",
+    authentication: { phase: "idle" },
+    resumeAvailable: false,
+  });
+  assert.deepEqual(await account.startSignIn("passkey"), {
+    phase: "started",
+    intent: "sign_in",
+    method: "passkey",
+  });
+  assert.deepEqual(await account.getAccountSessionState(), {
+    state: "signed_out",
+    authentication: {
+      phase: "started",
+      intent: "sign_in",
+      method: "passkey",
+    },
+    resumeAvailable: false,
+  });
+});
+
+test("fake Account client exposes every semantic authentication intention", async () => {
+  const interruptedSeed = structuredClone(seed);
+  interruptedSeed.accountSessionState = {
+    state: "signed_out",
+    authentication: { phase: "ready" },
+    resumeAvailable: true,
+  };
+  const interrupted = createFakePunksAccountClient(interruptedSeed);
+  await interrupted.checkCompatibility();
+
+  assert.deepEqual(await interrupted.resumeInterruptedAuthentication(), {
+    phase: "ready",
+  });
+  assert.equal(
+    (await interrupted.getAccountSessionState()).resumeAvailable,
+    false,
+  );
+  const account = createFakePunksAccountClient(seed);
+  await account.checkCompatibility();
+  assert.deepEqual(await account.startAccountSwitch("github"), {
+    phase: "started",
+    intent: "switch_account",
+    method: "github",
+  });
+  assert.deepEqual(
+    await account.startReauthentication("passkey", "merge_accounts"),
+    {
+      phase: "started",
+      intent: "reauthenticate",
+      method: "passkey",
+    },
+  );
+  assert.deepEqual(await account.startIdentityLink("google"), {
+    phase: "started",
+    intent: "link_google",
+    method: "google",
+  });
+  assert.deepEqual(await account.startPasskeyRegistration(), {
+    phase: "started",
+    intent: "register_passkey",
+    method: "passkey",
+  });
+  assert.deepEqual(await account.cancelAuthentication(), {
+    phase: "cancelled",
+  });
+  assert.deepEqual(await account.renewAccountSession(), {
+    phase: "cancelled",
+  });
+  assert.equal(await account.signOut(), "revoked");
+  assert.deepEqual(await account.getAccountSessionState(), {
+    state: "signed_out",
+    authentication: { phase: "idle" },
+    resumeAvailable: false,
+  });
+  for (const retiredMethod of [
+    "getSession",
+    "ceremonyStart",
+    "ceremonyStatus",
+    "ceremonyCancel",
+    "sessionRenew",
+    "logout",
+  ]) {
+    assert.equal(retiredMethod in account, false);
+  }
+});
+
 test("fake profile enforces the same generation-bound WorkspaceSession", async () => {
   const account = createFakePunksAccountClient(seed);
   await account.checkCompatibility();
-  await account.getSession();
+  await account.getAccountSessionState();
   await account.listWorkspaces();
   const first = await account.openWorkspace(workspaceId);
   const second = await account.openWorkspace(secondWorkspaceId);

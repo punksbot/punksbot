@@ -5,6 +5,7 @@ const PLATFORMS = ["macos", "linux", "windows"];
 const EXPECTED_PRODUCT_NAME = "Punks Bot Staging";
 const EXPECTED_MAIN_BINARY_NAME = "punks-bot-staging";
 const EXPECTED_IDENTIFIER = "bot.punks.desktop.staging";
+const EXPECTED_DEEP_LINK_SCHEME = "punks-staging";
 const EXPECTED_UPDATER_ENDPOINT =
   "https://github.com/mabzadev/punksbot/releases/latest/download/latest.json";
 const EXPECTED_UPDATER_PUBLIC_KEY =
@@ -69,9 +70,11 @@ function assertCandidate(config, platform) {
   if (
     !Array.isArray(schemes) ||
     schemes.length !== 1 ||
-    schemes[0] !== "punks"
+    schemes[0] !== EXPECTED_DEEP_LINK_SCHEME
   ) {
-    throw new Error(`${platform}: only the punks deep-link scheme is allowed`);
+    throw new Error(
+      `${platform}: only the punks-staging deep-link scheme is allowed`,
+    );
   }
   const updater = config?.plugins?.updater;
   if (

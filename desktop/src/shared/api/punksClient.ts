@@ -18,24 +18,24 @@ import type {
   WorkspaceSummary,
 } from "@punks/contracts";
 import { TauriPunksAccountClient } from "./punksTauriClient";
+import type {
+  AccountSessionStateView,
+  AuthenticationMethod,
+  CeremonyPhaseView,
+  IdentityLinkProvider,
+} from "./punksAuthentication";
 import { PunksDesktopFailure } from "./punksFailure";
 import { canonicalPunksReaction } from "./punksReaction";
 
 export { PunksDesktopFailure } from "./punksFailure";
 export type { PunksFailureKind } from "./punksFailure";
-
-/** Phase publique de la Cérémonie de connexion desktop (issue #54) —
- * aucune donnée sensible ne traverse l'IPC. */
-export type CeremonyPhaseView =
-  | { phase: "idle" }
-  | { phase: "started"; provider: string }
-  | { phase: "browser_complete" }
-  | { phase: "ready" }
-  | { phase: "delivering" }
-  | { phase: "confirmed"; session_id: string }
-  | { phase: "cancelled" }
-  | { phase: "expired" }
-  | { phase: "failed"; code: string };
+export type {
+  AccountSessionStateView,
+  AuthenticationIntent,
+  AuthenticationMethod,
+  CeremonyPhaseView,
+  IdentityLinkProvider,
+} from "./punksAuthentication";
 
 export type WorkspaceLease = {
   origin: string;
@@ -141,15 +141,24 @@ export interface PunksWorkspaceSession {
 
 export interface PunksAccountClient {
   checkCompatibility(): Promise<DesktopCompatibilityResponse>;
-  getSession(): Promise<AuthSession>;
+  getAccountSessionState(): Promise<AccountSessionStateView>;
+  startSignIn(provider: AuthenticationMethod): Promise<CeremonyPhaseView>;
+  startAccountSwitch(
+    provider: AuthenticationMethod,
+  ): Promise<CeremonyPhaseView>;
+  startReauthentication(
+    method: AuthenticationMethod,
+    purpose: string,
+  ): Promise<CeremonyPhaseView>;
+  startIdentityLink(provider: IdentityLinkProvider): Promise<CeremonyPhaseView>;
+  startPasskeyRegistration(): Promise<CeremonyPhaseView>;
+  resumeInterruptedAuthentication(): Promise<CeremonyPhaseView>;
+  cancelAuthentication(): Promise<CeremonyPhaseView>;
+  renewAccountSession(): Promise<CeremonyPhaseView>;
+  signOut(): Promise<"revoked" | "queued">;
   listWorkspaces(): Promise<WorkspaceSummary[]>;
   resolveWorkspace(idOrSlug: string): Promise<WorkspaceSummary | null>;
   openWorkspace(workspaceId: string): Promise<PunksWorkspaceSession>;
-  ceremonyStart(provider: "google" | "github"): Promise<CeremonyPhaseView>;
-  ceremonyStatus(): Promise<CeremonyPhaseView>;
-  ceremonyCancel(): Promise<CeremonyPhaseView>;
-  sessionRenew(): Promise<CeremonyPhaseView>;
-  logout(): Promise<"revoked" | "queued">;
   /** Native envelope validation; test clients may omit this boundary. */
   validateNavigation?(url: string): Promise<PunksNavigationTarget>;
 }
@@ -162,6 +171,7 @@ export function createTauriPunksAccountClient(): PunksAccountClient {
 export type FakePunksClientSeed = {
   compatibility: DesktopCompatibilityResponse;
   session: AuthSession;
+  accountSessionState?: AccountSessionStateView;
   workspaces: WorkspaceSummary[];
   streams: Record<string, ConversationSummary[]>;
   messages: Record<string, MessageView[]>;
@@ -174,6 +184,14 @@ export function createFakePunksAccountClient(
 ): PunksAccountClient {
   const seed = structuredClone(input);
   let ceremonyPhase: CeremonyPhaseView = { phase: "idle" };
+  let accountSessionState: AccountSessionStateView = structuredClone(
+    seed.accountSessionState ?? {
+      state: "authenticated",
+      session: seed.session,
+      authentication: ceremonyPhase,
+      resumeAvailable: false,
+    },
+  );
   let compatible = false;
   let generation = 0;
   let activeLease: WorkspaceLease | null = null;
@@ -222,31 +240,127 @@ export function createFakePunksAccountClient(
       compatible = seed.compatibility.compatible;
       return structuredClone(seed.compatibility);
     },
-    async getSession() {
+    async getAccountSessionState() {
       assertCompatible();
-      return structuredClone(seed.session);
+      return structuredClone(accountSessionState);
+    },
+    async startSignIn(provider) {
+      assertCompatible();
+      if (accountSessionState.state !== "signed_out") {
+        throw new PunksDesktopFailure(
+          "contract_violation",
+          "Sign-in requires a signed-out Account client",
+        );
+      }
+      ceremonyPhase = {
+        phase: "started",
+        intent: "sign_in",
+        method: provider,
+      };
+      accountSessionState = {
+        ...accountSessionState,
+        authentication: ceremonyPhase,
+        resumeAvailable: false,
+      };
+      return structuredClone(ceremonyPhase);
+    },
+    async startAccountSwitch(provider) {
+      assertCompatible();
+      ceremonyPhase = {
+        phase: "started",
+        intent: "switch_account",
+        method: provider,
+      };
+      accountSessionState = {
+        ...accountSessionState,
+        authentication: ceremonyPhase,
+        resumeAvailable: false,
+      };
+      return structuredClone(ceremonyPhase);
+    },
+    async startReauthentication(method, _purpose) {
+      assertCompatible();
+      ceremonyPhase = {
+        phase: "started",
+        intent: "reauthenticate",
+        method,
+      };
+      accountSessionState = {
+        ...accountSessionState,
+        authentication: ceremonyPhase,
+        resumeAvailable: false,
+      };
+      return structuredClone(ceremonyPhase);
+    },
+    async startIdentityLink(provider) {
+      assertCompatible();
+      ceremonyPhase = {
+        phase: "started",
+        intent: provider === "google" ? "link_google" : "link_github",
+        method: provider,
+      };
+      accountSessionState = {
+        ...accountSessionState,
+        authentication: ceremonyPhase,
+        resumeAvailable: false,
+      };
+      return structuredClone(ceremonyPhase);
+    },
+    async startPasskeyRegistration() {
+      assertCompatible();
+      ceremonyPhase = {
+        phase: "started",
+        intent: "register_passkey",
+        method: "passkey",
+      };
+      accountSessionState = {
+        ...accountSessionState,
+        authentication: ceremonyPhase,
+        resumeAvailable: false,
+      };
+      return structuredClone(ceremonyPhase);
+    },
+    async resumeInterruptedAuthentication() {
+      assertCompatible();
+      if (!accountSessionState.resumeAvailable) {
+        throw new PunksDesktopFailure(
+          "contract_violation",
+          "No interrupted desktop authentication can be resumed",
+        );
+      }
+      accountSessionState = {
+        ...accountSessionState,
+        resumeAvailable: false,
+      };
+      return structuredClone(accountSessionState.authentication);
+    },
+    async cancelAuthentication() {
+      assertCompatible();
+      ceremonyPhase = { phase: "cancelled" };
+      accountSessionState = {
+        ...accountSessionState,
+        authentication: ceremonyPhase,
+        resumeAvailable: false,
+      };
+      return structuredClone(ceremonyPhase);
+    },
+    async renewAccountSession() {
+      assertCompatible();
+      return structuredClone(accountSessionState.authentication);
+    },
+    async signOut() {
+      assertCompatible();
+      ceremonyPhase = { phase: "idle" };
+      accountSessionState = {
+        state: "signed_out",
+        authentication: ceremonyPhase,
+        resumeAvailable: false,
+      };
+      return "revoked" as const;
     },
     async listWorkspaces() {
       assertCompatible();
       return structuredClone(seed.workspaces);
-    },
-    async ceremonyStart(provider) {
-      ceremonyPhase = { phase: "started", provider };
-      return structuredClone(ceremonyPhase);
-    },
-    async ceremonyStatus() {
-      return structuredClone(ceremonyPhase);
-    },
-    async ceremonyCancel() {
-      ceremonyPhase = { phase: "cancelled" };
-      return structuredClone(ceremonyPhase);
-    },
-    async sessionRenew() {
-      return structuredClone(ceremonyPhase);
-    },
-    async logout() {
-      ceremonyPhase = { phase: "idle" };
-      return "revoked" as const;
     },
     async resolveWorkspace(idOrSlug) {
       assertCompatible();

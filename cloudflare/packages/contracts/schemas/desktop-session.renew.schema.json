@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/desktop-session.renew@1",
+  "title": "DesktopSessionRenewExchange",
+  "oneOf": [
+    { "$ref": "#/$defs/prepareRequest" },
+    { "$ref": "#/$defs/preparedResponse" },
+    { "$ref": "#/$defs/confirmRequest" },
+    { "$ref": "#/$defs/confirmedResponse" }
+  ],
+  "$defs": {
+    "prepareRequest": {
+      "title": "DesktopSessionRenewPrepareRequest",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract", "message", "action", "commandId"],
+      "properties": {
+        "contract": { "const": "desktop-session.renew@1" },
+        "message": { "const": "request" },
+        "action": { "const": "prepare" },
+        "commandId": { "type": "string", "format": "uuid" }
+      }
+    },
+    "session": {
+      "title": "DesktopSessionRenewSession",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sessionId",
+        "punkId",
+        "authenticatedAt",
+        "expiresAt",
+        "recentReauthUntil",
+        "punk"
+      ],
+      "properties": {
+        "sessionId": { "type": "string", "format": "uuid" },
+        "punkId": { "type": "string", "format": "uuid" },
+        "authenticatedAt": { "type": "string", "format": "date-time" },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "recentReauthUntil": {
+          "anyOf": [
+            { "type": "string", "format": "date-time" },
+            { "type": "null" }
+          ]
+        },
+        "punk": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "displayName", "avatarUrl"],
+          "properties": {
+            "id": { "type": "string", "format": "uuid" },
+            "displayName": { "type": "string", "minLength": 1, "maxLength": 80 },
+            "avatarUrl": {
+              "anyOf": [
+                { "type": "string", "format": "uri", "maxLength": 2048 },
+                { "type": "null" }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "capability": {
+      "title": "DesktopSessionRenewRevokeCapability",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["token", "expiresAt"],
+      "properties": {
+        "token": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{43,128}$"
+        },
+        "expiresAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "preparedResponse": {
+      "title": "DesktopSessionRenewPreparedResponse",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract",
+        "message",
+        "action",
+        "commandId",
+        "rotationId",
+        "session",
+        "revokeCapability",
+        "confirmBy"
+      ],
+      "properties": {
+        "contract": { "const": "desktop-session.renew@1" },
+        "message": { "const": "response" },
+        "action": { "const": "prepared" },
+        "commandId": { "type": "string", "format": "uuid" },
+        "rotationId": { "type": "string", "format": "uuid" },
+        "session": { "$ref": "#/$defs/session" },
+        "revokeCapability": { "$ref": "#/$defs/capability" },
+        "confirmBy": { "type": "string", "format": "date-time" }
+      }
+    },
+    "confirmRequest": {
+      "title": "DesktopSessionRenewConfirmRequest",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract", "message", "action", "commandId", "rotationId"],
+      "properties": {
+        "contract": { "const": "desktop-session.renew@1" },
+        "message": { "const": "request" },
+        "action": { "const": "confirm" },
+        "commandId": { "type": "string", "format": "uuid" },
+        "rotationId": { "type": "string", "format": "uuid" }
+      }
+    },
+    "confirmedResponse": {
+      "title": "DesktopSessionRenewConfirmedResponse",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract",
+        "message",
+        "action",
+        "commandId",
+        "rotationId",
+        "sessionId",
+        "confirmedAt"
+      ],
+      "properties": {
+        "contract": { "const": "desktop-session.renew@1" },
+        "message": { "const": "response" },
+        "action": { "const": "confirmed" },
+        "commandId": { "type": "string", "format": "uuid" },
+        "rotationId": { "type": "string", "format": "uuid" },
+        "sessionId": { "type": "string", "format": "uuid" },
+        "confirmedAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}

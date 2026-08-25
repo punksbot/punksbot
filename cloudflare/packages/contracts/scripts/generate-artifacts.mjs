@@ -199,7 +199,13 @@ function uniqueName(base, taken, disambiguator) {
     taken.add(base);
     return base;
   }
-  const candidate = `${base}${pascal(disambiguator)}`;
+  const suffix = pascal(disambiguator) || "Type";
+  let candidate = `${base}${suffix}`;
+  let ordinal = 2;
+  while (taken.has(candidate)) {
+    candidate = `${base}${suffix}${ordinal}`;
+    ordinal += 1;
+  }
   taken.add(candidate);
   return candidate;
 }
@@ -282,12 +288,12 @@ class RustEmitter {
   }
 
   /** Nom d'un type interne ($defs ou contrat référencé), en le générant si besoin. */
-  typeName(name, schema, defsRoot) {
-    if (this.contractNames.has(name)) {
-      return this.contractNames.get(name);
+  typeName(name, schema, defsRoot, cacheKey = name) {
+    if (this.contractNames.has(cacheKey)) {
+      return this.contractNames.get(cacheKey);
     }
     const base = uniqueName(pascal(schema.title ?? name), this.names, name);
-    this.contractNames.set(name, base);
+    this.contractNames.set(cacheKey, base);
     const declared = this.declare(schema, base, defsRoot);
     this.declarations.push(declared);
     return base;
@@ -645,7 +651,15 @@ class RustEmitter {
   unionSource(name, variants, rootSchema) {
     const variantTypes = [];
     for (const [variantName, variantSchema] of variants) {
-      const typeName = this.typeName(variantName, variantSchema, rootSchema);
+      // `$defs/request` et `$defs/response` sont des noms locaux au contrat.
+      // Les utiliser seuls comme clés réemployait silencieusement les types du
+      // premier échange dans tous les échanges suivants.
+      const typeName = this.typeName(
+        variantName,
+        variantSchema,
+        rootSchema,
+        `${name}.${variantName}`,
+      );
       variantTypes.push([pascal(variantName), typeName]);
     }
     const body = variantTypes
@@ -895,8 +909,34 @@ const ROUTES = {
     path: "/api/v1/desktop/compatibility",
   },
   getSession: { method: "get", path: "/api/auth/v1/session" },
-  startAuthentication: { method: "post", path: "/api/auth/v1/start" },
-  logout: { method: "post", path: "/api/auth/v1/logout" },
+  startDesktopAuthentication: {
+    method: "post",
+    path: "/api/auth/v1/desktop/start",
+  },
+  getDesktopAuthenticationStatus: {
+    method: "post",
+    path: "/api/auth/v1/desktop/status",
+  },
+  claimDesktopAuthentication: {
+    method: "post",
+    path: "/api/auth/v1/desktop/claim",
+  },
+  confirmDesktopAuthentication: {
+    method: "post",
+    path: "/api/auth/v1/desktop/confirm",
+  },
+  cancelDesktopAuthentication: {
+    method: "post",
+    path: "/api/auth/v1/desktop/cancel",
+  },
+  renewDesktopSession: {
+    method: "post",
+    path: "/api/auth/v1/desktop/session/renew",
+  },
+  revokeDesktopSession: {
+    method: "post",
+    path: "/api/auth/v1/desktop/session/revoke",
+  },
   listWorkspaces: { method: "get", path: "/api/v1/workspaces" },
   listStreams: {
     method: "get",
@@ -940,10 +980,36 @@ const CLIENT_CONTROLS = new Set([
   "confirmFollowBatch",
 ]);
 
-function contractReference(reference) {
-  return {
-    $ref: `#/components/schemas/${schemaTitle(reference.split("@")[0])}`,
-  };
+const DESKTOP_NATIVE_OPERATIONS = new Set([
+  "startDesktopAuthentication",
+  "getDesktopAuthenticationStatus",
+  "claimDesktopAuthentication",
+  "confirmDesktopAuthentication",
+  "cancelDesktopAuthentication",
+  "renewDesktopSession",
+  "revokeDesktopSession",
+]);
+
+function contractReference(reference, direction) {
+  const name = reference.split("@")[0];
+  const schema = schemaByName.get(name);
+  const variants =
+    direction === undefined
+      ? []
+      : Object.entries(schema?.$defs ?? {})
+          .filter(
+            ([, definition]) =>
+              definition.properties?.message?.const === direction,
+          )
+          .map(([definitionName]) => ({
+            $ref: `#/components/schemas/${pascal(
+              schema.title ?? name,
+              definitionName,
+            )}`,
+          }));
+  if (variants.length === 1) return variants[0];
+  if (variants.length > 1) return { oneOf: variants };
+  return { $ref: `#/components/schemas/${schemaTitle(name)}` };
 }
 
 function successResponseHeaders(operation) {
@@ -967,7 +1033,9 @@ function successResponseHeaders(operation) {
 function successResponseSchemas(operation) {
   const responseContract = operation.responseContract;
   const contracted =
-    responseContract === undefined ? null : contractReference(responseContract);
+    responseContract === undefined
+      ? null
+      : contractReference(responseContract, "response");
   let statuses = [200];
   let schema = contracted;
   switch (operation.name) {
@@ -995,15 +1063,7 @@ function successResponseSchemas(operation) {
         },
       };
       break;
-    case "logout":
-      schema = {
-        type: "object",
-        additionalProperties: false,
-        required: ["signedOut"],
-        properties: { signedOut: { type: "boolean", const: true } },
-      };
-      break;
-    case "startAuthentication":
+    case "startDesktopAuthentication":
       statuses = [201];
       break;
     case "postMessage":
@@ -1105,6 +1165,16 @@ function operationParameters(operation, route) {
   const requestSchema = schemaByName.get(requestName);
   const properties = requestSchema.properties ?? {};
   const parameters = [];
+  if (DESKTOP_NATIVE_OPERATIONS.has(operation.name)) {
+    parameters.push({
+      name: "Sec-Punks-Desktop-Environment",
+      in: "header",
+      required: true,
+      description:
+        "Assertion de distribution compilée; ce nom Sec-* ne peut pas être émis par browser Fetch.",
+      schema: { enum: ["local", "staging", "production"] },
+    });
+  }
   for (const placeholder of placeholders) {
     const property = properties[placeholder];
     if (property === undefined) {
@@ -1194,11 +1264,10 @@ function emitOpenApi(contracts) {
               required: true,
               content: {
                 "application/json": {
-                  schema: {
-                    $ref: `#/components/schemas/${schemaTitle(
-                      operation.requestContract.split("@")[0],
-                    )}`,
-                  },
+                  schema: contractReference(
+                    operation.requestContract,
+                    "request",
+                  ),
                 },
               },
             },

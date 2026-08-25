@@ -407,6 +407,20 @@ phase without relying on an in-memory socket registry.
    transports, backup state and monotonically verified counter, and serializes
    assertions before issuing a fresh session.
 
+The packaged desktop uses a separate `DesktopAuthFlowDO`, never a browser
+Session transfer. Rust generates a 256-bit verifier and sends only its PKCE
+S256 commitment to `desktop-auth.start@1`. The system browser completes OAuth
+or WebAuthn under its HttpOnly browser binding, then returns only a flow UUID
+through the environment-specific protocol handler. Native `status`, `claim`,
+`confirm`, and `cancel` are idempotent and require the compiled distribution
+header. A claimed Session remains `prepared`: only `/api/auth/v1/session` may
+read it for quarantine validation, while every collaborative authority rejects
+it until native secure-storage reread and `confirm`. `SessionRevocationDO`
+holds a separate revoke-only capability; `SessionRotationDO` implements the
+same prepare/readback/confirm discipline for foreground renewal. Target-bound
+five-minute `DesktopReauthGrantDO` grants replace a generic recent-reauth flag
+for identity linking and passkey registration.
+
 ## Desktop compatibility runtime identity
 
 `POST /api/v1/desktop/compatibility` expose les identités d'exécution
@@ -438,6 +452,10 @@ et n'exposent pas les identités runtime.
 - JSON bodies are streamed through explicit byte ceilings before parsing.
 - OAuth callbacks are browser-bound, PKCE-protected, expire after ten minutes,
   and are consumed at most once.
+- Desktop completion schemes, keyring namespaces, native request headers,
+  OAuth clients and WebAuthn RP IDs are distinct for local, staging and
+  production. The browser never receives a desktop Session cookie or a
+  revoke-only capability.
 - Auth sessions and security claims are authoritative Durable Objects, never KV.
 - The Bot Runtime has no route, storage or secret. Only its exact private
   Service Bindings can reach Auth's mint-only `BotInvocationIssuer` and the

@@ -222,7 +222,9 @@ monitored before API rollout. The Auth deployment must be withheld if any OAuth
 credential is absent. The erasure registry itself has no secret; its security
 boundary is the exclusive R2 binding and private Worker reachability. Realtime,
 media and sharing Workers will be added as their vertical slices become
-deployable. The passkey backend already belongs to the Auth Worker, but positive
-staging and client ceremony coverage remains outstanding. Already provisioned
+deployable. The Auth Worker and native client now contain the recoverable
+Google/GitHub/passkey desktop ceremony and its local/workerd coverage; the
+installed, signed multi-platform proof against the exact staging deployment
+remains the responsibility of the tranche promotion workflow. Already provisioned
 isolated resources and successful dry-runs are not evidence that those
 capabilities or Workers are deployed.

@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/desktop-auth.status@1",
+  "title": "DesktopAuthStatusExchange",
+  "oneOf": [
+    { "$ref": "#/$defs/request" },
+    { "$ref": "#/$defs/response" }
+  ],
+  "$defs": {
+    "request": {
+      "title": "DesktopAuthStatusRequest",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract", "message", "flowId", "verifierCommitment"],
+      "properties": {
+        "contract": { "const": "desktop-auth.status@1" },
+        "message": { "const": "request" },
+        "flowId": { "type": "string", "format": "uuid" },
+        "verifierCommitment": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{43}$"
+        }
+      }
+    },
+    "decision": {
+      "title": "DesktopAuthRetryDecision",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "oldSessionUsable",
+        "revokePreparedSession",
+        "destroyWorkspaceContext",
+        "retrySameRequest",
+        "freshHumanActionRequired"
+      ],
+      "properties": {
+        "oldSessionUsable": { "type": "boolean" },
+        "revokePreparedSession": { "type": "boolean" },
+        "destroyWorkspaceContext": { "type": "boolean" },
+        "retrySameRequest": { "type": "boolean" },
+        "freshHumanActionRequired": { "type": "boolean" }
+      }
+    },
+    "response": {
+      "title": "DesktopAuthStatusResponse",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract",
+        "message",
+        "flowId",
+        "phase",
+        "terminal",
+        "expiresAt",
+        "result",
+        "decision"
+      ],
+      "properties": {
+        "contract": { "const": "desktop-auth.status@1" },
+        "message": { "const": "response" },
+        "flowId": { "type": "string", "format": "uuid" },
+        "phase": {
+          "enum": [
+            "started",
+            "browser_complete",
+            "ready",
+            "delivering",
+            "confirmed",
+            "cancelled",
+            "expired"
+          ]
+        },
+        "terminal": { "type": "boolean" },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "result": {
+          "enum": [
+            "success",
+            "human_action_required",
+            "security_failure",
+            "transient_interruption"
+          ]
+        },
+        "decision": { "$ref": "#/$defs/decision" }
+      }
+    }
+  }
+}

@@ -30,13 +30,13 @@ describe("corpus commun desktop-social-loop@1", () => {
     expect(run.traces.length).toBeGreaterThan(0);
   });
 
-  it("matrice exhaustive : les 18 opérations produisent la trace canonique complète", () => {
+  it("matrice exhaustive : les 23 opérations produisent la trace canonique complète", () => {
     const run = runOperationCorpus();
     expect(run.divergences).toEqual([]);
     expect(new Set(run.traces.map(({ operation }) => operation))).toEqual(
       new Set(operationCorpusJson.operations.map(({ operation }) => operation)),
     );
-    expect(operationCorpusJson.operations).toHaveLength(18);
+    expect(operationCorpusJson.operations).toHaveLength(23);
     for (const trace of run.traces) {
       expect(Object.keys(trace).sort()).toEqual([
         "ack",

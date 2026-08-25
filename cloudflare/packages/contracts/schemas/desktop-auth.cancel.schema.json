@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/desktop-auth.cancel@1",
+  "title": "DesktopAuthCancelExchange",
+  "oneOf": [
+    { "$ref": "#/$defs/request" },
+    { "$ref": "#/$defs/response" }
+  ],
+  "$defs": {
+    "request": {
+      "title": "DesktopAuthCancelRequest",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract", "message", "flowId", "verifier"],
+      "properties": {
+        "contract": { "const": "desktop-auth.cancel@1" },
+        "message": { "const": "request" },
+        "flowId": { "type": "string", "format": "uuid" },
+        "verifier": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" }
+      }
+    },
+    "response": {
+      "title": "DesktopAuthCancelResponse",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract", "message", "flowId", "phase", "cancelledAt"],
+      "properties": {
+        "contract": { "const": "desktop-auth.cancel@1" },
+        "message": { "const": "response" },
+        "flowId": { "type": "string", "format": "uuid" },
+        "phase": { "const": "cancelled" },
+        "cancelledAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}

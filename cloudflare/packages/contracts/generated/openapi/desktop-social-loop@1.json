@@ -1593,6 +1593,677 @@
         "title": "CreateAccountMergePlanCommand",
         "type": "object"
       },
+      "DesktopAuthCancelExchange": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/DesktopAuthCancelExchangeRequest"
+          },
+          {
+            "$ref": "#/components/schemas/DesktopAuthCancelExchangeResponse"
+          }
+        ],
+        "title": "DesktopAuthCancelExchange"
+      },
+      "DesktopAuthCancelExchangeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "contract": {
+            "const": "desktop-auth.cancel@1"
+          },
+          "flowId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "message": {
+            "const": "request"
+          },
+          "verifier": {
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "contract",
+          "message",
+          "flowId",
+          "verifier"
+        ],
+        "title": "DesktopAuthCancelRequest",
+        "type": "object"
+      },
+      "DesktopAuthCancelExchangeResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "cancelledAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "contract": {
+            "const": "desktop-auth.cancel@1"
+          },
+          "flowId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "message": {
+            "const": "response"
+          },
+          "phase": {
+            "const": "cancelled"
+          }
+        },
+        "required": [
+          "contract",
+          "message",
+          "flowId",
+          "phase",
+          "cancelledAt"
+        ],
+        "title": "DesktopAuthCancelResponse",
+        "type": "object"
+      },
+      "DesktopAuthClaimExchange": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/DesktopAuthClaimExchangeRequest"
+          },
+          {
+            "$ref": "#/components/schemas/DesktopAuthClaimExchangeSessionResponse"
+          },
+          {
+            "$ref": "#/components/schemas/DesktopAuthClaimExchangeReauthorizationResponse"
+          }
+        ],
+        "title": "DesktopAuthClaimExchange"
+      },
+      "DesktopAuthClaimExchangeAuthorization": {
+        "additionalProperties": false,
+        "properties": {
+          "authorizationId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "handoffId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "intent": {
+            "const": "reauthenticate"
+          },
+          "punkId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sessionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "targetMethod": {
+            "enum": [
+              "link_google",
+              "link_github",
+              "register_passkey"
+            ]
+          }
+        },
+        "required": [
+          "authorizationId",
+          "sessionId",
+          "punkId",
+          "intent",
+          "targetMethod",
+          "handoffId",
+          "expiresAt"
+        ],
+        "title": "DesktopReauthenticationAuthorization",
+        "type": "object"
+      },
+      "DesktopAuthClaimExchangeCapability": {
+        "additionalProperties": false,
+        "properties": {
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "token": {
+            "pattern": "^[A-Za-z0-9_-]{43,128}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "expiresAt"
+        ],
+        "title": "DesktopSessionRevokeCapability",
+        "type": "object"
+      },
+      "DesktopAuthClaimExchangeReauthorizationResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "authorization": {
+            "$ref": "#/components/schemas/DesktopAuthClaimExchangeAuthorization"
+          },
+          "contract": {
+            "const": "desktop-auth.claim@1"
+          },
+          "deliveryExpiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "deliveryId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "deliveryKind": {
+            "const": "reauthorization"
+          },
+          "flowId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "message": {
+            "const": "response"
+          },
+          "phase": {
+            "const": "delivering"
+          }
+        },
+        "required": [
+          "contract",
+          "message",
+          "flowId",
+          "phase",
+          "deliveryKind",
+          "deliveryId",
+          "authorization",
+          "deliveryExpiresAt"
+        ],
+        "title": "DesktopAuthClaimReauthorizationResponse",
+        "type": "object"
+      },
+      "DesktopAuthClaimExchangeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "contract": {
+            "const": "desktop-auth.claim@1"
+          },
+          "deliveryKind": {
+            "const": "request"
+          },
+          "flowId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "message": {
+            "const": "request"
+          },
+          "verifier": {
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "contract",
+          "message",
+          "deliveryKind",
+          "flowId",
+          "verifier"
+        ],
+        "title": "DesktopAuthClaimRequest",
+        "type": "object"
+      },
+      "DesktopAuthClaimExchangeSession": {
+        "additionalProperties": false,
+        "properties": {
+          "authenticatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "punk": {
+            "additionalProperties": false,
+            "properties": {
+              "avatarUrl": {
+                "anyOf": [
+                  {
+                    "format": "uri",
+                    "maxLength": 2048,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "displayName": {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "displayName",
+              "avatarUrl"
+            ],
+            "type": "object"
+          },
+          "punkId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "recentReauthUntil": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sessionId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId",
+          "punkId",
+          "authenticatedAt",
+          "expiresAt",
+          "recentReauthUntil",
+          "punk"
+        ],
+        "title": "DesktopAuthClaimSession",
+        "type": "object"
+      },
+      "DesktopAuthClaimExchangeSessionResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "contract": {
+            "const": "desktop-auth.claim@1"
+          },
+          "deliveryExpiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "deliveryId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "deliveryKind": {
+            "const": "session"
+          },
+          "flowId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "message": {
+            "const": "response"
+          },
+          "phase": {
+            "const": "delivering"
+          },
+          "revokeCapability": {
+            "$ref": "#/components/schemas/DesktopAuthClaimExchangeCapability"
+          },
+          "session": {
+            "$ref": "#/components/schemas/DesktopAuthClaimExchangeSession"
+          }
+        },
+        "required": [
+          "contract",
+          "message",
+          "flowId",
+          "phase",
+          "deliveryKind",
+          "deliveryId",
+          "session",
+          "revokeCapability",
+          "deliveryExpiresAt"
+        ],
+        "title": "DesktopAuthClaimResponse",
+        "type": "object"
+      },
+      "DesktopAuthConfirmExchange": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/DesktopAuthConfirmExchangeRequest"
+          },
+          {
+            "$ref": "#/components/schemas/DesktopAuthConfirmExchangeResponse"
+          }
+        ],
+        "title": "DesktopAuthConfirmExchange"
+      },
+      "DesktopAuthConfirmExchangeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "contract": {
+            "const": "desktop-auth.confirm@1"
+          },
+          "deliveryId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "flowId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "message": {
+            "const": "request"
+          },
+          "verifier": {
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "contract",
+          "message",
+          "flowId",
+          "verifier",
+          "deliveryId"
+        ],
+        "title": "DesktopAuthConfirmRequest",
+        "type": "object"
+      },
+      "DesktopAuthConfirmExchangeResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "confirmedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "contract": {
+            "const": "desktop-auth.confirm@1"
+          },
+          "flowId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "message": {
+            "const": "response"
+          },
+          "phase": {
+            "const": "confirmed"
+          },
+          "sessionId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "contract",
+          "message",
+          "flowId",
+          "phase",
+          "sessionId",
+          "confirmedAt"
+        ],
+        "title": "DesktopAuthConfirmResponse",
+        "type": "object"
+      },
+      "DesktopAuthStartExchange": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/DesktopAuthStartExchangeRequest"
+          },
+          {
+            "$ref": "#/components/schemas/DesktopAuthStartExchangeResponse"
+          }
+        ],
+        "title": "DesktopAuthStartExchange"
+      },
+      "DesktopAuthStartExchangeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "authorizationId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "contract": {
+            "const": "desktop-auth.start@1"
+          },
+          "intent": {
+            "enum": [
+              "sign_in",
+              "switch_account",
+              "reauthenticate",
+              "link_google",
+              "link_github",
+              "register_passkey"
+            ]
+          },
+          "message": {
+            "const": "request"
+          },
+          "method": {
+            "enum": [
+              "google",
+              "github",
+              "passkey"
+            ]
+          },
+          "purpose": {
+            "enum": [
+              "link_google",
+              "link_github",
+              "register_passkey"
+            ]
+          },
+          "verifierCommitment": {
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "contract",
+          "message",
+          "intent",
+          "method",
+          "verifierCommitment"
+        ],
+        "title": "DesktopAuthStartRequest",
+        "type": "object"
+      },
+      "DesktopAuthStartExchangeResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "browserUrl": {
+            "format": "uri",
+            "maxLength": 2048,
+            "type": "string"
+          },
+          "contract": {
+            "const": "desktop-auth.start@1"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "flowId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "intent": {
+            "enum": [
+              "sign_in",
+              "switch_account",
+              "reauthenticate",
+              "link_google",
+              "link_github",
+              "register_passkey"
+            ]
+          },
+          "message": {
+            "const": "response"
+          },
+          "method": {
+            "enum": [
+              "google",
+              "github",
+              "passkey"
+            ]
+          },
+          "phase": {
+            "const": "started"
+          }
+        },
+        "required": [
+          "contract",
+          "message",
+          "flowId",
+          "phase",
+          "intent",
+          "method",
+          "browserUrl",
+          "createdAt",
+          "expiresAt"
+        ],
+        "title": "DesktopAuthStartResponse",
+        "type": "object"
+      },
+      "DesktopAuthStatusExchange": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/DesktopAuthStatusExchangeRequest"
+          },
+          {
+            "$ref": "#/components/schemas/DesktopAuthStatusExchangeResponse"
+          }
+        ],
+        "title": "DesktopAuthStatusExchange"
+      },
+      "DesktopAuthStatusExchangeDecision": {
+        "additionalProperties": false,
+        "properties": {
+          "destroyWorkspaceContext": {
+            "type": "boolean"
+          },
+          "freshHumanActionRequired": {
+            "type": "boolean"
+          },
+          "oldSessionUsable": {
+            "type": "boolean"
+          },
+          "retrySameRequest": {
+            "type": "boolean"
+          },
+          "revokePreparedSession": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "oldSessionUsable",
+          "revokePreparedSession",
+          "destroyWorkspaceContext",
+          "retrySameRequest",
+          "freshHumanActionRequired"
+        ],
+        "title": "DesktopAuthRetryDecision",
+        "type": "object"
+      },
+      "DesktopAuthStatusExchangeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "contract": {
+            "const": "desktop-auth.status@1"
+          },
+          "flowId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "message": {
+            "const": "request"
+          },
+          "verifierCommitment": {
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "contract",
+          "message",
+          "flowId",
+          "verifierCommitment"
+        ],
+        "title": "DesktopAuthStatusRequest",
+        "type": "object"
+      },
+      "DesktopAuthStatusExchangeResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "contract": {
+            "const": "desktop-auth.status@1"
+          },
+          "decision": {
+            "$ref": "#/components/schemas/DesktopAuthStatusExchangeDecision"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "flowId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "message": {
+            "const": "response"
+          },
+          "phase": {
+            "enum": [
+              "started",
+              "browser_complete",
+              "ready",
+              "delivering",
+              "confirmed",
+              "cancelled",
+              "expired"
+            ]
+          },
+          "result": {
+            "enum": [
+              "success",
+              "human_action_required",
+              "security_failure",
+              "transient_interruption"
+            ]
+          },
+          "terminal": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "contract",
+          "message",
+          "flowId",
+          "phase",
+          "terminal",
+          "expiresAt",
+          "result",
+          "decision"
+        ],
+        "title": "DesktopAuthStatusResponse",
+        "type": "object"
+      },
       "DesktopCompatibilityQuery": {
         "additionalProperties": false,
         "properties": {
@@ -1688,6 +2359,316 @@
           "capabilities"
         ],
         "title": "DesktopCompatibilityResponse",
+        "type": "object"
+      },
+      "DesktopSessionRenewExchange": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/DesktopSessionRenewExchangePrepareRequest"
+          },
+          {
+            "$ref": "#/components/schemas/DesktopSessionRenewExchangePreparedResponse"
+          },
+          {
+            "$ref": "#/components/schemas/DesktopSessionRenewExchangeConfirmRequest"
+          },
+          {
+            "$ref": "#/components/schemas/DesktopSessionRenewExchangeConfirmedResponse"
+          }
+        ],
+        "title": "DesktopSessionRenewExchange"
+      },
+      "DesktopSessionRenewExchangeCapability": {
+        "additionalProperties": false,
+        "properties": {
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "token": {
+            "pattern": "^[A-Za-z0-9_-]{43,128}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "expiresAt"
+        ],
+        "title": "DesktopSessionRenewRevokeCapability",
+        "type": "object"
+      },
+      "DesktopSessionRenewExchangeConfirmRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "const": "confirm"
+          },
+          "commandId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "contract": {
+            "const": "desktop-session.renew@1"
+          },
+          "message": {
+            "const": "request"
+          },
+          "rotationId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "contract",
+          "message",
+          "action",
+          "commandId",
+          "rotationId"
+        ],
+        "title": "DesktopSessionRenewConfirmRequest",
+        "type": "object"
+      },
+      "DesktopSessionRenewExchangeConfirmedResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "const": "confirmed"
+          },
+          "commandId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "confirmedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "contract": {
+            "const": "desktop-session.renew@1"
+          },
+          "message": {
+            "const": "response"
+          },
+          "rotationId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sessionId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "contract",
+          "message",
+          "action",
+          "commandId",
+          "rotationId",
+          "sessionId",
+          "confirmedAt"
+        ],
+        "title": "DesktopSessionRenewConfirmedResponse",
+        "type": "object"
+      },
+      "DesktopSessionRenewExchangePrepareRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "const": "prepare"
+          },
+          "commandId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "contract": {
+            "const": "desktop-session.renew@1"
+          },
+          "message": {
+            "const": "request"
+          }
+        },
+        "required": [
+          "contract",
+          "message",
+          "action",
+          "commandId"
+        ],
+        "title": "DesktopSessionRenewPrepareRequest",
+        "type": "object"
+      },
+      "DesktopSessionRenewExchangePreparedResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "const": "prepared"
+          },
+          "commandId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "confirmBy": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "contract": {
+            "const": "desktop-session.renew@1"
+          },
+          "message": {
+            "const": "response"
+          },
+          "revokeCapability": {
+            "$ref": "#/components/schemas/DesktopSessionRenewExchangeCapability"
+          },
+          "rotationId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "session": {
+            "$ref": "#/components/schemas/DesktopSessionRenewExchangeSession"
+          }
+        },
+        "required": [
+          "contract",
+          "message",
+          "action",
+          "commandId",
+          "rotationId",
+          "session",
+          "revokeCapability",
+          "confirmBy"
+        ],
+        "title": "DesktopSessionRenewPreparedResponse",
+        "type": "object"
+      },
+      "DesktopSessionRenewExchangeSession": {
+        "additionalProperties": false,
+        "properties": {
+          "authenticatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "punk": {
+            "additionalProperties": false,
+            "properties": {
+              "avatarUrl": {
+                "anyOf": [
+                  {
+                    "format": "uri",
+                    "maxLength": 2048,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "displayName": {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "displayName",
+              "avatarUrl"
+            ],
+            "type": "object"
+          },
+          "punkId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "recentReauthUntil": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sessionId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId",
+          "punkId",
+          "authenticatedAt",
+          "expiresAt",
+          "recentReauthUntil",
+          "punk"
+        ],
+        "title": "DesktopSessionRenewSession",
+        "type": "object"
+      },
+      "DesktopSessionRevokeExchange": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/DesktopSessionRevokeExchangeRequest"
+          },
+          {
+            "$ref": "#/components/schemas/DesktopSessionRevokeExchangeResponse"
+          }
+        ],
+        "title": "DesktopSessionRevokeExchange"
+      },
+      "DesktopSessionRevokeExchangeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "capability": {
+            "pattern": "^[A-Za-z0-9_-]{43,128}$",
+            "type": "string"
+          },
+          "contract": {
+            "const": "desktop-session.revoke@1"
+          },
+          "message": {
+            "const": "request"
+          }
+        },
+        "required": [
+          "contract",
+          "message",
+          "capability"
+        ],
+        "title": "DesktopSessionRevokeRequest",
+        "type": "object"
+      },
+      "DesktopSessionRevokeExchangeResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "contract": {
+            "const": "desktop-session.revoke@1"
+          },
+          "expired": {
+            "type": "boolean"
+          },
+          "message": {
+            "const": "response"
+          },
+          "revoked": {
+            "const": true
+          }
+        },
+        "required": [
+          "contract",
+          "message",
+          "revoked",
+          "expired"
+        ],
+        "title": "DesktopSessionRevokeResponse",
         "type": "object"
       },
       "FollowConversationQuery": {
@@ -3272,60 +4253,6 @@
           }
         ]
       },
-      "StartAuthCommand": {
-        "additionalProperties": false,
-        "properties": {
-          "contract": {
-            "const": "auth.start@1"
-          },
-          "intent": {
-            "enum": [
-              "sign_in",
-              "reauthenticate",
-              "link"
-            ]
-          },
-          "provider": {
-            "enum": [
-              "google",
-              "github"
-            ]
-          },
-          "returnTo": {
-            "maxLength": 1024,
-            "minLength": 1,
-            "pattern": "^/(?![/\\\\])",
-            "type": "string"
-          }
-        },
-        "required": [
-          "contract",
-          "provider",
-          "intent",
-          "returnTo"
-        ],
-        "title": "StartAuthCommand",
-        "type": "object"
-      },
-      "StartAuthResponse": {
-        "additionalProperties": false,
-        "properties": {
-          "authorizationUrl": {
-            "format": "uri",
-            "type": "string"
-          },
-          "expiresAt": {
-            "format": "date-time",
-            "type": "string"
-          }
-        },
-        "required": [
-          "authorizationUrl",
-          "expiresAt"
-        ],
-        "title": "StartAuthResponse",
-        "type": "object"
-      },
       "Workspace": {
         "additionalProperties": false,
         "properties": {
@@ -3432,26 +4359,40 @@
   },
   "openapi": "3.1.0",
   "paths": {
-    "/api/auth/v1/logout": {
+    "/api/auth/v1/desktop/cancel": {
       "post": {
-        "operationId": "logout",
-        "parameters": [],
+        "operationId": "cancelDesktopAuthentication",
+        "parameters": [
+          {
+            "description": "Assertion de distribution compilée; ce nom Sec-* ne peut pas être émis par browser Fetch.",
+            "in": "header",
+            "name": "Sec-Punks-Desktop-Environment",
+            "required": true,
+            "schema": {
+              "enum": [
+                "local",
+                "staging",
+                "production"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DesktopAuthCancelExchangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "signedOut": {
-                      "const": true,
-                      "type": "boolean"
-                    }
-                  },
-                  "required": [
-                    "signedOut"
-                  ],
-                  "type": "object"
+                  "$ref": "#/components/schemas/DesktopAuthCancelExchangeResponse"
                 }
               }
             },
@@ -3468,7 +4409,364 @@
             "description": "Erreur fermée de la taxonomie Punks."
           }
         },
-        "summary": "logout (account · mutation)",
+        "summary": "cancelDesktopAuthentication (account · mutation)",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/auth/v1/desktop/claim": {
+      "post": {
+        "operationId": "claimDesktopAuthentication",
+        "parameters": [
+          {
+            "description": "Assertion de distribution compilée; ce nom Sec-* ne peut pas être émis par browser Fetch.",
+            "in": "header",
+            "name": "Sec-Punks-Desktop-Environment",
+            "required": true,
+            "schema": {
+              "enum": [
+                "local",
+                "staging",
+                "production"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DesktopAuthClaimExchangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/DesktopAuthClaimExchangeSessionResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/DesktopAuthClaimExchangeReauthorizationResponse"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "Réponse de succès du Worker."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PunksProblem"
+                }
+              }
+            },
+            "description": "Erreur fermée de la taxonomie Punks."
+          }
+        },
+        "summary": "claimDesktopAuthentication (account · mutation)",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/auth/v1/desktop/confirm": {
+      "post": {
+        "operationId": "confirmDesktopAuthentication",
+        "parameters": [
+          {
+            "description": "Assertion de distribution compilée; ce nom Sec-* ne peut pas être émis par browser Fetch.",
+            "in": "header",
+            "name": "Sec-Punks-Desktop-Environment",
+            "required": true,
+            "schema": {
+              "enum": [
+                "local",
+                "staging",
+                "production"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DesktopAuthConfirmExchangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesktopAuthConfirmExchangeResponse"
+                }
+              }
+            },
+            "description": "Réponse de succès du Worker."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PunksProblem"
+                }
+              }
+            },
+            "description": "Erreur fermée de la taxonomie Punks."
+          }
+        },
+        "summary": "confirmDesktopAuthentication (account · mutation)",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/auth/v1/desktop/session/renew": {
+      "post": {
+        "operationId": "renewDesktopSession",
+        "parameters": [
+          {
+            "description": "Assertion de distribution compilée; ce nom Sec-* ne peut pas être émis par browser Fetch.",
+            "in": "header",
+            "name": "Sec-Punks-Desktop-Environment",
+            "required": true,
+            "schema": {
+              "enum": [
+                "local",
+                "staging",
+                "production"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/DesktopSessionRenewExchangePrepareRequest"
+                  },
+                  {
+                    "$ref": "#/components/schemas/DesktopSessionRenewExchangeConfirmRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/DesktopSessionRenewExchangePreparedResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/DesktopSessionRenewExchangeConfirmedResponse"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "Réponse de succès du Worker."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PunksProblem"
+                }
+              }
+            },
+            "description": "Erreur fermée de la taxonomie Punks."
+          }
+        },
+        "summary": "renewDesktopSession (account · mutation)",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/auth/v1/desktop/session/revoke": {
+      "post": {
+        "operationId": "revokeDesktopSession",
+        "parameters": [
+          {
+            "description": "Assertion de distribution compilée; ce nom Sec-* ne peut pas être émis par browser Fetch.",
+            "in": "header",
+            "name": "Sec-Punks-Desktop-Environment",
+            "required": true,
+            "schema": {
+              "enum": [
+                "local",
+                "staging",
+                "production"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DesktopSessionRevokeExchangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesktopSessionRevokeExchangeResponse"
+                }
+              }
+            },
+            "description": "Réponse de succès du Worker."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PunksProblem"
+                }
+              }
+            },
+            "description": "Erreur fermée de la taxonomie Punks."
+          }
+        },
+        "summary": "revokeDesktopSession (account · mutation)",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/auth/v1/desktop/start": {
+      "post": {
+        "operationId": "startDesktopAuthentication",
+        "parameters": [
+          {
+            "description": "Assertion de distribution compilée; ce nom Sec-* ne peut pas être émis par browser Fetch.",
+            "in": "header",
+            "name": "Sec-Punks-Desktop-Environment",
+            "required": true,
+            "schema": {
+              "enum": [
+                "local",
+                "staging",
+                "production"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DesktopAuthStartExchangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesktopAuthStartExchangeResponse"
+                }
+              }
+            },
+            "description": "Ressource créée par le Worker."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PunksProblem"
+                }
+              }
+            },
+            "description": "Erreur fermée de la taxonomie Punks."
+          }
+        },
+        "summary": "startDesktopAuthentication (account · mutation)",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/auth/v1/desktop/status": {
+      "post": {
+        "operationId": "getDesktopAuthenticationStatus",
+        "parameters": [
+          {
+            "description": "Assertion de distribution compilée; ce nom Sec-* ne peut pas être émis par browser Fetch.",
+            "in": "header",
+            "name": "Sec-Punks-Desktop-Environment",
+            "required": true,
+            "schema": {
+              "enum": [
+                "local",
+                "staging",
+                "production"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DesktopAuthStatusExchangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesktopAuthStatusExchangeResponse"
+                }
+              }
+            },
+            "description": "Réponse de succès du Worker."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PunksProblem"
+                }
+              }
+            },
+            "description": "Erreur fermée de la taxonomie Punks."
+          }
+        },
+        "summary": "getDesktopAuthenticationStatus (account · read)",
         "tags": [
           "account"
         ]
@@ -3510,48 +4808,6 @@
           }
         },
         "summary": "getSession (account · read)",
-        "tags": [
-          "account"
-        ]
-      }
-    },
-    "/api/auth/v1/start": {
-      "post": {
-        "operationId": "startAuthentication",
-        "parameters": [],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/StartAuthCommand"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StartAuthResponse"
-                }
-              }
-            },
-            "description": "Ressource créée par le Worker."
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PunksProblem"
-                }
-              }
-            },
-            "description": "Erreur fermée de la taxonomie Punks."
-          }
-        },
-        "summary": "startAuthentication (account · mutation)",
         "tags": [
           "account"
         ]

@@ -154,13 +154,13 @@ describe("artefacts API générés desktop-social-loop@1", () => {
         session: { $ref: "#/components/schemas/AuthSession" },
       },
     });
-    expect(Object.keys(responses("/api/auth/v1/start", "post"))).toContain(
-      "201",
-    );
-    expect(responseSchema("/api/auth/v1/logout", "post", "200")).toMatchObject({
-      type: "object",
-      required: ["signedOut"],
-      properties: { signedOut: { type: "boolean", const: true } },
+    expect(
+      Object.keys(responses("/api/auth/v1/desktop/start", "post")),
+    ).toContain("201");
+    expect(
+      responseSchema("/api/auth/v1/desktop/status", "post", "200"),
+    ).toMatchObject({
+      $ref: "#/components/schemas/DesktopAuthStatusExchangeResponse",
     });
     expect(
       responseSchema(
@@ -210,6 +210,30 @@ describe("artefacts API générés desktop-social-loop@1", () => {
       description: expect.stringMatching(/base64url.*sept Workers/i),
       schema: { type: "string", pattern: "^[A-Za-z0-9_-]+$" },
     });
+  });
+
+  it("OpenAPI : chaque opération native exige l'identité de distribution Sec-*", () => {
+    const paths = openApiJson.paths as JsonObject;
+    for (const path of [
+      "/api/auth/v1/desktop/start",
+      "/api/auth/v1/desktop/status",
+      "/api/auth/v1/desktop/claim",
+      "/api/auth/v1/desktop/confirm",
+      "/api/auth/v1/desktop/cancel",
+      "/api/auth/v1/desktop/session/renew",
+      "/api/auth/v1/desktop/session/revoke",
+    ]) {
+      const operation = (paths[path] as JsonObject).post as JsonObject;
+      expect(operation.parameters).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            name: "Sec-Punks-Desktop-Environment",
+            in: "header",
+            required: true,
+          }),
+        ]),
+      );
+    }
   });
 
   it("AsyncAPI : chaque variable du canal FOLLOW est déclarée", () => {
@@ -342,5 +366,50 @@ describe("artefacts API générés desktop-social-loop@1", () => {
     for (const contract of contracts) {
       expect(rust).toContain(`"punks://contracts/${contract}" =>`);
     }
+  });
+
+  it("Rust : chaque échange desktop namespace ses propres variants", () => {
+    const rust = readFileSync(
+      fileURLToPath(
+        new URL("../generated/rust/punks_contracts.rs", import.meta.url),
+      ),
+      "utf8",
+    );
+    for (const [exchange, request, response] of [
+      [
+        "DesktopAuthStatusExchange",
+        "DesktopAuthStatusRequest",
+        "DesktopAuthStatusResponse",
+      ],
+      [
+        "DesktopAuthClaimExchange",
+        "DesktopAuthClaimRequest",
+        "DesktopAuthClaimResponse",
+      ],
+      [
+        "DesktopAuthConfirmExchange",
+        "DesktopAuthConfirmRequest",
+        "DesktopAuthConfirmResponse",
+      ],
+      [
+        "DesktopAuthCancelExchange",
+        "DesktopAuthCancelRequest",
+        "DesktopAuthCancelResponse",
+      ],
+      [
+        "DesktopSessionRevokeExchange",
+        "DesktopSessionRevokeRequest",
+        "DesktopSessionRevokeResponse",
+      ],
+    ]) {
+      expect(rust).toMatch(
+        new RegExp(
+          `pub enum ${exchange} \\{[\\s\\S]*?Request\\(${request}\\),[\\s\\S]*?Response\\(${response}\\),`,
+        ),
+      );
+    }
+    expect(rust).not.toMatch(
+      /pub enum (?:DesktopAuthStatus|DesktopAuthClaim|DesktopAuthConfirm|DesktopAuthCancel|DesktopSessionRevoke)Exchange \{[^}]*DesktopAuthStart/,
+    );
   });
 });

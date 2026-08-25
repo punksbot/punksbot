@@ -15,8 +15,11 @@ import type {
 import { PunksDesktopFailure } from "./punksFailure";
 import { invokePunks, requireContract } from "./punksTauriTransport";
 import type {
+  AccountSessionStateView,
+  AuthenticationMethod,
   CeremonyPhaseView,
   EditMessageInput,
+  IdentityLinkProvider,
   MessagePageInput,
   PunksAccountClient,
   PunksFollow,
@@ -29,6 +32,127 @@ import type {
   ThreadPageInput,
   WorkspaceLease,
 } from "./punksClient";
+
+const authenticationMethods = new Set<AuthenticationMethod>([
+  "google",
+  "github",
+  "passkey",
+]);
+const authenticationIntents = new Set([
+  "sign_in",
+  "switch_account",
+  "reauthenticate",
+  "link_google",
+  "link_github",
+  "register_passkey",
+]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function hasExactKeys(
+  value: Record<string, unknown>,
+  expected: readonly string[],
+): boolean {
+  const actual = Object.keys(value).sort();
+  const wanted = [...expected].sort();
+  return (
+    actual.length === wanted.length &&
+    actual.every((key, index) => key === wanted[index])
+  );
+}
+
+function invalidNativeView(message: string): never {
+  throw new PunksDesktopFailure("contract_violation", message);
+}
+
+function requireCeremonyPhaseView(value: unknown): CeremonyPhaseView {
+  if (!isRecord(value) || typeof value.phase !== "string") {
+    return invalidNativeView("Native authentication phase is invalid");
+  }
+  if (
+    [
+      "idle",
+      "browser_complete",
+      "ready",
+      "delivering",
+      "cancelled",
+      "expired",
+    ].includes(value.phase)
+  ) {
+    if (!hasExactKeys(value, ["phase"])) {
+      return invalidNativeView("Native authentication phase is not sanitized");
+    }
+    return value as CeremonyPhaseView;
+  }
+  if (value.phase === "started") {
+    if (
+      !hasExactKeys(value, ["phase", "intent", "method"]) ||
+      typeof value.intent !== "string" ||
+      !authenticationIntents.has(value.intent) ||
+      typeof value.method !== "string" ||
+      !authenticationMethods.has(value.method as AuthenticationMethod)
+    ) {
+      return invalidNativeView("Native started phase is invalid");
+    }
+    return value as CeremonyPhaseView;
+  }
+  if (
+    value.phase === "confirmed" &&
+    hasExactKeys(value, ["phase", "sessionId"]) &&
+    typeof value.sessionId === "string"
+  ) {
+    return value as CeremonyPhaseView;
+  }
+  if (
+    value.phase === "failed" &&
+    hasExactKeys(value, ["phase", "code"]) &&
+    typeof value.code === "string"
+  ) {
+    return value as CeremonyPhaseView;
+  }
+  return invalidNativeView("Native authentication phase is invalid");
+}
+
+function requireAccountSessionStateView(
+  value: unknown,
+): AccountSessionStateView {
+  if (!isRecord(value) || typeof value.resumeAvailable !== "boolean") {
+    return invalidNativeView("Native Account session state is invalid");
+  }
+  const authentication = requireCeremonyPhaseView(value.authentication);
+  if (
+    value.state === "signed_out" &&
+    hasExactKeys(value, ["state", "authentication", "resumeAvailable"])
+  ) {
+    return {
+      state: "signed_out",
+      authentication,
+      resumeAvailable: value.resumeAvailable,
+    };
+  }
+  if (
+    value.state === "authenticated" &&
+    hasExactKeys(value, [
+      "state",
+      "session",
+      "authentication",
+      "resumeAvailable",
+    ])
+  ) {
+    return {
+      state: "authenticated",
+      session: requireContract<AuthSession>(
+        "punks://contracts/auth.session@1",
+        value.session,
+      ),
+      authentication,
+      resumeAvailable: value.resumeAvailable,
+    };
+  }
+  return invalidNativeView("Native Account session state is not sanitized");
+}
 
 class TauriWorkspaceSession implements PunksWorkspaceSession {
   readonly lease: WorkspaceLease;
@@ -168,11 +292,75 @@ export class TauriPunksAccountClient implements PunksAccountClient {
     );
   }
 
-  async getSession(): Promise<AuthSession> {
-    return requireContract<AuthSession>(
-      "punks://contracts/auth.session@1",
-      await invokePunks("punks_get_session"),
+  async getAccountSessionState(): Promise<AccountSessionStateView> {
+    return requireAccountSessionStateView(
+      await invokePunks("punks_get_account_session_state"),
     );
+  }
+
+  async startSignIn(
+    provider: AuthenticationMethod,
+  ): Promise<CeremonyPhaseView> {
+    return requireCeremonyPhaseView(
+      await invokePunks("punks_start_sign_in", { provider }),
+    );
+  }
+
+  async startAccountSwitch(
+    provider: AuthenticationMethod,
+  ): Promise<CeremonyPhaseView> {
+    return requireCeremonyPhaseView(
+      await invokePunks("punks_start_account_switch", { provider }),
+    );
+  }
+
+  async startReauthentication(
+    method: AuthenticationMethod,
+    purpose: string,
+  ): Promise<CeremonyPhaseView> {
+    return requireCeremonyPhaseView(
+      await invokePunks("punks_start_reauthentication", { method, purpose }),
+    );
+  }
+
+  async startIdentityLink(
+    provider: IdentityLinkProvider,
+  ): Promise<CeremonyPhaseView> {
+    return requireCeremonyPhaseView(
+      await invokePunks("punks_start_identity_link", { provider }),
+    );
+  }
+
+  async startPasskeyRegistration(): Promise<CeremonyPhaseView> {
+    return requireCeremonyPhaseView(
+      await invokePunks("punks_start_passkey_registration"),
+    );
+  }
+
+  async resumeInterruptedAuthentication(): Promise<CeremonyPhaseView> {
+    return requireCeremonyPhaseView(
+      await invokePunks("punks_resume_interrupted_authentication"),
+    );
+  }
+
+  async cancelAuthentication(): Promise<CeremonyPhaseView> {
+    return requireCeremonyPhaseView(
+      await invokePunks("punks_cancel_authentication"),
+    );
+  }
+
+  async renewAccountSession(): Promise<CeremonyPhaseView> {
+    return requireCeremonyPhaseView(
+      await invokePunks("punks_renew_account_session"),
+    );
+  }
+
+  async signOut(): Promise<"revoked" | "queued"> {
+    const outcome = await invokePunks<unknown>("punks_sign_out");
+    if (outcome !== "revoked" && outcome !== "queued") {
+      return invalidNativeView("Native sign-out result is invalid");
+    }
+    return outcome;
   }
 
   async listWorkspaces(): Promise<WorkspaceSummary[]> {
@@ -187,26 +375,6 @@ export class TauriPunksAccountClient implements PunksAccountClient {
 
   resolveWorkspace(idOrSlug: string): Promise<WorkspaceSummary | null> {
     return invokePunks("punks_resolve_workspace", { idOrSlug });
-  }
-
-  ceremonyStart(provider: "google" | "github"): Promise<CeremonyPhaseView> {
-    return invokePunks("punks_ceremony_start", { provider });
-  }
-
-  ceremonyStatus(): Promise<CeremonyPhaseView> {
-    return invokePunks("punks_ceremony_status");
-  }
-
-  ceremonyCancel(): Promise<CeremonyPhaseView> {
-    return invokePunks("punks_ceremony_cancel");
-  }
-
-  sessionRenew(): Promise<CeremonyPhaseView> {
-    return invokePunks("punks_session_renew");
-  }
-
-  logout(): Promise<"revoked" | "queued"> {
-    return invokePunks("punks_logout");
   }
 
   validateNavigation(url: string): Promise<PunksNavigationTarget> {

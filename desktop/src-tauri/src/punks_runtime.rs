@@ -9,15 +9,49 @@ use std::sync::Arc;
 use tauri::Manager;
 use tauri_plugin_deep_link::DeepLinkExt;
 
-use crate::{punks_client, punks_session_store::KeyringSessionPersistence};
+use crate::{punks_auth, punks_client, punks_session_store::KeyringSessionPersistence};
 
-fn dispatch_session_deep_link(app: tauri::AppHandle, url: String) {
-    if !url.starts_with("punks://session") {
-        return;
+fn expected_auth_scheme() -> &'static str {
+    match option_env!("PUNKS_DISTRIBUTION") {
+        Some("production") => "punks",
+        Some("staging") => "punks-staging",
+        _ => "punks-local",
     }
+}
+
+fn parse_auth_completion_url(raw: &str, expected_scheme: &str) -> Result<String, String> {
+    let parsed =
+        tauri::Url::parse(raw).map_err(|_| "invalid authentication completion".to_string())?;
+    if parsed.scheme() != expected_scheme
+        || parsed.host_str() != Some("auth")
+        || parsed.path() != "/complete"
+        || parsed.fragment().is_some()
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.port().is_some()
+    {
+        return Err("authentication completion does not match this distribution".to_string());
+    }
+    let pairs = parsed.query_pairs().collect::<Vec<_>>();
+    if pairs.len() != 1 || pairs[0].0 != "flow" {
+        return Err("authentication completion must carry only its flow".to_string());
+    }
+    let flow_id = pairs[0].1.as_ref();
+    let parsed_flow = uuid::Uuid::parse_str(flow_id)
+        .map_err(|_| "authentication flow id is invalid".to_string())?;
+    if parsed_flow.to_string() != flow_id {
+        return Err("authentication flow id is not canonical".to_string());
+    }
+    Ok(flow_id.to_string())
+}
+
+fn dispatch_auth_completion_deep_link(app: tauri::AppHandle, url: String) {
+    let Ok(flow_id) = parse_auth_completion_url(&url, expected_auth_scheme()) else {
+        return;
+    };
     tauri::async_runtime::spawn(async move {
-        if let Err(error) = punks_client::handle_session_deeplink(app, &url).await {
-            eprintln!("punks-desktop: session deep link rejected: {error}");
+        if let Err(error) = punks_auth::handle_auth_completion(app, &flow_id).await {
+            eprintln!("punks-desktop: authentication completion rejected: {error}");
         }
     });
 }
@@ -26,7 +60,7 @@ fn install_deep_link_handlers(app: &mut tauri::App) {
     let handle = app.handle().clone();
     app.deep_link().on_open_url(move |event| {
         for url in event.urls() {
-            dispatch_session_deep_link(handle.clone(), url.to_string());
+            dispatch_auth_completion_deep_link(handle.clone(), url.to_string());
         }
     });
 
@@ -34,7 +68,7 @@ fn install_deep_link_handlers(app: &mut tauri::App) {
     match app.deep_link().get_current() {
         Ok(Some(urls)) => {
             for url in urls {
-                dispatch_session_deep_link(app.handle().clone(), url.to_string());
+                dispatch_auth_completion_deep_link(app.handle().clone(), url.to_string());
             }
         }
         Ok(None) => {}
@@ -51,7 +85,7 @@ pub fn run() -> Result<(), String> {
                 let _ = window.set_focus();
             }
             for argument in argv {
-                dispatch_session_deep_link(app.clone(), argument);
+                dispatch_auth_completion_deep_link(app.clone(), argument);
             }
         }))
         .plugin(tauri_plugin_deep_link::init())
@@ -77,13 +111,17 @@ pub fn run() -> Result<(), String> {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            punks_client::punks_ceremony_start,
-            punks_client::punks_ceremony_status,
-            punks_client::punks_ceremony_cancel,
-            punks_client::punks_session_renew,
-            punks_client::punks_logout,
+            punks_auth::punks_get_account_session_state,
+            punks_auth::punks_start_sign_in,
+            punks_auth::punks_start_account_switch,
+            punks_auth::punks_start_reauthentication,
+            punks_auth::punks_start_identity_link,
+            punks_auth::punks_start_passkey_registration,
+            punks_auth::punks_resume_interrupted_authentication,
+            punks_auth::punks_cancel_authentication,
+            punks_auth::punks_renew_account_session,
+            punks_auth::punks_sign_out,
             punks_client::punks_check_compatibility,
-            punks_client::punks_get_session,
             punks_client::punks_validate_navigation,
             punks_client::punks_list_workspaces,
             punks_client::punks_resolve_workspace,
@@ -110,4 +148,52 @@ pub fn run() -> Result<(), String> {
 
     app.run(|_, _| {});
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const FLOW_ID: &str = "d9428888-122b-4d9b-8f03-1a1127e667b8";
+
+    #[test]
+    fn completion_deep_link_is_bound_to_the_compiled_environment() {
+        assert_eq!(
+            parse_auth_completion_url(
+                &format!("punks-staging://auth/complete?flow={FLOW_ID}"),
+                "punks-staging",
+            )
+            .expect("staging completion"),
+            FLOW_ID
+        );
+        assert!(parse_auth_completion_url(
+            &format!("punks://auth/complete?flow={FLOW_ID}"),
+            "punks-staging",
+        )
+        .is_err());
+        assert!(parse_auth_completion_url(
+            &format!("punks-staging://session?flow={FLOW_ID}"),
+            "punks-staging",
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn completion_deep_link_carries_only_one_canonical_flow_id() {
+        assert!(parse_auth_completion_url(
+            &format!("punks-local://auth/complete?flow={FLOW_ID}&cookie=secret"),
+            "punks-local",
+        )
+        .is_err());
+        assert!(parse_auth_completion_url(
+            "punks-local://auth/complete?flow=not-a-uuid",
+            "punks-local",
+        )
+        .is_err());
+        assert!(parse_auth_completion_url(
+            &format!("punks-local://auth/complete?flow={FLOW_ID}#fragment"),
+            "punks-local",
+        )
+        .is_err());
+    }
 }

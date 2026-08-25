@@ -14,10 +14,21 @@
 use std::fmt;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-/// TTL de la transaction de démarrage côté Worker (10 minutes).
+pub use crate::native_auth::{
+    AuthenticationMethod, NativeVerifier, PendingAuthIntent, PendingAuthPhase, RevocationSecret,
+    SessionSecret,
+};
+
+/// TTL d'une transaction OAuth Google/GitHub côté Worker (10 minutes).
 pub const CEREMONY_START_TTL: Duration = Duration::from_secs(10 * 60);
-/// TTL de la livraison à usage unique côté Worker (120 secondes).
-pub const DELIVERY_TTL: Duration = Duration::from_secs(120);
+/// TTL d'une transaction WebAuthn côté Worker (5 minutes).
+pub const PASSKEY_START_TTL: Duration = Duration::from_secs(5 * 60);
+/// Délai de réclamation après la fin du navigateur (5 minutes).
+pub const DELIVERY_READY_TTL: Duration = Duration::from_secs(5 * 60);
+/// Délai de confirmation après la première réclamation (10 minutes).
+pub const DELIVERY_IN_PROGRESS_TTL: Duration = Duration::from_secs(10 * 60);
+/// Plafond absolu après la fin du navigateur (20 minutes).
+pub const POST_BROWSER_MAX_TTL: Duration = Duration::from_secs(20 * 60);
 /// Fenêtre de renouvellement glissant : 30 jours.
 pub const RENEWAL_TTL: Duration = Duration::from_secs(30 * 24 * 3_600);
 /// Seuil de renouvellement : il reste moins de 7 jours.
@@ -40,12 +51,6 @@ impl CeremonyClock for SystemClock {
     }
 }
 
-/// Fournisseur d'identifiant d'installation (UUID v4 stocké en stockage
-/// sécurisé OS par l'application).
-pub trait InstallationIdentity: Send + Sync {
-    fn installation_id(&self) -> String;
-}
-
 /// Persistance du jar de Session en stockage sécurisé OS. L'application
 /// implémente ce trait au-dessus de son SecretStore ; la crate n'expose
 /// jamais la valeur hors de ces frontières contrôlées.
@@ -62,10 +67,19 @@ pub trait RevocationQueue: Send + Sync {
     fn enqueue(&self, pending: PendingRevocation) -> Result<(), String>;
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug)]
 pub struct PendingRevocation {
     pub session_id: String,
+    pub capability: RevocationCapability,
     pub queued_at: SystemTime,
+}
+
+/// Capacité de révocation et sa borne d'utilisation, stockées ensemble dans
+/// le coffre sécurisé mais jamais dans l'état de Session actif.
+#[derive(Debug)]
+pub struct RevocationCapability {
+    pub secret: RevocationSecret,
+    pub expires_at: SystemTime,
 }
 
 /// Métadonnées de session persistées à côté du secret (jamais le cookie).
@@ -75,33 +89,6 @@ pub struct SessionMetadata {
     pub punk_id: String,
     pub expires_at: SystemTime,
     pub last_renewed_at: Option<SystemTime>,
-}
-
-/// Cookie de Session détenu exclusivement par Rust. Le contenu est masqué
-/// dans `Debug` et `Display` : il ne peut fuiter dans un log ni une erreur.
-pub struct SessionSecret(String);
-
-impl SessionSecret {
-    pub fn from_cookie_header(value: &str) -> Self {
-        Self(value.to_string())
-    }
-
-    /// Accès brut réservé au jar natif ; jamais sérialisé ni loggé.
-    pub fn raw(&self) -> &str {
-        &self.0
-    }
-}
-
-impl fmt::Debug for SessionSecret {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("SessionSecret(<redacted>)")
-    }
-}
-
-impl fmt::Display for SessionSecret {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("SessionSecret(<redacted>)")
-    }
 }
 
 /// Phase publique de la cérémonie — la seule forme qui traverse l'IPC.
@@ -114,12 +101,18 @@ pub enum CeremonyPhase {
         provider: String,
         expires_at: SystemTime,
     },
-    /// Le deeplink d'environnement a livré le jeton à usage unique.
-    BrowserComplete { expires_at: SystemTime },
-    /// La livraison a été acceptée ; le cookie est en quarantaine validée.
-    Ready,
-    /// La livraison est en cours d'échange avec le Worker.
-    Delivering,
+    /// Le deeplink d'environnement a signalé la fin du navigateur.
+    BrowserComplete {
+        expires_at: SystemTime,
+        post_browser_deadline: SystemTime,
+    },
+    /// Le résultat navigateur est prêt à être réclamé.
+    Ready {
+        expires_at: SystemTime,
+        post_browser_deadline: SystemTime,
+    },
+    /// La livraison est en cours de validation et de persistance natives.
+    Delivering { expires_at: SystemTime },
     /// Session confirmée, persistée et promue dans le jar actif.
     Confirmed { session_id: String },
     /// Annulation explicite du Punk.
@@ -183,9 +176,14 @@ impl Ceremony {
             | CeremonyPhase::Cancelled
             | CeremonyPhase::Expired
             | CeremonyPhase::Failed { .. } => {
+                let ttl = if provider == "passkey" {
+                    PASSKEY_START_TTL
+                } else {
+                    CEREMONY_START_TTL
+                };
                 self.phase = CeremonyPhase::Started {
                     provider: provider.to_string(),
-                    expires_at: self.clock.now() + CEREMONY_START_TTL,
+                    expires_at: self.clock.now() + ttl,
                 };
                 Ok(())
             }
@@ -213,47 +211,73 @@ impl Ceremony {
             self.phase = CeremonyPhase::Expired;
             return Err(CeremonyFailure::DeliveryExpired);
         }
+        let now = self.clock.now();
         self.phase = CeremonyPhase::BrowserComplete {
-            expires_at: self.clock.now() + DELIVERY_TTL,
+            expires_at: now + DELIVERY_READY_TTL,
+            post_browser_deadline: now + POST_BROWSER_MAX_TTL,
         };
         Ok(())
     }
 
-    /// `BrowserComplete → Delivering` : l'échange à usage unique commence.
-    pub fn begin_delivery(&mut self) -> Result<(), CeremonyFailure> {
+    /// `BrowserComplete → Ready` : le résultat navigateur peut être réclamé.
+    pub fn ready(&mut self) -> Result<(), CeremonyFailure> {
         match &self.phase {
-            CeremonyPhase::BrowserComplete { expires_at } => {
+            CeremonyPhase::BrowserComplete {
+                expires_at,
+                post_browser_deadline,
+            } => {
                 let expires_at = *expires_at;
                 if self.clock.now() >= expires_at {
                     self.phase = CeremonyPhase::Expired;
                     return Err(CeremonyFailure::DeliveryExpired);
                 }
-                self.phase = CeremonyPhase::Delivering;
+                self.phase = CeremonyPhase::Ready {
+                    expires_at,
+                    post_browser_deadline: *post_browser_deadline,
+                };
                 Ok(())
             }
             _ => Err(CeremonyFailure::InvalidDeliveryToken),
         }
     }
 
-    /// `Delivering → Ready` : le cookie livré est en quarantaine validée.
-    pub fn quarantine_validated(&mut self) -> Result<(), CeremonyFailure> {
-        match self.phase {
-            CeremonyPhase::Delivering => {
-                self.phase = CeremonyPhase::Ready;
+    /// `Ready → Delivering` : la réclamation idempotente commence.
+    pub fn begin_delivery(&mut self) -> Result<(), CeremonyFailure> {
+        match &self.phase {
+            CeremonyPhase::Ready {
+                expires_at,
+                post_browser_deadline,
+            } => {
+                let now = self.clock.now();
+                if now >= *expires_at || now >= *post_browser_deadline {
+                    self.phase = CeremonyPhase::Expired;
+                    return Err(CeremonyFailure::DeliveryExpired);
+                }
+                self.phase = CeremonyPhase::Delivering {
+                    expires_at: std::cmp::min(
+                        now + DELIVERY_IN_PROGRESS_TTL,
+                        *post_browser_deadline,
+                    ),
+                };
                 Ok(())
             }
-            _ => Err(CeremonyFailure::ValidationFailed),
+            _ => Err(CeremonyFailure::InvalidDeliveryToken),
         }
     }
 
-    /// `Ready → Confirmed` : persistance OS réussie et promotion dans le jar.
+    /// `Delivering → Confirmed` : persistance OS relue, génération basculée
+    /// et confirmation serveur acquittée.
     pub fn confirm(&mut self, session_id: &str) -> Result<(), CeremonyFailure> {
-        match self.phase {
-            CeremonyPhase::Ready => {
+        match &self.phase {
+            CeremonyPhase::Delivering { expires_at } if self.clock.now() < *expires_at => {
                 self.phase = CeremonyPhase::Confirmed {
                     session_id: session_id.to_string(),
                 };
                 Ok(())
+            }
+            CeremonyPhase::Delivering { .. } => {
+                self.phase = CeremonyPhase::Expired;
+                Err(CeremonyFailure::DeliveryExpired)
             }
             _ => Err(CeremonyFailure::ValidationFailed),
         }
@@ -269,8 +293,8 @@ impl Ceremony {
         match &self.phase {
             CeremonyPhase::Started { .. }
             | CeremonyPhase::BrowserComplete { .. }
-            | CeremonyPhase::Ready
-            | CeremonyPhase::Delivering => {
+            | CeremonyPhase::Ready { .. }
+            | CeremonyPhase::Delivering { .. } => {
                 self.phase = CeremonyPhase::Cancelled;
                 Ok(())
             }
@@ -282,7 +306,9 @@ impl Ceremony {
     pub fn expire_if_due(&mut self) -> bool {
         let expired = match &self.phase {
             CeremonyPhase::Started { expires_at, .. } => self.clock.now() >= *expires_at,
-            CeremonyPhase::BrowserComplete { expires_at } => self.clock.now() >= *expires_at,
+            CeremonyPhase::BrowserComplete { expires_at, .. }
+            | CeremonyPhase::Ready { expires_at, .. }
+            | CeremonyPhase::Delivering { expires_at } => self.clock.now() >= *expires_at,
             _ => false,
         };
         if expired {
@@ -378,7 +404,7 @@ impl RenewalPolicy {
             return false;
         }
         let remaining = expires_at.duration_since(now).unwrap_or(Duration::ZERO);
-        if remaining > RENEWAL_THRESHOLD {
+        if remaining >= RENEWAL_THRESHOLD {
             return false;
         }
         match last_renewed_at {
@@ -408,19 +434,21 @@ pub async fn logout_local_first<F>(
     persistence: &dyn SessionPersistence,
     queue: &dyn RevocationQueue,
     metadata: &SessionMetadata,
+    capability: RevocationCapability,
     remote_revoke: F,
 ) -> Result<LogoutOutcome, String>
 where
-    F: std::future::Future<Output = Result<(), ()>>,
+    F: for<'a> FnOnce(&'a RevocationSecret) -> futures_util::future::BoxFuture<'a, Result<(), ()>>,
 {
     // 1. L'état local meurt d'abord, quoi qu'il arrive ensuite.
     persistence.destroy()?;
     // 2. La révocation distante est tentée, puis mise en file sur échec.
-    match remote_revoke.await {
+    match remote_revoke(&capability.secret).await {
         Ok(()) => Ok(LogoutOutcome::Revoked),
         Err(()) => queue
             .enqueue(PendingRevocation {
                 session_id: metadata.session_id.clone(),
+                capability,
                 queued_at: SystemTime::now(),
             })
             .map(|_| LogoutOutcome::Queued),
@@ -489,11 +517,11 @@ mod tests {
             CeremonyPhase::BrowserComplete { .. }
         ));
 
-        ceremony.begin_delivery().expect("delivering");
-        assert_eq!(ceremony.phase(), &CeremonyPhase::Delivering);
+        ceremony.ready().expect("ready");
+        assert!(matches!(ceremony.phase(), CeremonyPhase::Ready { .. }));
 
-        ceremony.quarantine_validated().expect("ready");
-        assert_eq!(ceremony.phase(), &CeremonyPhase::Ready);
+        ceremony.begin_delivery().expect("delivering");
+        assert!(matches!(ceremony.phase(), CeremonyPhase::Delivering { .. }));
 
         ceremony.confirm("session-1").expect("confirmed");
         assert_eq!(
@@ -502,6 +530,21 @@ mod tests {
                 session_id: "session-1".to_string()
             }
         );
+    }
+
+    #[test]
+    fn une_seule_ceremonie_non_terminale_peut_exister() {
+        let mut ceremony = ceremony_at(now());
+        ceremony.start("google").expect("first start");
+        let original = ceremony.phase().clone();
+
+        assert_eq!(
+            ceremony
+                .start("github")
+                .expect_err("second start must fail"),
+            "une cérémonie est déjà en cours"
+        );
+        assert_eq!(ceremony.phase(), &original);
     }
 
     #[test]
@@ -533,17 +576,32 @@ mod tests {
             .expect_err("expirée");
         assert_eq!(err, CeremonyFailure::InvalidDeliveryToken);
 
-        // la livraison à usage unique expire aussi après son TTL propre
+        // L'état ready expire après cinq minutes sans réclamation.
         let clock2 = AdvancingClock::at(now());
         let mut ceremony2 = Ceremony::new(clock2.clone());
         ceremony2.start("google").expect("start");
         ceremony2
             .browser_complete("staging", "staging")
             .expect("browser");
-        clock2.advance(DELIVERY_TTL + Duration::from_secs(1));
-        let err = ceremony2.begin_delivery().expect_err("livraison expirée");
+        ceremony2.ready().expect("ready");
+        clock2.advance(DELIVERY_READY_TTL + Duration::from_secs(1));
+        let err = ceremony2.begin_delivery().expect_err("ready expiré");
         assert_eq!(err, CeremonyFailure::DeliveryExpired);
         assert_eq!(ceremony2.phase(), &CeremonyPhase::Expired);
+
+        // Une livraison réclamée dispose de dix minutes, sans dépasser le
+        // plafond de vingt minutes à partir de browser_complete.
+        let clock3 = AdvancingClock::at(now());
+        let mut ceremony3 = Ceremony::new(clock3.clone());
+        ceremony3.start("passkey").expect("start");
+        ceremony3
+            .browser_complete("staging", "staging")
+            .expect("browser");
+        ceremony3.ready().expect("ready");
+        ceremony3.begin_delivery().expect("delivering");
+        clock3.advance(DELIVERY_IN_PROGRESS_TTL + Duration::from_secs(1));
+        assert!(ceremony3.expire_if_due());
+        assert_eq!(ceremony3.phase(), &CeremonyPhase::Expired);
     }
 
     #[test]
@@ -626,6 +684,32 @@ mod tests {
         assert!(!format!("{secret}").contains("valeur-sensitive"));
         let jar = QuarantineJar::new();
         assert!(!format!("{jar:?}").contains("punks_session"));
+
+        let capability = RevocationSecret::from_token(&"r".repeat(64)).expect("capability");
+        assert!(!format!("{capability:?}").contains(&"r".repeat(64)));
+        assert!(!format!("{capability}").contains(&"r".repeat(64)));
+        assert!(RevocationSecret::from_token("short").is_err());
+        assert!(RevocationSecret::from_token(&format!("{}=", "r".repeat(64))).is_err());
+    }
+
+    #[test]
+    fn le_verificateur_natif_est_opaque_et_son_engagement_est_stable() {
+        let verifier = NativeVerifier::from_bytes([0; 32]);
+
+        assert_eq!(verifier.encoded(), "A".repeat(43));
+        assert_eq!(
+            verifier.commitment(),
+            "DwBzhbb51LfusnSGBa_hqYSgo7-j8BTQnip4TOnlzRo"
+        );
+        assert!(!format!("{verifier:?}").contains(&verifier.encoded()));
+        assert!(!format!("{verifier}").contains(&verifier.encoded()));
+    }
+
+    #[test]
+    fn un_verificateur_natif_decode_exige_exactement_256_bits() {
+        assert!(NativeVerifier::decode(&"A".repeat(42)).is_err());
+        assert!(NativeVerifier::decode(&"A".repeat(43)).is_ok());
+        assert!(NativeVerifier::decode(&format!("{}=", "A".repeat(43))).is_err());
     }
 
     #[test]
@@ -635,6 +719,8 @@ mod tests {
 
         // 30 jours restants : pas dû.
         assert!(!policy.should_renew(now, now + RENEWAL_TTL, None));
+        // Exactement 7 jours : le seuil strict « moins de 7 jours » n'est pas franchi.
+        assert!(!policy.should_renew(now, now + RENEWAL_THRESHOLD, None));
         // 6 jours restants : dû, jamais renouvelé.
         assert!(policy.should_renew(now, now + Duration::from_secs(6 * 24 * 3_600), None));
         // 6 jours restants mais renouvelé il y a 1 heure : trop tôt.
@@ -704,9 +790,15 @@ mod tests {
         let queue = MemoryQueue {
             pending: Mutex::new(Vec::new()),
         };
-        let outcome = logout_local_first(&persistence, &queue, &metadata, async { Ok(()) })
-            .await
-            .unwrap();
+        let outcome = logout_local_first(
+            &persistence,
+            &queue,
+            &metadata,
+            revocation_capability(),
+            |_| Box::pin(async { Ok(()) }),
+        )
+        .await
+        .unwrap();
         assert_eq!(outcome, LogoutOutcome::Revoked);
         assert!(*persistence.destroyed.lock().unwrap());
         assert!(queue.pending.lock().unwrap().is_empty());
@@ -719,12 +811,22 @@ mod tests {
         let queue = MemoryQueue {
             pending: Mutex::new(Vec::new()),
         };
-        let outcome = logout_local_first(&persistence, &queue, &metadata, async { Err(()) })
-            .await
-            .unwrap();
+        let outcome = logout_local_first(
+            &persistence,
+            &queue,
+            &metadata,
+            revocation_capability(),
+            |_| Box::pin(async { Err(()) }),
+        )
+        .await
+        .unwrap();
         assert_eq!(outcome, LogoutOutcome::Queued);
         assert!(*persistence.destroyed.lock().unwrap());
         assert_eq!(queue.pending.lock().unwrap().len(), 1);
+        assert_eq!(
+            queue.pending.lock().unwrap()[0].capability.secret.raw(),
+            "r".repeat(64)
+        );
 
         // La destruction locale ne peut pas être contournée par la suite.
         let persistence = NullPersistence {
@@ -734,10 +836,23 @@ mod tests {
         let queue = MemoryQueue {
             pending: Mutex::new(Vec::new()),
         };
-        let error = logout_local_first(&persistence, &queue, &metadata, async { Ok(()) })
-            .await
-            .unwrap_err();
+        let error = logout_local_first(
+            &persistence,
+            &queue,
+            &metadata,
+            revocation_capability(),
+            |_| Box::pin(async { Ok(()) }),
+        )
+        .await
+        .unwrap_err();
         assert!(!error.is_empty());
         assert!(queue.pending.lock().unwrap().is_empty());
+    }
+
+    fn revocation_capability() -> RevocationCapability {
+        RevocationCapability {
+            secret: RevocationSecret::from_token(&"r".repeat(64)).expect("capability"),
+            expires_at: now() + RENEWAL_TTL,
+        }
     }
 }

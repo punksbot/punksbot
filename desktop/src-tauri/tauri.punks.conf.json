@@ -21,7 +21,7 @@
     },
     "deep-link": {
       "desktop": {
-        "schemes": ["punks"]
+        "schemes": ["punks-staging"]
       }
     }
   },

@@ -26,6 +26,20 @@ export function sameOrigin(request: Request, env: AuthEnv): boolean {
   }
 }
 
+/**
+ * Native-only boundary: `Sec-*` names are forbidden to browser Fetch while
+ * the Rust transport can set this compile-time environment assertion.
+ */
+export function sameDesktopDistribution(
+  request: Request,
+  env: AuthEnv,
+): boolean {
+  return (
+    sameOrigin(request, env) &&
+    request.headers.get("sec-punks-desktop-environment") === env.ENVIRONMENT
+  );
+}
+
 export function configuredTtl(env: AuthEnv): number {
   const value = Number.parseInt(env.SESSION_TTL_SECONDS, 10);
   return Number.isSafeInteger(value) && value >= 300 && value <= 2_592_000
@@ -46,8 +60,10 @@ export async function aggregateName(
     | "email"
     | "transaction"
     | "session"
+    | "session-revocation"
+    | "session-rotation"
     | "passkey-credential"
-    | "desktop-delivery",
+    | "desktop-auth-flow",
   value: string,
 ): Promise<string> {
   return deriveOpaqueUuid(`punks.auth.${domain}.v1`, value);
@@ -132,6 +148,78 @@ export async function ensureSessionForToken(
     value,
     cookie:
       cookieMode === "local-dev"
+        ? localDevSessionCookie(token, remainingTtl)
+        : sessionCookie(token, remainingTtl),
+    token,
+  };
+}
+
+/**
+ * Creates or replays the exact prepared desktop Session for one delivery.
+ * Prepared Sessions never satisfy `getActiveSession`; only confirm activates
+ * them. The opaque cookie remains a response header owned by native Rust.
+ */
+export async function prepareDesktopSessionForToken(
+  env: AuthEnv,
+  punk: Punk,
+  token: string,
+  lastRenewedAt?: string,
+): Promise<{ value: AuthSession; cookie: string; token: string }> {
+  const sessionId = await aggregateName("session", token);
+  const ttl = configuredTtl(env);
+  const stub = env.SESSIONS.getByName(sessionId);
+  let delivery: {
+    record: SessionRecord;
+    status: "prepared" | "active";
+    clientKind: "browser" | "desktop" | "mobile" | "api";
+  } | null = await stub.readForDesktopDelivery();
+  if (delivery === null) {
+    const now = new Date();
+    const candidate: SessionRecord = {
+      sessionId,
+      punkId: punk.id,
+      authenticatedAt: now.toISOString(),
+      expiresAt: new Date(now.getTime() + ttl * 1_000).toISOString(),
+      recentReauthUntil: null,
+    };
+    if (!(await stub.create(candidate, "desktop", "prepared", lastRenewedAt))) {
+      throw new Error("Prepared Session identifier collision");
+    }
+    delivery = {
+      record: candidate,
+      status: "prepared",
+      clientKind: "desktop",
+    };
+  }
+  if (
+    delivery.record.sessionId !== sessionId ||
+    delivery.record.punkId !== punk.id ||
+    delivery.clientKind !== "desktop"
+  ) {
+    throw new Error("Prepared Session belongs to another desktop delivery");
+  }
+  const value: AuthSession = {
+    ...delivery.record,
+    punk: {
+      id: punk.id,
+      displayName: punk.displayName,
+      avatarUrl: punk.avatarUrl,
+    },
+  };
+  if (!validateContract("punks://contracts/auth.session@1", value).valid) {
+    throw new Error("Prepared Session violated its canonical contract");
+  }
+  const remainingTtl = Math.max(
+    1,
+    Math.min(
+      ttl,
+      Math.floor((Date.parse(delivery.record.expiresAt) - Date.now()) / 1_000),
+    ),
+  );
+  return {
+    value,
+    cookie:
+      env.ENVIRONMENT === "local"
         ? localDevSessionCookie(token, remainingTtl)
         : sessionCookie(token, remainingTtl),
     token,

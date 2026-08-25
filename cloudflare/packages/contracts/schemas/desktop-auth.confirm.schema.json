@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/desktop-auth.confirm@1",
+  "title": "DesktopAuthConfirmExchange",
+  "oneOf": [
+    { "$ref": "#/$defs/request" },
+    { "$ref": "#/$defs/response" }
+  ],
+  "$defs": {
+    "request": {
+      "title": "DesktopAuthConfirmRequest",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract", "message", "flowId", "verifier", "deliveryId"],
+      "properties": {
+        "contract": { "const": "desktop-auth.confirm@1" },
+        "message": { "const": "request" },
+        "flowId": { "type": "string", "format": "uuid" },
+        "verifier": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" },
+        "deliveryId": { "type": "string", "format": "uuid" }
+      }
+    },
+    "response": {
+      "title": "DesktopAuthConfirmResponse",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract",
+        "message",
+        "flowId",
+        "phase",
+        "sessionId",
+        "confirmedAt"
+      ],
+      "properties": {
+        "contract": { "const": "desktop-auth.confirm@1" },
+        "message": { "const": "response" },
+        "flowId": { "type": "string", "format": "uuid" },
+        "phase": { "const": "confirmed" },
+        "sessionId": { "type": "string", "format": "uuid" },
+        "confirmedAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}

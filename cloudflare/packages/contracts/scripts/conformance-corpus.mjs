@@ -19,6 +19,13 @@ function matchesCondition(value, condition) {
 function stringSample(schema, path) {
   if (schema.format === "uuid") return UUID;
   if (schema.format === "date-time") return DATE;
+  if (
+    ["verifierCommitment", "verifier", "capability", "token"].some((field) =>
+      path.endsWith(field),
+    )
+  ) {
+    return "A".repeat(43);
+  }
   if (path.endsWith("origin")) return "https://punks.example";
   if (path.endsWith("slug")) return "aa";
   if (path.endsWith("reaction")) return "🔥";
@@ -470,14 +477,21 @@ function stimuliFor(operation) {
 
 /** Produit le corpus commun, fermé sur les opérations du profil. */
 export function generateOperationCorpus(profile, schemas) {
-  const contractSample = (reference) => {
+  const contractSample = (reference, message) => {
     if (reference === undefined) return null;
     const name = reference.split("@")[0];
     const root = schemas.get(name);
     if (root === undefined) throw new Error(`schéma absent : ${reference}`);
+    const variant = root.oneOf
+      ?.map((candidate) =>
+        candidate.$ref?.startsWith("#/$defs/")
+          ? root.$defs?.[candidate.$ref.slice(8)]
+          : candidate,
+      )
+      .find((candidate) => candidate?.properties?.message?.const === message);
     return {
       contract: `punks://contracts/${reference}`,
-      payload: sampleSchema(root, { root, schemas }),
+      payload: sampleSchema(variant ?? root, { root, schemas }),
     };
   };
   const problem = {
@@ -511,8 +525,8 @@ export function generateOperationCorpus(profile, schemas) {
       kind: operation.kind,
       retry: operation.retry,
       cancellablePhases: operation.cancellablePhases,
-      request: contractSample(operation.requestContract),
-      response: contractSample(operation.responseContract),
+      request: contractSample(operation.requestContract, "request"),
+      response: contractSample(operation.responseContract, "response"),
       cases: stimuliFor(operation).map((stimulus) => {
         const source =
           stimulus === "closed_problem"
@@ -522,8 +536,8 @@ export function generateOperationCorpus(profile, schemas) {
                   "malformed_response",
                   "malformed_frame",
                 ].includes(stimulus)
-              ? contractSample(operation.responseContract)
-              : contractSample(operation.requestContract);
+              ? contractSample(operation.responseContract, "response")
+              : contractSample(operation.requestContract, "request");
         let payload = source?.payload ?? null;
         if (stimulus === "unknown_field" && payload !== null) {
           payload = { ...payload, forbiddenSecret: SECRET };

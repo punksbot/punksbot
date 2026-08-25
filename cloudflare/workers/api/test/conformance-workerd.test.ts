@@ -81,8 +81,8 @@ describe("corpus commun desktop-social-loop@1 sous workerd", () => {
     ).toBe("suppressed");
   });
 
-  it("rejoue indépendamment les contrats de chacune des 18 opérations", () => {
-    expect(operationCorpus.operations).toHaveLength(18);
+  it("rejoue indépendamment les contrats de chacune des 23 opérations", () => {
+    expect(operationCorpus.operations).toHaveLength(23);
     for (const operation of operationCorpus.operations) {
       for (const testCase of operation.cases) {
         const actual = observeBackendScenario({

@@ -517,7 +517,7 @@ export class AccountMergeIntentDO extends DurableObject<AuthEnv> {
           try {
             switch (indexedHandoff.kind) {
               case "desktop-auth-flow":
-                sourceHandoff = await this.env.DESKTOP_DELIVERIES.getByName(
+                sourceHandoff = await this.env.DESKTOP_AUTH_FLOWS.getByName(
                   indexedHandoff.handoffId,
                 ).readForAccountMerge();
                 break;

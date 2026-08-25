@@ -66,12 +66,254 @@ mod const_checkers {
         }
     }
 
-    pub(super) fn expect_const_auth_start_1<'de, D>(deserializer: D) -> Result<String, D::Error>
+    pub(super) fn expect_const_desktop_auth_start_1<'de, D>(
+        deserializer: D,
+    ) -> Result<String, D::Error>
     where
         D: Deserializer<'de>,
     {
         let value = String::deserialize(deserializer)?;
-        if value == "auth.start@1" {
+        if value == "desktop-auth.start@1" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_request<'de, D>(deserializer: D) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "request" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_response<'de, D>(deserializer: D) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "response" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_started<'de, D>(deserializer: D) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "started" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_desktop_auth_status_1<'de, D>(
+        deserializer: D,
+    ) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "desktop-auth.status@1" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_desktop_auth_claim_1<'de, D>(
+        deserializer: D,
+    ) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "desktop-auth.claim@1" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_delivering<'de, D>(deserializer: D) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "delivering" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_session<'de, D>(deserializer: D) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "session" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_reauthorization<'de, D>(deserializer: D) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "reauthorization" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_reauthenticate<'de, D>(deserializer: D) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "reauthenticate" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_desktop_auth_confirm_1<'de, D>(
+        deserializer: D,
+    ) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "desktop-auth.confirm@1" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_confirmed<'de, D>(deserializer: D) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "confirmed" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_desktop_auth_cancel_1<'de, D>(
+        deserializer: D,
+    ) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "desktop-auth.cancel@1" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_cancelled<'de, D>(deserializer: D) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "cancelled" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_desktop_session_renew_1<'de, D>(
+        deserializer: D,
+    ) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "desktop-session.renew@1" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_prepare<'de, D>(deserializer: D) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "prepare" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_prepared<'de, D>(deserializer: D) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "prepared" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_confirm<'de, D>(deserializer: D) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "confirm" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_desktop_session_revoke_1<'de, D>(
+        deserializer: D,
+    ) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "desktop-session.revoke@1" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_r_true<'de, D>(deserializer: D) -> Result<bool, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = bool::deserialize(deserializer)?;
+        if value == true {
             Ok(value)
         } else {
             Err(de::Error::custom("unexpected constant"))
@@ -516,18 +758,6 @@ mod const_checkers {
         }
     }
 
-    pub(super) fn expect_const_r_true<'de, D>(deserializer: D) -> Result<bool, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let value = bool::deserialize(deserializer)?;
-        if value == true {
-            Ok(value)
-        } else {
-            Err(de::Error::custom("unexpected constant"))
-        }
-    }
-
     pub(super) fn expect_const_r_false<'de, D>(deserializer: D) -> Result<bool, D::Error>
     where
         D: Deserializer<'de>,
@@ -651,45 +881,662 @@ pub struct AuthSession {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub enum StartAuthCommandProvider {
-    #[serde(rename = "google")]
-    Google,
-    #[serde(rename = "github")]
-    Github,
+pub enum DesktopAuthStartRequestIntent {
+    #[serde(rename = "sign_in")]
+    SignIn,
+    #[serde(rename = "switch_account")]
+    SwitchAccount,
+    #[serde(rename = "reauthenticate")]
+    Reauthenticate,
+    #[serde(rename = "link_google")]
+    LinkGoogle,
+    #[serde(rename = "link_github")]
+    LinkGithub,
+    #[serde(rename = "register_passkey")]
+    RegisterPasskey,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub enum StartAuthCommandIntent {
-    #[serde(rename = "sign_in")]
-    SignIn,
-    #[serde(rename = "reauthenticate")]
-    Reauthenticate,
-    #[serde(rename = "link")]
-    Link,
+pub enum DesktopAuthStartRequestMethod {
+    #[serde(rename = "google")]
+    Google,
+    #[serde(rename = "github")]
+    Github,
+    #[serde(rename = "passkey")]
+    Passkey,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum DesktopAuthStartRequestPurpose {
+    #[serde(rename = "link_google")]
+    LinkGoogle,
+    #[serde(rename = "link_github")]
+    LinkGithub,
+    #[serde(rename = "register_passkey")]
+    RegisterPasskey,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct StartAuthCommand {
+pub struct DesktopAuthStartRequest {
     #[serde(
         rename = "contract",
-        deserialize_with = "const_checkers::expect_const_auth_start_1"
+        deserialize_with = "const_checkers::expect_const_desktop_auth_start_1"
     )]
     pub contract: String,
-    pub provider: StartAuthCommandProvider,
-    pub intent: StartAuthCommandIntent,
-    #[serde(rename = "returnTo")]
-    pub return_to: String,
+    #[serde(
+        rename = "message",
+        deserialize_with = "const_checkers::expect_const_request"
+    )]
+    pub message: String,
+    pub intent: DesktopAuthStartRequestIntent,
+    pub method: DesktopAuthStartRequestMethod,
+    #[serde(rename = "verifierCommitment")]
+    pub verifier_commitment: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub purpose: Option<DesktopAuthStartRequestPurpose>,
+    #[serde(rename = "authorizationId")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub authorization_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum DesktopAuthStartResponseIntent {
+    #[serde(rename = "sign_in")]
+    SignIn,
+    #[serde(rename = "switch_account")]
+    SwitchAccount,
+    #[serde(rename = "reauthenticate")]
+    Reauthenticate,
+    #[serde(rename = "link_google")]
+    LinkGoogle,
+    #[serde(rename = "link_github")]
+    LinkGithub,
+    #[serde(rename = "register_passkey")]
+    RegisterPasskey,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum DesktopAuthStartResponseMethod {
+    #[serde(rename = "google")]
+    Google,
+    #[serde(rename = "github")]
+    Github,
+    #[serde(rename = "passkey")]
+    Passkey,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct StartAuthResponse {
-    #[serde(rename = "authorizationUrl")]
-    pub authorization_url: String,
+pub struct DesktopAuthStartResponse {
+    #[serde(
+        rename = "contract",
+        deserialize_with = "const_checkers::expect_const_desktop_auth_start_1"
+    )]
+    pub contract: String,
+    #[serde(
+        rename = "message",
+        deserialize_with = "const_checkers::expect_const_response"
+    )]
+    pub message: String,
+    #[serde(rename = "flowId")]
+    pub flow_id: String,
+    #[serde(
+        rename = "phase",
+        deserialize_with = "const_checkers::expect_const_started"
+    )]
+    pub phase: String,
+    pub intent: DesktopAuthStartResponseIntent,
+    pub method: DesktopAuthStartResponseMethod,
+    #[serde(rename = "browserUrl")]
+    pub browser_url: String,
+    #[serde(rename = "createdAt")]
+    pub created_at: String,
     #[serde(rename = "expiresAt")]
     pub expires_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum DesktopAuthStartExchange {
+    Request(DesktopAuthStartRequest),
+    Response(DesktopAuthStartResponse),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DesktopAuthStatusRequest {
+    #[serde(
+        rename = "contract",
+        deserialize_with = "const_checkers::expect_const_desktop_auth_status_1"
+    )]
+    pub contract: String,
+    #[serde(
+        rename = "message",
+        deserialize_with = "const_checkers::expect_const_request"
+    )]
+    pub message: String,
+    #[serde(rename = "flowId")]
+    pub flow_id: String,
+    #[serde(rename = "verifierCommitment")]
+    pub verifier_commitment: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum DesktopAuthStatusResponsePhase {
+    #[serde(rename = "started")]
+    Started,
+    #[serde(rename = "browser_complete")]
+    BrowserComplete,
+    #[serde(rename = "ready")]
+    Ready,
+    #[serde(rename = "delivering")]
+    Delivering,
+    #[serde(rename = "confirmed")]
+    Confirmed,
+    #[serde(rename = "cancelled")]
+    Cancelled,
+    #[serde(rename = "expired")]
+    Expired,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum DesktopAuthStatusResponseResult {
+    #[serde(rename = "success")]
+    Success,
+    #[serde(rename = "human_action_required")]
+    HumanActionRequired,
+    #[serde(rename = "security_failure")]
+    SecurityFailure,
+    #[serde(rename = "transient_interruption")]
+    TransientInterruption,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DesktopAuthStatusExchangeDecision {
+    #[serde(rename = "oldSessionUsable")]
+    pub old_session_usable: bool,
+    #[serde(rename = "revokePreparedSession")]
+    pub revoke_prepared_session: bool,
+    #[serde(rename = "destroyWorkspaceContext")]
+    pub destroy_workspace_context: bool,
+    #[serde(rename = "retrySameRequest")]
+    pub retry_same_request: bool,
+    #[serde(rename = "freshHumanActionRequired")]
+    pub fresh_human_action_required: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DesktopAuthStatusResponse {
+    #[serde(
+        rename = "contract",
+        deserialize_with = "const_checkers::expect_const_desktop_auth_status_1"
+    )]
+    pub contract: String,
+    #[serde(
+        rename = "message",
+        deserialize_with = "const_checkers::expect_const_response"
+    )]
+    pub message: String,
+    #[serde(rename = "flowId")]
+    pub flow_id: String,
+    pub phase: DesktopAuthStatusResponsePhase,
+    pub terminal: bool,
+    #[serde(rename = "expiresAt")]
+    pub expires_at: String,
+    pub result: DesktopAuthStatusResponseResult,
+    pub decision: DesktopAuthStatusExchangeDecision,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum DesktopAuthStatusExchange {
+    Request(DesktopAuthStatusRequest),
+    Response(DesktopAuthStatusResponse),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DesktopAuthClaimRequest {
+    #[serde(
+        rename = "contract",
+        deserialize_with = "const_checkers::expect_const_desktop_auth_claim_1"
+    )]
+    pub contract: String,
+    #[serde(
+        rename = "message",
+        deserialize_with = "const_checkers::expect_const_request"
+    )]
+    pub message: String,
+    #[serde(
+        rename = "deliveryKind",
+        deserialize_with = "const_checkers::expect_const_request"
+    )]
+    pub delivery_kind: String,
+    #[serde(rename = "flowId")]
+    pub flow_id: String,
+    pub verifier: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DesktopAuthClaimExchangeSession {
+    #[serde(rename = "sessionId")]
+    pub session_id: String,
+    #[serde(rename = "punkId")]
+    pub punk_id: String,
+    #[serde(rename = "authenticatedAt")]
+    pub authenticated_at: String,
+    #[serde(rename = "expiresAt")]
+    pub expires_at: String,
+    #[serde(rename = "recentReauthUntil")]
+    pub recent_reauth_until: Option<String>,
+    pub punk: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DesktopAuthClaimExchangeCapability {
+    pub token: String,
+    #[serde(rename = "expiresAt")]
+    pub expires_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DesktopAuthClaimResponse {
+    #[serde(
+        rename = "contract",
+        deserialize_with = "const_checkers::expect_const_desktop_auth_claim_1"
+    )]
+    pub contract: String,
+    #[serde(
+        rename = "message",
+        deserialize_with = "const_checkers::expect_const_response"
+    )]
+    pub message: String,
+    #[serde(rename = "flowId")]
+    pub flow_id: String,
+    #[serde(
+        rename = "phase",
+        deserialize_with = "const_checkers::expect_const_delivering"
+    )]
+    pub phase: String,
+    #[serde(
+        rename = "deliveryKind",
+        deserialize_with = "const_checkers::expect_const_session"
+    )]
+    pub delivery_kind: String,
+    #[serde(rename = "deliveryId")]
+    pub delivery_id: String,
+    pub session: DesktopAuthClaimExchangeSession,
+    #[serde(rename = "revokeCapability")]
+    pub revoke_capability: DesktopAuthClaimExchangeCapability,
+    #[serde(rename = "deliveryExpiresAt")]
+    pub delivery_expires_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum DesktopAuthClaimExchangeAuthorizationTargetMethod {
+    #[serde(rename = "link_google")]
+    LinkGoogle,
+    #[serde(rename = "link_github")]
+    LinkGithub,
+    #[serde(rename = "register_passkey")]
+    RegisterPasskey,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DesktopAuthClaimExchangeAuthorization {
+    #[serde(rename = "authorizationId")]
+    pub authorization_id: String,
+    #[serde(rename = "sessionId")]
+    pub session_id: String,
+    #[serde(rename = "punkId")]
+    pub punk_id: String,
+    #[serde(
+        rename = "intent",
+        deserialize_with = "const_checkers::expect_const_reauthenticate"
+    )]
+    pub intent: String,
+    #[serde(rename = "targetMethod")]
+    pub target_method: DesktopAuthClaimExchangeAuthorizationTargetMethod,
+    #[serde(rename = "handoffId")]
+    pub handoff_id: String,
+    #[serde(rename = "expiresAt")]
+    pub expires_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DesktopAuthClaimReauthorizationResponse {
+    #[serde(
+        rename = "contract",
+        deserialize_with = "const_checkers::expect_const_desktop_auth_claim_1"
+    )]
+    pub contract: String,
+    #[serde(
+        rename = "message",
+        deserialize_with = "const_checkers::expect_const_response"
+    )]
+    pub message: String,
+    #[serde(rename = "flowId")]
+    pub flow_id: String,
+    #[serde(
+        rename = "phase",
+        deserialize_with = "const_checkers::expect_const_delivering"
+    )]
+    pub phase: String,
+    #[serde(
+        rename = "deliveryKind",
+        deserialize_with = "const_checkers::expect_const_reauthorization"
+    )]
+    pub delivery_kind: String,
+    #[serde(rename = "deliveryId")]
+    pub delivery_id: String,
+    pub authorization: DesktopAuthClaimExchangeAuthorization,
+    #[serde(rename = "deliveryExpiresAt")]
+    pub delivery_expires_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum DesktopAuthClaimExchange {
+    Request(DesktopAuthClaimRequest),
+    SessionResponse(DesktopAuthClaimResponse),
+    ReauthorizationResponse(DesktopAuthClaimReauthorizationResponse),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DesktopAuthConfirmRequest {
+    #[serde(
+        rename = "contract",
+        deserialize_with = "const_checkers::expect_const_desktop_auth_confirm_1"
+    )]
+    pub contract: String,
+    #[serde(
+        rename = "message",
+        deserialize_with = "const_checkers::expect_const_request"
+    )]
+    pub message: String,
+    #[serde(rename = "flowId")]
+    pub flow_id: String,
+    pub verifier: String,
+    #[serde(rename = "deliveryId")]
+    pub delivery_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DesktopAuthConfirmResponse {
+    #[serde(
+        rename = "contract",
+        deserialize_with = "const_checkers::expect_const_desktop_auth_confirm_1"
+    )]
+    pub contract: String,
+    #[serde(
+        rename = "message",
+        deserialize_with = "const_checkers::expect_const_response"
+    )]
+    pub message: String,
+    #[serde(rename = "flowId")]
+    pub flow_id: String,
+    #[serde(
+        rename = "phase",
+        deserialize_with = "const_checkers::expect_const_confirmed"
+    )]
+    pub phase: String,
+    #[serde(rename = "sessionId")]
+    pub session_id: String,
+    #[serde(rename = "confirmedAt")]
+    pub confirmed_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum DesktopAuthConfirmExchange {
+    Request(DesktopAuthConfirmRequest),
+    Response(DesktopAuthConfirmResponse),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DesktopAuthCancelRequest {
+    #[serde(
+        rename = "contract",
+        deserialize_with = "const_checkers::expect_const_desktop_auth_cancel_1"
+    )]
+    pub contract: String,
+    #[serde(
+        rename = "message",
+        deserialize_with = "const_checkers::expect_const_request"
+    )]
+    pub message: String,
+    #[serde(rename = "flowId")]
+    pub flow_id: String,
+    pub verifier: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DesktopAuthCancelResponse {
+    #[serde(
+        rename = "contract",
+        deserialize_with = "const_checkers::expect_const_desktop_auth_cancel_1"
+    )]
+    pub contract: String,
+    #[serde(
+        rename = "message",
+        deserialize_with = "const_checkers::expect_const_response"
+    )]
+    pub message: String,
+    #[serde(rename = "flowId")]
+    pub flow_id: String,
+    #[serde(
+        rename = "phase",
+        deserialize_with = "const_checkers::expect_const_cancelled"
+    )]
+    pub phase: String,
+    #[serde(rename = "cancelledAt")]
+    pub cancelled_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum DesktopAuthCancelExchange {
+    Request(DesktopAuthCancelRequest),
+    Response(DesktopAuthCancelResponse),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DesktopSessionRenewPrepareRequest {
+    #[serde(
+        rename = "contract",
+        deserialize_with = "const_checkers::expect_const_desktop_session_renew_1"
+    )]
+    pub contract: String,
+    #[serde(
+        rename = "message",
+        deserialize_with = "const_checkers::expect_const_request"
+    )]
+    pub message: String,
+    #[serde(
+        rename = "action",
+        deserialize_with = "const_checkers::expect_const_prepare"
+    )]
+    pub action: String,
+    #[serde(rename = "commandId")]
+    pub command_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DesktopSessionRenewExchangeSession {
+    #[serde(rename = "sessionId")]
+    pub session_id: String,
+    #[serde(rename = "punkId")]
+    pub punk_id: String,
+    #[serde(rename = "authenticatedAt")]
+    pub authenticated_at: String,
+    #[serde(rename = "expiresAt")]
+    pub expires_at: String,
+    #[serde(rename = "recentReauthUntil")]
+    pub recent_reauth_until: Option<String>,
+    pub punk: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DesktopSessionRenewExchangeCapability {
+    pub token: String,
+    #[serde(rename = "expiresAt")]
+    pub expires_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DesktopSessionRenewPreparedResponse {
+    #[serde(
+        rename = "contract",
+        deserialize_with = "const_checkers::expect_const_desktop_session_renew_1"
+    )]
+    pub contract: String,
+    #[serde(
+        rename = "message",
+        deserialize_with = "const_checkers::expect_const_response"
+    )]
+    pub message: String,
+    #[serde(
+        rename = "action",
+        deserialize_with = "const_checkers::expect_const_prepared"
+    )]
+    pub action: String,
+    #[serde(rename = "commandId")]
+    pub command_id: String,
+    #[serde(rename = "rotationId")]
+    pub rotation_id: String,
+    pub session: DesktopSessionRenewExchangeSession,
+    #[serde(rename = "revokeCapability")]
+    pub revoke_capability: DesktopSessionRenewExchangeCapability,
+    #[serde(rename = "confirmBy")]
+    pub confirm_by: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DesktopSessionRenewConfirmRequest {
+    #[serde(
+        rename = "contract",
+        deserialize_with = "const_checkers::expect_const_desktop_session_renew_1"
+    )]
+    pub contract: String,
+    #[serde(
+        rename = "message",
+        deserialize_with = "const_checkers::expect_const_request"
+    )]
+    pub message: String,
+    #[serde(
+        rename = "action",
+        deserialize_with = "const_checkers::expect_const_confirm"
+    )]
+    pub action: String,
+    #[serde(rename = "commandId")]
+    pub command_id: String,
+    #[serde(rename = "rotationId")]
+    pub rotation_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DesktopSessionRenewConfirmedResponse {
+    #[serde(
+        rename = "contract",
+        deserialize_with = "const_checkers::expect_const_desktop_session_renew_1"
+    )]
+    pub contract: String,
+    #[serde(
+        rename = "message",
+        deserialize_with = "const_checkers::expect_const_response"
+    )]
+    pub message: String,
+    #[serde(
+        rename = "action",
+        deserialize_with = "const_checkers::expect_const_confirmed"
+    )]
+    pub action: String,
+    #[serde(rename = "commandId")]
+    pub command_id: String,
+    #[serde(rename = "rotationId")]
+    pub rotation_id: String,
+    #[serde(rename = "sessionId")]
+    pub session_id: String,
+    #[serde(rename = "confirmedAt")]
+    pub confirmed_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum DesktopSessionRenewExchange {
+    PrepareRequest(DesktopSessionRenewPrepareRequest),
+    PreparedResponse(DesktopSessionRenewPreparedResponse),
+    ConfirmRequest(DesktopSessionRenewConfirmRequest),
+    ConfirmedResponse(DesktopSessionRenewConfirmedResponse),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DesktopSessionRevokeRequest {
+    #[serde(
+        rename = "contract",
+        deserialize_with = "const_checkers::expect_const_desktop_session_revoke_1"
+    )]
+    pub contract: String,
+    #[serde(
+        rename = "message",
+        deserialize_with = "const_checkers::expect_const_request"
+    )]
+    pub message: String,
+    pub capability: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DesktopSessionRevokeResponse {
+    #[serde(
+        rename = "contract",
+        deserialize_with = "const_checkers::expect_const_desktop_session_revoke_1"
+    )]
+    pub contract: String,
+    #[serde(
+        rename = "message",
+        deserialize_with = "const_checkers::expect_const_response"
+    )]
+    pub message: String,
+    #[serde(
+        rename = "revoked",
+        deserialize_with = "const_checkers::expect_const_r_true"
+    )]
+    pub revoked: bool,
+    pub expired: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum DesktopSessionRevokeExchange {
+    Request(DesktopSessionRevokeRequest),
+    Response(DesktopSessionRevokeResponse),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -1126,10 +1973,31 @@ pub struct MessageHistoryResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct PunkPunk {
+    #[serde(
+        rename = "kind",
+        deserialize_with = "const_checkers::expect_const_punk"
+    )]
+    pub kind: String,
+    #[serde(rename = "punkId")]
+    pub punk_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct BotBot {
+    #[serde(rename = "kind", deserialize_with = "const_checkers::expect_const_bot")]
+    pub kind: String,
+    #[serde(rename = "installationId")]
+    pub installation_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(untagged)]
 pub enum ResolveAuthorsQueryActor {
-    Punk(Punk),
-    Bot(Bot),
+    Punk(PunkPunk),
+    Bot(BotBot),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -1146,10 +2014,39 @@ pub struct ResolveAuthorsQuery {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct PunkPunk2 {
+    #[serde(
+        rename = "kind",
+        deserialize_with = "const_checkers::expect_const_punk"
+    )]
+    pub kind: String,
+    #[serde(rename = "punkId")]
+    pub punk_id: String,
+    #[serde(rename = "displayName")]
+    pub display_name: String,
+    #[serde(rename = "avatarUrl")]
+    pub avatar_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct BotBot2 {
+    #[serde(rename = "kind", deserialize_with = "const_checkers::expect_const_bot")]
+    pub kind: String,
+    #[serde(rename = "installationId")]
+    pub installation_id: String,
+    #[serde(rename = "displayName")]
+    pub display_name: String,
+    #[serde(rename = "avatarUrl")]
+    pub avatar_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(untagged)]
 pub enum ResolveAuthorsResponseAuthorSummary {
-    Punk(Punk),
-    Bot(Bot),
+    Punk(PunkPunk2),
+    Bot(BotBot2),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -1373,10 +2270,31 @@ pub struct ConversationFollowClientFrame {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct PunkPunk3 {
+    #[serde(
+        rename = "kind",
+        deserialize_with = "const_checkers::expect_const_punk"
+    )]
+    pub kind: String,
+    #[serde(rename = "punkId")]
+    pub punk_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct BotBot3 {
+    #[serde(rename = "kind", deserialize_with = "const_checkers::expect_const_bot")]
+    pub kind: String,
+    #[serde(rename = "installationId")]
+    pub installation_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(untagged)]
 pub enum PostMessageCommandActor {
-    Punk(Punk),
-    Bot(Bot),
+    Punk(PunkPunk3),
+    Bot(BotBot3),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -1405,10 +2323,31 @@ pub struct PostMessageResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct PunkPunk4 {
+    #[serde(
+        rename = "kind",
+        deserialize_with = "const_checkers::expect_const_punk"
+    )]
+    pub kind: String,
+    #[serde(rename = "punkId")]
+    pub punk_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct BotBot4 {
+    #[serde(rename = "kind", deserialize_with = "const_checkers::expect_const_bot")]
+    pub kind: String,
+    #[serde(rename = "installationId")]
+    pub installation_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(untagged)]
 pub enum AddMessageReactionCommandActor {
-    Punk(Punk),
-    Bot(Bot),
+    Punk(PunkPunk4),
+    Bot(BotBot4),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -1438,10 +2377,31 @@ pub struct AddMessageReactionCommand {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct PunkPunk5 {
+    #[serde(
+        rename = "kind",
+        deserialize_with = "const_checkers::expect_const_punk"
+    )]
+    pub kind: String,
+    #[serde(rename = "punkId")]
+    pub punk_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct BotBot5 {
+    #[serde(rename = "kind", deserialize_with = "const_checkers::expect_const_bot")]
+    pub kind: String,
+    #[serde(rename = "installationId")]
+    pub installation_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(untagged)]
 pub enum MessageReactionMutationResponseActor {
-    Punk(Punk),
-    Bot(Bot),
+    Punk(PunkPunk5),
+    Bot(BotBot5),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -1486,10 +2446,31 @@ pub struct MessageReactionMutationResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct PunkPunk6 {
+    #[serde(
+        rename = "kind",
+        deserialize_with = "const_checkers::expect_const_punk"
+    )]
+    pub kind: String,
+    #[serde(rename = "punkId")]
+    pub punk_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct BotBot6 {
+    #[serde(rename = "kind", deserialize_with = "const_checkers::expect_const_bot")]
+    pub kind: String,
+    #[serde(rename = "installationId")]
+    pub installation_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(untagged)]
 pub enum RemoveMessageReactionCommandActor {
-    Punk(Punk),
-    Bot(Bot),
+    Punk(PunkPunk6),
+    Bot(BotBot6),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -2121,11 +3102,38 @@ pub fn decode_profile_contract(contract: &str, payload: serde_json::Value) -> Re
         "punks://contracts/auth.session@1" => serde_json::from_value::<AuthSession>(payload)
             .map(|_| ())
             .map_err(|error| error.to_string()),
-        "punks://contracts/auth.start@1" => serde_json::from_value::<StartAuthCommand>(payload)
-            .map(|_| ())
-            .map_err(|error| error.to_string()),
-        "punks://contracts/auth.start-response@1" => {
-            serde_json::from_value::<StartAuthResponse>(payload)
+        "punks://contracts/desktop-auth.start@1" => {
+            serde_json::from_value::<DesktopAuthStartExchange>(payload)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        }
+        "punks://contracts/desktop-auth.status@1" => {
+            serde_json::from_value::<DesktopAuthStatusExchange>(payload)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        }
+        "punks://contracts/desktop-auth.claim@1" => {
+            serde_json::from_value::<DesktopAuthClaimExchange>(payload)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        }
+        "punks://contracts/desktop-auth.confirm@1" => {
+            serde_json::from_value::<DesktopAuthConfirmExchange>(payload)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        }
+        "punks://contracts/desktop-auth.cancel@1" => {
+            serde_json::from_value::<DesktopAuthCancelExchange>(payload)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        }
+        "punks://contracts/desktop-session.renew@1" => {
+            serde_json::from_value::<DesktopSessionRenewExchange>(payload)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        }
+        "punks://contracts/desktop-session.revoke@1" => {
+            serde_json::from_value::<DesktopSessionRevokeExchange>(payload)
                 .map(|_| ())
                 .map_err(|error| error.to_string())
         }

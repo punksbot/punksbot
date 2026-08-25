@@ -646,7 +646,7 @@ export function runSemanticScenario(
   return normalizeSemanticTrace({ ...trace, diagnostic: scenario.diagnostic });
 }
 
-/** Rejoue la matrice exhaustive des 18 opérations du profil. */
+/** Rejoue la matrice exhaustive des 23 opérations du profil. */
 export function runOperationCorpus(): CorpusRun {
   const corpus = operationCorpusJson as unknown as {
     forbiddenMarkers: string[];

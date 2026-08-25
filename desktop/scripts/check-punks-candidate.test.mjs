@@ -111,3 +111,19 @@ test("the public checker rejects the global Buzz TypeScript build", () => {
     rmSync(fixtureRoot, { recursive: true, force: true });
   }
 });
+
+test("the public checker rejects the production deep-link scheme for staging", () => {
+  const fixtureRoot = mkdtempSync(join(tmpdir(), "punks-candidate-config-"));
+  const fixture = join(fixtureRoot, "invalid.json");
+  const candidate = JSON.parse(readFileSync(flavor, "utf8"));
+  candidate.plugins["deep-link"].desktop.schemes = ["punks"];
+  writeFileSync(fixture, JSON.stringify(candidate));
+  try {
+    assert.throws(
+      () => runChecker("--base", base, "--config", fixture),
+      /only the punks-staging deep-link scheme is allowed/,
+    );
+  } finally {
+    rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+});

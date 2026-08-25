@@ -43,8 +43,13 @@ describe("desktop-social-loop@1 profile", () => {
     expect(desktopSocialLoop.operations.map(({ name }) => name)).toEqual([
       "checkCompatibility",
       "getSession",
-      "startAuthentication",
-      "logout",
+      "startDesktopAuthentication",
+      "getDesktopAuthenticationStatus",
+      "claimDesktopAuthentication",
+      "confirmDesktopAuthentication",
+      "cancelDesktopAuthentication",
+      "renewDesktopSession",
+      "revokeDesktopSession",
       "listWorkspaces",
       "resolveWorkspace",
       "openWorkspace",
@@ -64,7 +69,9 @@ describe("desktop-social-loop@1 profile", () => {
       (operations: Array<{ command?: boolean; retry?: string }>) =>
         operations
           .filter(({ command }) => command === true)
-          .every(({ retry }) => retry === "human_intent_required"),
+          .every(({ retry }) =>
+            ["human_intent_required", "same_identity"].includes(retry ?? ""),
+          ),
     );
     expect(desktopSocialLoop.operations).toSatisfy(
       (operations: Array<{ cancellablePhases?: string[] }>) =>
@@ -92,7 +99,7 @@ describe("desktop-social-loop@1 profile", () => {
     ]);
   });
 
-  it("ferme le corpus commun sur les 18 opérations et leurs scénarios applicables", () => {
+  it("ferme le corpus commun sur les 23 opérations et leurs scénarios applicables", () => {
     expect(operationCorpus.version).toBe(desktopSocialLoop.corpusVersion);
     expect(
       operationCorpus.operations.map(({ operation }) => operation),

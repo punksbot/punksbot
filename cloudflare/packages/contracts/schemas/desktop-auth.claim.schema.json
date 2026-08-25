@@ -1,0 +1,161 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/desktop-auth.claim@1",
+  "title": "DesktopAuthClaimExchange",
+  "oneOf": [
+    { "$ref": "#/$defs/request" },
+    { "$ref": "#/$defs/sessionResponse" },
+    { "$ref": "#/$defs/reauthorizationResponse" }
+  ],
+  "$defs": {
+    "request": {
+      "title": "DesktopAuthClaimRequest",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract",
+        "message",
+        "deliveryKind",
+        "flowId",
+        "verifier"
+      ],
+      "properties": {
+        "contract": { "const": "desktop-auth.claim@1" },
+        "message": { "const": "request" },
+        "deliveryKind": { "const": "request" },
+        "flowId": { "type": "string", "format": "uuid" },
+        "verifier": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" }
+      }
+    },
+    "session": {
+      "title": "DesktopAuthClaimSession",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sessionId",
+        "punkId",
+        "authenticatedAt",
+        "expiresAt",
+        "recentReauthUntil",
+        "punk"
+      ],
+      "properties": {
+        "sessionId": { "type": "string", "format": "uuid" },
+        "punkId": { "type": "string", "format": "uuid" },
+        "authenticatedAt": { "type": "string", "format": "date-time" },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "recentReauthUntil": {
+          "anyOf": [
+            { "type": "string", "format": "date-time" },
+            { "type": "null" }
+          ]
+        },
+        "punk": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "displayName", "avatarUrl"],
+          "properties": {
+            "id": { "type": "string", "format": "uuid" },
+            "displayName": { "type": "string", "minLength": 1, "maxLength": 80 },
+            "avatarUrl": {
+              "anyOf": [
+                { "type": "string", "format": "uri", "maxLength": 2048 },
+                { "type": "null" }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "capability": {
+      "title": "DesktopSessionRevokeCapability",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["token", "expiresAt"],
+      "properties": {
+        "token": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{43,128}$"
+        },
+        "expiresAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "sessionResponse": {
+      "title": "DesktopAuthClaimResponse",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract",
+        "message",
+        "flowId",
+        "phase",
+        "deliveryKind",
+        "deliveryId",
+        "session",
+        "revokeCapability",
+        "deliveryExpiresAt"
+      ],
+      "properties": {
+        "contract": { "const": "desktop-auth.claim@1" },
+        "message": { "const": "response" },
+        "flowId": { "type": "string", "format": "uuid" },
+        "phase": { "const": "delivering" },
+        "deliveryKind": { "const": "session" },
+        "deliveryId": { "type": "string", "format": "uuid" },
+        "session": { "$ref": "#/$defs/session" },
+        "revokeCapability": { "$ref": "#/$defs/capability" },
+        "deliveryExpiresAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "authorization": {
+      "title": "DesktopReauthenticationAuthorization",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authorizationId",
+        "sessionId",
+        "punkId",
+        "intent",
+        "targetMethod",
+        "handoffId",
+        "expiresAt"
+      ],
+      "properties": {
+        "authorizationId": { "type": "string", "format": "uuid" },
+        "sessionId": { "type": "string", "format": "uuid" },
+        "punkId": { "type": "string", "format": "uuid" },
+        "intent": { "const": "reauthenticate" },
+        "targetMethod": {
+          "enum": ["link_google", "link_github", "register_passkey"]
+        },
+        "handoffId": { "type": "string", "format": "uuid" },
+        "expiresAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "reauthorizationResponse": {
+      "title": "DesktopAuthClaimReauthorizationResponse",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract",
+        "message",
+        "flowId",
+        "phase",
+        "deliveryKind",
+        "deliveryId",
+        "authorization",
+        "deliveryExpiresAt"
+      ],
+      "properties": {
+        "contract": { "const": "desktop-auth.claim@1" },
+        "message": { "const": "response" },
+        "flowId": { "type": "string", "format": "uuid" },
+        "phase": { "const": "delivering" },
+        "deliveryKind": { "const": "reauthorization" },
+        "deliveryId": { "type": "string", "format": "uuid" },
+        "authorization": { "$ref": "#/$defs/authorization" },
+        "deliveryExpiresAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}

@@ -26,10 +26,15 @@ export class AuthTransactionDO extends DurableObject<AuthEnv> {
   }
 
   async create(transaction: AuthTransaction): Promise<boolean> {
-    if (
-      this.row() !== undefined ||
-      Date.parse(transaction.expiresAt) <= Date.now()
-    ) {
+    const existing = this.row();
+    if (existing !== undefined) {
+      return (
+        existing.status === "open" &&
+        existing.transaction_json === JSON.stringify(transaction) &&
+        Date.parse(transaction.expiresAt) > Date.now()
+      );
+    }
+    if (Date.parse(transaction.expiresAt) <= Date.now()) {
       return false;
     }
     this.ctx.storage.sql.exec(

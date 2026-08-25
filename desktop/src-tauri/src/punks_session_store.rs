@@ -1,198 +1,599 @@
-//! Punks-only session persistence.
-//!
-//! This adapter deliberately does not share Buzz's secret store, service name,
-//! cache, migration paths, or fallback files. A Punks distribution therefore
-//! cannot read or mutate a historical Nostr identity by construction.
+//! Punks-only Account persistence in one versioned OS-keyring credential.
+
+mod models;
+
+#[cfg(test)]
+mod tests;
+
+use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::SystemTime;
 
 use punks_account_client::ceremony::{SessionMetadata, SessionPersistence, SessionSecret};
 
-const SESSION_KEY: &str = "session-v1";
-const INSTALLATION_ID_KEY: &str = "installation-id";
+use models::{
+    encode_time, enqueue_stored_revocation, invalid_state, validate_uuid, StoredAccountState,
+    StoredActiveSession, StoredPendingAuthFlow, StoredPendingReauthorization, StoredPendingRenewal,
+    StoredQueuedRevocation, StoredStagedActivation,
+};
+#[allow(unused_imports)]
+pub(crate) use models::{
+    ActiveAccountSession, PendingAuthFlow, PendingAuthPurpose, PendingReauthorization,
+    PendingRenewal, QueuedRevocation, StagedActivation,
+};
 
-/// Persists the native session directly in the operating-system credential
-/// store. The cookie is never exposed to the WebView or an environment variable.
-pub struct KeyringSessionPersistence;
+const ACCOUNT_STATE_KEY: &str = "account-state-v1";
+
+fn storage_unavailable() -> String {
+    "Punks secure Account storage is unavailable".to_string()
+}
+
+trait CredentialStore: Send + Sync {
+    fn load(&self, service: &str, key: &str) -> Result<Option<String>, String>;
+    fn store(&self, service: &str, key: &str, value: &str) -> Result<(), String>;
+    fn delete(&self, service: &str, key: &str) -> Result<(), String>;
+}
+
+struct OsKeyringCredentialStore;
+
+impl OsKeyringCredentialStore {
+    fn entry(service: &str, key: &str) -> Result<keyring::Entry, String> {
+        keyring::Entry::new(service, key).map_err(|_| storage_unavailable())
+    }
+}
+
+impl CredentialStore for OsKeyringCredentialStore {
+    fn load(&self, service: &str, key: &str) -> Result<Option<String>, String> {
+        match Self::entry(service, key)?.get_password() {
+            Ok(value) => Ok(Some(value)),
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(_) => Err(storage_unavailable()),
+        }
+    }
+
+    fn store(&self, service: &str, key: &str, value: &str) -> Result<(), String> {
+        Self::entry(service, key)?
+            .set_password(value)
+            .map_err(|_| storage_unavailable())
+    }
+
+    fn delete(&self, service: &str, key: &str) -> Result<(), String> {
+        match Self::entry(service, key)?.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Err(_) => Err(storage_unavailable()),
+        }
+    }
+}
+
+fn service_name_for_distribution(distribution: Option<&str>) -> Result<&'static str, ()> {
+    match distribution {
+        None | Some("development") => Ok("punks-desktop-development"),
+        Some("staging") => Ok("punks-desktop-staging"),
+        Some("production") => Ok("punks-desktop"),
+        Some(_) => Err(()),
+    }
+}
+
+/// Punks-only adapter. No filesystem or Buzz-keyring fallback exists.
+pub struct KeyringSessionPersistence {
+    service: Result<&'static str, ()>,
+    credentials: Arc<dyn CredentialStore>,
+    transaction: Mutex<()>,
+}
 
 impl KeyringSessionPersistence {
     pub fn new() -> Self {
-        Self
-    }
-
-    fn entry(key: &str) -> Result<keyring::Entry, String> {
-        keyring::Entry::new(service_name(), key).map_err(|error| error.to_string())
-    }
-
-    fn load_value(key: &str) -> Result<Option<String>, String> {
-        match Self::entry(key)?.get_password() {
-            Ok(value) => Ok(Some(value)),
-            Err(keyring::Error::NoEntry) => Ok(None),
-            Err(error) => Err(error.to_string()),
-        }
-    }
-
-    fn delete_value(key: &str) -> Result<(), String> {
-        match Self::entry(key)?.delete_credential() {
-            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-            Err(error) => Err(error.to_string()),
-        }
-    }
-}
-
-fn service_name() -> &'static str {
-    match option_env!("PUNKS_DISTRIBUTION") {
-        Some("production") => "punks-desktop",
-        Some("staging") => "punks-desktop-staging",
-        _ => "punks-desktop-development",
-    }
-}
-
-/// Loads the stable per-installation identity, creating it in the Punks-only
-/// keychain service on first launch. The Punks runtime calls this only from
-/// Tauri setup after the single-instance plugin has acquired process ownership.
-pub fn load_or_create_installation_identity() -> Result<String, String> {
-    if let Some(identity) = KeyringSessionPersistence::load_value(INSTALLATION_ID_KEY)? {
-        validate_installation_identity(&identity)?;
-        return Ok(identity);
-    }
-
-    let generated = uuid::Uuid::new_v4().to_string();
-    KeyringSessionPersistence::entry(INSTALLATION_ID_KEY)?
-        .set_password(&generated)
-        .map_err(|error| error.to_string())?;
-    let persisted = KeyringSessionPersistence::load_value(INSTALLATION_ID_KEY)?
-        .ok_or_else(|| "installation identity disappeared after creation".to_string())?;
-    validate_installation_identity(&persisted)?;
-    Ok(persisted)
-}
-
-fn validate_installation_identity(value: &str) -> Result<(), String> {
-    let parsed = uuid::Uuid::parse_str(value)
-        .map_err(|_| "installation identity is not a UUID".to_string())?;
-    if parsed.get_version_num() != 4 || parsed.to_string() != value {
-        return Err("installation identity must be a canonical UUIDv4".to_string());
-    }
-    Ok(())
-}
-
-#[derive(serde::Serialize, serde::Deserialize)]
-struct StoredSessionMetadata {
-    session_id: String,
-    punk_id: String,
-    expires_at_seconds: u64,
-    last_renewed_at_seconds: Option<u64>,
-}
-
-impl From<&SessionMetadata> for StoredSessionMetadata {
-    fn from(metadata: &SessionMetadata) -> Self {
         Self {
-            session_id: metadata.session_id.clone(),
-            punk_id: metadata.punk_id.clone(),
-            expires_at_seconds: punks_account_client::ceremony::unix_seconds(metadata.expires_at),
-            last_renewed_at_seconds: metadata
-                .last_renewed_at
-                .map(punks_account_client::ceremony::unix_seconds),
+            service: service_name_for_distribution(option_env!("PUNKS_DISTRIBUTION")),
+            credentials: Arc::new(OsKeyringCredentialStore),
+            transaction: Mutex::new(()),
         }
     }
-}
 
-impl StoredSessionMetadata {
-    fn into_metadata(self) -> Result<SessionMetadata, String> {
-        let epoch = std::time::UNIX_EPOCH;
-        Ok(SessionMetadata {
-            session_id: self.session_id,
-            punk_id: self.punk_id,
-            expires_at: epoch
-                .checked_add(std::time::Duration::from_secs(self.expires_at_seconds))
-                .ok_or_else(|| {
-                    "persisted session expiry is outside SystemTime range".to_string()
-                })?,
-            last_renewed_at: self
-                .last_renewed_at_seconds
-                .map(|seconds| {
-                    epoch
-                        .checked_add(std::time::Duration::from_secs(seconds))
-                        .ok_or_else(|| {
-                            "persisted session renewal is outside SystemTime range".to_string()
-                        })
+    #[cfg(test)]
+    fn with_store(service: &'static str, credentials: Arc<dyn CredentialStore>) -> Self {
+        Self {
+            service: Ok(service),
+            credentials,
+            transaction: Mutex::new(()),
+        }
+    }
+
+    fn service(&self) -> Result<&'static str, String> {
+        self.service.map_err(|_| storage_unavailable())
+    }
+
+    fn lock(&self) -> Result<MutexGuard<'_, ()>, String> {
+        self.transaction.lock().map_err(|_| storage_unavailable())
+    }
+
+    fn read_state(&self) -> Result<StoredAccountState, String> {
+        let Some(raw) = self.credentials.load(self.service()?, ACCOUNT_STATE_KEY)? else {
+            return Ok(StoredAccountState::empty());
+        };
+        let state =
+            serde_json::from_str::<StoredAccountState>(&raw).map_err(|_| invalid_state())?;
+        state.validate()?;
+        Ok(state)
+    }
+
+    fn write_state(&self, state: &StoredAccountState) -> Result<(), String> {
+        state.validate()?;
+        let service = self.service()?;
+        if state.is_empty() {
+            self.credentials.delete(service, ACCOUNT_STATE_KEY)?;
+            return match self.credentials.load(service, ACCOUNT_STATE_KEY)? {
+                None => Ok(()),
+                Some(_) => Err(storage_unavailable()),
+            };
+        }
+        let encoded = serde_json::to_string(state).map_err(|_| invalid_state())?;
+        self.credentials
+            .store(service, ACCOUNT_STATE_KEY, &encoded)?;
+        match self.credentials.load(service, ACCOUNT_STATE_KEY)? {
+            Some(read_back) if read_back.as_bytes() == encoded.as_bytes() => Ok(()),
+            _ => Err(storage_unavailable()),
+        }
+    }
+
+    fn inspect<R>(
+        &self,
+        read: impl FnOnce(StoredAccountState) -> Result<R, String>,
+    ) -> Result<R, String> {
+        let _transaction = self.lock()?;
+        read(self.read_state()?)
+    }
+
+    fn update<R>(
+        &self,
+        change: impl FnOnce(&mut StoredAccountState) -> Result<R, String>,
+    ) -> Result<R, String> {
+        let _transaction = self.lock()?;
+        let mut state = self.read_state()?;
+        let result = change(&mut state)?;
+        self.write_state(&state)?;
+        Ok(result)
+    }
+
+    pub(crate) fn save_pending_auth_flow(&self, flow: &PendingAuthFlow) -> Result<(), String> {
+        let pending = StoredPendingAuthFlow::try_from(flow)?;
+        self.update(move |state| {
+            if state.pending_renewal.is_some()
+                || state.pending_reauthorization.is_some()
+                || state
+                    .pending_auth_flow
+                    .as_ref()
+                    .is_some_and(|current| current.flow_id != pending.flow_id)
+            {
+                return Err("another native Account transition is active".to_string());
+            }
+            state.pending_auth_flow = Some(pending);
+            Ok(())
+        })
+    }
+
+    pub(crate) fn load_pending_auth_flow(&self) -> Result<Option<PendingAuthFlow>, String> {
+        self.inspect(|state| {
+            state
+                .pending_auth_flow
+                .map(PendingAuthFlow::try_from)
+                .transpose()
+        })
+    }
+
+    pub(crate) fn clear_pending_auth_flow(&self) -> Result<(), String> {
+        self.update(|state| {
+            if state.staged_activation.is_some() {
+                return Err("a staged activation must be resolved first".to_string());
+            }
+            state.pending_auth_flow = None;
+            Ok(())
+        })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn save_active_session(&self, active: &ActiveAccountSession) -> Result<(), String> {
+        let replacement = StoredActiveSession::try_from(active)?;
+        self.update(move |state| {
+            if state.active_session.as_ref().is_some_and(|current| {
+                current.metadata.session_id != replacement.metadata.session_id
+            }) {
+                return Err("active Session replacement requires staging".to_string());
+            }
+            state.active_session = Some(replacement);
+            Ok(())
+        })
+    }
+
+    pub(crate) fn load_active_session(&self) -> Result<Option<ActiveAccountSession>, String> {
+        self.inspect(|state| {
+            state
+                .active_session
+                .map(ActiveAccountSession::try_from)
+                .transpose()
+        })
+    }
+
+    pub(crate) fn stage_activation(&self, activation: &StagedActivation) -> Result<(), String> {
+        let staged = StoredStagedActivation::try_from(activation)?;
+        let now = encode_time(SystemTime::now())?;
+        self.update(move |state| {
+            if state.pending_renewal.is_some() || state.pending_reauthorization.is_some() {
+                return Err("a Session renewal is already pending".to_string());
+            }
+            let pending = state
+                .pending_auth_flow
+                .as_mut()
+                .ok_or_else(|| "activation requires its pending authentication".to_string())?;
+            if pending.flow_id != staged.flow_id
+                || pending.phase != punks_account_client::ceremony::PendingAuthPhase::Ready
+                || staged.delivery_expires_at_seconds <= now
+                || staged.delivery_expires_at_seconds > pending.absolute_expires_at_seconds
+            {
+                return Err("activation does not match its pending authentication".to_string());
+            }
+            if state
+                .staged_activation
+                .as_ref()
+                .is_some_and(|current| current.delivery_id != staged.delivery_id)
+            {
+                return Err("another activation is already staged".to_string());
+            }
+            pending.phase = punks_account_client::ceremony::PendingAuthPhase::Delivering;
+            pending.phase_expires_at_seconds = staged.delivery_expires_at_seconds;
+            state.staged_activation = Some(staged);
+            Ok(())
+        })
+    }
+
+    pub(crate) fn reread_staged_activation(&self) -> Result<Option<StagedActivation>, String> {
+        self.inspect(|state| {
+            state
+                .staged_activation
+                .map(StagedActivation::try_from)
+                .transpose()
+        })
+    }
+
+    pub(crate) fn stage_renewal(&self, renewal: &PendingRenewal) -> Result<(), String> {
+        let pending = StoredPendingRenewal::try_from(renewal)?;
+        let now = encode_time(SystemTime::now())?;
+        self.update(move |state| {
+            let active = state
+                .active_session
+                .as_ref()
+                .ok_or_else(|| "Session renewal requires an active Session".to_string())?;
+            if active.metadata.punk_id != pending.metadata.punk_id {
+                return Err("Session renewal changed the active Punk".to_string());
+            }
+            if pending.confirm_by_seconds <= now {
+                return Err("Session renewal confirmation expired".to_string());
+            }
+            if state.pending_auth_flow.is_some()
+                || state.staged_activation.is_some()
+                || state.pending_reauthorization.is_some()
+            {
+                return Err("an authentication flow is already pending".to_string());
+            }
+            if state
+                .pending_renewal
+                .as_ref()
+                .is_some_and(|current| current.rotation_id != pending.rotation_id)
+            {
+                return Err("another Session renewal is already pending".to_string());
+            }
+            state.pending_renewal = Some(pending);
+            Ok(())
+        })
+    }
+
+    pub(crate) fn reread_renewal(&self) -> Result<Option<PendingRenewal>, String> {
+        self.inspect(|state| {
+            state
+                .pending_renewal
+                .map(PendingRenewal::try_from)
+                .transpose()
+        })
+    }
+
+    pub(crate) fn save_reauthorization(
+        &self,
+        reauthorization: &PendingReauthorization,
+    ) -> Result<(), String> {
+        let pending = StoredPendingReauthorization::try_from(reauthorization)?;
+        let now = encode_time(SystemTime::now())?;
+        self.update(move |state| {
+            if pending.expires_at_seconds <= now {
+                return Err("reauthorization handoff expired".to_string());
+            }
+            let active = state
+                .active_session
+                .as_ref()
+                .ok_or_else(|| "reauthorization requires an active Session".to_string())?;
+            if active.metadata.session_id != pending.session_id
+                || active.metadata.punk_id != pending.punk_id
+            {
+                return Err("reauthorization changed the active Account".to_string());
+            }
+            if state
+                .pending_reauthorization
+                .as_ref()
+                .is_some_and(|current| {
+                    current.authorization_id != pending.authorization_id
+                        || current.handoff_id != pending.handoff_id
                 })
-                .transpose()?,
+            {
+                return Err("another reauthorization handoff is pending".to_string());
+            }
+            state.pending_reauthorization = Some(pending);
+            Ok(())
+        })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn load_reauthorization(&self) -> Result<Option<PendingReauthorization>, String> {
+        self.inspect(|state| {
+            state
+                .pending_reauthorization
+                .map(PendingReauthorization::try_from)
+                .transpose()
+        })
+    }
+
+    pub(crate) fn take_reauthorization(
+        &self,
+        target: punks_account_client::ceremony::AuthenticationMethod,
+    ) -> Result<Option<PendingReauthorization>, String> {
+        self.take_reauthorization_at(target, SystemTime::now())
+    }
+
+    fn take_reauthorization_at(
+        &self,
+        target: punks_account_client::ceremony::AuthenticationMethod,
+        now: SystemTime,
+    ) -> Result<Option<PendingReauthorization>, String> {
+        let now = encode_time(now)?;
+        let pending = self.update(|state| {
+            let Some(current) = state.pending_reauthorization.as_ref() else {
+                return Ok(None);
+            };
+            if current.expires_at_seconds <= now {
+                state.pending_reauthorization = None;
+                return Ok(None);
+            }
+            if current.target_method != target {
+                return Ok(None);
+            }
+            Ok(state.pending_reauthorization.take())
+        })?;
+        pending.map(PendingReauthorization::try_from).transpose()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn clear_reauthorization(&self) -> Result<(), String> {
+        self.update(|state| {
+            state.pending_reauthorization = None;
+            Ok(())
+        })
+    }
+
+    fn promote_candidate(&self, renewal: bool) -> Result<Option<QueuedRevocation>, String> {
+        let queued = self.update(|state| {
+            let now = encode_time(SystemTime::now())?;
+            let next = if renewal {
+                let pending = state
+                    .pending_renewal
+                    .clone()
+                    .ok_or_else(|| "no Session renewal is pending".to_string())?;
+                if pending.confirm_by_seconds <= now {
+                    return Err("Session renewal confirmation expired".to_string());
+                }
+                pending.into_active()
+            } else {
+                let staged = state
+                    .staged_activation
+                    .clone()
+                    .ok_or_else(|| "no activation is staged".to_string())?;
+                if staged.delivery_expires_at_seconds <= now {
+                    return Err("authentication confirmation expired".to_string());
+                }
+                staged.into_active()
+            };
+            let queued = state
+                .active_session
+                .as_ref()
+                .map(|active| {
+                    active.queued_revocation(Some(&next.metadata.session_id), now, renewal)
+                })
+                .transpose()?
+                .flatten();
+            if let Some(revocation) = queued.as_ref() {
+                enqueue_stored_revocation(state, revocation.clone(), now)?;
+            }
+            state.active_session = Some(next);
+            state.pending_reauthorization = None;
+            if renewal {
+                state.pending_renewal = None;
+            } else {
+                state.pending_auth_flow = None;
+                state.staged_activation = None;
+            }
+            Ok(queued)
+        })?;
+        queued.map(QueuedRevocation::try_from).transpose()
+    }
+
+    pub(crate) fn replace_active_with_staged(&self) -> Result<Option<QueuedRevocation>, String> {
+        self.promote_candidate(false)
+    }
+
+    pub(crate) fn promote_staged_activation(&self) -> Result<Option<QueuedRevocation>, String> {
+        self.replace_active_with_staged()
+    }
+
+    pub(crate) fn promote_renewal(&self) -> Result<Option<QueuedRevocation>, String> {
+        self.promote_candidate(true)
+    }
+
+    fn discard_candidate(&self, renewal: bool) -> Result<Option<QueuedRevocation>, String> {
+        let queued = self.update(|state| {
+            let now = encode_time(SystemTime::now())?;
+            let queued = if renewal {
+                state
+                    .pending_renewal
+                    .as_ref()
+                    .ok_or_else(|| "no Session renewal is pending".to_string())?
+                    .queued_revocation(now)
+            } else {
+                state
+                    .staged_activation
+                    .as_ref()
+                    .ok_or_else(|| "no activation is staged".to_string())?
+                    .queued_revocation(now)
+            };
+            if let Some(revocation) = queued.as_ref() {
+                enqueue_stored_revocation(state, revocation.clone(), now)?;
+            }
+            if renewal {
+                state.pending_renewal = None;
+            } else {
+                state.staged_activation = None;
+                state.pending_auth_flow = None;
+            }
+            Ok(queued)
+        })?;
+        queued.map(QueuedRevocation::try_from).transpose()
+    }
+
+    pub(crate) fn discard_staged_activation(&self) -> Result<Option<QueuedRevocation>, String> {
+        self.discard_candidate(false)
+    }
+
+    pub(crate) fn discard_renewal(&self) -> Result<Option<QueuedRevocation>, String> {
+        self.discard_candidate(true)
+    }
+
+    /// Atomically makes every local Session unusable and preserves every usable
+    /// revoke-only capability before any network request is attempted.
+    pub(crate) fn sign_out_local(&self) -> Result<Vec<String>, String> {
+        self.update(|state| {
+            let now = encode_time(SystemTime::now())?;
+            let candidates = [
+                state
+                    .active_session
+                    .as_ref()
+                    .and_then(|active| active.queued_revocation(None, now, true).ok().flatten()),
+                state
+                    .staged_activation
+                    .as_ref()
+                    .and_then(|staged| staged.queued_revocation(now)),
+                state
+                    .pending_renewal
+                    .as_ref()
+                    .and_then(|renewal| renewal.queued_revocation(now)),
+            ];
+            let mut moved = Vec::new();
+            for revocation in candidates.into_iter().flatten() {
+                // A prepared/rotated capability for the same Session supersedes
+                // an older revoke-only capability during this one local sign-out.
+                state.revocation_queue.retain(|queued| {
+                    queued.session_id != revocation.session_id
+                        || queued.capability == revocation.capability
+                });
+                enqueue_stored_revocation(state, revocation.clone(), now)?;
+                if !moved.contains(&revocation.session_id) {
+                    moved.push(revocation.session_id);
+                }
+            }
+            state.active_session = None;
+            state.pending_auth_flow = None;
+            state.staged_activation = None;
+            state.pending_renewal = None;
+            state.pending_reauthorization = None;
+            Ok(moved)
+        })
+    }
+
+    pub(crate) fn enqueue_revocation(&self, revocation: &QueuedRevocation) -> Result<(), String> {
+        let stored = StoredQueuedRevocation::try_from(revocation)?;
+        let now = encode_time(revocation.queued_at)?;
+        self.update(move |state| enqueue_stored_revocation(state, stored, now))
+    }
+
+    pub(crate) fn list_revocations(&self) -> Result<Vec<QueuedRevocation>, String> {
+        self.inspect(|state| {
+            state
+                .revocation_queue
+                .into_iter()
+                .map(QueuedRevocation::try_from)
+                .collect()
+        })
+    }
+
+    pub(crate) fn remove_revocation(&self, session_id: &str) -> Result<bool, String> {
+        validate_uuid(session_id)?;
+        self.update(|state| {
+            let before = state.revocation_queue.len();
+            state
+                .revocation_queue
+                .retain(|revocation| revocation.session_id != session_id);
+            Ok(before != state.revocation_queue.len())
         })
     }
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
-struct StoredSession {
-    cookie: String,
-    metadata: StoredSessionMetadata,
+impl Default for KeyringSessionPersistence {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SessionPersistence for KeyringSessionPersistence {
     fn persist(&self, secret: &SessionSecret, metadata: &SessionMetadata) -> Result<(), String> {
-        // One credential prevents a partial write from pairing a new cookie
-        // with stale metadata (or the inverse).
-        let stored = serde_json::to_string(&StoredSession {
-            cookie: secret.raw().to_string(),
-            metadata: StoredSessionMetadata::from(metadata),
+        self.update(|state| {
+            let (capability, expiry) = match state.active_session.as_ref() {
+                Some(current) if current.metadata.session_id == metadata.session_id => {
+                    if current.metadata.punk_id != metadata.punk_id {
+                        return Err(invalid_state());
+                    }
+                    (
+                        current.revoke_capability.clone(),
+                        current.revoke_expires_at_seconds,
+                    )
+                }
+                Some(_) => return Err("active Session replacement requires staging".to_string()),
+                None => (None, None),
+            };
+            state.active_session = Some(StoredActiveSession::from_parts(
+                secret,
+                metadata,
+                capability
+                    .as_deref()
+                    .map(punks_account_client::ceremony::RevocationSecret::from_token)
+                    .transpose()
+                    .map_err(|_| invalid_state())?
+                    .as_ref(),
+                expiry
+                    .map(|seconds| {
+                        std::time::UNIX_EPOCH
+                            .checked_add(std::time::Duration::from_secs(seconds))
+                            .ok_or_else(invalid_state)
+                    })
+                    .transpose()?,
+            )?);
+            Ok(())
         })
-        .map_err(|error| error.to_string())?;
-        Self::entry(SESSION_KEY)?
-            .set_password(&stored)
-            .map_err(|error| error.to_string())
     }
 
     fn load(&self) -> Result<Option<(SessionSecret, SessionMetadata)>, String> {
-        let Some(stored) = Self::load_value(SESSION_KEY)? else {
-            return Ok(None);
-        };
-        let stored: StoredSession =
-            serde_json::from_str(&stored).map_err(|error| error.to_string())?;
-        Ok(Some((
-            SessionSecret::from_cookie_header(&stored.cookie),
-            stored.metadata.into_metadata()?,
-        )))
+        self.load_active_session()
+            .map(|active| active.map(|active| (active.cookie, active.metadata)))
     }
 
     fn destroy(&self) -> Result<(), String> {
-        Self::delete_value(SESSION_KEY)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn metadata_round_trip_preserves_session_fields() {
-        let metadata = SessionMetadata {
-            session_id: "session-1".to_string(),
-            punk_id: "punk-1".to_string(),
-            expires_at: std::time::UNIX_EPOCH + std::time::Duration::from_secs(1234),
-            last_renewed_at: Some(std::time::UNIX_EPOCH + std::time::Duration::from_secs(1000)),
-        };
-
-        let restored = StoredSessionMetadata::from(&metadata)
-            .into_metadata()
-            .expect("test metadata must fit SystemTime");
-
-        assert_eq!(restored, metadata);
-    }
-
-    #[test]
-    fn metadata_rejects_timestamps_outside_system_time_range() {
-        let stored = StoredSessionMetadata {
-            session_id: "session-1".to_string(),
-            punk_id: "punk-1".to_string(),
-            expires_at_seconds: u64::MAX,
-            last_renewed_at_seconds: None,
-        };
-
-        assert!(stored.into_metadata().is_err());
-    }
-
-    #[test]
-    fn installation_identity_accepts_only_canonical_uuid_v4() {
-        assert!(validate_installation_identity("d9428888-122b-4d9b-8f03-1a1127e667b8").is_ok());
-        assert!(validate_installation_identity("d9428888-122b-5d9b-8f03-1a1127e667b8").is_err());
-        assert!(validate_installation_identity("D9428888-122B-4D9B-8F03-1A1127E667B8").is_err());
+        self.update(|state| {
+            state.active_session = None;
+            state.pending_reauthorization = None;
+            Ok(())
+        })
     }
 }

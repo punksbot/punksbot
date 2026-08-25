@@ -88,6 +88,7 @@
         "retry": {
           "enum": [
             "safe_read",
+            "same_identity",
             "human_intent_required",
             "renderer_confirmation",
             "never"
@@ -118,7 +119,11 @@
         {
           "if": { "properties": { "command": { "const": true } } },
           "then": {
-            "properties": { "retry": { "const": "human_intent_required" } }
+            "properties": {
+              "retry": {
+                "enum": ["human_intent_required", "same_identity"]
+              }
+            }
           }
         }
       ]

@@ -13,6 +13,9 @@ import {
 import {
   createTauriPunksAccountClient,
   PunksDesktopFailure,
+  type AccountSessionStateView,
+  type AuthenticationMethod,
+  type CeremonyPhaseView,
   type PunksAccountClient,
 } from "@/shared/api/punksClient";
 import type {
@@ -42,6 +45,7 @@ export type PunksBootstrapStatus = "loading" | "signed_out" | "ready" | "error";
 type BootstrapState = {
   status: PunksBootstrapStatus;
   compatibility: DesktopCompatibilityResponse | null;
+  accountSessionState: AccountSessionStateView | null;
   session: AuthSession | null;
   workspaces: WorkspaceSummary[];
   error: unknown;
@@ -51,6 +55,7 @@ export type PunksAccountRuntime = {
   client: PunksAccountClient;
   status: PunksBootstrapStatus;
   compatibility: DesktopCompatibilityResponse | null;
+  accountSessionState: AccountSessionStateView | null;
   session: AuthSession | null;
   workspaces: WorkspaceSummary[];
   route: PunksRoute | null;
@@ -145,42 +150,68 @@ function PunksUnavailableScreen() {
 
 function PunksSignedOut({
   client,
+  accountState,
   onStarted,
 }: {
   client: PunksAccountClient;
+  accountState: Extract<AccountSessionStateView, { state: "signed_out" }>;
   onStarted: () => Promise<void>;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [failure, setFailure] = useState<unknown>(null);
-  const [waitingForBrowser, setWaitingForBrowser] = useState(false);
+  const [authentication, setAuthentication] = useState<CeremonyPhaseView>(
+    accountState.authentication,
+  );
+  const [resumeAvailable, setResumeAvailable] = useState(
+    accountState.resumeAvailable,
+  );
+  const [polling, setPolling] = useState(false);
 
   useEffect(() => {
-    if (!waitingForBrowser) return;
+    if (polling) return;
+    setAuthentication(accountState.authentication);
+    setResumeAvailable(accountState.resumeAvailable);
+  }, [accountState, polling]);
+
+  useEffect(() => {
+    if (!polling) return;
     let active = true;
     let timer: number | undefined;
+    let attempts = 0;
 
     const poll = async () => {
       try {
-        const phase = await client.ceremonyStatus();
+        const state = await client.getAccountSessionState();
         if (!active) return;
-        if (phase.phase === "confirmed") {
-          setWaitingForBrowser(false);
+        setAuthentication(state.authentication);
+        setResumeAvailable(state.resumeAvailable);
+        if (
+          state.state === "authenticated" ||
+          state.authentication.phase === "confirmed"
+        ) {
+          setPolling(false);
           await onStarted();
           return;
         }
         if (
-          phase.phase === "cancelled" ||
-          phase.phase === "expired" ||
-          phase.phase === "failed"
+          state.authentication.phase === "cancelled" ||
+          state.authentication.phase === "expired" ||
+          state.authentication.phase === "failed"
         ) {
-          setWaitingForBrowser(false);
+          setPolling(false);
+          return;
+        }
+        attempts += 1;
+        if (attempts >= 800) {
+          setFailure(new Error("Desktop authentication status timed out"));
+          setPolling(false);
           return;
         }
         timer = window.setTimeout(() => void poll(), 750);
       } catch (error) {
         if (!active) return;
         setFailure(error);
-        setWaitingForBrowser(false);
+        setPolling(false);
       }
     };
 
@@ -189,20 +220,66 @@ function PunksSignedOut({
       active = false;
       if (timer !== undefined) window.clearTimeout(timer);
     };
-  }, [client, onStarted, waitingForBrowser]);
+  }, [client, onStarted, polling]);
 
-  const start = async (provider: "google" | "github") => {
+  const continueAfter = async (phase: CeremonyPhaseView) => {
+    setAuthentication(phase);
+    setResumeAvailable(false);
+    if (phase.phase === "confirmed") {
+      await onStarted();
+    } else if (
+      phase.phase !== "cancelled" &&
+      phase.phase !== "expired" &&
+      phase.phase !== "failed"
+    ) {
+      setPolling(true);
+    }
+  };
+
+  const start = async (provider: AuthenticationMethod) => {
     setBusy(provider);
     setFailure(null);
     try {
-      await client.ceremonyStart(provider);
-      setWaitingForBrowser(true);
+      await continueAfter(await client.startSignIn(provider));
     } catch (error) {
       setFailure(error);
     } finally {
       setBusy(null);
     }
   };
+
+  const resume = async () => {
+    setBusy("resume");
+    setFailure(null);
+    try {
+      await continueAfter(await client.resumeInterruptedAuthentication());
+    } catch (error) {
+      setFailure(error);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const cancel = async () => {
+    setBusy("cancel");
+    setFailure(null);
+    setPolling(false);
+    try {
+      const phase = await client.cancelAuthentication();
+      setAuthentication(phase);
+      setResumeAvailable(false);
+    } catch (error) {
+      setFailure(error);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const canCancel =
+    resumeAvailable ||
+    !["idle", "cancelled", "expired", "failed", "confirmed"].includes(
+      authentication.phase,
+    );
 
   return (
     <div
@@ -214,11 +291,11 @@ function PunksSignedOut({
         <p className="mt-2 text-sm text-muted-foreground">
           Continue in your system browser to authorize this desktop session.
         </p>
-        <div className="mt-5 flex gap-2">
+        <div className="mt-5 flex flex-wrap gap-2">
           <button
             className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground"
             data-testid="punks-sign-in-google"
-            disabled={busy !== null || waitingForBrowser}
+            disabled={busy !== null || polling}
             onClick={() => void start("google")}
             type="button"
           >
@@ -227,14 +304,45 @@ function PunksSignedOut({
           <button
             className="rounded-md border border-border px-3 py-2 text-sm"
             data-testid="punks-sign-in-github"
-            disabled={busy !== null || waitingForBrowser}
+            disabled={busy !== null || polling}
             onClick={() => void start("github")}
             type="button"
           >
             {busy === "github" ? "Opening…" : "GitHub"}
           </button>
+          <button
+            className="rounded-md border border-border px-3 py-2 text-sm"
+            data-testid="punks-sign-in-passkey"
+            disabled={busy !== null || polling}
+            onClick={() => void start("passkey")}
+            type="button"
+          >
+            {busy === "passkey" ? "Opening…" : "Passkey"}
+          </button>
         </div>
-        {waitingForBrowser ? (
+        {resumeAvailable && !polling ? (
+          <button
+            className="mt-3 rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground"
+            data-testid="punks-finish-sign-in"
+            disabled={busy !== null}
+            onClick={() => void resume()}
+            type="button"
+          >
+            Finish sign-in
+          </button>
+        ) : null}
+        {canCancel ? (
+          <button
+            className="mt-3 ml-2 rounded-md border border-border px-3 py-2 text-sm"
+            data-testid="punks-cancel-sign-in"
+            disabled={busy !== null}
+            onClick={() => void cancel()}
+            type="button"
+          >
+            Cancel
+          </button>
+        ) : null}
+        {polling ? (
           <p className="mt-3 text-sm text-muted-foreground">
             Finish authorization in your system browser…
           </p>
@@ -274,6 +382,7 @@ function PunksAccountProvider({
   const [state, setState] = useState<BootstrapState>({
     status: "loading",
     compatibility,
+    accountSessionState: null,
     session: null,
     workspaces: [],
     error: null,
@@ -283,12 +392,24 @@ function PunksAccountProvider({
   const refresh = useCallback(async () => {
     setState((current) => ({ ...current, status: "loading", error: null }));
     try {
-      const session = await client.getSession();
+      const accountSessionState = await client.getAccountSessionState();
+      if (accountSessionState.state === "signed_out") {
+        setState({
+          status: "signed_out",
+          compatibility,
+          accountSessionState,
+          session: null,
+          workspaces: [],
+          error: null,
+        });
+        return;
+      }
       const workspaces = await client.listWorkspaces();
       setState({
         status: "ready",
         compatibility,
-        session,
+        accountSessionState,
+        session: accountSessionState.session,
         workspaces,
         error: null,
       });
@@ -297,6 +418,11 @@ function PunksAccountProvider({
         setState((current) => ({
           ...current,
           status: "signed_out",
+          accountSessionState: {
+            state: "signed_out",
+            authentication: { phase: "idle" },
+            resumeAvailable: false,
+          },
           session: null,
           workspaces: [],
           error: null,
@@ -312,6 +438,29 @@ function PunksAccountProvider({
   }, [refresh]);
 
   useEffect(() => () => void scopeManager.invalidate(), [scopeManager]);
+
+  const renewalInFlight = useRef(false);
+  useEffect(() => {
+    if (state.status !== "ready") return;
+    const renewOnForeground = () => {
+      if (document.visibilityState !== "visible" || renewalInFlight.current) {
+        return;
+      }
+      renewalInFlight.current = true;
+      void client
+        .renewAccountSession()
+        .catch(() => undefined)
+        .finally(() => {
+          renewalInFlight.current = false;
+        });
+    };
+    window.addEventListener("focus", renewOnForeground);
+    document.addEventListener("visibilitychange", renewOnForeground);
+    return () => {
+      window.removeEventListener("focus", renewOnForeground);
+      document.removeEventListener("visibilitychange", renewOnForeground);
+    };
+  }, [client, state.status]);
 
   const localStore = useMemo(() => {
     if (state.compatibility === null || state.session === null) return null;
@@ -339,11 +488,16 @@ function PunksAccountProvider({
   const logout = useCallback(async () => {
     await scopeManager.invalidate();
     try {
-      await client.logout();
+      await client.signOut();
     } finally {
       setState((current) => ({
         ...current,
         status: "signed_out",
+        accountSessionState: {
+          state: "signed_out",
+          authentication: { phase: "idle" },
+          resumeAvailable: false,
+        },
         session: null,
         workspaces: [],
       }));
@@ -428,6 +582,7 @@ function PunksAccountProvider({
     client,
     status: state.status,
     compatibility: state.compatibility,
+    accountSessionState: state.accountSessionState,
     session: state.session,
     workspaces: state.workspaces,
     route,
@@ -653,7 +808,17 @@ function PunksAccountGate({ client }: { client: PunksAccountClient }) {
     return <PunksCompatibilityGate message="Checking Punks compatibility…" />;
   }
   if (account.status === "signed_out") {
-    return <PunksSignedOut client={client} onStarted={account.refresh} />;
+    const accountState = account.accountSessionState;
+    if (accountState === null || accountState.state !== "signed_out") {
+      return <PunksCompatibilityGate />;
+    }
+    return (
+      <PunksSignedOut
+        accountState={accountState}
+        client={client}
+        onStarted={account.refresh}
+      />
+    );
   }
   if (account.status === "error") return <PunksCompatibilityGate />;
   return <PunksWorkspaceRouter />;

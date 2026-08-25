@@ -44,11 +44,32 @@
           "className": "AuthTransactionDO"
         },
         {
-          "id": "auth-desktop-delivery",
+          "id": "auth-desktop-flow",
           "kind": "durable-object",
           "worker": "punks-auth-staging",
-          "binding": "DESKTOP_DELIVERIES",
-          "className": "DesktopDeliveryDO"
+          "binding": "DESKTOP_AUTH_FLOWS",
+          "className": "DesktopAuthFlowDO"
+        },
+        {
+          "id": "auth-desktop-reauthorization",
+          "kind": "durable-object",
+          "worker": "punks-auth-staging",
+          "binding": "DESKTOP_REAUTH_GRANTS",
+          "className": "DesktopReauthGrantDO"
+        },
+        {
+          "id": "auth-session-revocation",
+          "kind": "durable-object",
+          "worker": "punks-auth-staging",
+          "binding": "SESSION_REVOCATIONS",
+          "className": "SessionRevocationDO"
+        },
+        {
+          "id": "auth-session-rotation",
+          "kind": "durable-object",
+          "worker": "punks-auth-staging",
+          "binding": "SESSION_ROTATIONS",
+          "className": "SessionRotationDO"
         },
         {
           "id": "auth-session",

@@ -15,6 +15,7 @@ type SessionRow = Record<
 >;
 
 const LAST_RENEWED_AT_KEY = "last_renewed_at";
+const PENDING_RENEWAL_KEY = "pending_renewal_command";
 const ACCOUNT_MERGE_REAUTH_KEY = "account_merge_reauth_v1";
 
 interface AccountMergeReauthentication {
@@ -39,7 +40,7 @@ export class SessionDO extends DurableObject<AuthEnv> {
         recent_reauth_until TEXT,
         client_kind TEXT NOT NULL DEFAULT 'browser'
           CHECK (client_kind IN ('browser', 'desktop', 'mobile', 'api')),
-        status TEXT NOT NULL CHECK (status IN ('active', 'revoked')),
+        status TEXT NOT NULL CHECK (status IN ('prepared', 'active', 'revoked')),
         updated_at TEXT NOT NULL
       ) STRICT;
       CREATE TABLE IF NOT EXISTS account_merge_reauth_claim (
@@ -51,6 +52,38 @@ export class SessionDO extends DurableObject<AuthEnv> {
           CHECK (status IN ('active', 'consumed'))
       ) STRICT
     `);
+    const sessionTableSql = this.ctx.storage.sql
+      .exec<{ sql: string }>(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'auth_session'",
+      )
+      .toArray()[0]?.sql;
+    if (
+      sessionTableSql !== undefined &&
+      !sessionTableSql.includes("'prepared'")
+    ) {
+      this.ctx.storage.sql.exec(`
+        ALTER TABLE auth_session RENAME TO auth_session_before_prepared;
+        CREATE TABLE auth_session (
+          singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+          session_id TEXT NOT NULL,
+          punk_id TEXT NOT NULL,
+          authenticated_at TEXT NOT NULL,
+          expires_at TEXT NOT NULL,
+          recent_reauth_until TEXT,
+          client_kind TEXT NOT NULL DEFAULT 'browser'
+            CHECK (client_kind IN ('browser', 'desktop', 'mobile', 'api')),
+          status TEXT NOT NULL CHECK (status IN ('prepared', 'active', 'revoked')),
+          updated_at TEXT NOT NULL
+        ) STRICT;
+        INSERT INTO auth_session
+          (singleton, session_id, punk_id, authenticated_at, expires_at,
+           recent_reauth_until, client_kind, status, updated_at)
+        SELECT singleton, session_id, punk_id, authenticated_at, expires_at,
+               recent_reauth_until, client_kind, status, updated_at
+        FROM auth_session_before_prepared;
+        DROP TABLE auth_session_before_prepared
+      `);
+    }
     const sessionColumns = this.ctx.storage.sql
       .exec<{ name: string }>("PRAGMA table_info(auth_session)")
       .toArray();
@@ -74,6 +107,8 @@ export class SessionDO extends DurableObject<AuthEnv> {
   async create(
     session: SessionRecord,
     clientKind: "browser" | "desktop" | "mobile" | "api" = "browser",
+    status: "prepared" | "active" = "active",
+    lastRenewedAt?: string,
   ): Promise<boolean> {
     if (
       this.row() !== undefined ||
@@ -85,15 +120,25 @@ export class SessionDO extends DurableObject<AuthEnv> {
       `INSERT INTO auth_session
         (singleton, session_id, punk_id, authenticated_at, expires_at,
          recent_reauth_until, client_kind, status, updated_at)
-       VALUES (1, ?, ?, ?, ?, ?, ?, 'active', ?)`,
+       VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)`,
       session.sessionId,
       session.punkId,
       session.authenticatedAt,
       session.expiresAt,
       session.recentReauthUntil,
       clientKind,
+      status,
       session.authenticatedAt,
     );
+    if (lastRenewedAt !== undefined) {
+      await this.ctx.storage.put(LAST_RENEWED_AT_KEY, lastRenewedAt);
+    }
+    if (status === "prepared") {
+      this.ctx.waitUntil(
+        this.ctx.storage.setAlarm(Date.parse(session.expiresAt)),
+      );
+      return true;
+    }
     let indexed = false;
     try {
       indexed = await this.env.PUNKS.getByName(
@@ -121,6 +166,132 @@ export class SessionDO extends DurableObject<AuthEnv> {
       return this.readForAccountMerge();
     } catch {
       return null;
+    }
+  }
+
+  /** Reads a prepared or active Session only for the native delivery protocol. */
+  readForDesktopDelivery(): {
+    record: SessionRecord;
+    status: "prepared" | "active";
+    clientKind: "browser" | "desktop" | "mobile" | "api";
+  } | null {
+    const row = this.row();
+    if (
+      row === undefined ||
+      (row.status !== "prepared" && row.status !== "active") ||
+      Date.parse(String(row.expires_at)) <= Date.now()
+    ) {
+      return null;
+    }
+    return {
+      record: {
+        sessionId: String(row.session_id),
+        punkId: String(row.punk_id),
+        authenticatedAt: String(row.authenticated_at),
+        expiresAt: String(row.expires_at),
+        recentReauthUntil:
+          row.recent_reauth_until === null
+            ? null
+            : String(row.recent_reauth_until),
+      },
+      status: row.status,
+      clientKind: String(row.client_kind) as
+        | "browser"
+        | "desktop"
+        | "mobile"
+        | "api",
+    };
+  }
+
+  /** Activates exactly one prepared Session after native confirmation. */
+  async activatePrepared(sessionId: string): Promise<boolean> {
+    const delivery = this.readForDesktopDelivery();
+    if (delivery === null || delivery.record.sessionId !== sessionId) {
+      return false;
+    }
+    if (delivery.status === "active") return true;
+    let indexed = false;
+    try {
+      indexed = await this.env.PUNKS.getByName(
+        delivery.record.punkId,
+      ).recordAccountMergeSession({
+        ...delivery.record,
+        clientKind: delivery.clientKind,
+      });
+    } catch {
+      return false;
+    }
+    if (!indexed) return false;
+    return (
+      this.ctx.storage.sql.exec(
+        `UPDATE auth_session SET status = 'active', updated_at = ?
+         WHERE singleton = 1 AND status = 'prepared'`,
+        new Date().toISOString(),
+      ).rowsWritten === 1
+    );
+  }
+
+  /** Reserves one due rotation command without extending this Session in place. */
+  async beginRenewal(input: {
+    commandId: string;
+    now: number;
+    thresholdSeconds: number;
+    minIntervalSeconds: number;
+  }): Promise<
+    | { ok: true; record: SessionRecord }
+    | {
+        ok: false;
+        code: "inactive" | "not_due" | "too_recent" | "in_progress";
+      }
+  > {
+    const row = this.row();
+    if (
+      row === undefined ||
+      row.status !== "active" ||
+      Date.parse(String(row.expires_at)) <= input.now
+    ) {
+      return { ok: false, code: "inactive" };
+    }
+    if (
+      (Date.parse(String(row.expires_at)) - input.now) / 1_000 >=
+      input.thresholdSeconds
+    ) {
+      return { ok: false, code: "not_due" };
+    }
+    const lastRenewedAt =
+      await this.ctx.storage.get<string>(LAST_RENEWED_AT_KEY);
+    if (
+      lastRenewedAt !== undefined &&
+      input.now - Date.parse(lastRenewedAt) < input.minIntervalSeconds * 1_000
+    ) {
+      return { ok: false, code: "too_recent" };
+    }
+    const pending = await this.ctx.storage.get<string>(PENDING_RENEWAL_KEY);
+    if (pending !== undefined && pending !== input.commandId) {
+      return { ok: false, code: "in_progress" };
+    }
+    if (pending === undefined) {
+      await this.ctx.storage.put(PENDING_RENEWAL_KEY, input.commandId);
+    }
+    return {
+      ok: true,
+      record: {
+        sessionId: String(row.session_id),
+        punkId: String(row.punk_id),
+        authenticatedAt: String(row.authenticated_at),
+        expiresAt: String(row.expires_at),
+        recentReauthUntil:
+          row.recent_reauth_until === null
+            ? null
+            : String(row.recent_reauth_until),
+      },
+    };
+  }
+
+  async clearRenewal(commandId: string): Promise<void> {
+    const pending = await this.ctx.storage.get<string>(PENDING_RENEWAL_KEY);
+    if (pending === commandId) {
+      await this.ctx.storage.delete(PENDING_RENEWAL_KEY);
     }
   }
 
@@ -341,7 +512,7 @@ export class SessionDO extends DurableObject<AuthEnv> {
       return { ok: false, code: "inactive" };
     }
     const remainingSeconds = (expiresAtMs - policy.now) / 1_000;
-    if (remainingSeconds > policy.thresholdSeconds) {
+    if (remainingSeconds >= policy.thresholdSeconds) {
       return { ok: false, code: "not_due" };
     }
     const lastRenewedAt =
@@ -405,6 +576,7 @@ export class SessionDO extends DurableObject<AuthEnv> {
       new Date().toISOString(),
     );
     await this.ctx.storage.delete(ACCOUNT_MERGE_REAUTH_KEY);
+    await this.ctx.storage.delete(PENDING_RENEWAL_KEY);
     this.ctx.storage.sql.exec("DELETE FROM account_merge_reauth_claim");
     await this.env.PUNKS.getByName(
       String(row.punk_id),

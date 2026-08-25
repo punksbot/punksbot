@@ -22,10 +22,19 @@ function bootstrapService(): BootstrapRpc {
 }
 
 describe("desktop-social-loop@1 Auth sous workerd", () => {
-  it("exerce getSession, startAuthentication et logout sur le Worker et ses Durable Objects", async () => {
+  it("exerce getSession et le démarrage desktop fermé sur le Worker et ses Durable Objects", async () => {
     const names = operationCorpus.operations.map(({ operation }) => operation);
     expect(names).toEqual(
-      expect.arrayContaining(["getSession", "startAuthentication", "logout"]),
+      expect.arrayContaining([
+        "getSession",
+        "startDesktopAuthentication",
+        "getDesktopAuthenticationStatus",
+        "claimDesktopAuthentication",
+        "confirmDesktopAuthentication",
+        "cancelDesktopAuthentication",
+        "renewDesktopSession",
+        "revokeDesktopSession",
+      ]),
     );
 
     const bootstrapped = await bootstrapService().bootstrap();
@@ -49,14 +58,14 @@ describe("desktop-social-loop@1 Auth sous workerd", () => {
     ).toBe(true);
 
     const startPayload = operationCorpus.operations.find(
-      ({ operation }) => operation === "startAuthentication",
+      ({ operation }) => operation === "startDesktopAuthentication",
     )?.request?.payload;
     const started = await workerExports.default.fetch(
-      new Request("https://auth.punks.test/api/auth/v1/start", {
+      new Request("https://auth.punks.test/api/auth/v1/desktop/start", {
         method: "POST",
         headers: {
-          cookie,
           origin: "https://auth.punks.test",
+          "sec-punks-desktop-environment": "local",
           "content-type": "application/json",
         },
         body: JSON.stringify(startPayload),
@@ -65,24 +74,9 @@ describe("desktop-social-loop@1 Auth sous workerd", () => {
     expect(started.status).toBe(201);
     expect(
       validateContract(
-        "punks://contracts/auth.start-response@1",
+        "punks://contracts/desktop-auth.start@1",
         await started.json(),
       ).valid,
     ).toBe(true);
-
-    const logout = await workerExports.default.fetch(
-      new Request("https://auth.punks.test/api/auth/v1/logout", {
-        method: "POST",
-        headers: { cookie, origin: "https://auth.punks.test" },
-      }),
-    );
-    expect(logout.status).toBe(200);
-
-    const expired = await workerExports.default.fetch(
-      new Request("https://auth.punks.test/api/auth/v1/session", {
-        headers: { cookie },
-      }),
-    );
-    expect(expired.status).toBe(401);
   });
 });

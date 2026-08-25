@@ -37,7 +37,10 @@
       { "name": "IDENTITY_CLAIMS", "class_name": "IdentityClaimDO" },
       { "name": "EMAIL_CLAIMS", "class_name": "EmailClaimDO" },
       { "name": "AUTH_TRANSACTIONS", "class_name": "AuthTransactionDO" },
-      { "name": "DESKTOP_DELIVERIES", "class_name": "DesktopDeliveryDO" },
+      { "name": "DESKTOP_AUTH_FLOWS", "class_name": "DesktopAuthFlowDO" },
+      { "name": "DESKTOP_REAUTH_GRANTS", "class_name": "DesktopReauthGrantDO" },
+      { "name": "SESSION_REVOCATIONS", "class_name": "SessionRevocationDO" },
+      { "name": "SESSION_ROTATIONS", "class_name": "SessionRotationDO" },
       { "name": "SESSIONS", "class_name": "SessionDO" },
       { "name": "PASSKEY_CEREMONIES", "class_name": "PasskeyCeremonyDO" },
       { "name": "PASSKEY_CREDENTIALS", "class_name": "PasskeyCredentialDO" }
@@ -65,6 +68,16 @@
     {
       "tag": "v4",
       "new_sqlite_classes": ["AccountMergeIntentDO"]
+    },
+    {
+      "tag": "v5",
+      "deleted_classes": ["DesktopDeliveryDO"],
+      "new_sqlite_classes": [
+        "DesktopAuthFlowDO",
+        "DesktopReauthGrantDO",
+        "SessionRevocationDO",
+        "SessionRotationDO"
+      ]
     }
   ],
   "observability": { "enabled": true },
@@ -110,7 +123,10 @@
           { "name": "IDENTITY_CLAIMS", "class_name": "IdentityClaimDO" },
           { "name": "EMAIL_CLAIMS", "class_name": "EmailClaimDO" },
           { "name": "AUTH_TRANSACTIONS", "class_name": "AuthTransactionDO" },
-          { "name": "DESKTOP_DELIVERIES", "class_name": "DesktopDeliveryDO" },
+          { "name": "DESKTOP_AUTH_FLOWS", "class_name": "DesktopAuthFlowDO" },
+          { "name": "DESKTOP_REAUTH_GRANTS", "class_name": "DesktopReauthGrantDO" },
+          { "name": "SESSION_REVOCATIONS", "class_name": "SessionRevocationDO" },
+          { "name": "SESSION_ROTATIONS", "class_name": "SessionRotationDO" },
           { "name": "SESSIONS", "class_name": "SessionDO" },
           { "name": "PASSKEY_CEREMONIES", "class_name": "PasskeyCeremonyDO" },
           { "name": "PASSKEY_CREDENTIALS", "class_name": "PasskeyCredentialDO" }

@@ -3,8 +3,7 @@ import type { AuthProviderProfile, AuthSession, Punk } from "@punks/contracts";
 import type { AuthIntent, AuthProvider } from "./env";
 
 export interface DesktopTransactionTarget {
-  installationHash: string;
-  environment: "local" | "staging" | "production";
+  flowId: string;
 }
 
 export interface AuthTransaction {
@@ -19,13 +18,6 @@ export interface AuthTransaction {
   expiresAt: string;
   /** Présent uniquement pour la Cérémonie de connexion desktop (issue #54). */
   desktop?: DesktopTransactionTarget;
-}
-
-export interface DesktopDeliveryRecord {
-  sessionToken: string;
-  punkId: string;
-  installationHash: string;
-  expiresAt: string;
 }
 
 export type ClaimResolution =

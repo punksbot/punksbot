@@ -34,13 +34,16 @@ export class RuntimeIdentityService extends WorkerEntrypoint<AuthEnv> {
     return { versionId: this.env.CF_VERSION_METADATA.id };
   }
 }
-export { DesktopDeliveryDO } from "./desktop-delivery-do";
+export { DesktopAuthFlowDO } from "./desktop-auth-flow-do";
+export { DesktopReauthGrantDO } from "./desktop-reauth-grant-do";
 export { EmailClaimDO } from "./email-claim-do";
 export { IdentityClaimDO } from "./identity-claim-do";
 export { PasskeyCeremonyDO } from "./passkey-ceremony-do";
 export { PasskeyCredentialDO } from "./passkey-credential-do";
 export { PunkDO } from "./punk-do";
 export { SessionDO } from "./session-do";
+export { SessionRevocationDO } from "./session-revocation-do";
+export { SessionRotationDO } from "./session-rotation-do";
 
 const opaqueUuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;

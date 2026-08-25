@@ -51,17 +51,22 @@ async function installPunksTauriBoundary(
               origin,
               capabilities: [...compatibilitySeed.capabilities],
             };
-          case "punks_get_session":
+          case "punks_get_account_session_state":
             return {
-              sessionId,
-              punkId,
-              authenticatedAt: "2026-08-25T10:00:00.000Z",
-              expiresAt: "2026-08-26T10:00:00.000Z",
-              recentReauthUntil: null,
-              punk: {
-                id: punkId,
-                displayName: "Capability Test Punk",
-                avatarUrl: null,
+              state: "authenticated",
+              authentication: { phase: "idle" },
+              resumeAvailable: false,
+              session: {
+                sessionId,
+                punkId,
+                authenticatedAt: "2026-08-25T10:00:00.000Z",
+                expiresAt: "2026-08-26T10:00:00.000Z",
+                recentReauthUntil: null,
+                punk: {
+                  id: punkId,
+                  displayName: "Capability Test Punk",
+                  avatarUrl: null,
+                },
               },
             };
           case "punks_list_workspaces":
@@ -278,7 +283,7 @@ test("une panne de compatibilité reste un état runtime récupérable", async (
   expect(await invokedCommands(page)).toEqual([
     "punks_check_compatibility",
     "punks_check_compatibility",
-    "punks_get_session",
+    "punks_get_account_session_state",
     "punks_list_workspaces",
     "punks_open_workspace",
     "punks_list_streams",

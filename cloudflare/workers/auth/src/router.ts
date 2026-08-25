@@ -1,11 +1,8 @@
 import type {
   AuthProviderProfile,
   AuthSession,
-  DeliverDesktopSessionCommand,
-  DesktopSessionResponse,
   StartAuthCommand,
   StartAuthResponse,
-  StartDesktopAuthCommand,
 } from "@punks/contracts";
 import { validateContract } from "@punks/contracts";
 import { deriveOpaqueUuid } from "@punks/core";
@@ -16,9 +13,11 @@ import {
   oauthCookie,
   oauthCookieName,
   parseCookies,
-  sessionCookie,
+  sessionToken,
 } from "./cookies";
 import { hash, pkceChallenge, randomToken } from "./crypto";
+import { completeDesktopOAuth, failDesktopOAuth } from "./desktop-auth";
+import { routeDesktopAuth } from "./desktop-auth-router";
 import type { AuthEnv, AuthProvider } from "./env";
 import { json, problem, readJson, redirect } from "./http";
 import { routePasskeys } from "./passkeys";
@@ -31,82 +30,15 @@ import type { AuthTransaction, IdentityInput } from "./rpc";
 import {
   aggregateName,
   canonicalPunk,
-  configuredTtl,
-  ensureSessionForToken,
   getActiveSession,
   newSession,
   sameOrigin,
+  sameDesktopDistribution,
   type ActiveSession,
 } from "./session";
 
 function validProvider(value: string): value is AuthProvider {
   return value === "google" || value === "github";
-}
-
-/** Politique de renouvellement glissant de la Session desktop (issue #54). */
-const RENEWAL_THRESHOLD_SECONDS = 7 * 24 * 3_600;
-const RENEWAL_MIN_INTERVAL_SECONDS = 24 * 3_600;
-const DESKTOP_DELIVERY_TTL_MS = 120_000;
-
-function desktopDeeplink(
-  environment: string,
-  params: Record<string, string>,
-): string {
-  const url = new URL("punks://session");
-  url.searchParams.set("environment", environment);
-  for (const [key, value] of Object.entries(params)) {
-    url.searchParams.set(key, value);
-  }
-  return url.toString();
-}
-
-function desktopResultRedirect(
-  environment: string,
-  state: string,
-  result: string,
-): Response {
-  return redirect(
-    desktopDeeplink(environment, { state, result: `error_${result}` }),
-    [clearOauthCookie(state)],
-  );
-}
-
-/**
- * Dépose la session fraîche dans la livraison à usage unique et ramène le
- * navigateur vers le deeplink desktop — le navigateur ne reçoit jamais le
- * cookie de la session desktop (issue #54).
- */
-async function deliverDesktopSession(
-  env: AuthEnv,
-  transaction: AuthTransaction,
-  state: string,
-  punk: ReturnType<typeof canonicalPunk>,
-  session: { value: AuthSession; cookie: string; token: string },
-): Promise<Response> {
-  const target = transaction.desktop;
-  if (target === undefined) {
-    throw new Error("Desktop delivery requires a desktop transaction");
-  }
-  const deliveryToken = randomToken(32);
-  const created = await env.DESKTOP_DELIVERIES.getByName(
-    await aggregateName("desktop-delivery", deliveryToken),
-  ).create({
-    sessionToken: session.token,
-    punkId: punk.id,
-    installationHash: target.installationHash,
-    expiresAt: new Date(Date.now() + DESKTOP_DELIVERY_TTL_MS).toISOString(),
-  });
-  if (!created) {
-    return desktopResultRedirect(
-      target.environment,
-      state,
-      "temporarily_unavailable",
-    );
-  }
-  return redirect(
-    desktopDeeplink(target.environment, { state, delivery: deliveryToken }),
-    [clearOauthCookie(state)],
-  );
 }
 
 function resultRedirect(
@@ -233,11 +165,8 @@ async function signIn(
   state: string,
   identity: IdentityInput,
 ): Promise<Response> {
-  const desktop = transaction.desktop ?? null;
   const fail = (result: string): Response =>
-    desktop !== null
-      ? desktopResultRedirect(desktop.environment, state, result)
-      : resultRedirect(env, transaction, state, result);
+    resultRedirect(env, transaction, state, result);
 
   const identityName = await aggregateName(
     "identity",
@@ -250,20 +179,7 @@ async function signIn(
     if (!punk.ok) {
       return fail("temporarily_unavailable");
     }
-    const session = await newSession(
-      env,
-      canonicalPunk(punk.state),
-      desktop === null ? "browser" : "desktop",
-    );
-    if (desktop !== null) {
-      return deliverDesktopSession(
-        env,
-        transaction,
-        state,
-        canonicalPunk(punk.state),
-        session,
-      );
-    }
+    const session = await newSession(env, canonicalPunk(punk.state));
     return resultRedirect(env, transaction, state, "signed_in", [
       session.cookie,
     ]);
@@ -323,20 +239,7 @@ async function signIn(
   if (!identityActivated || !emailActivated) {
     return fail("temporarily_unavailable");
   }
-  const session = await newSession(
-    env,
-    canonicalPunk(provisioned.state),
-    desktop === null ? "browser" : "desktop",
-  );
-  if (desktop !== null) {
-    return deliverDesktopSession(
-      env,
-      transaction,
-      state,
-      canonicalPunk(provisioned.state),
-      session,
-    );
-  }
+  const session = await newSession(env, canonicalPunk(provisioned.state));
   return resultRedirect(env, transaction, state, "signed_in", [session.cookie]);
 }
 
@@ -493,10 +396,12 @@ async function oauthCallback(
   if (browserBinding === undefined) {
     return problem(400, "invalid_input", "OAuth browser binding is missing");
   }
+  const browserBindingHash = await hash(browserBinding);
   const transactionId = await aggregateName("transaction", state);
-  const begun = await env.AUTH_TRANSACTIONS.getByName(transactionId).begin(
-    await hash(browserBinding),
-  );
+  const begun =
+    await env.AUTH_TRANSACTIONS.getByName(transactionId).begin(
+      browserBindingHash,
+    );
   if (!begun.ok || begun.transaction.provider !== provider) {
     return problem(
       400,
@@ -514,6 +419,16 @@ async function oauthCallback(
       providerFetch,
     );
     const identity = await identityInput(profile);
+    if (transaction.desktop !== undefined) {
+      return completeDesktopOAuth({
+        request,
+        env,
+        transaction,
+        transactionId,
+        browserBindingHash,
+        identity,
+      });
+    }
     if (transaction.intent === "sign_in") {
       return signIn(env, transaction, transactionId, state, identity);
     }
@@ -529,21 +444,48 @@ async function oauthCallback(
       identity,
     );
   } catch {
+    if (transaction.desktop !== undefined) {
+      return failDesktopOAuth({
+        env,
+        transaction,
+        browserBindingHash,
+        code: "provider_error",
+      });
+    }
     return resultRedirect(env, transaction, state, "provider_error");
   }
 }
 
 async function getSession(request: Request, env: AuthEnv): Promise<Response> {
-  const current = await getActiveSession(request, env);
-  if (current === null) {
-    return problem(401, "unauthenticated", "No active Punk session");
+  const active = await getActiveSession(request, env);
+  let record = active?.record ?? null;
+  let punk = active?.punk ?? null;
+  if (record === null || punk === null) {
+    const token = sessionToken(request, env);
+    if (token === null || !sameDesktopDistribution(request, env)) {
+      return problem(401, "unauthenticated", "No readable Punk session");
+    }
+    const sessionId = await aggregateName("session", token);
+    const delivery =
+      await env.SESSIONS.getByName(sessionId).readForDesktopDelivery();
+    if (delivery === null || delivery.status !== "prepared") {
+      return problem(401, "unauthenticated", "No readable Punk session");
+    }
+    const punkResult = await env.PUNKS.getByName(
+      delivery.record.punkId,
+    ).query();
+    if (!punkResult.ok) {
+      return problem(401, "unauthenticated", "Prepared Punk is unavailable");
+    }
+    record = delivery.record;
+    punk = canonicalPunk(punkResult.state);
   }
   const session: AuthSession = {
-    ...current.record,
+    ...record,
     punk: {
-      id: current.punk.id,
-      displayName: current.punk.displayName,
-      avatarUrl: current.punk.avatarUrl,
+      id: punk.id,
+      displayName: punk.displayName,
+      avatarUrl: punk.avatarUrl,
     },
   };
   if (!validateContract("punks://contracts/auth.session@1", session).valid) {
@@ -565,200 +507,6 @@ async function logout(request: Request, env: AuthEnv): Promise<Response> {
   });
 }
 
-/**
- * Démarre la Cérémonie de connexion desktop (issue #54) : même discipline
- * OAuth/PKCE/state que le web (ADR 0042), mais la transaction porte la
- * cible desktop (installation attendue + environnement) et l'issue est une
- * livraison à usage unique, pas un cookie de navigateur.
- */
-async function startDesktopAuth(
-  request: Request,
-  env: AuthEnv,
-): Promise<Response> {
-  if (!sameOrigin(request, env)) {
-    return problem(403, "forbidden", "Same-origin auth request is required");
-  }
-  let input: unknown;
-  try {
-    input = await readJson(request);
-  } catch {
-    return problem(400, "invalid_input", "Desktop auth start body is invalid");
-  }
-  if (
-    !validateContract("punks://contracts/auth.desktop-start@1", input).valid
-  ) {
-    return problem(
-      400,
-      "invalid_input",
-      "Desktop auth start command is invalid",
-    );
-  }
-  const command = input as StartDesktopAuthCommand;
-  if (command.environment !== env.ENVIRONMENT) {
-    return problem(
-      403,
-      "forbidden",
-      "Desktop ceremony environment does not match this deployment",
-    );
-  }
-  const state = randomToken(32);
-  const browserBinding = randomToken(32);
-  const codeVerifier = randomToken(64);
-  const now = new Date();
-  const transaction: AuthTransaction = {
-    provider: command.provider,
-    intent: "sign_in",
-    returnTo: "/",
-    browserBindingHash: await hash(browserBinding),
-    codeVerifier,
-    currentPunkId: null,
-    currentSessionId: null,
-    createdAt: now.toISOString(),
-    expiresAt: new Date(now.getTime() + 10 * 60_000).toISOString(),
-    desktop: {
-      installationHash: await hash(
-        `punks.desktop-installation.v1\n${command.installationId}`,
-      ),
-      environment: command.environment,
-    },
-  };
-  const transactionName = await aggregateName("transaction", state);
-  if (
-    !(await env.AUTH_TRANSACTIONS.getByName(transactionName).create(
-      transaction,
-    ))
-  ) {
-    return problem(
-      503,
-      "temporarily_unavailable",
-      "Auth transaction could not start",
-    );
-  }
-  const body: StartAuthResponse = {
-    authorizationUrl: authorizationUrl(env, command.provider, {
-      state,
-      challenge: await pkceChallenge(codeVerifier),
-    }),
-    expiresAt: transaction.expiresAt,
-  };
-  if (
-    !validateContract("punks://contracts/auth.desktop-start-response@1", body)
-      .valid
-  ) {
-    return problem(500, "internal", "Auth response violated its contract");
-  }
-  return json(body, 201, {
-    "set-cookie": oauthCookie(state, browserBinding, 600),
-  });
-}
-
-/** Consomme la livraison à usage unique et remet le cookie au client natif. */
-async function deliverDesktopSessionCommand(
-  request: Request,
-  env: AuthEnv,
-): Promise<Response> {
-  if (!sameOrigin(request, env)) {
-    return problem(403, "forbidden", "Same-origin auth request is required");
-  }
-  let input: unknown;
-  try {
-    input = await readJson(request);
-  } catch {
-    return problem(400, "invalid_input", "Desktop delivery body is invalid");
-  }
-  if (
-    !validateContract("punks://contracts/auth.desktop-delivery@1", input).valid
-  ) {
-    return problem(400, "invalid_input", "Desktop delivery command is invalid");
-  }
-  const command = input as DeliverDesktopSessionCommand;
-  const installationHash = await hash(
-    `punks.desktop-installation.v1\n${command.installationId}`,
-  );
-  const consumed = await env.DESKTOP_DELIVERIES.getByName(
-    await aggregateName("desktop-delivery", command.deliveryToken),
-  ).consume(installationHash);
-  if (!consumed.ok) {
-    return problem(
-      consumed.code === "consumed" ? 409 : 400,
-      consumed.code === "consumed" ? "idempotency_conflict" : "invalid_input",
-      `Desktop delivery is ${consumed.code}`,
-    );
-  }
-  const punk = await env.PUNKS.getByName(consumed.record.punkId).query();
-  if (!punk.ok) {
-    return problem(
-      401,
-      "unauthenticated",
-      "Delivered Punk is no longer active",
-    );
-  }
-  const session = await ensureSessionForToken(
-    env,
-    canonicalPunk(punk.state),
-    consumed.record.sessionToken,
-  );
-  const body: DesktopSessionResponse = { session: session.value };
-  if (
-    !validateContract("punks://contracts/auth.desktop-session-response@1", body)
-      .valid
-  ) {
-    return problem(500, "internal", "Session violated its contract");
-  }
-  return json(body, 200, { "set-cookie": session.cookie });
-}
-
-/** Renouvellement glissant : 30 jours, seuil de 7 jours, une fois par 24 h. */
-async function renewDesktopSession(
-  request: Request,
-  env: AuthEnv,
-): Promise<Response> {
-  if (!sameOrigin(request, env)) {
-    return problem(403, "forbidden", "Same-origin renewal is required");
-  }
-  const current = await getActiveSession(request, env);
-  if (current === null) {
-    return problem(401, "unauthenticated", "No active Punk session");
-  }
-  const renewed = await current.stub.extend({
-    now: Date.now(),
-    ttlSeconds: configuredTtl(env),
-    thresholdSeconds: RENEWAL_THRESHOLD_SECONDS,
-    minIntervalSeconds: RENEWAL_MIN_INTERVAL_SECONDS,
-  });
-  if (!renewed.ok) {
-    return problem(
-      renewed.code === "too_recent" ? 429 : 409,
-      renewed.code === "too_recent"
-        ? "command_in_progress"
-        : "idempotency_conflict",
-      `Session renewal is ${renewed.code}`,
-    );
-  }
-  const value: AuthSession = {
-    ...renewed.record,
-    punk: {
-      id: current.punk.id,
-      displayName: current.punk.displayName,
-      avatarUrl: current.punk.avatarUrl,
-    },
-  };
-  const body: DesktopSessionResponse = { session: value };
-  if (
-    !validateContract("punks://contracts/auth.desktop-session-response@1", body)
-      .valid
-  ) {
-    return problem(500, "internal", "Session violated its contract");
-  }
-  const remainingTtl = Math.max(
-    1,
-    Math.floor((Date.parse(renewed.record.expiresAt) - Date.now()) / 1_000),
-  );
-  return json(body, 200, {
-    "set-cookie": sessionCookie(current.token, remainingTtl),
-  });
-}
-
 export async function route(
   request: Request,
   env: AuthEnv,
@@ -776,17 +524,9 @@ export async function route(
   if (request.method === "POST" && path === "/api/auth/v1/start") {
     return startAuth(request, env);
   }
-  if (request.method === "POST" && path === "/api/auth/v1/desktop/start") {
-    return startDesktopAuth(request, env);
-  }
-  if (request.method === "POST" && path === "/api/auth/v1/desktop/deliver") {
-    return deliverDesktopSessionCommand(request, env);
-  }
-  if (
-    request.method === "POST" &&
-    path === "/api/auth/v1/desktop/session/renew"
-  ) {
-    return renewDesktopSession(request, env);
+  const desktop = routeDesktopAuth(request, env, path);
+  if (desktop !== null) {
+    return desktop;
   }
   if (request.method === "GET" && path === "/api/auth/v1/session") {
     return getSession(request, env);

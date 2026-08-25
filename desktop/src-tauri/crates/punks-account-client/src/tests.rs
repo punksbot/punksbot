@@ -885,7 +885,7 @@ fn rust_replays_every_profile_operation_with_the_canonical_trace() {
     );
     let source = std::fs::read_to_string(path).unwrap();
     let corpus: OperationCorpus = serde_json::from_str(&source).unwrap();
-    assert_eq!(corpus.operations.len(), 18);
+    assert_eq!(corpus.operations.len(), 23);
     let mut traces = Vec::new();
     for operation in &corpus.operations {
         assert!(!operation.cases.is_empty(), "{}", operation.operation);

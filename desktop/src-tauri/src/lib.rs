@@ -69,6 +69,10 @@ mod prevent_sleep;
 #[cfg(feature = "buzz-desktop")]
 mod ptt_shortcut;
 #[cfg(feature = "punks-desktop-social-loop")]
+mod punks_auth;
+#[cfg(feature = "punks-desktop-social-loop")]
+mod punks_auth_state;
+#[cfg(feature = "punks-desktop-social-loop")]
 mod punks_client;
 #[cfg(feature = "punks-desktop-social-loop")]
 mod punks_runtime;

@@ -78,22 +78,74 @@
       "responseContract": "auth.session@1"
     },
     {
-      "name": "startAuthentication",
+      "name": "startDesktopAuthentication",
       "owner": "account",
       "kind": "mutation",
       "command": true,
       "retry": "human_intent_required",
       "cancellablePhases": ["before_emit", "in_flight"],
-      "requestContract": "auth.start@1",
-      "responseContract": "auth.start-response@1"
+      "requestContract": "desktop-auth.start@1",
+      "responseContract": "desktop-auth.start@1"
     },
     {
-      "name": "logout",
+      "name": "getDesktopAuthenticationStatus",
+      "owner": "account",
+      "kind": "read",
+      "command": false,
+      "retry": "safe_read",
+      "cancellablePhases": ["before_emit", "in_flight"],
+      "requestContract": "desktop-auth.status@1",
+      "responseContract": "desktop-auth.status@1"
+    },
+    {
+      "name": "claimDesktopAuthentication",
+      "owner": "account",
+      "kind": "mutation",
+      "command": true,
+      "retry": "same_identity",
+      "cancellablePhases": ["before_emit", "in_flight", "delivery"],
+      "requestContract": "desktop-auth.claim@1",
+      "responseContract": "desktop-auth.claim@1"
+    },
+    {
+      "name": "confirmDesktopAuthentication",
+      "owner": "account",
+      "kind": "mutation",
+      "command": true,
+      "retry": "same_identity",
+      "cancellablePhases": ["before_emit", "in_flight"],
+      "requestContract": "desktop-auth.confirm@1",
+      "responseContract": "desktop-auth.confirm@1"
+    },
+    {
+      "name": "cancelDesktopAuthentication",
       "owner": "account",
       "kind": "mutation",
       "command": true,
       "retry": "human_intent_required",
-      "cancellablePhases": ["before_emit", "in_flight"]
+      "cancellablePhases": ["before_emit", "in_flight"],
+      "requestContract": "desktop-auth.cancel@1",
+      "responseContract": "desktop-auth.cancel@1"
+    },
+    {
+      "name": "renewDesktopSession",
+      "owner": "account",
+      "kind": "mutation",
+      "command": true,
+      "retry": "same_identity",
+      "cancellablePhases": ["before_emit", "in_flight", "delivery"],
+      "requestContract": "desktop-session.renew@1",
+      "responseContract": "desktop-session.renew@1"
+    },
+    {
+      "name": "revokeDesktopSession",
+      "owner": "account",
+      "kind": "mutation",
+      "command": true,
+      "retry": "same_identity",
+      "cancellablePhases": ["before_emit", "in_flight"],
+      "requestContract": "desktop-session.revoke@1",
+      "responseContract": "desktop-session.revoke@1"
     },
     {
       "name": "listWorkspaces",

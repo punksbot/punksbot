@@ -29,6 +29,7 @@ mod failure;
 mod follow;
 mod follow_connection;
 mod message_mutations;
+mod native_auth;
 mod promotion_audit;
 mod semantic_trace;
 mod session;
@@ -437,7 +438,7 @@ impl PunksAccountClient {
             Ok(response) => response,
             Err(error) => {
                 if matches!(error.kind, FailureKind::SessionExpired) {
-                    self.invalidate().await;
+                    self.clear_account_session().await;
                 }
                 return Err(error);
             }
