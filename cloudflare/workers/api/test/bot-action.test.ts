@@ -1512,6 +1512,8 @@ describe("private Punks Bot Reaction vertical slice", () => {
     }
   });
 
+  // This matrix creates up to twelve Durable Object fixtures and R2 objects.
+  // Keep its cold-run allowance local instead of weakening the global timeout.
   it("keeps hot receipts fail-closed for corrupt or non-canonical existing R2 objects", async () => {
     for (const [prefix, corruption] of [
       [0x86, "invalid-json"],
@@ -1685,7 +1687,7 @@ describe("private Punks Bot Reaction vertical slice", () => {
         ).toBe(failed.outbox.attempts);
       });
     }
-  }, 15_000);
+  }, 30_000);
 
   it("fails closed when the receipt archive binding is unavailable", async () => {
     const receipt = await terminalReceiptFixture(0x8c);
