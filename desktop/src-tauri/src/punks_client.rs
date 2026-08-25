@@ -4,8 +4,9 @@ use punks_account_client::ceremony::CompiledPunksEnvironment;
 use punks_account_client::{
     AuthorReference, AuthorSummary, ClientDistribution, ClientFailure, ClientPlatform,
     DesktopCompatibility, FollowCancellation, FollowConnection, FollowDelivery, MessagePage,
-    MessageView, PunksAccountClient, PunksNavigationTarget, ReactionMutationResult, StreamSummary,
-    StreamView, WorkspaceLease, WorkspaceSession, WorkspaceSummary,
+    MessageReplyTarget, MessageView, PunksAccountClient, PunksNavigationTarget,
+    ReactionMutationResult, StreamSummary, StreamView, WorkspaceLease, WorkspaceSession,
+    WorkspaceSummary,
 };
 use serde::Deserialize;
 use tokio::sync::{Mutex, RwLock};
@@ -421,7 +422,7 @@ pub struct PostTextInput {
     conversation_id: String,
     content: String,
     topic: Option<String>,
-    reply_to_message_id: Option<String>,
+    reply_target: Option<MessageReplyTarget>,
 }
 
 #[tauri::command]
@@ -439,7 +440,7 @@ pub async fn punks_post_message(
             &input.conversation_id,
             &input.content,
             input.topic.as_deref(),
-            input.reply_to_message_id.as_deref(),
+            input.reply_target.as_ref(),
         )
         .await
 }

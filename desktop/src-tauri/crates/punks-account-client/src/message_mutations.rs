@@ -22,6 +22,27 @@ enum ReactionOperation {
     Remove,
 }
 
+#[derive(Clone, Copy)]
+struct ExpectedReactionCoordinate<'a> {
+    workspace_id: &'a str,
+    punk_id: &'a str,
+    conversation_id: &'a str,
+    message_id: &'a str,
+    reaction: &'a str,
+}
+
+/// Authorized parent coordinates captured by the renderer before a reply.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MessageReplyTarget {
+    /// Exact Message that will become the new reply's parent.
+    pub message_id: String,
+    /// Authoritative root of the parent's Fil de discussion.
+    pub thread_root_message_id: String,
+    /// Authoritative depth of the parent Message.
+    pub thread_depth: u64,
+}
+
 impl ReactionOperation {
     fn contract(self) -> &'static str {
         match self {
@@ -61,11 +82,21 @@ impl WorkspaceSession {
         conversation_id: &str,
         content: &str,
         topic: Option<&str>,
-        reply_to_message_id: Option<&str>,
+        reply_target: Option<&MessageReplyTarget>,
     ) -> Result<MessageView, ClientFailure> {
         validate_uuid(conversation_id, "conversationId")?;
-        if let Some(reply_to_message_id) = reply_to_message_id {
-            validate_uuid(reply_to_message_id, "replyToMessageId")?;
+        if let Some(reply_target) = reply_target {
+            validate_uuid(&reply_target.message_id, "replyTarget.messageId")?;
+            validate_uuid(
+                &reply_target.thread_root_message_id,
+                "replyTarget.threadRootMessageId",
+            )?;
+            if reply_target.thread_depth >= 100 {
+                return Err(ClientFailure::new(
+                    FailureKind::ContractViolation,
+                    "Reply target exceeds the Message thread depth limit",
+                ));
+            }
         }
         if content.is_empty() {
             return Err(ClientFailure::new(
@@ -76,6 +107,7 @@ impl WorkspaceSession {
         self.require_capability("message-post").await?;
         self.assert_current().await?;
         let command_id = uuid::Uuid::new_v4().to_string();
+        let reply_to_message_id = reply_target.map(|target| target.message_id.as_str());
         let response = self
             .request(
                 Method::POST,
@@ -109,7 +141,7 @@ impl WorkspaceSession {
             &self.lease.workspace_id,
             &self.lease.punk_id,
             conversation_id,
-            reply_to_message_id,
+            reply_target,
         )?;
         Ok(acknowledgement.message)
     }
@@ -324,11 +356,13 @@ impl WorkspaceSession {
         validate_reaction_acknowledgement(
             operation,
             &acknowledgement,
-            &self.lease.workspace_id,
-            &self.lease.punk_id,
-            conversation_id,
-            message_id,
-            &canonical,
+            ExpectedReactionCoordinate {
+                workspace_id: &self.lease.workspace_id,
+                punk_id: &self.lease.punk_id,
+                conversation_id,
+                message_id,
+                reaction: &canonical,
+            },
         )?;
         Ok(acknowledgement)
     }
@@ -425,7 +459,7 @@ fn validate_post_acknowledgement(
     workspace_id: &str,
     punk_id: &str,
     conversation_id: &str,
-    reply_to_message_id: Option<&str>,
+    reply_target: Option<&MessageReplyTarget>,
 ) -> Result<(), ClientFailure> {
     validate_message_view_runtime(message, workspace_id, conversation_id)?;
     let authored_by_current_punk = matches!(
@@ -434,17 +468,17 @@ fn validate_post_acknowledgement(
             punk_id: acknowledged_punk_id,
         } if acknowledged_punk_id == punk_id
     );
-    let ancestry_matches = match reply_to_message_id {
+    let ancestry_matches = match reply_target {
         None => {
             message.parent_message_id.is_none()
                 && message.thread_root_message_id == message.id
                 && message.thread_depth == 0
         }
-        Some(parent_message_id) => {
-            message.id != parent_message_id
-                && message.parent_message_id.as_deref() == Some(parent_message_id)
-                && message.thread_root_message_id != message.id
-                && message.thread_depth >= 1
+        Some(reply_target) => {
+            message.id != reply_target.message_id
+                && message.parent_message_id.as_deref() == Some(reply_target.message_id.as_str())
+                && message.thread_root_message_id == reply_target.thread_root_message_id
+                && message.thread_depth == reply_target.thread_depth + 1
         }
     };
     if !authored_by_current_punk || !ancestry_matches {
@@ -456,47 +490,35 @@ fn validate_post_acknowledgement(
 fn validate_reaction_acknowledgement(
     operation: ReactionOperation,
     acknowledgement: &ReactionMutationResult,
-    workspace_id: &str,
-    punk_id: &str,
-    conversation_id: &str,
-    message_id: &str,
-    reaction: &str,
+    expected: ExpectedReactionCoordinate<'_>,
 ) -> Result<(), ClientFailure> {
-    let semantics_match = match operation {
+    let effect_matches = match operation {
         ReactionOperation::Add => {
-            acknowledgement.reaction.is_some()
-                && matches!(acknowledgement.effect.as_str(), "added" | "unchanged")
+            matches!(acknowledgement.effect.as_str(), "added" | "unchanged")
         }
         ReactionOperation::Remove => {
-            acknowledgement.reaction.is_none()
-                && matches!(acknowledgement.effect.as_str(), "removed" | "unchanged")
+            matches!(acknowledgement.effect.as_str(), "removed" | "unchanged")
         }
     };
-    if !semantics_match {
+    let current_view_matches = acknowledgement.replayed
+        || match operation {
+            ReactionOperation::Add => acknowledgement.reaction.is_some(),
+            ReactionOperation::Remove => acknowledgement.reaction.is_none(),
+        };
+    if !effect_matches || !current_view_matches {
         return Err(ClientFailure::contract(
             "message.reaction-mutation-response@1",
         ));
     }
     if let Some(view) = &acknowledgement.reaction {
-        validate_reaction_view(
-            view,
-            workspace_id,
-            punk_id,
-            conversation_id,
-            message_id,
-            reaction,
-        )?;
+        validate_reaction_view(view, expected)?;
     }
     Ok(())
 }
 
 fn validate_reaction_view(
     view: &ReactionView,
-    workspace_id: &str,
-    punk_id: &str,
-    conversation_id: &str,
-    message_id: &str,
-    reaction: &str,
+    expected: ExpectedReactionCoordinate<'_>,
 ) -> Result<(), ClientFailure> {
     validate_uuid(&view.id, "reactionId")?;
     validate_uuid(&view.workspace_id, "workspaceId")?;
@@ -506,12 +528,12 @@ fn validate_reaction_view(
         &view.actor,
         MessageAuthor::Punk {
             punk_id: acknowledged_punk_id,
-        } if acknowledged_punk_id == punk_id
+        } if acknowledged_punk_id == expected.punk_id
     );
-    if view.workspace_id != workspace_id
-        || view.conversation_id != conversation_id
-        || view.message_id != message_id
-        || view.reaction != reaction
+    if view.workspace_id != expected.workspace_id
+        || view.conversation_id != expected.conversation_id
+        || view.message_id != expected.message_id
+        || view.reaction != expected.reaction
         || !authored_by_current_punk
         || !valid_rfc3339(&view.reacted_at)
     {

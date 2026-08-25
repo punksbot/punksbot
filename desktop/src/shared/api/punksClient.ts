@@ -59,11 +59,17 @@ export type ThreadPageInput = MessagePageInput & {
   threadRootMessageId: string;
 };
 
+export type MessageReplyTarget = {
+  messageId: string;
+  threadRootMessageId: string;
+  threadDepth: number;
+};
+
 export type PostTextInput = {
   conversationId: string;
   content: string;
   topic?: string | null;
-  replyToMessageId?: string;
+  replyTarget?: MessageReplyTarget;
 };
 
 export type EditMessageInput = {
@@ -651,12 +657,7 @@ export function createFakePunksAccountClient(
             },
           };
         },
-        async postMessage({
-          conversationId,
-          content,
-          topic,
-          replyToMessageId,
-        }) {
+        async postMessage({ conversationId, content, topic, replyTarget }) {
           assertCapability("message-post");
           assertCurrent(lease);
           if (content.trim().length === 0) {
@@ -670,10 +671,15 @@ export function createFakePunksAccountClient(
             messages = [];
             seed.messages[conversationId] = messages;
           }
-          const parent = replyToMessageId
-            ? messages.find((message) => message.id === replyToMessageId)
+          const parent = replyTarget
+            ? messages.find((message) => message.id === replyTarget.messageId)
             : undefined;
-          if (replyToMessageId !== undefined && parent?.status !== "active") {
+          if (
+            replyTarget !== undefined &&
+            (parent?.status !== "active" ||
+              parent.threadRootMessageId !== replyTarget.threadRootMessageId ||
+              parent.threadDepth !== replyTarget.threadDepth)
+          ) {
             throw new PunksDesktopFailure(
               "problem",
               "Reply target is unavailable",
@@ -685,7 +691,7 @@ export function createFakePunksAccountClient(
           const stream = streams.find((item) => item.id === conversationId);
           if (
             stream?.topicRequired === true &&
-            replyToMessageId === undefined &&
+            replyTarget === undefined &&
             (topic === undefined || topic === null || topic.trim().length === 0)
           ) {
             throw new PunksDesktopFailure(
@@ -705,7 +711,7 @@ export function createFakePunksAccountClient(
             topic: topic?.trim() || null,
             mentionedPunkIds: [],
             mediaIds: [],
-            parentMessageId: replyToMessageId ?? null,
+            parentMessageId: replyTarget?.messageId ?? null,
             threadRootMessageId: root,
             threadDepth: parent === undefined ? 0 : parent.threadDepth + 1,
             broadcast: false,

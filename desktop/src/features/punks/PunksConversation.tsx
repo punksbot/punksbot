@@ -362,7 +362,15 @@ export function PunksConversation({
           conversationId,
           content: content.trim(),
           topic: messageId === null ? topic.trim() || null : null,
-          ...(messageId === null ? {} : { replyToMessageId: messageId }),
+          ...(targetMessage === undefined
+            ? {}
+            : {
+                replyTarget: {
+                  messageId: targetMessage.id,
+                  threadRootMessageId: targetMessage.threadRootMessageId,
+                  threadDepth: targetMessage.threadDepth,
+                },
+              }),
         }),
       );
     },

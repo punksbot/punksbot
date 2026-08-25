@@ -387,7 +387,11 @@ test("fake social mutations preserve Message subjects, replies, and Reaction ACK
     workspace.postMessage({
       conversationId,
       content: "Réponse sans cible autorisée",
-      replyToMessageId: "77777777-7777-4777-8777-777777777777",
+      replyTarget: {
+        messageId: "77777777-7777-4777-8777-777777777777",
+        threadRootMessageId: "77777777-7777-4777-8777-777777777777",
+        threadDepth: 0,
+      },
     }),
     { kind: "problem" },
   );
@@ -396,7 +400,11 @@ test("fake social mutations preserve Message subjects, replies, and Reaction ACK
     conversationId,
     content: "Une réponse",
     topic: "Sujet de test",
-    replyToMessageId: rootId,
+    replyTarget: {
+      messageId: rootId,
+      threadRootMessageId: rootId,
+      threadDepth: 0,
+    },
   });
   assert.equal(reply.topic, "Sujet de test");
   assert.equal(reply.parentMessageId, rootId);

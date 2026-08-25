@@ -6,6 +6,12 @@ import type {
   ConversationView,
   MessageHistoryResponse,
 } from "@punks/contracts";
+import {
+  exerciseNestedReply,
+  exerciseRootMessageSubject,
+  exerciseUnicodeReactionToggle,
+  type SocialMutationHarness,
+} from "./helpers/punksSocialMutationScenarios";
 
 const ORIGIN = "http://127.0.0.1:4174";
 const WORKSPACE_ID = "11111111-1111-4111-8111-111111111111";
@@ -298,14 +304,24 @@ async function installPunksTauriBoundary(
               conversationId: string;
               content: string;
               topic?: string | null;
-              replyToMessageId?: string;
+              replyTarget?: {
+                messageId: string;
+                threadRootMessageId: string;
+                threadDepth: number;
+              };
             };
-            const parent = input.replyToMessageId
+            const parent = input.replyTarget
               ? socialMessages.find(
-                  (message) => message.id === input.replyToMessageId,
+                  (message) => message.id === input.replyTarget?.messageId,
                 )
               : undefined;
-            if (input.replyToMessageId && parent === undefined) {
+            if (
+              input.replyTarget &&
+              (parent === undefined ||
+                parent.threadRootMessageId !==
+                  input.replyTarget.threadRootMessageId ||
+                parent.threadDepth !== input.replyTarget.threadDepth)
+            ) {
               throw {
                 kind: "problem",
                 message: "Reply target is unavailable",
@@ -329,7 +345,7 @@ async function installPunksTauriBoundary(
               topic: input.topic ?? null,
               mentionedPunkIds: [],
               mediaIds: [],
-              parentMessageId: input.replyToMessageId ?? null,
+              parentMessageId: input.replyTarget?.messageId ?? null,
               threadRootMessageId: parent?.threadRootMessageId ?? id,
               threadDepth: parent === undefined ? 0 : parent.threadDepth + 1,
               broadcast: false,
@@ -461,6 +477,26 @@ async function loadedResources(page: Page): Promise<string[]> {
     performance.getEntriesByType("resource").map((entry) => entry.name),
   );
 }
+
+async function releaseFollow(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    (
+      window as typeof window & {
+        __PUNKS_RELEASE_FOLLOW__?: () => void;
+      }
+    ).__PUNKS_RELEASE_FOLLOW__?.();
+  });
+}
+
+const SOCIAL_MUTATION_HARNESS: SocialMutationHarness = {
+  capabilities: T1_CAPABILITIES,
+  conversationId: CONVERSATION_ID,
+  install: installPunksTauriBoundary,
+  invokedCalls,
+  message: socialMessage,
+  releaseFollow,
+  workspaceId: WORKSPACE_ID,
+};
 
 test("une route directe indisponible s'arrête avant toute commande", async ({
   page,
@@ -757,13 +793,7 @@ test("la boucle sociale publie un batch avant ACK et bloque les mutations avant 
     beforeLive.indexOf("punks_follow_next"),
   );
 
-  await page.evaluate(() => {
-    (
-      window as typeof window & {
-        __PUNKS_RELEASE_FOLLOW__?: () => void;
-      }
-    ).__PUNKS_RELEASE_FOLLOW__?.();
-  });
+  await releaseFollow(page);
 
   await expect(page.getByTestId("punks-follow-live").first()).toBeVisible();
   await expect(composer).toBeEnabled();
@@ -775,164 +805,25 @@ test("la boucle sociale publie un batch avant ACK et bloque les mutations avant 
   await expect(
     page.getByTestId("punks-message-target-unavailable"),
   ).toBeVisible();
-  await page.evaluate(() => {
-    (
-      window as typeof window & {
-        __PUNKS_RELEASE_FOLLOW__?: () => void;
-      }
-    ).__PUNKS_RELEASE_FOLLOW__?.();
-  });
+  await releaseFollow(page);
   await expect(page.getByTestId("punks-follow-live").first()).toBeVisible();
   await expect(page.getByTestId("punks-message-composer")).toBeDisabled();
   expect(await invokedCommands(page)).not.toContain("punks_get_thread");
   expect(await invokedCommands(page)).not.toContain("punks_post_message");
 });
 
-test("un Punk publie un Message racine avec son sujet depuis le Stream live", async ({
+test("un Punk publie un Message racine avec son sujet", async ({ page }) => {
+  await exerciseRootMessageSubject(page, SOCIAL_MUTATION_HARNESS);
+});
+
+test("une réponse reste dans le Fil du Message sélectionné", async ({
   page,
 }) => {
-  const initialMessageId = "88888888-8888-4888-8888-888888888888";
-  const streamSummary: ConversationSummary = {
-    id: CONVERSATION_ID,
-    workspaceId: WORKSPACE_ID,
-    name: "Subject Stream",
-    type: "stream",
-    visibility: "private",
-    description: null,
-    topic: "Publication",
-    purpose: "Exercise explicit Message intents",
-    topicRequired: true,
-    ttlSeconds: null,
-    ttlDeadline: null,
-    revision: 1,
-    cursor: 1,
-    updatedAt: "2026-08-25T10:00:00.000Z",
-  };
-  await installPunksTauriBoundary(page, {
-    compatible: true,
-    capabilities: T1_CAPABILITIES,
-    social: {
-      streams: [streamSummary],
-      stream: {
-        ...streamSummary,
-        maxMembers: null,
-        status: "active",
-        createdAt: "2026-08-25T10:00:00.000Z",
-        archivedAt: null,
-      },
-      timeline: {
-        workspaceId: WORKSPACE_ID,
-        conversationId: CONVERSATION_ID,
-        highWaterCursor: 1,
-        order: "createdCursor-ascending",
-        items: [socialMessage(initialMessageId, 1, "Existing Message")],
-        nextCursor: null,
-      },
-    },
-  });
-  await page.goto(`/w/capability-test/conversations/${CONVERSATION_ID}`);
-  await expect(page.getByTestId("punks-message-composer")).toBeDisabled();
-  await page.evaluate(() => {
-    (
-      window as typeof window & {
-        __PUNKS_RELEASE_FOLLOW__?: () => void;
-      }
-    ).__PUNKS_RELEASE_FOLLOW__?.();
-  });
-  await expect(page.getByTestId("punks-follow-live").first()).toBeVisible();
+  await exerciseNestedReply(page, SOCIAL_MUTATION_HARNESS);
+});
 
-  await page.getByTestId("punks-message-topic").fill("Release notes");
-  const composer = page.getByTestId("punks-message-composer");
-  await composer.fill("The new social loop is live.");
-  await page.getByRole("button", { name: "Send" }).click();
-
-  await expect(
-    page
-      .getByTestId("punks-message-list")
-      .getByText("The new social loop is live.", { exact: true }),
-  ).toBeVisible();
-  const postedRow = page
-    .getByTestId("punks-message-list")
-    .locator("article")
-    .filter({ hasText: "The new social loop is live." });
-  await expect(
-    postedRow.getByText("Release notes", { exact: true }),
-  ).toBeVisible();
-  await expect(composer).toHaveValue("");
-  const postCalls = (await invokedCalls(page)).filter(
-    ({ command }) => command === "punks_post_message",
-  );
-  expect(postCalls).toHaveLength(1);
-  expect(postCalls[0]?.args.input).toEqual({
-    conversationId: CONVERSATION_ID,
-    content: "The new social loop is live.",
-    topic: "Release notes",
-  });
-
-  await page.goto(
-    `/w/capability-test/conversations/${CONVERSATION_ID}/messages/${initialMessageId}`,
-  );
-  await expect(page.getByTestId("punks-message-composer")).toBeDisabled();
-  await page.evaluate(() => {
-    (
-      window as typeof window & {
-        __PUNKS_RELEASE_FOLLOW__?: () => void;
-      }
-    ).__PUNKS_RELEASE_FOLLOW__?.();
-  });
-  await expect(page.getByTestId("punks-follow-live").first()).toBeVisible();
-  await page
-    .getByTestId("punks-message-composer")
-    .fill("A nested reply stays in the selected thread.");
-  await page.getByRole("button", { name: "Send" }).click();
-
-  await expect(
-    page
-      .getByTestId("punks-thread")
-      .getByText("A nested reply stays in the selected thread.", {
-        exact: true,
-      }),
-  ).toBeVisible();
-  const replyCalls = (await invokedCalls(page)).filter(
-    ({ command }) => command === "punks_post_message",
-  );
-  expect(replyCalls).toHaveLength(1);
-  expect(replyCalls[0]?.args.input).toEqual({
-    conversationId: CONVERSATION_ID,
-    content: "A nested reply stays in the selected thread.",
-    topic: null,
-    replyToMessageId: initialMessageId,
-  });
-
-  const initialRow = page
-    .getByTestId("punks-message-list")
-    .locator(`[data-message-id="${initialMessageId}"]`);
-  await initialRow
-    .getByTestId(`punks-reaction-input-${initialMessageId}`)
-    .fill("🦄");
-  const reactionButton = initialRow.getByTestId(
-    `punks-reaction-${initialMessageId}-thumbs-up`,
-  );
-  await expect(reactionButton).toHaveText("Add 🦄 0");
-  await reactionButton.click();
-  await expect(reactionButton).toHaveText("Remove 🦄 0");
-  await reactionButton.click();
-  await expect(reactionButton).toHaveText("Add 🦄 0");
-
-  const reactionCalls = (await invokedCalls(page)).filter(({ command }) =>
-    ["punks_add_reaction", "punks_remove_reaction"].includes(command),
-  );
-  expect(reactionCalls.map(({ command }) => command)).toEqual([
-    "punks_add_reaction",
-    "punks_remove_reaction",
-  ]);
-  for (const call of reactionCalls) {
-    expect(call.args.input).toEqual({
-      conversationId: CONVERSATION_ID,
-      messageId: initialMessageId,
-      reaction: "🦄",
-    });
-  }
+test("un Punk ajoute puis retire une Réaction Unicode", async ({ page }) => {
+  await exerciseUnicodeReactionToggle(page, SOCIAL_MUTATION_HARNESS);
 });
 
 test("une révocation FOLLOW purge les vues et reste terminale", async ({

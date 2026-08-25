@@ -48,6 +48,7 @@ pub use follow::{
     FollowConfirmation, FollowEffect, FollowPhase, FollowReduction, FollowServerFrame, FollowState,
 };
 pub use follow_connection::{FollowCancellation, FollowConnection, FollowDelivery};
+pub use message_mutations::MessageReplyTarget;
 pub use semantic_trace::{
     normalize_semantic_trace, run_semantic_scenario, SemanticEvent, SemanticObservation,
     SemanticTrace,
