@@ -533,8 +533,15 @@ export class AccountMergeIntentDO extends DurableObject<AuthEnv> {
                 ).readForAccountMerge();
                 break;
               case "reauth-authorization":
+                sourceHandoff = await this.env.DESKTOP_REAUTH_GRANTS.getByName(
+                  indexedHandoff.handoffId,
+                ).readForAccountMerge();
+                break;
               case "session-renewal":
-                return unavailable(correlationId);
+                sourceHandoff = await this.env.SESSION_ROTATIONS.getByName(
+                  indexedHandoff.handoffId,
+                ).readForAccountMerge();
+                break;
             }
           } catch {
             throw new AccountMergeInternalFailure(

@@ -28,9 +28,17 @@ export class SessionRotationDO extends DurableObject<AuthEnv> {
   }): Promise<SessionRotationRecord | null> {
     const existing = await this.read();
     if (existing !== null) {
-      return existing.commandId === input.commandId &&
+      const matches =
+        existing.commandId === input.commandId &&
         existing.oldSessionId === input.oldSessionId &&
-        existing.punkId === input.punkId
+        existing.punkId === input.punkId;
+      if (!matches || existing.confirmedAt !== null) {
+        return matches ? existing : null;
+      }
+      return (await this.indexHandoff(
+        existing,
+        existing.newSessionId === null ? "pending" : "prepared",
+      ))
         ? existing
         : null;
     }
@@ -46,6 +54,13 @@ export class SessionRotationDO extends DurableObject<AuthEnv> {
       confirmedAt: null,
     };
     await this.ctx.storage.put(RECORD_KEY, record);
+    if (!(await this.indexHandoff(record, "pending"))) {
+      await this.ctx.storage.delete(RECORD_KEY);
+      await this.env.SESSIONS.getByName(input.oldSessionId).clearRenewal(
+        input.commandId,
+      );
+      return null;
+    }
     this.ctx.waitUntil(this.ctx.storage.setAlarm(Date.parse(record.confirmBy)));
     return record;
   }
@@ -67,7 +82,7 @@ export class SessionRotationDO extends DurableObject<AuthEnv> {
       record.newSessionId = input.newSessionId;
       await this.ctx.storage.put(RECORD_KEY, record);
     }
-    return record;
+    return (await this.indexHandoff(record, "prepared")) ? record : null;
   }
 
   async confirmation(input: {
@@ -105,7 +120,33 @@ export class SessionRotationDO extends DurableObject<AuthEnv> {
       record.confirmedAt = new Date().toISOString();
       await this.ctx.storage.put(RECORD_KEY, record);
     }
+    await this.env.PUNKS.getByName(record.punkId).removeAccountMergeHandoff(
+      this.ctx.id.name ?? "",
+    );
     return record;
+  }
+
+  /** Account-merge planning revalidates this pending rotation at its source. */
+  async readForAccountMerge(): Promise<{
+    punkId: string;
+    kind: "session-renewal";
+    state: "pending" | "prepared";
+    expiresAt: string;
+  } | null> {
+    const record = await this.read();
+    if (
+      record === null ||
+      record.confirmedAt !== null ||
+      Date.parse(record.confirmBy) <= Date.now()
+    ) {
+      return null;
+    }
+    return {
+      punkId: record.punkId,
+      kind: "session-renewal",
+      state: record.newSessionId === null ? "pending" : "prepared",
+      expiresAt: record.confirmBy,
+    };
   }
 
   override async alarm(): Promise<void> {
@@ -118,7 +159,31 @@ export class SessionRotationDO extends DurableObject<AuthEnv> {
         record.commandId,
       );
     }
+    if (record !== null) {
+      await this.env.PUNKS.getByName(record.punkId).removeAccountMergeHandoff(
+        this.ctx.id.name ?? "",
+      );
+    }
     await this.ctx.storage.deleteAll();
+  }
+
+  private async indexHandoff(
+    record: SessionRotationRecord,
+    state: "pending" | "prepared",
+  ): Promise<boolean> {
+    try {
+      return await this.env.PUNKS.getByName(
+        record.punkId,
+      ).recordAccountMergeHandoff({
+        handoffId: this.ctx.id.name ?? "",
+        punkId: record.punkId,
+        kind: "session-renewal",
+        state,
+        expiresAt: record.confirmBy,
+      });
+    } catch {
+      return false;
+    }
   }
 
   private async read(): Promise<SessionRotationRecord | null> {

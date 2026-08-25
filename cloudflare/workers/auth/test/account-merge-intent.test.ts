@@ -570,6 +570,90 @@ describe("AccountMergeIntentDO", () => {
     );
   });
 
+  it("revalidates a desktop reauthentication grant before planning its cancellation", async () => {
+    const value = fixture();
+    await seedAuthorities(value);
+    const authorizationId = crypto.randomUUID();
+    const expiresAt = timestamp(Date.now() + 300_000);
+    await expect(
+      authEnv.DESKTOP_REAUTH_GRANTS.getByName(authorizationId).create({
+        authorizationId,
+        sessionId: value.survivorSessionId,
+        punkId: value.survivorProof.punkId,
+        targetMethod: "link_github",
+        handoffId: crypto.randomUUID(),
+        expiresAt,
+      }),
+    ).resolves.toBe(true);
+    const authority = stub(value.intentId);
+    await authority.recordFreshProof(
+      value.survivorProof,
+      sourceSession(value, value.survivorProof),
+    );
+    await authority.recordFreshProof(
+      value.absorbedProof,
+      sourceSession(value, value.absorbedProof),
+    );
+
+    const response = await authority.preparePlan({
+      command: value.command(),
+      correlationId: "desktop-reauth-grant",
+    });
+
+    expect(response.ok).toBe(true);
+    if (!response.ok) throw new TypeError("Expected indexed Plan");
+    expect(response.plan.handoffs).toContainEqual(
+      expect.objectContaining({
+        origin: "survivor",
+        kind: "reauth-authorization",
+        state: "deliverable",
+        action: "cancel",
+        expiresAt,
+      }),
+    );
+  });
+
+  it("includes an in-flight desktop Session rotation in the immutable Plan", async () => {
+    const value = fixture();
+    await seedAuthorities(value);
+    const rotationId = crypto.randomUUID();
+    const rotation = await authEnv.SESSION_ROTATIONS.getByName(
+      rotationId,
+    ).create({
+      commandId: crypto.randomUUID(),
+      oldSessionId: value.survivorSessionId,
+      punkId: value.survivorProof.punkId,
+    });
+    expect(rotation).not.toBeNull();
+    if (rotation === null) throw new TypeError("Expected Session rotation");
+    const authority = stub(value.intentId);
+    await authority.recordFreshProof(
+      value.survivorProof,
+      sourceSession(value, value.survivorProof),
+    );
+    await authority.recordFreshProof(
+      value.absorbedProof,
+      sourceSession(value, value.absorbedProof),
+    );
+
+    const response = await authority.preparePlan({
+      command: value.command(),
+      correlationId: "session-renewal",
+    });
+
+    expect(response.ok).toBe(true);
+    if (!response.ok) throw new TypeError("Expected indexed Plan");
+    expect(response.plan.handoffs).toContainEqual(
+      expect.objectContaining({
+        origin: "survivor",
+        kind: "session-renewal",
+        state: "pending",
+        action: "cancel",
+        expiresAt: rotation.confirmBy,
+      }),
+    );
+  });
+
   it("rejects expanded planner RPC input", async () => {
     const value = fixture();
     await seedAuthorities(value);

@@ -100,6 +100,29 @@ export class DesktopReauthGrantDO extends DurableObject<AuthEnv> {
     return { ok: true, replayed: false };
   }
 
+  /** Account-merge planning revalidates the live grant at its source. */
+  async readForAccountMerge(): Promise<{
+    punkId: string;
+    kind: "reauth-authorization";
+    state: "deliverable";
+    expiresAt: string;
+  } | null> {
+    const record = await this.read();
+    if (
+      record === null ||
+      record.consumedByFlowId !== null ||
+      Date.parse(record.expiresAt) <= Date.now()
+    ) {
+      return null;
+    }
+    return {
+      punkId: record.punkId,
+      kind: "reauth-authorization",
+      state: "deliverable",
+      expiresAt: record.expiresAt,
+    };
+  }
+
   override async alarm(): Promise<void> {
     const record = await this.read();
     if (record !== null) await this.remove(record);

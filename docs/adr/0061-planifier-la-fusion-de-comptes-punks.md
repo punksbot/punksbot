@@ -45,7 +45,8 @@ couverture fermée sur une fenêtre de 30 jours ; tant que cette couverture n’
 pas acquise, leur inventaire ne peut pas être déclaré complet. Chaque Session
 inventoriée est ensuite relue dans son `SessionDO`. Chaque handoff est pareillement
 revalidé contre son Durable Object source — `DesktopAuthFlowDO`,
-`DesktopReauthGrantDO`, `AuthTransactionDO` ou `PasskeyCeremonyDO` — avec son identifiant, son type, son
+`DesktopReauthGrantDO`, `SessionRotationDO`, `AuthTransactionDO` ou
+`PasskeyCeremonyDO` — avec son identifiant, son type, son
 état, son Punk et son échéance exacts. Une entrée indexée sans source valide est
 retirée ou refusée, jamais transformée en preuve d’autorité.
 
