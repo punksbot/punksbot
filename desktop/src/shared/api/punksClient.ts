@@ -670,14 +670,17 @@ export function createFakePunksAccountClient(
             messages = [];
             seed.messages[conversationId] = messages;
           }
-          const id = crypto.randomUUID();
-          const root = replyToMessageId
-            ? (messages.find((message) => message.id === replyToMessageId)
-                ?.threadRootMessageId ?? replyToMessageId)
-            : id;
           const parent = replyToMessageId
             ? messages.find((message) => message.id === replyToMessageId)
             : undefined;
+          if (replyToMessageId !== undefined && parent?.status !== "active") {
+            throw new PunksDesktopFailure(
+              "problem",
+              "Reply target is unavailable",
+            );
+          }
+          const id = crypto.randomUUID();
+          const root = parent?.threadRootMessageId ?? id;
           const cursor = (messages.at(-1)?.cursor ?? 0) + 1;
           const stream = streams.find((item) => item.id === conversationId);
           if (

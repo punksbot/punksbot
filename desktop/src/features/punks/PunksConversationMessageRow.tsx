@@ -76,6 +76,14 @@ export function ConversationMessageRow({
           })}
         </time>
       </div>
+      {active && message.topic !== null ? (
+        <p
+          className="mt-2 text-sm font-semibold"
+          data-testid={`punks-message-topic-${message.id}`}
+        >
+          {message.topic}
+        </p>
+      ) : null}
       <p className="mt-2 whitespace-pre-wrap text-message">
         {active
           ? (message.content ?? "")

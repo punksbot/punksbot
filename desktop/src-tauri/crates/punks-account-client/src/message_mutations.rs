@@ -3,16 +3,39 @@ use serde_json::json;
 use unicode_normalization::UnicodeNormalization;
 
 use super::{
+    social_validation::{valid_rfc3339, validate_message_view_runtime},
     transport::{decode, RequestSafety},
     validation::validate_uuid,
-    ClientFailure, FailureKind, MessageMutationResponse, MessageView, ReactionMutationResult,
-    WorkspaceSession,
+    ClientFailure, FailureKind, MessageAuthor, MessageMutationResponse, MessageView,
+    ReactionMutationResult, ReactionView, WorkspaceSession,
 };
 
 #[derive(Clone, Copy)]
 enum MessageLifecycleOperation {
     Retract,
     Restore,
+}
+
+#[derive(Clone, Copy)]
+enum ReactionOperation {
+    Add,
+    Remove,
+}
+
+impl ReactionOperation {
+    fn contract(self) -> &'static str {
+        match self {
+            Self::Add => "message.reaction-add@1",
+            Self::Remove => "message.reaction-remove@1",
+        }
+    }
+
+    fn path(self) -> &'static str {
+        match self {
+            Self::Add => "add",
+            Self::Remove => "remove",
+        }
+    }
 }
 
 impl MessageLifecycleOperation {
@@ -81,11 +104,13 @@ impl WorkspaceSession {
         self.assert_current().await?;
         let acknowledgement: MessageMutationResponse = decode("message.post-response@1", response)?;
         self.assert_current().await?;
-        if acknowledgement.message.workspace_id != self.lease.workspace_id
-            || acknowledgement.message.conversation_id != conversation_id
-        {
-            return Err(ClientFailure::contract("message.post-response@1"));
-        }
+        validate_post_acknowledgement(
+            &acknowledgement.message,
+            &self.lease.workspace_id,
+            &self.lease.punk_id,
+            conversation_id,
+            reply_to_message_id,
+        )?;
         Ok(acknowledgement.message)
     }
 
@@ -233,8 +258,13 @@ impl WorkspaceSession {
         message_id: &str,
         reaction: &str,
     ) -> Result<ReactionMutationResult, ClientFailure> {
-        self.mutate_reaction("add", conversation_id, message_id, reaction)
-            .await
+        self.mutate_reaction(
+            ReactionOperation::Add,
+            conversation_id,
+            message_id,
+            reaction,
+        )
+        .await
     }
 
     /// Removes one canonical Unicode Reaction exactly once.
@@ -244,13 +274,18 @@ impl WorkspaceSession {
         message_id: &str,
         reaction: &str,
     ) -> Result<ReactionMutationResult, ClientFailure> {
-        self.mutate_reaction("remove", conversation_id, message_id, reaction)
-            .await
+        self.mutate_reaction(
+            ReactionOperation::Remove,
+            conversation_id,
+            message_id,
+            reaction,
+        )
+        .await
     }
 
     async fn mutate_reaction(
         &self,
-        action: &str,
+        operation: ReactionOperation,
         conversation_id: &str,
         message_id: &str,
         reaction: &str,
@@ -261,17 +296,14 @@ impl WorkspaceSession {
         self.require_capability("unicode-reactions").await?;
         self.assert_current().await?;
         let command_id = uuid::Uuid::new_v4().to_string();
-        let contract = if action == "add" {
-            "message.reaction-add@1"
-        } else {
-            "message.reaction-remove@1"
-        };
+        let contract = operation.contract();
         let response = self
             .request(
                 Method::POST,
                 format!(
-                    "/api/v1/workspaces/{}/conversations/{conversation_id}/messages/{message_id}/reactions/{action}",
-                    self.lease.workspace_id
+                    "/api/v1/workspaces/{}/conversations/{conversation_id}/messages/{message_id}/reactions/{}",
+                    self.lease.workspace_id,
+                    operation.path(),
                 ),
                 Some(json!({
                     "contract": contract,
@@ -289,6 +321,15 @@ impl WorkspaceSession {
         let acknowledgement: ReactionMutationResult =
             decode("message.reaction-mutation-response@1", response)?;
         self.assert_current().await?;
+        validate_reaction_acknowledgement(
+            operation,
+            &acknowledgement,
+            &self.lease.workspace_id,
+            &self.lease.punk_id,
+            conversation_id,
+            message_id,
+            &canonical,
+        )?;
         Ok(acknowledgement)
     }
 
@@ -375,6 +416,108 @@ fn validate_mutation_scope(
         || message.id != message_id
     {
         return Err(ClientFailure::contract("message.mutation-response@1"));
+    }
+    Ok(())
+}
+
+fn validate_post_acknowledgement(
+    message: &MessageView,
+    workspace_id: &str,
+    punk_id: &str,
+    conversation_id: &str,
+    reply_to_message_id: Option<&str>,
+) -> Result<(), ClientFailure> {
+    validate_message_view_runtime(message, workspace_id, conversation_id)?;
+    let authored_by_current_punk = matches!(
+        &message.author,
+        MessageAuthor::Punk {
+            punk_id: acknowledged_punk_id,
+        } if acknowledged_punk_id == punk_id
+    );
+    let ancestry_matches = match reply_to_message_id {
+        None => {
+            message.parent_message_id.is_none()
+                && message.thread_root_message_id == message.id
+                && message.thread_depth == 0
+        }
+        Some(parent_message_id) => {
+            message.id != parent_message_id
+                && message.parent_message_id.as_deref() == Some(parent_message_id)
+                && message.thread_root_message_id != message.id
+                && message.thread_depth >= 1
+        }
+    };
+    if !authored_by_current_punk || !ancestry_matches {
+        return Err(ClientFailure::contract("message.post-response@1"));
+    }
+    Ok(())
+}
+
+fn validate_reaction_acknowledgement(
+    operation: ReactionOperation,
+    acknowledgement: &ReactionMutationResult,
+    workspace_id: &str,
+    punk_id: &str,
+    conversation_id: &str,
+    message_id: &str,
+    reaction: &str,
+) -> Result<(), ClientFailure> {
+    let semantics_match = match operation {
+        ReactionOperation::Add => {
+            acknowledgement.reaction.is_some()
+                && matches!(acknowledgement.effect.as_str(), "added" | "unchanged")
+        }
+        ReactionOperation::Remove => {
+            acknowledgement.reaction.is_none()
+                && matches!(acknowledgement.effect.as_str(), "removed" | "unchanged")
+        }
+    };
+    if !semantics_match {
+        return Err(ClientFailure::contract(
+            "message.reaction-mutation-response@1",
+        ));
+    }
+    if let Some(view) = &acknowledgement.reaction {
+        validate_reaction_view(
+            view,
+            workspace_id,
+            punk_id,
+            conversation_id,
+            message_id,
+            reaction,
+        )?;
+    }
+    Ok(())
+}
+
+fn validate_reaction_view(
+    view: &ReactionView,
+    workspace_id: &str,
+    punk_id: &str,
+    conversation_id: &str,
+    message_id: &str,
+    reaction: &str,
+) -> Result<(), ClientFailure> {
+    validate_uuid(&view.id, "reactionId")?;
+    validate_uuid(&view.workspace_id, "workspaceId")?;
+    validate_uuid(&view.conversation_id, "conversationId")?;
+    validate_uuid(&view.message_id, "messageId")?;
+    let authored_by_current_punk = matches!(
+        &view.actor,
+        MessageAuthor::Punk {
+            punk_id: acknowledged_punk_id,
+        } if acknowledged_punk_id == punk_id
+    );
+    if view.workspace_id != workspace_id
+        || view.conversation_id != conversation_id
+        || view.message_id != message_id
+        || view.reaction != reaction
+        || !authored_by_current_punk
+        || !valid_rfc3339(&view.reacted_at)
+    {
+        return Err(ClientFailure::contract(
+            "message.reaction-mutation-response@1",
+        ));
     }
     Ok(())
 }

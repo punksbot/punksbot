@@ -395,16 +395,17 @@ export function PunksConversation({
       }
       const canonicalReaction = canonicalPunksReaction(reaction);
       const currentReaction = currentReactionFor(message.id, canonicalReaction);
-      const issuedAfterCursor =
-        queryClient.getQueryData<ConversationCache>(historyKey)?.appliedCursor;
-      if (issuedAfterCursor === undefined) {
+      const issuedFrom =
+        queryClient.getQueryData<ConversationCache>(historyKey);
+      if (issuedFrom === undefined) {
         throw new PunksDesktopFailure(
           "contract_violation",
           "The Stream mutation checkpoint is unavailable",
         );
       }
       return manager.run(scope, async () => ({
-        issuedAfterCursor,
+        issuedAfterCursor: issuedFrom.appliedCursor,
+        issuedFrom,
         response: await (currentReaction?.reactedByPunk
           ? scope.session.removeReaction({
               conversationId,
@@ -419,8 +420,20 @@ export function PunksConversation({
       }));
     },
     retry: false,
-    onSuccess: ({ issuedAfterCursor, response }, { message, reaction }) => {
+    onSuccess: (
+      { issuedAfterCursor, issuedFrom, response },
+      { message, reaction },
+    ) => {
       if (!manager.isCurrent(scope)) return;
+      // A replacement snapshot can legitimately reuse the same numeric
+      // cursor. Reference identity closes that hole: any cache publication
+      // while the cursorless Reaction ACK was in flight makes FOLLOW/read
+      // authority win without decorating the replacement.
+      if (
+        queryClient.getQueryData<ConversationCache>(historyKey) !== issuedFrom
+      ) {
+        return;
+      }
       const canonicalReaction = canonicalPunksReaction(reaction);
       notifyManager.batch(() => {
         for (const [

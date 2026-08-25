@@ -16,6 +16,7 @@ use super::{
     ClientPlatform, FailureKind, FollowPhase, FollowServerFrame, FollowState, PunksAccountClient,
 };
 
+mod message_mutations;
 mod social_reads;
 mod workspace_context;
 

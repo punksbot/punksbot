@@ -383,6 +383,14 @@ test("fake social mutations preserve Message subjects, replies, and Reaction ACK
     workspace.postMessage({ conversationId, content: "Sans sujet" }),
     { kind: "problem" },
   );
+  await assert.rejects(
+    workspace.postMessage({
+      conversationId,
+      content: "Réponse sans cible autorisée",
+      replyToMessageId: "77777777-7777-4777-8777-777777777777",
+    }),
+    { kind: "problem" },
+  );
 
   const reply = await workspace.postMessage({
     conversationId,
