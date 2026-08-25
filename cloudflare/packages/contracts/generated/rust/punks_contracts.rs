@@ -1059,6 +1059,49 @@ pub enum DesktopAuthStatusResponseResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum DesktopAuthStatusResponseOutcomeCode {
+    #[serde(rename = "account_created")]
+    AccountCreated,
+    #[serde(rename = "account_creation_confirmation_required")]
+    AccountCreationConfirmationRequired,
+    #[serde(rename = "authenticated")]
+    Authenticated,
+    #[serde(rename = "cancelled")]
+    Cancelled,
+    #[serde(rename = "expired")]
+    Expired,
+    #[serde(rename = "link_required")]
+    LinkRequired,
+    #[serde(rename = "link_pending")]
+    LinkPending,
+    #[serde(rename = "linked")]
+    Linked,
+    #[serde(rename = "merge_required")]
+    MergeRequired,
+    #[serde(rename = "passkey_authenticated")]
+    PasskeyAuthenticated,
+    #[serde(rename = "passkey_invalid")]
+    PasskeyInvalid,
+    #[serde(rename = "passkey_registration_pending")]
+    PasskeyRegistrationPending,
+    #[serde(rename = "passkey_registered")]
+    PasskeyRegistered,
+    #[serde(rename = "passkey_unknown_or_invalid")]
+    PasskeyUnknownOrInvalid,
+    #[serde(rename = "provider_error")]
+    ProviderError,
+    #[serde(rename = "reauthenticated")]
+    Reauthenticated,
+    #[serde(rename = "reauthentication_failed")]
+    ReauthenticationFailed,
+    #[serde(rename = "session_expired")]
+    SessionExpired,
+    #[serde(rename = "temporarily_unavailable")]
+    TemporarilyUnavailable,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct DesktopAuthStatusExchangeDecision {
     #[serde(rename = "oldSessionUsable")]
@@ -1093,6 +1136,8 @@ pub struct DesktopAuthStatusResponse {
     #[serde(rename = "expiresAt")]
     pub expires_at: String,
     pub result: DesktopAuthStatusResponseResult,
+    #[serde(rename = "outcomeCode")]
+    pub outcome_code: Option<DesktopAuthStatusResponseOutcomeCode>,
     pub decision: DesktopAuthStatusExchangeDecision,
 }
 

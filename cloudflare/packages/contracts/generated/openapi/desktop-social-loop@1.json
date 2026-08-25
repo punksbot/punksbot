@@ -2228,6 +2228,36 @@
           "message": {
             "const": "response"
           },
+          "outcomeCode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "account_created",
+                  "account_creation_confirmation_required",
+                  "authenticated",
+                  "cancelled",
+                  "expired",
+                  "link_required",
+                  "link_pending",
+                  "linked",
+                  "merge_required",
+                  "passkey_authenticated",
+                  "passkey_invalid",
+                  "passkey_registration_pending",
+                  "passkey_registered",
+                  "passkey_unknown_or_invalid",
+                  "provider_error",
+                  "reauthenticated",
+                  "reauthentication_failed",
+                  "session_expired",
+                  "temporarily_unavailable"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "phase": {
             "enum": [
               "started",
@@ -2259,6 +2289,7 @@
           "terminal",
           "expiresAt",
           "result",
+          "outcomeCode",
           "decision"
         ],
         "title": "DesktopAuthStatusResponse",

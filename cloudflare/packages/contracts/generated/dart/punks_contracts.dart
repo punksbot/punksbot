@@ -592,6 +592,42 @@ enum DesktopAuthStatusExchangeResponseResult {
   String toJson() => value;
 }
 
+enum DesktopAuthStatusExchangeResponseOutcomeCode {
+  accountCreated("account_created"),
+  accountCreationConfirmationRequired("account_creation_confirmation_required"),
+  authenticated("authenticated"),
+  cancelled("cancelled"),
+  expired("expired"),
+  linkRequired("link_required"),
+  linkPending("link_pending"),
+  linked("linked"),
+  mergeRequired("merge_required"),
+  passkeyAuthenticated("passkey_authenticated"),
+  passkeyInvalid("passkey_invalid"),
+  passkeyRegistrationPending("passkey_registration_pending"),
+  passkeyRegistered("passkey_registered"),
+  passkeyUnknownOrInvalid("passkey_unknown_or_invalid"),
+  providerError("provider_error"),
+  reauthenticated("reauthenticated"),
+  reauthenticationFailed("reauthentication_failed"),
+  sessionExpired("session_expired"),
+  temporarilyUnavailable("temporarily_unavailable"),
+  ;
+
+  const DesktopAuthStatusExchangeResponseOutcomeCode(this.value);
+
+  final String value;
+
+  factory DesktopAuthStatusExchangeResponseOutcomeCode.fromJson(Object? value, String path) {
+    for (final candidate in values) {
+      if (candidate.value == value) return candidate;
+    }
+    throw FormatException('$path must be a DesktopAuthStatusExchangeResponseOutcomeCode value');
+  }
+
+  String toJson() => value;
+}
+
 class DesktopAuthStatusExchangeDecision {
   final bool oldSessionUsable;
   final bool revokePreparedSession;
@@ -638,6 +674,7 @@ class DesktopAuthStatusExchangeResponse extends DesktopAuthStatusExchange {
   final bool terminal;
   final String expiresAt;
   final DesktopAuthStatusExchangeResponseResult result;
+  final DesktopAuthStatusExchangeResponseOutcomeCode? outcomeCode;
   final DesktopAuthStatusExchangeDecision decision;
 
   const DesktopAuthStatusExchangeResponse({
@@ -648,11 +685,12 @@ class DesktopAuthStatusExchangeResponse extends DesktopAuthStatusExchange {
     required this.terminal,
     required this.expiresAt,
     required this.result,
+    required this.outcomeCode,
     required this.decision,
   }) : super();
 
   factory DesktopAuthStatusExchangeResponse.fromJson(Map<String, Object?> json) {
-    _rejectUnknownKeys(json, const {"contract", "message", "flowId", "phase", "terminal", "expiresAt", "result", "decision"}, "DesktopAuthStatusExchangeResponse");
+    _rejectUnknownKeys(json, const {"contract", "message", "flowId", "phase", "terminal", "expiresAt", "result", "outcomeCode", "decision"}, "DesktopAuthStatusExchangeResponse");
     return DesktopAuthStatusExchangeResponse(
       contract: _expectStringConst(_requiredKey(json, "contract", "DesktopAuthStatusExchangeResponse"), "desktop-auth.status@1", "DesktopAuthStatusExchangeResponse.contract"),
       message: _expectStringConst(_requiredKey(json, "message", "DesktopAuthStatusExchangeResponse"), "response", "DesktopAuthStatusExchangeResponse.message"),
@@ -661,6 +699,7 @@ class DesktopAuthStatusExchangeResponse extends DesktopAuthStatusExchange {
       terminal: _asBool(_requiredKey(json, "terminal", "DesktopAuthStatusExchangeResponse"), "DesktopAuthStatusExchangeResponse.terminal"),
       expiresAt: _asString(_requiredKey(json, "expiresAt", "DesktopAuthStatusExchangeResponse"), "DesktopAuthStatusExchangeResponse.expiresAt"),
       result: DesktopAuthStatusExchangeResponseResult.fromJson(_requiredKey(json, "result", "DesktopAuthStatusExchangeResponse"), "DesktopAuthStatusExchangeResponse.result"),
+      outcomeCode: _requiredKey(json, "outcomeCode", "DesktopAuthStatusExchangeResponse") == null ? null : DesktopAuthStatusExchangeResponseOutcomeCode.fromJson(_requiredKey(json, "outcomeCode", "DesktopAuthStatusExchangeResponse"), "DesktopAuthStatusExchangeResponse.outcomeCode"),
       decision: DesktopAuthStatusExchangeDecision.fromJson(_asMap(_requiredKey(json, "decision", "DesktopAuthStatusExchangeResponse"), "DesktopAuthStatusExchangeResponse.decision")),
     );
   }
@@ -675,6 +714,7 @@ class DesktopAuthStatusExchangeResponse extends DesktopAuthStatusExchange {
       "terminal": terminal,
       "expiresAt": expiresAt,
       "result": result.toJson(),
+      "outcomeCode": outcomeCode == null ? null : outcomeCode!.toJson(),
       "decision": decision.toJson(),
     };
     return json;

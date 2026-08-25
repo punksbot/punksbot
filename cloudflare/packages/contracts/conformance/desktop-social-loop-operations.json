@@ -1581,6 +1581,7 @@
                 "expiresAt": "2026-08-22T12:00:00.000Z",
                 "flowId": "00000000-0000-8000-8000-000000000001",
                 "message": "response",
+                "outcomeCode": null,
                 "phase": "started",
                 "result": "success",
                 "terminal": false
@@ -1613,6 +1614,7 @@
             "expiresAt": "2026-08-22T12:00:00.000Z",
             "flowId": "00000000-0000-8000-8000-000000000001",
             "message": "response",
+            "outcomeCode": null,
             "phase": "started",
             "result": "success",
             "terminal": false
@@ -1902,6 +1904,7 @@
           "expiresAt": "2026-08-22T12:00:00.000Z",
           "flowId": "00000000-0000-8000-8000-000000000001",
           "message": "response",
+          "outcomeCode": null,
           "phase": "started",
           "result": "success",
           "terminal": false
@@ -4374,7 +4377,7 @@
           }
         }
       },
-      "retry": "same_identity"
+      "retry": "human_intent_required"
     },
     {
       "cancellablePhases": [

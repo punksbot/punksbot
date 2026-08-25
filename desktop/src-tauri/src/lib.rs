@@ -3,7 +3,6 @@
 compile_error!("`buzz-desktop` and `punks-desktop-social-loop` are mutually exclusive");
 #[cfg(not(any(feature = "buzz-desktop", feature = "punks-desktop-social-loop")))]
 compile_error!("enable exactly one desktop runtime feature");
-
 #[cfg(feature = "buzz-desktop")]
 mod app_menu;
 #[cfg(feature = "buzz-desktop")]

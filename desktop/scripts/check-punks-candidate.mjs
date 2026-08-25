@@ -12,6 +12,32 @@ const EXPECTED_UPDATER_PUBLIC_KEY =
   "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQ2MTFCOEFFQTQyRjBDQTUKUldTbERDK2tycmdSMXJINFZUSWt3bkFWS3o4Y1EyazRrazBCbXV1M2FSSUY4M1dqSDZBUlIrKzYK";
 const EXPECTED_PUNKS_BUILD =
   "pnpm exec tsc --project tsconfig.punks.json && pnpm exec vite build";
+const ENVIRONMENT_FLAVORS = [
+  {
+    environment: "staging",
+    file: "tauri.punks.conf.json",
+    productName: "Punks Bot Staging",
+    mainBinaryName: "punks-bot-staging",
+    identifier: "bot.punks.desktop.staging",
+    scheme: "punks-staging",
+  },
+  {
+    environment: "local",
+    file: "tauri.punks.local.conf.json",
+    productName: "Punks Bot Local",
+    mainBinaryName: "punks-bot-local",
+    identifier: "bot.punks.desktop.local",
+    scheme: "punks-local",
+  },
+  {
+    environment: "production",
+    file: "tauri.punks.production.conf.json",
+    productName: "Punks Bot",
+    mainBinaryName: "punks-bot",
+    identifier: "bot.punks.desktop",
+    scheme: "punks",
+  },
+];
 
 function isObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -100,6 +126,46 @@ function assertCandidate(config, platform) {
   }
 }
 
+function assertEnvironmentIsolation(configRoot, stagingPatch) {
+  const seen = new Set();
+  for (const expected of ENVIRONMENT_FLAVORS) {
+    const config =
+      expected.environment === "staging"
+        ? stagingPatch
+        : loadJson(join(configRoot, expected.file));
+    const schemes = config?.plugins?.["deep-link"]?.desktop?.schemes;
+    const identity = [
+      config.productName,
+      config.mainBinaryName,
+      config.identifier,
+      schemes?.[0],
+    ];
+    if (
+      identity[0] !== expected.productName ||
+      identity[1] !== expected.mainBinaryName ||
+      identity[2] !== expected.identifier ||
+      !Array.isArray(schemes) ||
+      schemes.length !== 1 ||
+      identity[3] !== expected.scheme ||
+      config?.build?.beforeBuildCommand !== EXPECTED_PUNKS_BUILD ||
+      config?.app?.security?.capabilities?.length !== 1 ||
+      config.app.security.capabilities[0] !== "punks" ||
+      config?.bundle?.externalBin?.length !== 0
+    ) {
+      throw new Error(
+        `${expected.environment}: Punks application identity is not isolated`,
+      );
+    }
+    const key = identity.join("\0");
+    if (seen.has(key)) {
+      throw new Error(
+        `${expected.environment}: Punks application identity is reused`,
+      );
+    }
+    seen.add(key);
+  }
+}
+
 function parseArgs(argv) {
   const options = {};
   for (let index = 0; index < argv.length; index += 2) {
@@ -135,6 +201,7 @@ export function validateCandidateFiles({ base, config }) {
     );
     assertCandidate(merged, platform);
   }
+  assertEnvironmentIsolation(configRoot, candidatePatch);
 }
 
 export function main(argv = process.argv.slice(2)) {

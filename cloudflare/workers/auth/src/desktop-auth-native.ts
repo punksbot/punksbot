@@ -11,6 +11,7 @@ import type {
 import { validateContract } from "@punks/contracts";
 
 import { desktopAuthDecision } from "./desktop-auth-browser-page";
+import { commitDesktopBrowserEffect } from "./desktop-auth";
 import type { DesktopAuthFlowRecord } from "./desktop-auth-flow-do";
 import { pkceChallenge } from "./crypto";
 import type { AuthEnv } from "./env";
@@ -98,6 +99,7 @@ export async function statusDesktopAuth(
     terminal: ["confirmed", "cancelled", "expired"].includes(flow.phase),
     expiresAt: flow.expiresAt,
     result: flow.result,
+    outcomeCode: flow.outcomeCode,
     decision: desktopAuthDecision(flow),
   };
   return validateResponse("punks://contracts/desktop-auth.status@1", body)
@@ -247,6 +249,39 @@ export async function confirmDesktopAuth(
       : confirmation.flow.sessionId;
   if (sessionId === null) {
     return problem(500, "internal", "Desktop confirmation has no Session");
+  }
+  if (
+    confirmation.flow.intent === "link_google" ||
+    confirmation.flow.intent === "link_github" ||
+    confirmation.flow.intent === "register_passkey"
+  ) {
+    const effect = await commitDesktopBrowserEffect(env, confirmation.flow);
+    if (!effect.ok) {
+      if (effect.code === "temporarily_unavailable") {
+        return problem(
+          503,
+          "temporarily_unavailable",
+          "Sensitive desktop effect is not committed",
+        );
+      }
+      await stub.failDelivery({
+        deliveryId: command.deliveryId,
+        result: "security_failure",
+        outcomeCode: effect.code,
+      });
+      return problem(
+        409,
+        "identity_conflict",
+        `Sensitive desktop effect is ${effect.code}`,
+      );
+    }
+    if (!(await stub.browserEffectCommitted(command.deliveryId))) {
+      return problem(
+        503,
+        "temporarily_unavailable",
+        "Sensitive desktop effect confirmation is incomplete",
+      );
+    }
   }
   if (
     confirmation.flow.intent !== "reauthenticate" &&

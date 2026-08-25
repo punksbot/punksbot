@@ -87,6 +87,7 @@ describe("desktop authentication contracts (issue #54)", () => {
           terminal: false,
           expiresAt: "2026-08-25T12:15:00.000Z",
           result: "success",
+          outcomeCode: null,
           decision: {
             oldSessionUsable: false,
             revokePreparedSession: false,

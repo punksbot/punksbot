@@ -1,5 +1,8 @@
 //! Native orchestration for the recoverable desktop authentication ceremony.
 
+#[cfg(test)]
+mod tests;
+
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
@@ -47,6 +50,17 @@ fn phase_for_pending(flow: &PendingAuthFlow) -> CeremonyPhaseView {
         PendingAuthPhase::Confirmed => CeremonyPhaseView::Delivering,
         PendingAuthPhase::Cancelled => CeremonyPhaseView::Cancelled,
         PendingAuthPhase::Expired => CeremonyPhaseView::Expired,
+    }
+}
+
+fn phase_for_status(flow: &PendingAuthFlow, status: &DesktopAuthStatus) -> CeremonyPhaseView {
+    match (status.phase, status.outcome_code.as_deref()) {
+        (PendingAuthPhase::Cancelled, Some("cancelled")) => CeremonyPhaseView::Cancelled,
+        (PendingAuthPhase::Expired, _) | (_, Some("expired")) => CeremonyPhaseView::Expired,
+        (PendingAuthPhase::Cancelled, Some(code)) => CeremonyPhaseView::Failed {
+            code: code.to_string(),
+        },
+        _ => phase_for_pending(flow),
     }
 }
 
@@ -336,7 +350,7 @@ async fn complete_pending_authentication(
                     .clear_pending_auth_flow()
                     .map_err(|_| store_failure())?;
             }
-            return Ok(CeremonyPhaseView::Cancelled);
+            return Ok(phase_for_status(&flow, &status));
         }
         PendingAuthPhase::Expired => {
             if staged.is_some() {
@@ -349,7 +363,7 @@ async fn complete_pending_authentication(
                     .clear_pending_auth_flow()
                     .map_err(|_| store_failure())?;
             }
-            return Ok(CeremonyPhaseView::Expired);
+            return Ok(phase_for_status(&flow, &status));
         }
         PendingAuthPhase::Ready | PendingAuthPhase::Delivering | PendingAuthPhase::Confirmed => {}
         _ => return Ok(phase_for_pending(&flow)),
@@ -592,7 +606,7 @@ pub async fn punks_get_account_session_state(
             }
         }
         return Ok(AccountSessionStateView::SignedOut {
-            authentication: phase_for_pending(&flow),
+            authentication: phase_for_status(&flow, &status),
             resume_available: !status.terminal || status.phase == PendingAuthPhase::Confirmed,
         });
     }

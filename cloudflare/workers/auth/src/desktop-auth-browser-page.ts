@@ -37,6 +37,29 @@ export function confirmationPage(
 <button type="submit">Créer mon Compte Punks</button></form></main>`);
 }
 
+export function existingBrowserSessionPage(input: {
+  flowId: string;
+  displayName: string;
+  method: "google" | "github" | "passkey";
+}): Response {
+  const escapedName = input.displayName
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+  const methodLabel =
+    input.method === "github"
+      ? "GitHub"
+      : input.method === "google"
+        ? "Google"
+        : "une passkey";
+  return browserHtml(`<!doctype html>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Continuer dans Punks Bot</title><main><h1>Continuer comme ${escapedName} ?</h1>
+<form method="post" action="/api/auth/v1/desktop/browser/session/confirm"><input type="hidden" name="flow" value="${input.flowId}"><button type="submit">Continuer comme ${escapedName}</button></form>
+<form method="get" action="/api/auth/v1/desktop/browser"><input type="hidden" name="flow" value="${input.flowId}"><input type="hidden" name="useMethod" value="1"><button type="submit">Utiliser ${methodLabel} à la place</button></form></main>`);
+}
+
 export function passkeyPage(input: {
   flowId: string;
   purpose: "authentication" | "registration";
@@ -49,7 +72,7 @@ export function passkeyPage(input: {
 <script type="module">
 const input=${payload};
 const bytes=(value)=>Uint8Array.from(atob(value.replace(/-/g,"+").replace(/_/g,"/").padEnd(Math.ceil(value.length/4)*4,"=")),c=>c.charCodeAt(0));
-const b64=(value)=>btoa(String.fromCharCode(...new Uint8Array(value))).replace(/+/g,"-").replace(///g,"_").replace(/=+$/g,"");
+const b64=(value)=>btoa(String.fromCharCode(...new Uint8Array(value))).replace(/\\+/g,"-").replace(/\\//g,"_").replace(/=+$/g,"");
 const publicKey={...input.publicKey,challenge:bytes(input.publicKey.challenge)};
 if(publicKey.user)publicKey.user={...publicKey.user,id:bytes(publicKey.user.id)};
 if(publicKey.excludeCredentials)publicKey.excludeCredentials=publicKey.excludeCredentials.map(x=>({...x,id:bytes(x.id)}));
@@ -71,7 +94,9 @@ export function desktopAuthDecision(
       (flow.phase === "cancelled" || flow.phase === "expired") &&
       flow.sessionId !== null,
     destroyWorkspaceContext:
-      flow.phase === "confirmed" && flow.currentSessionId !== null,
+      flow.phase === "confirmed" &&
+      flow.currentSessionId !== null &&
+      flow.intent !== "reauthenticate",
     retrySameRequest:
       !terminal && ["started", "ready", "delivering"].includes(flow.phase),
     freshHumanActionRequired:

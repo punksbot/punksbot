@@ -26,6 +26,18 @@ test("the Punks candidate flavor removes every Buzz distribution edge", () => {
   );
 });
 
+test("local, staging and production own distinct app and protocol identities", () => {
+  assert.doesNotThrow(() => runChecker("--base", base, "--config", flavor));
+  for (const name of [
+    "tauri.punks.local.conf.json",
+    "tauri.punks.production.conf.json",
+  ]) {
+    assert.ok(
+      JSON.parse(readFileSync(join(desktopRoot, "src-tauri", name), "utf8")),
+    );
+  }
+});
+
 test("the public checker rejects a flavor that leaves a Buzz sidecar", () => {
   const fixtureRoot = mkdtempSync(join(tmpdir(), "punks-candidate-config-"));
   const fixture = join(fixtureRoot, "invalid.json");

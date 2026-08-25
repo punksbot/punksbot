@@ -132,7 +132,7 @@
       "owner": "account",
       "kind": "mutation",
       "command": true,
-      "retry": "same_identity",
+      "retry": "human_intent_required",
       "cancellablePhases": ["before_emit", "in_flight", "delivery"],
       "requestContract": "desktop-session.renew@1",
       "responseContract": "desktop-session.renew@1"

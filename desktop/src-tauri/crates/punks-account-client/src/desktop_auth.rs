@@ -10,8 +10,8 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::ceremony::{
-    AuthenticationMethod, NativeVerifier, PendingAuthIntent, PendingAuthPhase,
-    RevocationCapability, RevocationSecret, SessionMetadata, SessionSecret,
+    AuthenticationMethod, CompiledPunksEnvironment, NativeVerifier, PendingAuthIntent,
+    PendingAuthPhase, RevocationCapability, RevocationSecret, SessionMetadata, SessionSecret,
 };
 use crate::contracts_profile as contracts;
 use crate::failure::{ClientFailure, FailureKind};
@@ -19,6 +19,7 @@ use crate::failure::{ClientFailure, FailureKind};
 const SESSION_COOKIE_PREFIX: &str = "__Host-punks_session=";
 const LOCAL_SESSION_COOKIE_PREFIX: &str = "punks_session_dev=";
 
+/// Server-selected coordinates of a newly started native flow.
 pub struct DesktopAuthStart {
     pub flow_id: String,
     pub intent: PendingAuthIntent,
@@ -28,6 +29,7 @@ pub struct DesktopAuthStart {
     pub expires_at: SystemTime,
 }
 
+/// Closed recovery decision returned with a flow status.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DesktopAuthDecision {
     pub old_session_usable: bool,
@@ -37,6 +39,7 @@ pub struct DesktopAuthDecision {
     pub fresh_human_action_required: bool,
 }
 
+/// Closed result class shared by Worker, Rust and TypeScript.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DesktopAuthResult {
     Success,
@@ -45,6 +48,7 @@ pub enum DesktopAuthResult {
     TransientInterruption,
 }
 
+/// Non-secret native projection of `desktop-auth.status@1`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DesktopAuthStatus {
     pub flow_id: String,
@@ -52,9 +56,11 @@ pub struct DesktopAuthStatus {
     pub terminal: bool,
     pub expires_at: SystemTime,
     pub result: DesktopAuthResult,
+    pub outcome_code: Option<String>,
     pub decision: DesktopAuthDecision,
 }
 
+/// Idempotently claimed Session held in the native quarantine boundary.
 pub struct ClaimedSession {
     pub flow_id: String,
     pub delivery_id: String,
@@ -84,6 +90,7 @@ pub enum ClaimedDelivery {
     Reauthorization(ClaimedReauthorization),
 }
 
+/// Terminal acknowledgement returned by `desktop-auth.confirm@1`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfirmedSession {
     pub flow_id: String,
@@ -91,6 +98,7 @@ pub struct ConfirmedSession {
     pub confirmed_at: SystemTime,
 }
 
+/// Prepared Session rotation awaiting secure-store reread and confirmation.
 pub struct PreparedRenewal {
     pub command_id: String,
     pub rotation_id: String,
@@ -100,11 +108,12 @@ pub struct PreparedRenewal {
     pub confirm_by: SystemTime,
 }
 
+/// Native-only HTTP client for the seven closed desktop auth contracts.
 #[derive(Clone)]
 pub struct DesktopAuthClient {
     http: reqwest::Client,
     origin: String,
-    environment: &'static str,
+    environment: CompiledPunksEnvironment,
 }
 
 #[derive(Deserialize)]
@@ -138,13 +147,24 @@ fn status_failure(status: u16) -> ClientFailure {
 
 fn parse_iso8601(value: &str) -> Result<SystemTime, ClientFailure> {
     let bytes = value.as_bytes();
-    if bytes.len() != 20
-        || bytes[4] != b'-'
+    let fractional_millis = match bytes.len() {
+        20 if bytes[19] == b'Z' => 0,
+        24 if bytes[19] == b'.'
+            && bytes[23] == b'Z'
+            && bytes[20..23].iter().all(u8::is_ascii_digit) =>
+        {
+            value
+                .get(20..23)
+                .and_then(|part| part.parse::<u64>().ok())
+                .ok_or_else(|| transport_failure("invalid Punks timestamp"))?
+        }
+        _ => return Err(transport_failure("invalid Punks timestamp")),
+    };
+    if bytes[4] != b'-'
         || bytes[7] != b'-'
         || bytes[10] != b'T'
         || bytes[13] != b':'
         || bytes[16] != b':'
-        || bytes[19] != b'Z'
     {
         return Err(transport_failure("invalid Punks timestamp"));
     }
@@ -186,6 +206,7 @@ fn parse_iso8601(value: &str) -> Result<SystemTime, ClientFailure> {
         .ok_or_else(|| transport_failure("Punks timestamp is outside supported range"))?;
     UNIX_EPOCH
         .checked_add(Duration::from_secs(seconds as u64))
+        .and_then(|time| time.checked_add(Duration::from_millis(fractional_millis)))
         .ok_or_else(|| transport_failure("Punks timestamp is outside supported range"))
 }
 
@@ -233,19 +254,17 @@ fn renewal_metadata(
 }
 
 impl DesktopAuthClient {
+    /// Builds a client pinned to the compiled Punks origin and environment.
     pub fn new(origin: &str) -> Result<Self, ClientFailure> {
-        let environment = match option_env!("PUNKS_DISTRIBUTION") {
-            Some("production") => "production",
-            Some("staging") => "staging",
-            _ => "local",
-        };
+        let environment = CompiledPunksEnvironment::current()
+            .map_err(|_| transport_failure("unknown compiled Punks environment"))?;
         let parsed = reqwest::Url::parse(origin)
             .map_err(|_| transport_failure("invalid compiled Punks origin"))?;
         if !matches!(parsed.scheme(), "http" | "https")
             || parsed.host_str().is_none()
             || !parsed.username().is_empty()
             || parsed.password().is_some()
-            || (environment != "local" && parsed.scheme() != "https")
+            || (environment != CompiledPunksEnvironment::Local && parsed.scheme() != "https")
         {
             return Err(transport_failure("invalid compiled Punks origin"));
         }
@@ -267,7 +286,7 @@ impl DesktopAuthClient {
         );
         headers.insert(
             HeaderName::from_static("sec-punks-desktop-environment"),
-            HeaderValue::from_static(self.environment),
+            HeaderValue::from_static(self.environment.as_str()),
         );
         if let Some(secret) = cookie {
             headers.insert(
@@ -305,6 +324,7 @@ impl DesktopAuthClient {
         Ok((headers, payload))
     }
 
+    /// Starts one explicit human intent using only the verifier commitment.
     pub async fn start(
         &self,
         intent: PendingAuthIntent,
@@ -352,6 +372,7 @@ impl DesktopAuthClient {
         })
     }
 
+    /// Reads the recoverable public phase without claiming its result.
     pub async fn status(
         &self,
         flow_id: &str,
@@ -376,6 +397,7 @@ impl DesktopAuthClient {
             terminal: response.terminal,
             expires_at: parse_iso8601(&response.expires_at)?,
             result: status_result(response.result),
+            outcome_code: response.outcome_code.map(status_outcome_code),
             decision: DesktopAuthDecision {
                 old_session_usable: response.decision.old_session_usable,
                 revoke_prepared_session: response.decision.revoke_prepared_session,
@@ -386,6 +408,7 @@ impl DesktopAuthClient {
         })
     }
 
+    /// Claims or replays the exact delivery bound to the native verifier.
     pub async fn claim(
         &self,
         flow_id: &str,
@@ -462,6 +485,7 @@ impl DesktopAuthClient {
         }
     }
 
+    /// Confirms a delivery only after native validation and durable reread.
     pub async fn confirm(
         &self,
         flow_id: &str,
@@ -491,6 +515,7 @@ impl DesktopAuthClient {
         })
     }
 
+    /// Cancels a nonterminal flow idempotently.
     pub async fn cancel(
         &self,
         flow_id: &str,
@@ -513,6 +538,7 @@ impl DesktopAuthClient {
         Ok(())
     }
 
+    /// Reads a prepared Session through the validation-only server seam.
     pub async fn validate(&self, cookie: &SessionSecret) -> Result<SessionMetadata, ClientFailure> {
         let response = self
             .http
@@ -540,6 +566,7 @@ impl DesktopAuthClient {
         })
     }
 
+    /// Prepares, but does not activate, a bounded Session rotation.
     pub async fn prepare_renewal(
         &self,
         cookie: &SessionSecret,
@@ -574,6 +601,7 @@ impl DesktopAuthClient {
         })
     }
 
+    /// Confirms a rotation already persisted and reread by native storage.
     pub async fn confirm_renewal(
         &self,
         cookie: &SessionSecret,
@@ -600,6 +628,7 @@ impl DesktopAuthClient {
         Ok(response.session_id)
     }
 
+    /// Exercises only the minimal revoke-only capability, without a cookie.
     pub async fn revoke(&self, capability: &RevocationSecret) -> Result<(), ClientFailure> {
         let request = contracts::DesktopSessionRevokeRequest {
             contract: "desktop-session.revoke@1".to_string(),
@@ -699,6 +728,32 @@ fn status_result(value: contracts::DesktopAuthStatusResponseResult) -> DesktopAu
     }
 }
 
+fn status_outcome_code(value: contracts::DesktopAuthStatusResponseOutcomeCode) -> String {
+    use contracts::DesktopAuthStatusResponseOutcomeCode as Code;
+    match value {
+        Code::AccountCreated => "account_created",
+        Code::AccountCreationConfirmationRequired => "account_creation_confirmation_required",
+        Code::Authenticated => "authenticated",
+        Code::Cancelled => "cancelled",
+        Code::Expired => "expired",
+        Code::LinkRequired => "link_required",
+        Code::LinkPending => "link_pending",
+        Code::Linked => "linked",
+        Code::MergeRequired => "merge_required",
+        Code::PasskeyAuthenticated => "passkey_authenticated",
+        Code::PasskeyInvalid => "passkey_invalid",
+        Code::PasskeyRegistrationPending => "passkey_registration_pending",
+        Code::PasskeyRegistered => "passkey_registered",
+        Code::PasskeyUnknownOrInvalid => "passkey_unknown_or_invalid",
+        Code::ProviderError => "provider_error",
+        Code::Reauthenticated => "reauthenticated",
+        Code::ReauthenticationFailed => "reauthentication_failed",
+        Code::SessionExpired => "session_expired",
+        Code::TemporarilyUnavailable => "temporarily_unavailable",
+    }
+    .to_string()
+}
+
 fn extract_session_cookie(headers: &HeaderMap) -> Result<SessionSecret, ClientFailure> {
     for value in headers.get_all(reqwest::header::SET_COOKIE) {
         let raw = value
@@ -707,7 +762,11 @@ fn extract_session_cookie(headers: &HeaderMap) -> Result<SessionSecret, ClientFa
         for prefix in [SESSION_COOKIE_PREFIX, LOCAL_SESSION_COOKIE_PREFIX] {
             if let Some(rest) = raw.strip_prefix(prefix) {
                 let token = rest.split(';').next().unwrap_or("").trim();
-                if token.len() >= 32 {
+                if (32..=4_096).contains(&token.len())
+                    && token
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+                {
                     return Ok(SessionSecret::from_cookie_header(&format!(
                         "{prefix}{token}"
                     )));
@@ -746,6 +805,14 @@ mod tests {
                 expected,
             );
         }
+        assert_eq!(
+            parse_iso8601("2026-08-23T01:00:00.123Z")
+                .expect("worker timestamp with milliseconds")
+                .duration_since(UNIX_EPOCH)
+                .expect("after epoch")
+                .as_millis(),
+            1_787_446_800_123,
+        );
         for invalid in [
             "not-a-date",
             "2026-02-29T12:00:00Z",
@@ -755,6 +822,7 @@ mod tests {
             "2026-01-01T00:00:60Z",
             "2026-01-01T00:00:00+01:00",
             "2026-01-01T00:00:00Zjunk",
+            "2026-01-01T00:00:00.12Z",
         ] {
             assert!(parse_iso8601(invalid).is_err(), "{invalid}");
         }
@@ -806,7 +874,7 @@ mod tests {
             headers
                 .get("sec-punks-desktop-environment")
                 .and_then(|value| value.to_str().ok()),
-            Some(client.environment)
+            Some(client.environment.as_str())
         );
         assert_eq!(
             headers.get(ORIGIN).and_then(|value| value.to_str().ok()),

@@ -1,306 +1,57 @@
-import { env } from "cloudflare:test";
 import { describe, expect, it, vi } from "vitest";
 
-import type { AuthEnv } from "../src/env";
-import type { ProviderFetch } from "../src/provider";
-import { bytesToBase64Url, pkceChallenge } from "../src/crypto";
+import { bytesToBase64Url } from "../src/crypto";
 import { route } from "../src/router";
 import { aggregateName } from "../src/session";
-
-const authEnv = env as AuthEnv;
-const origin = "https://auth.punks.test";
-const nativeHeaders = {
+import {
+  authEnv,
+  cancel,
+  claim,
+  completeOAuth,
+  confirm,
+  finishOAuth,
+  launchOAuth,
+  nativeHeaders,
+  oauthCookie,
   origin,
-  "sec-punks-desktop-environment": authEnv.ENVIRONMENT,
-} as const;
-
-function cookie(response: Response, pattern: RegExp): string {
-  const value = response.headers.get("set-cookie") ?? "";
-  const match = value.match(pattern);
-  if (match?.[1] === undefined || match[2] === undefined) {
-    throw new Error(`Cookie absent: ${value}`);
-  }
-  return `${match[1]}=${match[2]}`;
-}
-
-function oauthCookie(response: Response): string {
-  return cookie(response, /(__Host-punks_oauth_[A-Za-z0-9_-]+)=([^;,]+)/);
-}
-
-function sessionCookie(response: Response): string {
-  return cookie(response, /((?:__Host-)?punks_session(?:_dev)?)=([^;,]+)/);
-}
-
-function providerFixture(subject: string): ProviderFetch {
-  return async (input, init) => {
-    const url = String(input);
-    if (url.includes("/token") || url.includes("access_token")) {
-      expect(String(init?.body)).toContain("code_verifier=");
-      return Response.json({
-        access_token: `provider-token-${subject}`,
-        token_type: "bearer",
-      });
-    }
-    return Response.json({
-      sub: subject,
-      email: `${subject}@example.com`,
-      email_verified: true,
-      name: `Punk ${subject}`,
-      picture: "https://images.example/punk.png",
-    });
-  };
-}
-
-async function provisionIdentity(subject: string): Promise<{
-  punkId: string;
-  cookie: string;
-}> {
-  const started = await route(
-    new Request(`${origin}/api/auth/v1/start`, {
-      method: "POST",
-      headers: { "content-type": "application/json", origin },
-      body: JSON.stringify({
-        contract: "auth.start@1",
-        provider: "google",
-        intent: "sign_in",
-        returnTo: "/",
-      }),
-    }),
-    authEnv,
-  );
-  expect(started.status).toBe(201);
-  const authorizationUrl = new URL(
-    ((await started.clone().json()) as { authorizationUrl: string })
-      .authorizationUrl,
-  );
-  const response = await route(
-    new Request(
-      `${origin}/api/auth/v1/oauth/google/callback?state=${encodeURIComponent(
-        authorizationUrl.searchParams.get("state") ?? "",
-      )}&code=fixture`,
-      { headers: { cookie: oauthCookie(started) } },
-    ),
-    authEnv,
-    providerFixture(subject),
-  );
-  expect(response.status).toBe(303);
-  const activeCookie = sessionCookie(response);
-  const session = await route(
-    new Request(`${origin}/api/auth/v1/session`, {
-      headers: { cookie: activeCookie },
-    }),
-    authEnv,
-  );
-  const sessionBody = (await session.json()) as {
-    session: { punkId: string };
-  };
-  return { punkId: sessionBody.session.punkId, cookie: activeCookie };
-}
-
-interface StartedDesktop {
-  flowId: string;
-  browserUrl: string;
-  verifier: string;
-  commitment: string;
-}
-
-async function startDesktop(
-  input: {
-    verifier?: string;
-    intent?:
-      | "sign_in"
-      | "switch_account"
-      | "reauthenticate"
-      | "link_google"
-      | "link_github"
-      | "register_passkey";
-    method?: "google" | "github" | "passkey";
-    session?: string;
-    originHeader?: string | null;
-    purpose?: "link_google" | "link_github" | "register_passkey";
-    authorizationId?: string;
-    nativeHeader?: boolean;
-  } = {},
-): Promise<{ response: Response; started: StartedDesktop | null }> {
-  const verifier =
-    input.verifier ??
-    bytesToBase64Url(crypto.getRandomValues(new Uint8Array(32)));
-  const commitment = await pkceChallenge(verifier);
-  const response = await route(
-    new Request(`${origin}/api/auth/v1/desktop/start`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        ...(input.nativeHeader === false
-          ? {}
-          : { "sec-punks-desktop-environment": authEnv.ENVIRONMENT }),
-        ...(input.originHeader === null
-          ? {}
-          : { origin: input.originHeader ?? origin }),
-        ...(input.session === undefined ? {} : { cookie: input.session }),
-      },
-      body: JSON.stringify({
-        contract: "desktop-auth.start@1",
-        message: "request",
-        intent: input.intent ?? "sign_in",
-        method: input.method ?? "google",
-        verifierCommitment: commitment,
-        ...(input.purpose === undefined ? {} : { purpose: input.purpose }),
-        ...(input.authorizationId === undefined
-          ? {}
-          : { authorizationId: input.authorizationId }),
-      }),
-    }),
-    authEnv,
-  );
-  if (response.status !== 201) return { response, started: null };
-  const body = (await response.clone().json()) as {
-    flowId: string;
-    browserUrl: string;
-  };
-  return {
-    response,
-    started: { ...body, verifier, commitment },
-  };
-}
-
-async function launchOAuth(started: StartedDesktop): Promise<{
-  state: string;
-  cookie: string;
-  response: Response;
-}> {
-  const response = await route(new Request(started.browserUrl), authEnv);
-  expect(response.status).toBe(303);
-  const location = new URL(response.headers.get("location") ?? "");
-  return {
-    state: location.searchParams.get("state") ?? "",
-    cookie: oauthCookie(response),
-    response,
-  };
-}
-
-async function completeOAuth(
-  started: StartedDesktop,
-  subject: string,
-): Promise<{ response: Response; browserCookie: string }> {
-  const launched = await launchOAuth(started);
-  const response = await route(
-    new Request(
-      `${origin}/api/auth/v1/oauth/google/callback?state=${encodeURIComponent(
-        launched.state,
-      )}&code=fixture`,
-      { headers: { cookie: launched.cookie } },
-    ),
-    authEnv,
-    providerFixture(subject),
-  );
-  return { response, browserCookie: launched.cookie };
-}
-
-async function status(
-  started: StartedDesktop,
-  commitment = started.commitment,
-) {
-  return route(
-    new Request(`${origin}/api/auth/v1/desktop/status`, {
-      method: "POST",
-      headers: { "content-type": "application/json", ...nativeHeaders },
-      body: JSON.stringify({
-        contract: "desktop-auth.status@1",
-        message: "request",
-        flowId: started.flowId,
-        verifierCommitment: commitment,
-      }),
-    }),
-    authEnv,
-  );
-}
-
-async function claim(started: StartedDesktop, verifier = started.verifier) {
-  return route(
-    new Request(`${origin}/api/auth/v1/desktop/claim`, {
-      method: "POST",
-      headers: { "content-type": "application/json", ...nativeHeaders },
-      body: JSON.stringify({
-        contract: "desktop-auth.claim@1",
-        message: "request",
-        deliveryKind: "request",
-        flowId: started.flowId,
-        verifier,
-      }),
-    }),
-    authEnv,
-  );
-}
-
-async function confirm(
-  started: StartedDesktop,
-  deliveryId: string,
-  verifier = started.verifier,
-) {
-  return route(
-    new Request(`${origin}/api/auth/v1/desktop/confirm`, {
-      method: "POST",
-      headers: { "content-type": "application/json", ...nativeHeaders },
-      body: JSON.stringify({
-        contract: "desktop-auth.confirm@1",
-        message: "request",
-        flowId: started.flowId,
-        verifier,
-        deliveryId,
-      }),
-    }),
-    authEnv,
-  );
-}
-
-async function readyGoogle(subject: string): Promise<StartedDesktop> {
-  await provisionIdentity(subject);
-  const { response, started } = await startDesktop();
-  expect(response.status).toBe(201);
-  if (started === null) throw new Error("desktop start absent");
-  const completed = await completeOAuth(started, subject);
-  expect(completed.response.status).toBe(303);
-  expect(completed.response.headers.get("location")).toBe(
-    `punks-local://auth/complete?flow=${started.flowId}`,
-  );
-  expect(completed.response.headers.get("set-cookie") ?? "").not.toContain(
-    "punks_session",
-  );
-  return started;
-}
-
-async function reauthenticateFor(
-  subject: string,
-  session: string,
-  purpose: "link_google" | "link_github" | "register_passkey",
-): Promise<{
-  started: StartedDesktop;
-  deliveryId: string;
-  authorizationId: string;
-}> {
-  const { started } = await startDesktop({
-    intent: "reauthenticate",
-    method: "google",
-    purpose,
-    session,
-  });
-  if (started === null) throw new Error("reauth start absent");
-  expect((await completeOAuth(started, subject)).response.status).toBe(303);
-  const delivered = await claim(started);
-  expect(delivered.status).toBe(200);
-  const body = (await delivered.json()) as {
-    deliveryId: string;
-    authorization: { authorizationId: string };
-  };
-  return {
-    started,
-    deliveryId: body.deliveryId,
-    authorizationId: body.authorization.authorizationId,
-  };
-}
+  providerFixture,
+  provisionIdentity,
+  readyGoogle,
+  reauthenticateFor,
+  sessionCookie,
+  startDesktop,
+  status,
+} from "./desktop-ceremony-helpers";
 
 describe("DesktopAuthFlow protocol (issue #54)", () => {
+  it("demande confirmation avant de continuer avec la Session web", async () => {
+    const web = await provisionIdentity(`desktop-web-${crypto.randomUUID()}`);
+    const { started } = await startDesktop();
+    if (started === null) throw new Error("desktop start absent");
+    const page = await route(
+      new Request(started.browserUrl, { headers: { cookie: web.cookie } }),
+      authEnv,
+    );
+    expect(page.status).toBe(200);
+    const html = await page.clone().text();
+    expect(html).toContain("Continuer comme");
+    expect(html).toContain("Utiliser Google à la place");
+    const form = new FormData();
+    form.set("flow", started.flowId);
+    const continued = await route(
+      new Request(`${origin}/api/auth/v1/desktop/browser/session/confirm`, {
+        method: "POST",
+        headers: { origin, cookie: `${web.cookie}; ${oauthCookie(page)}` },
+        body: form,
+      }),
+      authEnv,
+    );
+    expect(continued.status).toBe(303);
+    const delivered = await claim(started);
+    const body = (await delivered.json()) as { deliveryId: string };
+    expect((await confirm(started, body.deliveryId)).status).toBe(200);
+  });
+
   it("ferme origin, commitment et intentions liées à la Session courante", async () => {
     expect((await startDesktop({ originHeader: null })).response.status).toBe(
       403,
@@ -464,22 +215,8 @@ describe("DesktopAuthFlow protocol (issue #54)", () => {
       deliveryId: string;
     };
     const preparedCookie = sessionCookie(delivered);
-    const cancel = () =>
-      route(
-        new Request(`${origin}/api/auth/v1/desktop/cancel`, {
-          method: "POST",
-          headers: { "content-type": "application/json", ...nativeHeaders },
-          body: JSON.stringify({
-            contract: "desktop-auth.cancel@1",
-            message: "request",
-            flowId: started.flowId,
-            verifier: started.verifier,
-          }),
-        }),
-        authEnv,
-      );
-    expect((await cancel()).status).toBe(200);
-    expect((await cancel()).status).toBe(200);
+    expect((await cancel(started)).status).toBe(200);
+    expect((await cancel(started)).status).toBe(200);
     expect((await confirm(started, delivery.deliveryId)).status).toBe(409);
     expect(
       (
@@ -567,6 +304,15 @@ describe("DesktopAuthFlow protocol (issue #54)", () => {
       authorizationId: reauth.authorizationId,
     });
     expect(accepted.response.status).toBe(201);
+    if (accepted.started === null) throw new Error("link flow absent");
+    const launched = await launchOAuth(accepted.started);
+    expect((await cancel(accepted.started)).status).toBe(200);
+    expect((await finishOAuth(launched, `${subject}-late`)).status).toBe(400);
+    expect(
+      await authEnv.IDENTITY_CLAIMS.getByName(
+        await aggregateName("identity", `google:${subject}-late`),
+      ).resolve(),
+    ).toEqual({ status: "missing" });
     const replayedElsewhere = await startDesktop({
       intent: "link_google",
       method: "google",
@@ -598,6 +344,43 @@ describe("DesktopAuthFlow protocol (issue #54)", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("ne lie le nouveau Moyen qu'au confirm natif avec rotation", async () => {
+    const ownerSubject = `desktop-link-owner-${crypto.randomUUID()}`;
+    const linkedSubject = `desktop-link-target-${crypto.randomUUID()}`;
+    const current = await provisionIdentity(ownerSubject);
+    const reauth = await reauthenticateFor(
+      ownerSubject,
+      current.cookie,
+      "link_google",
+    );
+    expect((await confirm(reauth.started, reauth.deliveryId)).status).toBe(200);
+    const { started } = await startDesktop({
+      intent: "link_google",
+      method: "google",
+      session: current.cookie,
+      authorizationId: reauth.authorizationId,
+    });
+    if (started === null) throw new Error("link flow absent");
+    expect((await completeOAuth(started, linkedSubject)).response.status).toBe(
+      303,
+    );
+    const identity = authEnv.IDENTITY_CLAIMS.getByName(
+      await aggregateName("identity", `google:${linkedSubject}`),
+    );
+    expect(await identity.resolve()).toEqual({ status: "missing" });
+    const delivered = await claim(started);
+    const body = (await delivered.json()) as { deliveryId: string };
+    expect((await confirm(started, body.deliveryId)).status).toBe(200);
+    expect(await (await status(started)).json()).toMatchObject({
+      phase: "confirmed",
+      outcomeCode: "linked",
+    });
+    expect(await identity.resolve()).toMatchObject({
+      status: "active",
+      punkId: current.punkId,
+    });
   });
 
   it("expire publiquement le flow et refuse toute réclamation tardive", async () => {
@@ -734,13 +517,107 @@ async function passkeyAssertion(input: {
   return {
     id: input.credentialId,
     rawId: input.credentialId,
-    type: "public-key",
+    type: "public-key" as const,
     clientExtensionResults: {},
     response: {
       clientDataJSON: bytesToBase64Url(clientData),
       authenticatorData: bytesToBase64Url(authenticatorData),
       signature: bytesToBase64Url(signature),
-      userHandle: null,
+    },
+  };
+}
+
+async function passkeyRegistration(challenge: string) {
+  const keys = (await crypto.subtle.generateKey(
+    { name: "ECDSA", namedCurve: "P-256" },
+    true,
+    ["sign", "verify"],
+  )) as CryptoKeyPair;
+  const jwk = await crypto.subtle.exportKey("jwk", keys.publicKey);
+  const decode = (value: string) =>
+    Uint8Array.from(atob(value.replace(/-/g, "+").replace(/_/g, "/")), (char) =>
+      char.charCodeAt(0),
+    );
+  const cose = concatBytes(
+    new Uint8Array([
+      0xa5, 0x01, 0x02, 0x03, 0x26, 0x20, 0x01, 0x21, 0x58, 0x20,
+    ]),
+    decode(jwk.x ?? ""),
+    new Uint8Array([0x22, 0x58, 0x20]),
+    decode(jwk.y ?? ""),
+  );
+  const credentialIdBytes = crypto.getRandomValues(new Uint8Array(32));
+  const credentialId = bytesToBase64Url(credentialIdBytes);
+  const clientData = new TextEncoder().encode(
+    JSON.stringify({
+      type: "webauthn.create",
+      challenge,
+      origin,
+      crossOrigin: false,
+    }),
+  );
+  const rpIdHash = new Uint8Array(
+    await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode("auth.punks.test"),
+    ),
+  );
+  const authData = concatBytes(
+    rpIdHash,
+    new Uint8Array([0x45, 0, 0, 0, 0]),
+    new Uint8Array(16),
+    new Uint8Array([0, credentialIdBytes.length]),
+    credentialIdBytes,
+    cose,
+  );
+  const attestationObject = concatBytes(
+    new Uint8Array([
+      0xa3,
+      0x63,
+      0x66,
+      0x6d,
+      0x74,
+      0x64,
+      0x6e,
+      0x6f,
+      0x6e,
+      0x65,
+      0x67,
+      0x61,
+      0x74,
+      0x74,
+      0x53,
+      0x74,
+      0x6d,
+      0x74,
+      0xa0,
+      0x68,
+      0x61,
+      0x75,
+      0x74,
+      0x68,
+      0x44,
+      0x61,
+      0x74,
+      0x61,
+      0x58,
+      authData.length,
+    ]),
+    authData,
+  );
+  return {
+    credentialId,
+    privateKey: keys.privateKey,
+    response: {
+      id: credentialId,
+      rawId: credentialId,
+      type: "public-key",
+      clientExtensionResults: {},
+      response: {
+        clientDataJSON: bytesToBase64Url(clientData),
+        attestationObject: bytesToBase64Url(attestationObject),
+        transports: ["internal"],
+      },
     },
   };
 }
@@ -817,12 +694,116 @@ describe("Desktop passkey and confirmed rotation", () => {
       authEnv,
     );
     expect(completed.status, await completed.clone().text()).toBe(200);
-    expect(await completed.json()).toEqual({
-      completionUrl: `punks-local://auth/complete?flow=${started.flowId}`,
-    });
     expect(await (await status(started)).json()).toMatchObject({
       phase: "ready",
     });
+  });
+
+  it("enregistre puis authentifie une passkey desktop seulement après confirm", async () => {
+    const subject = `desktop-register-passkey-${crypto.randomUUID()}`;
+    const current = await provisionIdentity(subject);
+    const reauth = await reauthenticateFor(
+      subject,
+      current.cookie,
+      "register_passkey",
+    );
+    expect((await confirm(reauth.started, reauth.deliveryId)).status).toBe(200);
+    const { started } = await startDesktop({
+      intent: "register_passkey",
+      method: "passkey",
+      session: current.cookie,
+      authorizationId: reauth.authorizationId,
+    });
+    if (started === null) throw new Error("passkey registration flow absent");
+    const launched = await route(new Request(started.browserUrl), authEnv);
+    const page = await launched.clone().text();
+    const payload = page.match(/const input=(\{.*?\});\n/)?.[1];
+    if (payload === undefined) throw new Error("options passkey absentes");
+    const challenge = (
+      JSON.parse(payload) as { publicKey: { challenge: string } }
+    ).publicKey.challenge;
+    const registration = await passkeyRegistration(challenge);
+    const completed = await route(
+      new Request(`${origin}/api/auth/v1/desktop/browser/passkey/complete`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin,
+          cookie: oauthCookie(launched),
+        },
+        body: JSON.stringify({
+          flowId: started.flowId,
+          response: registration.response,
+        }),
+      }),
+      authEnv,
+    );
+    expect(completed.status, await completed.clone().text()).toBe(200);
+    const credential = authEnv.PASSKEY_CREDENTIALS.getByName(
+      await aggregateName("passkey-credential", registration.credentialId),
+    );
+    expect(
+      await credential.verifyAuthentication({
+        ceremonyId: crypto.randomUUID(),
+        challenge: "pending-registration-check",
+        origin,
+        rpId: "auth.punks.test",
+        response: await passkeyAssertion({
+          ...registration,
+          challenge: "pending-registration-check",
+        }),
+      }),
+    ).toEqual({ ok: false, code: "pending" });
+
+    const delivered = await claim(started);
+    const delivery = (await delivered.json()) as { deliveryId: string };
+    expect((await confirm(started, delivery.deliveryId)).status).toBe(200);
+    expect(await (await status(started)).json()).toMatchObject({
+      phase: "confirmed",
+      outcomeCode: "passkey_registered",
+    });
+
+    const signedIn = await startDesktop({ method: "passkey" });
+    if (signedIn.started === null)
+      throw new Error("passkey sign-in flow absent");
+    const signInPage = await route(
+      new Request(signedIn.started.browserUrl),
+      authEnv,
+    );
+    const signInPayload = (await signInPage.text()).match(
+      /const input=(\{.*?\});\n/,
+    )?.[1];
+    if (signInPayload === undefined)
+      throw new Error("options passkey absentes");
+    const signInChallenge = (
+      JSON.parse(signInPayload) as { publicKey: { challenge: string } }
+    ).publicKey.challenge;
+    const authenticated = await route(
+      new Request(`${origin}/api/auth/v1/desktop/browser/passkey/complete`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin,
+          cookie: oauthCookie(signInPage),
+        },
+        body: JSON.stringify({
+          flowId: signedIn.started.flowId,
+          response: await passkeyAssertion({
+            ...registration,
+            challenge: signInChallenge,
+          }),
+        }),
+      }),
+      authEnv,
+    );
+    expect(authenticated.status, await authenticated.clone().text()).toBe(200);
+    const signedInDelivery = await claim(signedIn.started);
+    const signedInBody = (await signedInDelivery.json()) as {
+      deliveryId: string;
+    };
+    expect(
+      (await confirm(signedIn.started, signedInBody.deliveryId)).status,
+    ).toBe(200);
   });
 
   it("ne renouvelle pas à exactement sept jours, seulement en dessous", async () => {

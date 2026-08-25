@@ -661,13 +661,15 @@ pub(super) fn validate_uuid(value: &str) -> Result<(), String> {
 }
 
 fn validate_cookie(value: &str) -> Result<(), String> {
-    let known =
-        value.starts_with("__Host-punks_session=") || value.starts_with("punks_session_dev=");
-    (known
-        && value.len() <= MAX_COOKIE_BYTES
-        && !value
-            .bytes()
-            .any(|byte| byte.is_ascii_control() || byte == b';'))
+    let token = value
+        .strip_prefix("__Host-punks_session=")
+        .or_else(|| value.strip_prefix("punks_session_dev="));
+    (token.is_some_and(|token| {
+        (32..=MAX_COOKIE_BYTES).contains(&token.len())
+            && token
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+    }))
     .then_some(())
     .ok_or_else(invalid_state)
 }

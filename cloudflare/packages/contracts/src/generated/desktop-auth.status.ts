@@ -16,6 +16,7 @@ phase: ("started" | "browser_complete" | "ready" | "delivering" | "confirmed" | 
 terminal: boolean
 expiresAt: string
 result: ("success" | "human_action_required" | "security_failure" | "transient_interruption")
+outcomeCode: (("account_created" | "account_creation_confirmation_required" | "authenticated" | "cancelled" | "expired" | "link_required" | "link_pending" | "linked" | "merge_required" | "passkey_authenticated" | "passkey_invalid" | "passkey_registration_pending" | "passkey_registered" | "passkey_unknown_or_invalid" | "provider_error" | "reauthenticated" | "reauthentication_failed" | "session_expired" | "temporarily_unavailable") | null)
 decision: DesktopAuthRetryDecision
 }
 export interface DesktopAuthRetryDecision {

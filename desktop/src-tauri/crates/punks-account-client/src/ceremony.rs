@@ -15,8 +15,8 @@ use std::fmt;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub use crate::native_auth::{
-    AuthenticationMethod, NativeVerifier, PendingAuthIntent, PendingAuthPhase, RevocationSecret,
-    SessionSecret,
+    AuthenticationMethod, CompiledEnvironmentError, CompiledPunksEnvironment, NativeVerifier,
+    PendingAuthIntent, PendingAuthPhase, RevocationSecret, SessionSecret,
 };
 
 /// TTL d'une transaction OAuth Google/GitHub côté Worker (10 minutes).

@@ -1,5 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
+use punks_account_client::ceremony::CompiledPunksEnvironment;
 use punks_account_client::{
     AuthorReference, AuthorSummary, ClientDistribution, ClientFailure, ClientPlatform,
     DesktopCompatibility, FollowCancellation, FollowConnection, FollowDelivery, MessagePage,
@@ -32,16 +33,41 @@ struct FollowEntry {
 impl PunksDesktopClient {
     pub fn from_distribution() -> Self {
         let origin = option_env!("PUNKS_ORIGIN").unwrap_or("http://127.0.0.1:8787");
-        let distribution = match option_env!("PUNKS_DISTRIBUTION") {
-            Some("staging") => ClientDistribution::Staging,
-            Some("production") => ClientDistribution::Production,
-            _ => ClientDistribution::Development,
-        };
+        let distribution = CompiledPunksEnvironment::current().map(|value| match value {
+            CompiledPunksEnvironment::Local => ClientDistribution::Development,
+            CompiledPunksEnvironment::Staging => ClientDistribution::Staging,
+            CompiledPunksEnvironment::Production => ClientDistribution::Production,
+        });
+        Self {
+            account: distribution
+                .map_err(|_| {
+                    ClientFailure::native(
+                        punks_account_client::FailureKind::ContractViolation,
+                        "unknown compiled Punks environment",
+                    )
+                })
+                .and_then(|distribution| {
+                    PunksAccountClient::new(
+                        origin,
+                        env!("CARGO_PKG_VERSION"),
+                        distribution,
+                        current_platform(),
+                    )
+                }),
+            transitions: Mutex::new(()),
+            sessions: Mutex::new(HashMap::new()),
+            follows: Mutex::new(HashMap::new()),
+            authentication: Mutex::new(NativeAuthenticationRuntime::new(origin)),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn for_test(origin: &str) -> Self {
         Self {
             account: PunksAccountClient::new(
                 origin,
                 env!("CARGO_PKG_VERSION"),
-                distribution,
+                ClientDistribution::Development,
                 current_platform(),
             ),
             transitions: Mutex::new(()),

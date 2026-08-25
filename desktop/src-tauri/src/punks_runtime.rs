@@ -10,13 +10,12 @@ use tauri::Manager;
 use tauri_plugin_deep_link::DeepLinkExt;
 
 use crate::{punks_auth, punks_client, punks_session_store::KeyringSessionPersistence};
+use punks_account_client::ceremony::CompiledPunksEnvironment;
 
-fn expected_auth_scheme() -> &'static str {
-    match option_env!("PUNKS_DISTRIBUTION") {
-        Some("production") => "punks",
-        Some("staging") => "punks-staging",
-        _ => "punks-local",
-    }
+fn expected_auth_scheme() -> Option<&'static str> {
+    CompiledPunksEnvironment::current()
+        .ok()
+        .map(CompiledPunksEnvironment::deep_link_scheme)
 }
 
 fn parse_auth_completion_url(raw: &str, expected_scheme: &str) -> Result<String, String> {
@@ -46,7 +45,10 @@ fn parse_auth_completion_url(raw: &str, expected_scheme: &str) -> Result<String,
 }
 
 fn dispatch_auth_completion_deep_link(app: tauri::AppHandle, url: String) {
-    let Ok(flow_id) = parse_auth_completion_url(&url, expected_auth_scheme()) else {
+    let Some(expected_scheme) = expected_auth_scheme() else {
+        return;
+    };
+    let Ok(flow_id) = parse_auth_completion_url(&url, expected_scheme) else {
         return;
     };
     tauri::async_runtime::spawn(async move {

@@ -226,10 +226,11 @@ fn legacy_trait_and_strict_readback_fail_closed_without_secret_errors() {
         .unwrap_err()
         .contains(&flow.verifier.encoded()));
     assert_eq!(
-        service_name_for_distribution(Some("staging")),
+        CompiledPunksEnvironment::from_build_value(Some("staging"))
+            .map(CompiledPunksEnvironment::keyring_service),
         Ok("punks-desktop-staging")
     );
-    assert!(service_name_for_distribution(Some("qa")).is_err());
+    assert!(CompiledPunksEnvironment::from_build_value(Some("qa")).is_err());
 }
 
 #[test]

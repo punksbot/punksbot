@@ -20,10 +20,15 @@ import type {
   DesktopAuthFlowRecord,
   DesktopAuthIntent,
   DesktopAuthMethod,
+  DesktopAuthOutcomeCode,
   DesktopPendingIdentity,
 } from "./desktop-auth-flow-do";
 import type { DesktopReauthTarget } from "./desktop-reauth-grant-do";
-import { confirmationPage, passkeyPage } from "./desktop-auth-browser-page";
+import {
+  confirmationPage,
+  existingBrowserSessionPage,
+  passkeyPage,
+} from "./desktop-auth-browser-page";
 import type { AuthEnv } from "./env";
 import { json, problem, readJson, redirect } from "./http";
 import {
@@ -281,6 +286,24 @@ export async function launchDesktopBrowser(
     Math.floor((Date.parse(launched.flow.expiresAt) - Date.now()) / 1_000),
   );
   const cookie = oauthCookie(launched.state, launched.browserBinding, maxAge);
+  const useSelectedMethod =
+    new URL(request.url).searchParams.get("useMethod") === "1";
+  if (
+    !useSelectedMethod &&
+    (launched.flow.intent === "sign_in" ||
+      launched.flow.intent === "switch_account")
+  ) {
+    const browserSession = await getActiveSession(request, env);
+    if (browserSession !== null) {
+      const page = existingBrowserSessionPage({
+        flowId,
+        displayName: browserSession.punk.displayName,
+        method: launched.flow.method,
+      });
+      page.headers.set("set-cookie", cookie);
+      return page;
+    }
+  }
   if (launched.flow.method === "google" || launched.flow.method === "github") {
     const transaction: AuthTransaction = {
       provider: launched.flow.method,
@@ -367,10 +390,63 @@ export async function launchDesktopBrowser(
   return response;
 }
 
+export async function confirmExistingBrowserSession(
+  request: Request,
+  env: AuthEnv,
+): Promise<Response> {
+  if (!sameOrigin(request, env)) {
+    return problem(403, "forbidden", "Same-origin confirmation is required");
+  }
+  const form = await request.formData();
+  const flowId = String(form.get("flow") ?? "");
+  if (!validFlowId(flowId)) {
+    return problem(400, "invalid_input", "Desktop flow is invalid");
+  }
+  const stub = flowStub(env, flowId);
+  const flow = await stub.browserMetadata();
+  if (
+    flow === null ||
+    (flow.intent !== "sign_in" && flow.intent !== "switch_account")
+  ) {
+    return problem(
+      400,
+      "invalid_input",
+      "Browser Session choice is unavailable",
+    );
+  }
+  const binding = browserBinding(flow, request);
+  const browserSession = await getActiveSession(request, env);
+  if (binding === null || browserSession === null) {
+    return problem(
+      400,
+      "invalid_input",
+      "Browser Session confirmation is unbound",
+    );
+  }
+  const browserBindingHash = await hash(binding);
+  const recorded = await stub.recordBrowserComplete({ browserBindingHash });
+  if (
+    !recorded.ok ||
+    !(await stub.ready({
+      punkId: browserSession.record.punkId,
+      outcomeCode: "authenticated",
+    }))
+  ) {
+    return problem(
+      409,
+      "idempotency_conflict",
+      "Browser Session confirmation is terminal",
+    );
+  }
+  return completionRedirect(flow);
+}
+
 async function provisionIdentity(
   env: AuthEnv,
   identity: DesktopPendingIdentity,
-): Promise<{ ok: true; punkId: string } | { ok: false; code: string }> {
+): Promise<
+  { ok: true; punkId: string } | { ok: false; code: DesktopAuthOutcomeCode }
+> {
   const punkId = await deriveOpaqueUuid(
     "punks.punk.v1",
     `${identity.profile.provider}:${identity.profile.subject}`,
@@ -432,11 +508,11 @@ async function provisionIdentity(
   return { ok: true, punkId };
 }
 
-async function linkIdentity(
+export async function commitDesktopIdentityLink(
   env: AuthEnv,
   flow: DesktopAuthFlowRecord,
   identity: DesktopPendingIdentity,
-): Promise<{ ok: true } | { ok: false; code: string }> {
+): Promise<{ ok: true } | { ok: false; code: DesktopAuthOutcomeCode }> {
   if (flow.currentPunkId === null)
     return { ok: false, code: "session_expired" };
   const punkId = flow.currentPunkId;
@@ -490,18 +566,67 @@ async function linkIdentity(
   return { ok: true };
 }
 
+/** Commits a browser-proven sensitive effect only inside native confirm. */
+export async function commitDesktopBrowserEffect(
+  env: AuthEnv,
+  flow: DesktopAuthFlowRecord,
+): Promise<{ ok: true } | { ok: false; code: DesktopAuthOutcomeCode }> {
+  if (flow.browserEffectCommitted) return { ok: true };
+  if (flow.intent === "link_google" || flow.intent === "link_github") {
+    if (flow.pendingIdentity === null) {
+      return { ok: false, code: "temporarily_unavailable" };
+    }
+    return commitDesktopIdentityLink(env, flow, flow.pendingIdentity);
+  }
+  if (flow.intent === "register_passkey") {
+    if (flow.pendingPasskey === null || flow.currentPunkId === null) {
+      return { ok: false, code: "temporarily_unavailable" };
+    }
+    const linked = await env.PUNKS.getByName(flow.currentPunkId).linkPasskey({
+      credentialId: flow.pendingPasskey.credentialId,
+      subjectHash: flow.pendingPasskey.subjectHash,
+      emailHash: flow.pendingPasskey.emailHash,
+      now: new Date().toISOString(),
+    });
+    if (!linked.ok) {
+      return {
+        ok: false,
+        code:
+          linked.code === "identity_conflict"
+            ? "merge_required"
+            : "temporarily_unavailable",
+      };
+    }
+    const activated = await env.PASSKEY_CREDENTIALS.getByName(
+      await aggregateName(
+        "passkey-credential",
+        flow.pendingPasskey.credentialId,
+      ),
+    ).activate({
+      punkId: flow.currentPunkId,
+      transactionId: flow.pendingPasskey.transactionId,
+    });
+    return activated
+      ? { ok: true }
+      : { ok: false, code: "temporarily_unavailable" };
+  }
+  return { ok: true };
+}
+
 async function failAndComplete(
   env: AuthEnv,
   flow: DesktopAuthFlowRecord,
   browserBindingHash: string,
-  code: string,
+  code: DesktopAuthOutcomeCode,
 ): Promise<Response> {
   await flowStub(env, flow.flowId).fail({
     browserBindingHash,
     result:
       code === "temporarily_unavailable"
         ? "transient_interruption"
-        : "security_failure",
+        : code === "link_required" || code === "merge_required"
+          ? "human_action_required"
+          : "security_failure",
     outcomeCode: code,
   });
   return completionRedirect(flow);
@@ -543,22 +668,30 @@ export async function completeDesktopOAuth(input: {
     ),
   ).resolve();
   if (flow.intent === "link_google" || flow.intent === "link_github") {
-    await stub.recordBrowserComplete({
+    const recorded = await stub.recordBrowserComplete({
       browserBindingHash: input.browserBindingHash,
+      pendingIdentity: pending,
+      outcomeCode: "link_pending",
     });
-    const linked = await linkIdentity(input.env, flow, pending);
-    if (!linked.ok) {
-      return failAndComplete(
-        input.env,
-        flow,
-        input.browserBindingHash,
-        linked.code,
+    if (!recorded.ok) {
+      return problem(
+        400,
+        "invalid_input",
+        "Desktop OAuth completion is terminal",
       );
     }
-    await stub.ready({
-      punkId: flow.currentPunkId ?? "",
-      outcomeCode: "linked",
-    });
+    if (
+      !(await stub.ready({
+        punkId: flow.currentPunkId ?? "",
+        outcomeCode: "link_pending",
+      }))
+    ) {
+      return problem(
+        409,
+        "idempotency_conflict",
+        "Desktop OAuth completion was cancelled",
+      );
+    }
     return completionRedirect(flow);
   }
   if (flow.intent === "reauthenticate") {
@@ -575,23 +708,41 @@ export async function completeDesktopOAuth(input: {
         "reauthentication_failed",
       );
     }
-    await stub.recordBrowserComplete({
+    const recorded = await stub.recordBrowserComplete({
       browserBindingHash: input.browserBindingHash,
     });
-    await stub.ready({
-      punkId: flow.currentPunkId,
-      outcomeCode: "reauthenticated",
-    });
+    if (
+      !recorded.ok ||
+      !(await stub.ready({
+        punkId: flow.currentPunkId,
+        outcomeCode: "reauthenticated",
+      }))
+    ) {
+      return problem(
+        400,
+        "invalid_input",
+        "Desktop OAuth completion is terminal",
+      );
+    }
     return completionRedirect(flow);
   }
   if (resolution.status === "active") {
-    await stub.recordBrowserComplete({
+    const recorded = await stub.recordBrowserComplete({
       browserBindingHash: input.browserBindingHash,
     });
-    await stub.ready({
-      punkId: resolution.punkId,
-      outcomeCode: "authenticated",
-    });
+    if (
+      !recorded.ok ||
+      !(await stub.ready({
+        punkId: resolution.punkId,
+        outcomeCode: "authenticated",
+      }))
+    ) {
+      return problem(
+        400,
+        "invalid_input",
+        "Desktop OAuth completion is terminal",
+      );
+    }
     return completionRedirect(flow);
   }
   if (resolution.status === "pending") {
@@ -616,7 +767,7 @@ export async function failDesktopOAuth(input: {
   env: AuthEnv;
   transaction: AuthTransaction;
   browserBindingHash: string;
-  code: string;
+  code: DesktopAuthOutcomeCode;
 }): Promise<Response> {
   const flowId = input.transaction.desktop?.flowId ?? null;
   if (!validFlowId(flowId)) {
@@ -767,32 +918,33 @@ export async function completeDesktopPasskey(
         "Passkey belongs to another Punk",
       );
     }
-    const linked = await env.PUNKS.getByName(
-      launched.flow.currentPunkId,
-    ).linkPasskey({
-      credentialId: credential.id,
-      subjectHash,
-      emailHash: await hash(`punks.passkey-no-email.v1\n${credential.id}`),
-      now: new Date().toISOString(),
+    const recorded = await stub.recordBrowserComplete({
+      browserBindingHash: bindingHash,
+      pendingPasskey: {
+        credentialId: credential.id,
+        subjectHash,
+        emailHash: await hash(`punks.passkey-no-email.v1\n${credential.id}`),
+        transactionId,
+      },
+      outcomeCode: "passkey_registration_pending",
     });
     if (
-      !linked.ok ||
-      !(await credentialObject.activate({
+      !recorded.ok ||
+      !(await stub.ready({
         punkId: launched.flow.currentPunkId,
-        transactionId,
+        outcomeCode: "passkey_registration_pending",
       }))
     ) {
+      await credentialObject.release({
+        punkId: launched.flow.currentPunkId,
+        transactionId,
+      });
       return problem(
-        503,
-        "temporarily_unavailable",
-        "Passkey activation failed",
+        409,
+        "idempotency_conflict",
+        "Passkey registration was cancelled",
       );
     }
-    await stub.recordBrowserComplete({ browserBindingHash: bindingHash });
-    await stub.ready({
-      punkId: launched.flow.currentPunkId,
-      outcomeCode: "passkey_registered",
-    });
   } else {
     const response = input.response as { id?: string };
     if (typeof response.id !== "string") {

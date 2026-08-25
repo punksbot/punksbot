@@ -8,7 +8,9 @@ mod tests;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::SystemTime;
 
-use punks_account_client::ceremony::{SessionMetadata, SessionPersistence, SessionSecret};
+use punks_account_client::ceremony::{
+    CompiledPunksEnvironment, SessionMetadata, SessionPersistence, SessionSecret,
+};
 
 use models::{
     encode_time, enqueue_stored_revocation, invalid_state, validate_uuid, StoredAccountState,
@@ -27,7 +29,7 @@ fn storage_unavailable() -> String {
     "Punks secure Account storage is unavailable".to_string()
 }
 
-trait CredentialStore: Send + Sync {
+pub(crate) trait CredentialStore: Send + Sync {
     fn load(&self, service: &str, key: &str) -> Result<Option<String>, String>;
     fn store(&self, service: &str, key: &str, value: &str) -> Result<(), String>;
     fn delete(&self, service: &str, key: &str) -> Result<(), String>;
@@ -64,15 +66,6 @@ impl CredentialStore for OsKeyringCredentialStore {
     }
 }
 
-fn service_name_for_distribution(distribution: Option<&str>) -> Result<&'static str, ()> {
-    match distribution {
-        None | Some("development") => Ok("punks-desktop-development"),
-        Some("staging") => Ok("punks-desktop-staging"),
-        Some("production") => Ok("punks-desktop"),
-        Some(_) => Err(()),
-    }
-}
-
 /// Punks-only adapter. No filesystem or Buzz-keyring fallback exists.
 pub struct KeyringSessionPersistence {
     service: Result<&'static str, ()>,
@@ -83,14 +76,16 @@ pub struct KeyringSessionPersistence {
 impl KeyringSessionPersistence {
     pub fn new() -> Self {
         Self {
-            service: service_name_for_distribution(option_env!("PUNKS_DISTRIBUTION")),
+            service: CompiledPunksEnvironment::current()
+                .map(|value| value.keyring_service())
+                .map_err(|_| ()),
             credentials: Arc::new(OsKeyringCredentialStore),
             transaction: Mutex::new(()),
         }
     }
 
     #[cfg(test)]
-    fn with_store(service: &'static str, credentials: Arc<dyn CredentialStore>) -> Self {
+    pub(crate) fn with_store(service: &'static str, credentials: Arc<dyn CredentialStore>) -> Self {
         Self {
             service: Ok(service),
             credentials,
@@ -366,14 +361,6 @@ impl KeyringSessionPersistence {
             Ok(state.pending_reauthorization.take())
         })?;
         pending.map(PendingReauthorization::try_from).transpose()
-    }
-
-    #[cfg(test)]
-    pub(crate) fn clear_reauthorization(&self) -> Result<(), String> {
-        self.update(|state| {
-            state.pending_reauthorization = None;
-            Ok(())
-        })
     }
 
     fn promote_candidate(&self, renewal: bool) -> Result<Option<QueuedRevocation>, String> {
