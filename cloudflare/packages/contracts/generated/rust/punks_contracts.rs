@@ -1606,6 +1606,17 @@ pub enum DesktopAuthStartRequestPurpose {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DesktopAuthStartExchangeWorkspaceOwnershipTransfer {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: String,
+    #[serde(rename = "targetPunkId")]
+    pub target_punk_id: String,
+    #[serde(rename = "expectedRevision")]
+    pub expected_revision: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct DesktopAuthStartRequest {
     #[serde(
         rename = "contract",
@@ -1626,6 +1637,9 @@ pub struct DesktopAuthStartRequest {
     #[serde(rename = "authorizationId")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub authorization_id: Option<String>,
+    #[serde(rename = "workspaceOwnershipTransfer")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_ownership_transfer: Option<DesktopAuthStartExchangeWorkspaceOwnershipTransfer>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -1940,6 +1954,17 @@ pub enum DesktopAuthClaimExchangeAuthorizationTargetMethod {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DesktopAuthClaimExchangeWorkspaceOwnershipTransfer {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: String,
+    #[serde(rename = "targetPunkId")]
+    pub target_punk_id: String,
+    #[serde(rename = "expectedRevision")]
+    pub expected_revision: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct DesktopAuthClaimExchangeAuthorization {
     #[serde(rename = "authorizationId")]
     pub authorization_id: String,
@@ -1954,6 +1979,9 @@ pub struct DesktopAuthClaimExchangeAuthorization {
     pub intent: String,
     #[serde(rename = "targetMethod")]
     pub target_method: DesktopAuthClaimExchangeAuthorizationTargetMethod,
+    #[serde(rename = "workspaceOwnershipTransfer")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_ownership_transfer: Option<DesktopAuthClaimExchangeWorkspaceOwnershipTransfer>,
     #[serde(rename = "handoffId")]
     pub handoff_id: String,
     #[serde(rename = "expiresAt")]

@@ -11,6 +11,7 @@ use std::time::SystemTime;
 use punks_account_client::ceremony::{
     CompiledPunksEnvironment, SessionMetadata, SessionPersistence, SessionSecret,
 };
+use punks_account_client::desktop_auth::WorkspaceOwnershipTransferBinding;
 
 use models::{
     encode_time, enqueue_stored_revocation, invalid_state, validate_uuid, StoredAccountState,
@@ -338,12 +339,34 @@ impl KeyringSessionPersistence {
         &self,
         target: PendingAuthPurpose,
     ) -> Result<Option<PendingReauthorization>, String> {
-        self.take_reauthorization_at(target, SystemTime::now())
+        self.take_reauthorization_with_binding_at(target, None, SystemTime::now())
     }
 
+    #[cfg(test)]
+    pub(crate) fn take_workspace_ownership_reauthorization(
+        &self,
+        binding: &WorkspaceOwnershipTransferBinding,
+    ) -> Result<Option<PendingReauthorization>, String> {
+        self.take_reauthorization_with_binding_at(
+            PendingAuthPurpose::TransferWorkspaceOwnership,
+            Some(binding),
+            SystemTime::now(),
+        )
+    }
+
+    #[cfg(test)]
     fn take_reauthorization_at(
         &self,
         target: PendingAuthPurpose,
+        now: SystemTime,
+    ) -> Result<Option<PendingReauthorization>, String> {
+        self.take_reauthorization_with_binding_at(target, None, now)
+    }
+
+    fn take_reauthorization_with_binding_at(
+        &self,
+        target: PendingAuthPurpose,
+        binding: Option<&WorkspaceOwnershipTransferBinding>,
         now: SystemTime,
     ) -> Result<Option<PendingReauthorization>, String> {
         let now = encode_time(now)?;
@@ -368,7 +391,8 @@ impl KeyringSessionPersistence {
                         PendingAuthPurpose::RegisterPasskey
                     }
                 });
-            if current_purpose != target {
+            if current_purpose != target || current.workspace_ownership_transfer.as_ref() != binding
+            {
                 return Ok(None);
             }
             Ok(state.pending_reauthorization.take())

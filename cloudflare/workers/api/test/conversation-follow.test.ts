@@ -4,6 +4,7 @@ import type {
   ConversationFollowServerFrame,
   CreateConversationCommand,
   CreateWorkspaceCommand,
+  LeaveWorkspaceCommand,
   MessageView,
   PostMessageCommand,
   RemoveMessageReactionCommand,
@@ -124,6 +125,28 @@ async function setOtherMember(
     },
   );
   expect(response.status).toBe(200);
+}
+
+async function leaveOtherMember(workspaceId: string, commandId: string) {
+  const command: LeaveWorkspaceCommand = {
+    contract: "workspace.leave@1",
+    commandId,
+    workspaceId,
+    actor: { kind: "punk", punkId: otherPunkId },
+    payload: {},
+  };
+  return SELF.fetch(
+    `https://punks.bot/api/v1/workspaces/${workspaceId}/leave`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie: "__Host-punks_session=session-other",
+        "idempotency-key": commandId,
+      },
+      body: JSON.stringify(command),
+    },
+  );
 }
 
 async function archiveConversation(
@@ -859,7 +882,7 @@ describe("Punks Conversation follow WebSocket", () => {
         message.id,
         "564018aa-5c85-4640-997a-3c7e5e72d136",
       );
-      await authControl.holdSessionResolution(ownerSessionId, 3);
+      await authControl.holdSessionResolution(ownerSessionId, 4);
 
       const response = await follow(
         workspaceId,
@@ -1427,15 +1450,154 @@ describe("Punks Conversation follow WebSocket", () => {
       type: "changes",
       throughCursor: 2,
     });
+    const closed = nextClose(socket);
     await setOtherMember(
       workspaceId,
       "40bd23d7-d4c9-483e-9627-a655b792344d",
       false,
     );
-    const closed = nextClose(socket);
-    socket.send(
-      JSON.stringify({ schemaVersion: 1, type: "ack", throughCursor: 2 }),
+    await expect(closed).resolves.toMatchObject({ code: 1008 });
+  });
+
+  it("closes an idle follower as soon as Workspace access is removed", async () => {
+    const workspaceId = await createWorkspace(
+      "b136175e-561f-4701-b10e-fb764962432d",
+      "follow-idle-revocation",
     );
+    await setOtherMember(
+      workspaceId,
+      "6955a7b0-e40d-4cef-a91b-f798ddd638a1",
+      true,
+    );
+    const conversationId = await createConversation(
+      workspaceId,
+      "91ec5340-f8e8-42ec-983a-7ddd8222b598",
+    );
+    const message = await postMessage(
+      workspaceId,
+      conversationId,
+      "7aaee46e-3b8a-4f08-92c9-bf907f405d01",
+    );
+    const response = await follow(
+      workspaceId,
+      conversationId,
+      message.cursor,
+      "session-other",
+    );
+    const socket = response.webSocket;
+    expect(socket).not.toBeNull();
+    if (socket === null) return;
+    const frames = frameQueue(socket);
+    socket.accept();
+    await expect(frames.next()).resolves.toMatchObject({ type: "accepted" });
+    await expect(frames.next()).resolves.toMatchObject({ type: "ready" });
+    const closed = nextClose(socket);
+
+    await setOtherMember(
+      workspaceId,
+      "cebc2523-c177-44f8-a5dc-2f28c9dcbfaf",
+      false,
+    );
+
+    const terminal = await Promise.race([
+      closed,
+      scheduler.wait(250).then(() => null),
+    ]);
+    expect(terminal).toMatchObject({ code: 1008 });
+  });
+
+  it("closes an idle follower before its voluntary departure commits", async () => {
+    const workspaceId = await createWorkspace(
+      "2d066432-9cf8-45a4-9ab1-53ff92366994",
+      "follow-idle-departure",
+    );
+    await setOtherMember(
+      workspaceId,
+      "cf97a317-234a-4d54-9f7c-f3f42fc41efa",
+      true,
+    );
+    const conversationId = await createConversation(
+      workspaceId,
+      "6d1810c0-100f-4353-9597-5771ed12e454",
+    );
+    const message = await postMessage(
+      workspaceId,
+      conversationId,
+      "613d9ff1-f129-48b1-837c-9f062b4d104a",
+    );
+    const response = await follow(
+      workspaceId,
+      conversationId,
+      message.cursor,
+      "session-other",
+    );
+    const socket = response.webSocket;
+    expect(socket).not.toBeNull();
+    if (socket === null) return;
+    const frames = frameQueue(socket);
+    socket.accept();
+    await expect(frames.next()).resolves.toMatchObject({ type: "accepted" });
+    await expect(frames.next()).resolves.toMatchObject({ type: "ready" });
+    const closed = nextClose(socket);
+
+    const left = await leaveOtherMember(
+      workspaceId,
+      "587fc82d-ccee-4670-8165-3bed3573770b",
+    );
+    expect(left.status, await left.clone().text()).toBe(200);
+    await expect(closed).resolves.toMatchObject({ code: 1008 });
+  });
+
+  it("closes an idle follower when its registered Session expires", async () => {
+    const workspaceId = await createWorkspace(
+      "b1ad03d6-55ce-4e74-a37c-bcc841ef09f6",
+      "follow-idle-session-expiry",
+    );
+    await setOtherMember(
+      workspaceId,
+      "94744e3d-bd5b-44bf-b21b-49f22a9e2ce8",
+      true,
+    );
+    const conversationId = await createConversation(
+      workspaceId,
+      "a72d4c82-8d37-4ff5-8359-a7dd7316bd16",
+    );
+    const message = await postMessage(
+      workspaceId,
+      conversationId,
+      "5a790da2-3a30-4bd2-bf3e-188fc610c788",
+    );
+    const response = await follow(
+      workspaceId,
+      conversationId,
+      message.cursor,
+      "session-other",
+    );
+    const socket = response.webSocket;
+    expect(socket).not.toBeNull();
+    if (socket === null) return;
+    const frames = frameQueue(socket);
+    socket.accept();
+    await expect(frames.next()).resolves.toMatchObject({ type: "accepted" });
+    await expect(frames.next()).resolves.toMatchObject({ type: "ready" });
+    const closed = nextClose(socket);
+    const workspace = env.WORKSPACES.getByName(workspaceId);
+    await runInDurableObject(workspace, async (instance, state) => {
+      const alarmScheduling = Reflect.get(
+        instance,
+        "alarmScheduling",
+      ) as Promise<void>;
+      await alarmScheduling;
+      state.storage.sql.exec(
+        `UPDATE realtime_revocation_targets SET expires_at = ?
+         WHERE punk_id = ? AND conversation_id = ?`,
+        Date.now() - 1,
+        otherPunkId,
+        conversationId,
+      );
+      await instance.alarm();
+    });
+
     await expect(closed).resolves.toMatchObject({ code: 1008 });
   });
 

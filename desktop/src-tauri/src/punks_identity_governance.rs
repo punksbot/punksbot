@@ -1,3 +1,4 @@
+use punks_account_client::desktop_auth::WorkspaceOwnershipTransferBinding;
 use punks_account_client::{
     ClaimWorkspaceInvitationResult, ClientFailure, CreateWorkspaceInvitationResult, FailureKind,
     RevokeWorkspaceInvitationResult, WorkspaceGovernancePage, WorkspaceInvitationRole,
@@ -8,7 +9,7 @@ use serde::Deserialize;
 use std::sync::Arc;
 
 use crate::punks_client::PunksDesktopClient;
-use crate::punks_session_store::{KeyringSessionPersistence, PendingAuthPurpose};
+use crate::punks_session_store::KeyringSessionPersistence;
 
 /// Renderer input for one bounded Workspace invitation intent.
 #[derive(Debug, Deserialize)]
@@ -206,8 +207,13 @@ pub async fn punks_transfer_workspace_ownership(
         ));
     }
     let session = client.session(&lease).await?;
+    let binding = WorkspaceOwnershipTransferBinding {
+        workspace_id: lease.workspace_id.clone(),
+        target_punk_id: input.target_punk_id.clone(),
+        expected_revision: input.expected_revision,
+    };
     let authorization = store
-        .take_reauthorization(PendingAuthPurpose::TransferWorkspaceOwnership)
+        .take_workspace_ownership_reauthorization(&binding)
         .map_err(|_| {
             ClientFailure::native(
                 FailureKind::Problem,

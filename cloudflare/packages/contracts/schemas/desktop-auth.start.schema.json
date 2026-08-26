@@ -44,7 +44,10 @@
             "transfer_workspace_ownership"
           ]
         },
-        "authorizationId": { "type": "string", "format": "uuid" }
+        "authorizationId": { "type": "string", "format": "uuid" },
+        "workspaceOwnershipTransfer": {
+          "$ref": "#/$defs/workspaceOwnershipTransfer"
+        }
       }
     },
     "response": {
@@ -81,6 +84,17 @@
         "browserUrl": { "type": "string", "format": "uri", "maxLength": 2048 },
         "createdAt": { "type": "string", "format": "date-time" },
         "expiresAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "workspaceOwnershipTransfer": {
+      "title": "DesktopWorkspaceOwnershipTransferBinding",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["workspaceId", "targetPunkId", "expectedRevision"],
+      "properties": {
+        "workspaceId": { "type": "string", "format": "uuid" },
+        "targetPunkId": { "type": "string", "format": "uuid" },
+        "expectedRevision": { "type": "integer", "minimum": 1 }
       }
     }
   }

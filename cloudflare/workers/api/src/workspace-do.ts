@@ -146,6 +146,16 @@ type AccountMergeApplicationRow = Record<
   string | null
 > &
   Record<"prepared_revision", number | null>;
+type RealtimeRevocationTargetRow = Record<
+  "punk_id" | "conversation_id" | "session_id",
+  string
+>;
+interface RealtimeRegistrationCoordinates {
+  workspaceId: string;
+  punkId: string;
+  sessionId: string;
+  sessionExpiresAt: string;
+}
 type PendingArchiveRow = Record<
   | "start_cursor"
   | "end_cursor"
@@ -1641,11 +1651,106 @@ export class WorkspaceDO extends DurableObject<ApiEnv> {
     };
   }
 
+  /** Registers one live Conversation callback only for a current authorized Session. */
+  async registerRealtimeRevocationTarget(input: unknown): Promise<boolean> {
+    if (
+      typeof input !== "object" ||
+      input === null ||
+      Array.isArray(input) ||
+      Object.keys(input).sort().join(",") !==
+        "conversationId,punkId,sessionExpiresAt,sessionId,workspaceId"
+    ) {
+      return false;
+    }
+    const request = input as Record<string, unknown>;
+    if (
+      typeof request.workspaceId !== "string" ||
+      request.workspaceId !== this.ctx.id.name ||
+      typeof request.conversationId !== "string" ||
+      !UUID.test(request.conversationId) ||
+      typeof request.punkId !== "string" ||
+      !UUID.test(request.punkId) ||
+      typeof request.sessionId !== "string" ||
+      !UUID.test(request.sessionId) ||
+      typeof request.sessionExpiresAt !== "string"
+    ) {
+      return false;
+    }
+    const coordinates: RealtimeRegistrationCoordinates = {
+      workspaceId: request.workspaceId,
+      punkId: request.punkId,
+      sessionId: request.sessionId,
+      sessionExpiresAt: request.sessionExpiresAt,
+    };
+    if (
+      !(await this.authorizeRealtimeRegistration(coordinates)) ||
+      !(await this.closeExpiredRealtimeRevocationTargets())
+    ) {
+      return false;
+    }
+    if (!this.realtimeRegistrationStillAuthorized(coordinates)) return false;
+    const expiresAt = Date.parse(coordinates.sessionExpiresAt);
+    this.ctx.storage.sql.exec(
+      `INSERT INTO realtime_revocation_targets
+         (punk_id, conversation_id, session_id, expires_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(punk_id, conversation_id, session_id) DO UPDATE SET
+         expires_at = excluded.expires_at`,
+      coordinates.punkId,
+      request.conversationId,
+      coordinates.sessionId,
+      expiresAt,
+    );
+    try {
+      await this.scheduleNextRealtimeRevocationExpiry();
+    } catch {
+      this.ctx.storage.sql.exec(
+        `DELETE FROM realtime_revocation_targets
+         WHERE punk_id = ? AND conversation_id = ? AND session_id = ?`,
+        coordinates.punkId,
+        request.conversationId,
+        coordinates.sessionId,
+      );
+      return false;
+    }
+    return true;
+  }
+
+  /** Fences a Presence handshake against a pending Workspace access loss. */
+  async authorizePresenceRegistration(input: unknown): Promise<boolean> {
+    if (
+      typeof input !== "object" ||
+      input === null ||
+      Array.isArray(input) ||
+      Object.keys(input).sort().join(",") !==
+        "punkId,sessionExpiresAt,sessionId,workspaceId"
+    ) {
+      return false;
+    }
+    const request = input as Record<string, unknown>;
+    if (
+      typeof request.workspaceId !== "string" ||
+      typeof request.punkId !== "string" ||
+      typeof request.sessionId !== "string" ||
+      typeof request.sessionExpiresAt !== "string"
+    ) {
+      return false;
+    }
+    return this.authorizeRealtimeRegistration({
+      workspaceId: request.workspaceId,
+      punkId: request.punkId,
+      sessionId: request.sessionId,
+      sessionExpiresAt: request.sessionExpiresAt,
+    });
+  }
+
   follow(): { ok: false; code: "invalid_contract" } {
     return { ok: false, code: "invalid_contract" };
   }
 
   override async alarm(): Promise<void> {
+    const expiredTargetsClosed =
+      await this.closeExpiredRealtimeRevocationTargets();
     const pending = this.pending();
     if (pending !== undefined) {
       await this.attestAndFinalize(pending, true, false);
@@ -1653,6 +1758,11 @@ export class WorkspaceDO extends DurableObject<ApiEnv> {
     await this.flushAccountMergeRightsOutbox();
     await this.flushOutbox();
     await this.archiveJournalIfNeeded();
+    if (expiredTargetsClosed) {
+      await this.scheduleNextRealtimeRevocationExpiry();
+    } else {
+      await this.ensureAlarmAt(Date.now() + 1_000);
+    }
   }
 
   private initialize(): void {
@@ -1666,6 +1776,16 @@ export class WorkspaceDO extends DurableObject<ApiEnv> {
         punk_id TEXT PRIMARY KEY NOT NULL,
         role TEXT NOT NULL CHECK (role IN ('owner', 'moderator', 'member', 'guest'))
       ) STRICT;
+
+      CREATE TABLE IF NOT EXISTS realtime_revocation_targets (
+        punk_id TEXT NOT NULL,
+        conversation_id TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        expires_at INTEGER NOT NULL,
+        PRIMARY KEY (punk_id, conversation_id, session_id)
+      ) STRICT;
+      CREATE INDEX IF NOT EXISTS realtime_revocation_targets_expiry
+        ON realtime_revocation_targets(expires_at);
 
       CREATE TABLE IF NOT EXISTS command_results (
         command_id TEXT PRIMARY KEY NOT NULL,
@@ -1936,8 +2056,27 @@ export class WorkspaceDO extends DurableObject<ApiEnv> {
          SELECT 1 FROM outbox AS incomplete
          WHERE incomplete.cursor = outbox.cursor
            AND incomplete.delivered_at IS NULL
-       )`,
+      )`,
     );
+    const realtimeTargetColumns = this.ctx.storage.sql
+      .exec<{ name: string }>("PRAGMA table_info(realtime_revocation_targets)")
+      .toArray();
+    if (!realtimeTargetColumns.some(({ name }) => name === "session_id")) {
+      this.ctx.storage.transactionSync(() => {
+        this.ctx.storage.sql.exec(`
+          DROP TABLE realtime_revocation_targets;
+          CREATE TABLE realtime_revocation_targets (
+            punk_id TEXT NOT NULL,
+            conversation_id TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            expires_at INTEGER NOT NULL,
+            PRIMARY KEY (punk_id, conversation_id, session_id)
+          ) STRICT;
+          CREATE INDEX realtime_revocation_targets_expiry
+            ON realtime_revocation_targets(expires_at);
+        `);
+      });
+    }
     this.normalizeLegacyWorkspaceState();
   }
 
@@ -2527,12 +2666,27 @@ export class WorkspaceDO extends DurableObject<ApiEnv> {
         !(await this.env.WORKSPACE_OWNERSHIP_AUTHORITY.consume({
           authorizationId: command.payload.reauthorizationId,
           commandId,
+          workspaceId: command.workspaceId,
+          targetPunkId: command.payload.targetPunkId,
+          expectedRevision: command.payload.expectedRevision,
           punkId: authorization.punkId,
           sessionId: authorization.sessionId,
         })))
     ) {
       await this.abandonPreparedWorkspaceMutation([], commandId, payloadHash);
       return { ok: false, code: "forbidden" };
+    }
+    const accessLostPunkId =
+      command.contract === "workspace.member-remove@1"
+        ? command.payload.targetPunkId
+        : command.contract === "workspace.leave@1"
+          ? command.actor.punkId
+          : null;
+    if (
+      accessLostPunkId !== null &&
+      !(await this.revokeRealtimeAccessBeforeCommit(accessLostPunkId))
+    ) {
+      return { ok: false, code: "internal" };
     }
     let rightsChanges: AccountMergeWorkspaceMembershipChange[];
     try {
@@ -2578,6 +2732,9 @@ export class WorkspaceDO extends DurableObject<ApiEnv> {
         !(await this.env.WORKSPACE_OWNERSHIP_AUTHORITY.consume({
           authorizationId: command.payload.reauthorizationId,
           commandId,
+          workspaceId: command.workspaceId,
+          targetPunkId: command.payload.targetPunkId,
+          expectedRevision: command.payload.expectedRevision,
           punkId: authorization.punkId,
           sessionId: authorization.sessionId,
         })))
@@ -2839,6 +2996,172 @@ export class WorkspaceDO extends DurableObject<ApiEnv> {
       this.ctx.waitUntil(this.flushOutbox());
     }
     return { ok: true, value: finalized, replayed };
+  }
+
+  private async revokeRealtimeAccessBeforeCommit(
+    punkId: string,
+  ): Promise<boolean> {
+    while (true) {
+      const targets = this.ctx.storage.sql
+        .exec<RealtimeRevocationTargetRow>(
+          `SELECT punk_id, conversation_id, session_id
+           FROM realtime_revocation_targets
+           WHERE punk_id = ? ORDER BY conversation_id LIMIT 100`,
+          punkId,
+        )
+        .toArray();
+      if (targets.length === 0) break;
+      const outcomes = await Promise.all(
+        targets.map(async ({ conversation_id: conversationId }) => {
+          try {
+            return await this.env.CONVERSATIONS.getByName(
+              conversationId,
+            ).revokeWorkspaceAccess({
+              workspaceId: this.ctx.id.name ?? "",
+              punkId,
+            });
+          } catch {
+            return false;
+          }
+        }),
+      );
+      if (outcomes.some((outcome) => !outcome)) return false;
+      for (const { conversation_id: conversationId } of targets) {
+        this.ctx.storage.sql.exec(
+          `DELETE FROM realtime_revocation_targets
+           WHERE punk_id = ? AND conversation_id = ?`,
+          punkId,
+          conversationId,
+        );
+      }
+    }
+    try {
+      await this.env.PRESENCE.getByName(this.ctx.id.name ?? "").revokePunk(
+        punkId,
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async authorizeRealtimeRegistration(
+    request: RealtimeRegistrationCoordinates,
+  ): Promise<boolean> {
+    if (
+      request.workspaceId !== this.ctx.id.name ||
+      !UUID.test(request.punkId) ||
+      !UUID.test(request.sessionId)
+    ) {
+      return false;
+    }
+    const expiresAt = Date.parse(request.sessionExpiresAt);
+    if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) return false;
+    let session: Awaited<
+      ReturnType<ApiEnv["AUTH_SERVICE"]["resolveSessionId"]>
+    >;
+    try {
+      session = await this.env.AUTH_SERVICE.resolveSessionId(request.sessionId);
+    } catch {
+      return false;
+    }
+    if (
+      session === null ||
+      !validateContract("punks://contracts/auth.session@1", session).valid ||
+      session.sessionId !== request.sessionId ||
+      session.punkId !== request.punkId ||
+      session.expiresAt !== request.sessionExpiresAt
+    ) {
+      return false;
+    }
+    return this.realtimeRegistrationStillAuthorized(request);
+  }
+
+  private realtimeRegistrationStillAuthorized(
+    request: RealtimeRegistrationCoordinates,
+  ): boolean {
+    if (Date.parse(request.sessionExpiresAt) <= Date.now()) return false;
+    const state = this.stateMetadata();
+    const member = this.memberRow(request.punkId);
+    const pending = this.pending();
+    const pendingCommand =
+      pending === undefined
+        ? null
+        : parseWorkspaceCommand(String(pending.command_json));
+    const pendingRemovesAccess =
+      (pendingCommand?.contract === "workspace.member-remove@1" &&
+        pendingCommand.payload.targetPunkId === request.punkId) ||
+      (pendingCommand?.contract === "workspace.leave@1" &&
+        pendingCommand.actor.punkId === request.punkId);
+    return (
+      state !== null &&
+      state.status === "active" &&
+      member !== undefined &&
+      !pendingRemovesAccess &&
+      roleHasPermission(member.role as WorkspaceRole, "workspace.read")
+    );
+  }
+
+  private async closeExpiredRealtimeRevocationTargets(): Promise<boolean> {
+    const now = Date.now();
+    while (true) {
+      const targets = this.ctx.storage.sql
+        .exec<RealtimeRevocationTargetRow>(
+          `SELECT punk_id, conversation_id, session_id
+           FROM realtime_revocation_targets
+           WHERE expires_at <= ?
+           ORDER BY punk_id, conversation_id LIMIT 100`,
+          now,
+        )
+        .toArray();
+      if (targets.length === 0) return true;
+      const outcomes = await Promise.all(
+        targets.map(
+          async ({
+            punk_id: punkId,
+            conversation_id: conversationId,
+            session_id: sessionId,
+          }) => {
+            try {
+              return await this.env.CONVERSATIONS.getByName(
+                conversationId,
+              ).revokeWorkspaceAccess({
+                workspaceId: this.ctx.id.name ?? "",
+                punkId,
+                sessionId,
+              });
+            } catch {
+              return false;
+            }
+          },
+        ),
+      );
+      if (outcomes.some((outcome) => !outcome)) return false;
+      for (const {
+        punk_id: punkId,
+        conversation_id: conversationId,
+        session_id: sessionId,
+      } of targets) {
+        this.ctx.storage.sql.exec(
+          `DELETE FROM realtime_revocation_targets
+           WHERE punk_id = ? AND conversation_id = ? AND session_id = ?`,
+          punkId,
+          conversationId,
+          sessionId,
+        );
+      }
+    }
+  }
+
+  private async scheduleNextRealtimeRevocationExpiry(): Promise<void> {
+    const expiresAt = this.ctx.storage.sql
+      .exec<{ expires_at: number | null }>(
+        "SELECT MIN(expires_at) AS expires_at FROM realtime_revocation_targets",
+      )
+      .one().expires_at;
+    if (typeof expiresAt === "number") {
+      await this.ensureAlarmAt(expiresAt);
+    }
   }
 
   private async attest(

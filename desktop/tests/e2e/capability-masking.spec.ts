@@ -502,6 +502,17 @@ test("un Propriétaire réauthentifie le transfert puis quitte sans conserver de
       "punks_close_workspace",
     ]),
   );
+  const reauthentication = (await invokedCalls(page)).find(
+    ({ command }) => command === "punks_start_reauthentication",
+  );
+  expect(reauthentication?.args).toMatchObject({
+    purpose: "transfer_workspace_ownership",
+    workspaceOwnershipTransfer: {
+      workspaceId: WORKSPACE_ID,
+      targetPunkId,
+      expectedRevision: 1,
+    },
+  });
 });
 
 test("une réponse reste dans le Fil du Message sélectionné", async ({

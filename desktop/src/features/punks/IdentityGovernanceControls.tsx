@@ -439,12 +439,20 @@ function WorkspaceGovernanceDialog() {
   });
   const reauthenticationMutation = useMutation({
     mutationFn: async () => {
+      if (governance === undefined || transferCandidate === null) {
+        throw new Error("Ownership transfer target is unavailable");
+      }
       const attempt = reauthenticationGeneration.current + 1;
       reauthenticationGeneration.current = attempt;
       setTransferReauthenticated(false);
       await account.client.startReauthentication(
         reauthenticationMethod,
         "transfer_workspace_ownership",
+        {
+          workspaceId: scope.lease.workspaceId,
+          targetPunkId: transferCandidate.punkId,
+          expectedRevision: governance.revision,
+        },
       );
       for (let poll = 0; poll < 800; poll += 1) {
         await new Promise<void>((resolve) => {

@@ -19,6 +19,7 @@ import { PunksDesktopFailure } from "./punksFailure";
 import type {
   FakePunksClientSeed,
   PunksAccountClient,
+  WorkspaceOwnershipTransferReauthenticationInput,
   WorkspaceLease,
 } from "./punksClientTypes";
 import { canonicalPunksReaction } from "./punksReaction";
@@ -58,6 +59,8 @@ export function createFakePunksAccountClient(
   let generation = 0;
   let activeLease: WorkspaceLease | null = null;
   let pendingReauthorizationPurpose: string | null = null;
+  let pendingOwnershipTransferReauthorization: WorkspaceOwnershipTransferReauthenticationInput | null =
+    null;
   let profile: Punk = structuredClone(
     seed.profile ?? {
       id: seed.session.punkId,
@@ -133,14 +136,23 @@ export function createFakePunksAccountClient(
     seed,
     assertCapability,
     assertCurrent,
-    () => {
-      if (pendingReauthorizationPurpose !== "transfer_workspace_ownership") {
+    (lease, input) => {
+      if (
+        pendingReauthorizationPurpose !== "transfer_workspace_ownership" ||
+        pendingOwnershipTransferReauthorization?.workspaceId !==
+          lease.workspaceId ||
+        pendingOwnershipTransferReauthorization.targetPunkId !==
+          input.targetPunkId ||
+        pendingOwnershipTransferReauthorization.expectedRevision !==
+          input.expectedRevision
+      ) {
         throw new PunksDesktopFailure(
           "problem",
           "A fresh ownership-transfer reauthorization is required",
         );
       }
       pendingReauthorizationPurpose = null;
+      pendingOwnershipTransferReauthorization = null;
     },
     (lease) => {
       assertCurrent(lease);
@@ -260,9 +272,22 @@ export function createFakePunksAccountClient(
       };
       return structuredClone(ceremonyPhase);
     },
-    async startReauthentication(method, purpose) {
+    async startReauthentication(method, purpose, workspaceOwnershipTransfer) {
       assertCompatible();
+      if (
+        (purpose === "transfer_workspace_ownership") !==
+        (workspaceOwnershipTransfer !== undefined)
+      ) {
+        throw new PunksDesktopFailure(
+          "problem",
+          "Ownership reauthentication requires its exact target",
+        );
+      }
       pendingReauthorizationPurpose = purpose;
+      pendingOwnershipTransferReauthorization =
+        workspaceOwnershipTransfer === undefined
+          ? null
+          : structuredClone(workspaceOwnershipTransfer);
       ceremonyPhase = {
         phase: "started",
         intent: "reauthenticate",
@@ -320,6 +345,7 @@ export function createFakePunksAccountClient(
     async cancelAuthentication() {
       assertCompatible();
       pendingReauthorizationPurpose = null;
+      pendingOwnershipTransferReauthorization = null;
       ceremonyPhase = { phase: "cancelled" };
       accountSessionState = {
         ...accountSessionState,
@@ -335,6 +361,7 @@ export function createFakePunksAccountClient(
     async signOut() {
       assertCompatible();
       pendingReauthorizationPurpose = null;
+      pendingOwnershipTransferReauthorization = null;
       ceremonyPhase = { phase: "idle" };
       accountSessionState = {
         state: "signed_out",

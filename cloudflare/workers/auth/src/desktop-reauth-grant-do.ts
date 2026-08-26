@@ -8,23 +8,69 @@ export type DesktopReauthTarget =
   | "register_passkey"
   | "transfer_workspace_ownership";
 
+/** Immutable Workspace coordinates confirmed by one strong reauthentication. */
+export interface WorkspaceOwnershipTransferBinding {
+  workspaceId: string;
+  targetPunkId: string;
+  expectedRevision: number;
+}
+
 interface DesktopReauthGrantRecord {
   authorizationId: string;
   sessionId: string;
   punkId: string;
   targetMethod: DesktopReauthTarget;
+  workspaceOwnershipTransfer: WorkspaceOwnershipTransferBinding | null;
   handoffId: string;
   expiresAt: string;
   consumedByFlowId: string | null;
 }
 
 const RECORD_KEY = "desktop_reauth_grant_v1";
+const UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+
+function validWorkspaceOwnershipTransferBinding(
+  value: WorkspaceOwnershipTransferBinding | null | undefined,
+): boolean {
+  return (
+    value !== null &&
+    value !== undefined &&
+    UUID.test(value.workspaceId) &&
+    UUID.test(value.targetPunkId) &&
+    Number.isSafeInteger(value.expectedRevision) &&
+    value.expectedRevision >= 1
+  );
+}
+
+function sameWorkspaceOwnershipTransferBinding(
+  left: WorkspaceOwnershipTransferBinding | null | undefined,
+  right: WorkspaceOwnershipTransferBinding | null | undefined,
+): boolean {
+  const leftMissing = left === null || left === undefined;
+  const rightMissing = right === null || right === undefined;
+  return leftMissing || rightMissing
+    ? leftMissing && rightMissing
+    : left.workspaceId === right.workspaceId &&
+        left.targetPunkId === right.targetPunkId &&
+        left.expectedRevision === right.expectedRevision;
+}
 
 /** Five-minute, target-bound authorization created only by reauth confirm. */
 export class DesktopReauthGrantDO extends DurableObject<AuthEnv> {
   async create(
     input: Omit<DesktopReauthGrantRecord, "consumedByFlowId">,
   ): Promise<boolean> {
+    if (
+      (input.targetMethod === "transfer_workspace_ownership") !==
+        validWorkspaceOwnershipTransferBinding(
+          input.workspaceOwnershipTransfer,
+        ) ||
+      (input.targetMethod !== "transfer_workspace_ownership" &&
+        input.workspaceOwnershipTransfer !== null)
+    ) {
+      return false;
+    }
     const existing = await this.read();
     if (existing !== null) {
       return (
@@ -32,6 +78,10 @@ export class DesktopReauthGrantDO extends DurableObject<AuthEnv> {
         existing.sessionId === input.sessionId &&
         existing.punkId === input.punkId &&
         existing.targetMethod === input.targetMethod &&
+        sameWorkspaceOwnershipTransferBinding(
+          existing.workspaceOwnershipTransfer,
+          input.workspaceOwnershipTransfer,
+        ) &&
         existing.handoffId === input.handoffId &&
         existing.expiresAt === input.expiresAt
       );
@@ -66,6 +116,7 @@ export class DesktopReauthGrantDO extends DurableObject<AuthEnv> {
     sessionId: string;
     punkId: string;
     targetMethod: DesktopReauthTarget;
+    workspaceOwnershipTransfer: WorkspaceOwnershipTransferBinding | null;
     flowId: string;
   }): Promise<
     | { ok: true; replayed: boolean }
@@ -84,7 +135,11 @@ export class DesktopReauthGrantDO extends DurableObject<AuthEnv> {
       record.authorizationId !== input.authorizationId ||
       record.sessionId !== input.sessionId ||
       record.punkId !== input.punkId ||
-      record.targetMethod !== input.targetMethod
+      record.targetMethod !== input.targetMethod ||
+      !sameWorkspaceOwnershipTransferBinding(
+        record.workspaceOwnershipTransfer,
+        input.workspaceOwnershipTransfer,
+      )
     ) {
       return { ok: false, code: "binding_mismatch" };
     }

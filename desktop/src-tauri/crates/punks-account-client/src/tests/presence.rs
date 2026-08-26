@@ -2,12 +2,17 @@ use std::{sync::Arc, time::Duration};
 
 use futures_util::SinkExt;
 use serde_json::json;
-use tokio::{net::TcpListener, sync::RwLock, time::timeout};
+use tokio::{
+    net::TcpListener,
+    sync::{oneshot, RwLock},
+    time::timeout,
+};
 use tokio_tungstenite::{
     accept_hdr_async,
     tungstenite::{
         handshake::server::{Request, Response},
         http::HeaderValue,
+        protocol::{frame::coding::CloseCode, CloseFrame},
         Message,
     },
 };
@@ -15,7 +20,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::super::{
     reduce_follow_frame, reduce_presence_frame, ClientDistribution, ClientPlatform,
-    DesktopCompatibility, FollowEffect, FollowPhase, FollowServerFrame, FollowState,
+    DesktopCompatibility, FailureKind, FollowEffect, FollowPhase, FollowServerFrame, FollowState,
     PresenceDelivery, PresenceEffect, PresenceServerFrame, PresenceState, PunksAccountClient,
     WorkspaceLease, WorkspaceSession,
 };
@@ -155,6 +160,38 @@ fn presence_reducer_rejects_a_wrong_workspace_generation() {
     }));
     let error = reduce_presence_frame(&state, accepted).expect_err("stale generation");
     assert_eq!(error.kind, super::super::FailureKind::StaleWorkspace);
+}
+
+#[test]
+fn presence_authority_failures_are_terminal() {
+    use super::super::presence_connection::{
+        classify_presence_close, classify_presence_handshake_status,
+    };
+
+    assert_eq!(
+        classify_presence_close(1008, "authorization revoked"),
+        FailureKind::Problem,
+    );
+    assert_eq!(
+        classify_presence_close(1008, "unexpected policy failure"),
+        FailureKind::ContractViolation,
+    );
+    assert_eq!(
+        classify_presence_close(1000, "server restart"),
+        FailureKind::Transport,
+    );
+    assert_eq!(
+        classify_presence_handshake_status(401),
+        FailureKind::SessionExpired,
+    );
+    assert_eq!(
+        classify_presence_handshake_status(403),
+        FailureKind::Problem,
+    );
+    assert_eq!(
+        classify_presence_handshake_status(503),
+        FailureKind::Transport,
+    );
 }
 
 #[test]
@@ -318,6 +355,130 @@ async fn one_native_presence_connection_reconnects_after_transport_loss() {
             ..
         }
     ));
+
+    connection.close().await.expect("close Presence operation");
+    server.await.expect("Presence fixture task");
+}
+
+#[tokio::test]
+#[allow(clippy::result_large_err)] // The WebSocket handshake callback fixes this third-party Result type.
+async fn authorization_close_invalidates_workspace_without_reconnecting() {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind Presence fixture");
+    let origin = format!(
+        "http://{}",
+        listener.local_addr().expect("Presence fixture address")
+    );
+    let (revoke_sender, revoke_receiver) = oneshot::channel::<()>();
+    let server = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.expect("Presence connection");
+        let mut socket = accept_hdr_async(stream, |_request: &Request, mut response: Response| {
+            response.headers_mut().insert(
+                "sec-websocket-protocol",
+                HeaderValue::from_static("punks.presence.v1"),
+            );
+            Ok(response)
+        })
+        .await
+        .expect("Presence WebSocket handshake");
+        socket
+            .send(Message::Text(
+                json!({
+                    "schemaVersion": 1,
+                    "type": "accepted",
+                    "leaseToken": LEASE_TOKEN,
+                    "leaseGeneration": 1,
+                    "clientGeneration": 7,
+                    "heartbeatIntervalMs": 5000,
+                    "awayAfterMs": 10000,
+                    "expiresAfterMs": 15000,
+                    "presences": []
+                })
+                .to_string()
+                .into(),
+            ))
+            .await
+            .expect("send Presence acceptance");
+        revoke_receiver.await.expect("release authorization close");
+        socket
+            .send(Message::Close(Some(CloseFrame {
+                code: CloseCode::Policy,
+                reason: "authorization revoked".into(),
+            })))
+            .await
+            .expect("send authorization close");
+        assert!(
+            timeout(Duration::from_millis(750), listener.accept())
+                .await
+                .is_err(),
+            "authorization revocation must not reconnect",
+        );
+    });
+
+    let client = PunksAccountClient::new(
+        &origin,
+        "0.6.0",
+        ClientDistribution::Development,
+        ClientPlatform::MacosArm64,
+    )
+    .expect("native Account client");
+    let lease = WorkspaceLease {
+        origin: origin.clone(),
+        punk_id: PUNK_ID.to_owned(),
+        workspace_id: WORKSPACE_ID.to_owned(),
+        generation: 7,
+    };
+    let cancellation = CancellationToken::new();
+    let operations = Arc::new(RwLock::new(()));
+    {
+        let mut state = client.inner.state.lock().await;
+        state.compatibility = Some(DesktopCompatibility {
+            contract: "desktop.compatibility-response@1".to_owned(),
+            compatible: true,
+            profile: "desktop-social-loop@1".to_owned(),
+            registry_version: 1,
+            minimum_client_version: "0.6.0".to_owned(),
+            environment: "local".to_owned(),
+            origin: origin.clone(),
+            capabilities: vec!["presence".to_owned()],
+        });
+        state.active_lease = Some(lease.clone());
+        state.active_cancellation = Some(cancellation.clone());
+        state.active_operations = Some(Arc::clone(&operations));
+    }
+    let session = WorkspaceSession {
+        inner: Arc::clone(&client.inner),
+        lease,
+        device_id: "00000000-0000-4000-8000-000000000004".to_owned(),
+        cancellation,
+        operations,
+    };
+    let connection = Arc::new(session.hold_presence().await.expect("Presence operation"));
+    let accepted = timeout(Duration::from_secs(2), connection.next_delivery())
+        .await
+        .expect("Presence acceptance")
+        .expect("accepted Presence delivery");
+    assert!(matches!(accepted, PresenceDelivery::Accepted { .. }));
+
+    let terminal_connection = Arc::clone(&connection);
+    let terminal = tokio::spawn(async move { terminal_connection.next_delivery().await });
+    tokio::task::yield_now().await;
+    revoke_sender.send(()).expect("trigger authorization close");
+    let error = timeout(Duration::from_secs(2), terminal)
+        .await
+        .expect("terminal Presence delivery")
+        .expect("Presence delivery task")
+        .expect_err("authorization close is terminal");
+    assert_eq!(error.kind, FailureKind::Problem);
+    assert_eq!(
+        session
+            .assert_current()
+            .await
+            .expect_err("Workspace must be invalidated")
+            .kind,
+        FailureKind::StaleWorkspace,
+    );
 
     connection.close().await.expect("close Presence operation");
     server.await.expect("Presence fixture task");

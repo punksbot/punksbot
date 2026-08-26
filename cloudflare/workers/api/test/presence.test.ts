@@ -1397,7 +1397,7 @@ describe("ephemeral Presence", () => {
       releaseSessionResolution(sessionId: string): Promise<void>;
       setSessionRevoked(sessionId: string, revoked: boolean): Promise<void>;
     };
-    await auth.holdSessionResolution(revocableSessionId, 2);
+    await auth.holdSessionResolution(revocableSessionId, 3);
     try {
       const followResponsePromise = followConversation(
         workspaceId,
@@ -1513,6 +1513,128 @@ describe("ephemeral Presence", () => {
       await auth.setSessionRevoked(revocableSessionId, false);
       ownerSocket.close(1000, "test complete");
       staleSocket.close(1000, "test complete");
+    }
+  });
+
+  it("fences the Presence handshake when Workspace removal becomes pending", async () => {
+    const workspaceId = await createWorkspace();
+    await addOtherMember(workspaceId);
+    const auth = env.AUTH_SERVICE as typeof env.AUTH_SERVICE & {
+      holdSessionResolution(
+        sessionId: string,
+        callNumber: number,
+      ): Promise<void>;
+      sessionResolutionHoldReached(sessionId: string): Promise<boolean>;
+      releaseSessionResolution(sessionId: string): Promise<void>;
+    };
+    const otherSessionId = "22222222-2222-8222-8222-222222222222";
+    await auth.holdSessionResolution(otherSessionId, 2);
+    try {
+      const hold = holdPresence(workspaceId, "session-other");
+      await expect
+        .poll(() => auth.sessionResolutionHoldReached(otherSessionId))
+        .toBe(true);
+      await removeOtherMember(workspaceId);
+      await auth.releaseSessionResolution(otherSessionId);
+
+      const response = await hold;
+      expect(response.status).toBe(403);
+      expect(response.webSocket).toBeNull();
+      await expect(
+        runInDurableObject(
+          env.PRESENCE.getByName(workspaceId),
+          (_instance, state) =>
+            state.storage.sql
+              .exec<{ count: number }>(
+                "SELECT COUNT(*) AS count FROM presence_lease",
+              )
+              .one().count,
+        ),
+      ).resolves.toBe(0);
+    } finally {
+      await auth.releaseSessionResolution(otherSessionId);
+    }
+  });
+
+  it("closes a superseded Presence socket when replacement races with removal", async () => {
+    const workspaceId = await createWorkspace();
+    await addOtherMember(workspaceId);
+    const previousResponse = await holdPresence(workspaceId, "session-other");
+    const previousSocket = previousResponse.webSocket;
+    expect(previousSocket).not.toBeNull();
+    if (previousSocket === null) return;
+    const previousFrames = frameQueue(previousSocket);
+    previousSocket.accept();
+    await expect(previousFrames.next()).resolves.toMatchObject({
+      type: "accepted",
+    });
+    const previousClosed = nextClose(previousSocket);
+    const commandId = crypto.randomUUID();
+    const pendingRemoval: RemoveWorkspaceMemberCommand = {
+      contract: "workspace.member-remove@1",
+      commandId,
+      workspaceId,
+      actor: { kind: "punk", punkId: ownerPunkId },
+      payload: { targetPunkId: otherPunkId, expectedRevision: 2 },
+    };
+    const auth = env.AUTH_SERVICE as typeof env.AUTH_SERVICE & {
+      holdSessionResolution(
+        sessionId: string,
+        callNumber: number,
+      ): Promise<void>;
+      sessionResolutionHoldReached(sessionId: string): Promise<boolean>;
+      releaseSessionResolution(sessionId: string): Promise<void>;
+    };
+    const otherSessionId = "22222222-2222-8222-8222-222222222222";
+    await auth.holdSessionResolution(otherSessionId, 2);
+    try {
+      const replacement = holdPresence(workspaceId, "session-other");
+      await expect
+        .poll(() => auth.sessionResolutionHoldReached(otherSessionId))
+        .toBe(true);
+      await runInDurableObject(
+        env.WORKSPACES.getByName(workspaceId),
+        (_instance, state) => {
+          state.storage.sql.exec(
+            `INSERT INTO pending_command
+               (singleton, command_id, payload_hash, command_json,
+                unsigned_json, next_state_json, chunks_json,
+                reduction_overlay, authorization_session_id,
+                authorization_punk_id, invitation_json, attempts, created_at)
+             VALUES (1, ?, ?, ?, '{}', '{}', '[]', 1, NULL, NULL, NULL, 0, ?)`,
+            commandId,
+            "0".repeat(64),
+            JSON.stringify(pendingRemoval),
+            new Date().toISOString(),
+          );
+        },
+      );
+      await auth.releaseSessionResolution(otherSessionId);
+
+      const replacementResponse = await replacement;
+      expect(replacementResponse.status).toBe(403);
+      expect(replacementResponse.webSocket).toBeNull();
+      await env.PRESENCE.getByName(workspaceId).revokePunk(otherPunkId);
+      const terminal = await Promise.race([
+        previousClosed,
+        scheduler.wait(250).then(() => null),
+      ]);
+      expect(terminal).toMatchObject({
+        code: 1008,
+        reason: "authorization revoked",
+      });
+    } finally {
+      await auth.releaseSessionResolution(otherSessionId);
+      await runInDurableObject(
+        env.WORKSPACES.getByName(workspaceId),
+        (_instance, state) => {
+          state.storage.sql.exec(
+            "DELETE FROM pending_command WHERE command_id = ?",
+            commandId,
+          );
+        },
+      );
+      previousSocket.close(1000, "test complete");
     }
   });
 

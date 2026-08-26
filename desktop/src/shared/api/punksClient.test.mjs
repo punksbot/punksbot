@@ -818,6 +818,7 @@ test("fake ownership transfer requires targeted reauthentication and departure i
   const governanceSeed = structuredClone(seed);
   governanceSeed.compatibility.capabilities.push("identity-governance");
   const targetPunkId = "33333333-3333-4333-8333-333333333333";
+  const otherTargetPunkId = "44444444-4444-4444-8444-444444444444";
   governanceSeed.governance = {
     [workspaceId]: {
       id: workspaceId,
@@ -829,6 +830,7 @@ test("fake ownership transfer requires targeted reauthentication and departure i
       members: [
         { punkId, role: "owner" },
         { punkId: targetPunkId, role: "member" },
+        { punkId: otherTargetPunkId, role: "member" },
       ],
       revision: 1,
       cursor: 1,
@@ -847,6 +849,14 @@ test("fake ownership transfer requires targeted reauthentication and departure i
   await account.startReauthentication(
     "passkey",
     "transfer_workspace_ownership",
+    { workspaceId, targetPunkId, expectedRevision: 1 },
+  );
+  await assert.rejects(
+    workspace.transferOwnership({
+      targetPunkId: otherTargetPunkId,
+      expectedRevision: 1,
+    }),
+    /reauthorization/u,
   );
   const transfer = await workspace.transferOwnership({
     targetPunkId,

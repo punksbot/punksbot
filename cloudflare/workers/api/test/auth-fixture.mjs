@@ -234,6 +234,9 @@ export class WorkspaceOwnershipAuthorizationService extends WorkerEntrypoint {
     workspaceOwnershipTransferAuthorizations.set(input.authorizationId, {
       sessionId: input.sessionId,
       punkId: input.punkId,
+      workspaceId: input.workspaceId,
+      targetPunkId: input.targetPunkId,
+      expectedRevision: input.expectedRevision,
       consumedBy: null,
     });
   }
@@ -246,6 +249,9 @@ export class WorkspaceOwnershipAuthorizationService extends WorkerEntrypoint {
       authorization === undefined ||
       authorization.sessionId !== input.sessionId ||
       authorization.punkId !== input.punkId ||
+      authorization.workspaceId !== input.workspaceId ||
+      authorization.targetPunkId !== input.targetPunkId ||
+      authorization.expectedRevision !== input.expectedRevision ||
       (authorization.consumedBy !== null &&
         authorization.consumedBy !== input.commandId)
     ) {

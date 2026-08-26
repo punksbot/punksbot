@@ -1,7 +1,7 @@
 //! Native orchestration for the recoverable desktop authentication ceremony.
 
 mod account_state;
-
+mod ownership_reauthentication;
 #[cfg(test)]
 mod tests;
 
@@ -13,7 +13,7 @@ use punks_account_client::ceremony::{
     RenewalPolicy,
 };
 use punks_account_client::desktop_auth::{
-    ClaimedDelivery, ClaimedSession, DesktopAuthClient, DesktopAuthStatus,
+    ClaimedDelivery, ClaimedSession, DesktopAuthClient, DesktopAuthStartIntent, DesktopAuthStatus,
 };
 use punks_account_client::{ClientFailure, FailureKind};
 use tauri::Manager;
@@ -27,6 +27,11 @@ use crate::punks_session_store::{
     PendingRenewal, QueuedRevocation, StagedActivation,
 };
 use account_state::account_state_from_store;
+pub(crate) use ownership_reauthentication::WorkspaceOwnershipReauthenticationInput;
+use ownership_reauthentication::{
+    ownership_transfer_binding, parse_method, parse_reauthentication_purpose, pending_purpose,
+    NativeAuthStart,
+};
 
 fn native_failure(kind: FailureKind, message: &'static str) -> ClientFailure {
     ClientFailure::native(kind, message)
@@ -65,20 +70,6 @@ fn phase_for_status(flow: &PendingAuthFlow, status: &DesktopAuthStatus) -> Cerem
         },
         _ => phase_for_pending(flow),
     }
-}
-
-fn pending_purpose(value: PendingAuthPurpose) -> &'static str {
-    match value {
-        PendingAuthPurpose::LinkGoogle => "link_google",
-        PendingAuthPurpose::LinkGithub => "link_github",
-        PendingAuthPurpose::RegisterPasskey => "register_passkey",
-        PendingAuthPurpose::TransferWorkspaceOwnership => "transfer_workspace_ownership",
-    }
-}
-
-fn parse_method(value: &str) -> Result<AuthenticationMethod, ClientFailure> {
-    AuthenticationMethod::try_from(value)
-        .map_err(|_| native_failure(FailureKind::ContractViolation, "unsupported login method"))
 }
 
 fn auth_client(runtime: &NativeAuthenticationRuntime) -> Result<DesktopAuthClient, ClientFailure> {
@@ -149,11 +140,15 @@ async fn start_authentication(
     app: &tauri::AppHandle,
     client: &PunksDesktopClient,
     store: &KeyringSessionPersistence,
-    intent: PendingAuthIntent,
-    method: AuthenticationMethod,
-    purpose: Option<PendingAuthPurpose>,
-    authorization_id: Option<String>,
+    input: NativeAuthStart,
 ) -> Result<CeremonyPhaseView, ClientFailure> {
+    let NativeAuthStart {
+        intent,
+        method,
+        purpose,
+        authorization_id,
+        workspace_ownership_transfer,
+    } = input;
     if intent == PendingAuthIntent::SwitchAccount {
         client.account()?.cancel_workspace_operations().await;
     }
@@ -191,10 +186,13 @@ async fn start_authentication(
     };
     let started = auth
         .start(
-            intent,
-            method,
-            purpose.map(pending_purpose),
-            authorization_id.as_deref(),
+            DesktopAuthStartIntent {
+                intent,
+                method,
+                purpose: purpose.map(pending_purpose),
+                authorization_id: authorization_id.as_deref(),
+                workspace_ownership_transfer: workspace_ownership_transfer.as_ref(),
+            },
             &verifier,
             active.as_ref().map(|session| &session.cookie),
         )
@@ -210,6 +208,7 @@ async fn start_authentication(
             intent,
             method,
             purpose,
+            workspace_ownership_transfer,
             phase: PendingAuthPhase::Started,
             phase_expires_at: started.expires_at,
             absolute_expires_at,
@@ -479,6 +478,12 @@ async fn complete_pending_authentication(
                     "reauthorization target does not match its native intent",
                 ));
             }
+            if flow.workspace_ownership_transfer != claimed.workspace_ownership_transfer {
+                return Err(native_failure(
+                    FailureKind::ContractViolation,
+                    "ownership reauthorization binding does not match its native intent",
+                ));
+            }
             store
                 .save_reauthorization(&PendingReauthorization {
                     authorization_id: claimed.authorization_id,
@@ -486,6 +491,7 @@ async fn complete_pending_authentication(
                     punk_id: claimed.punk_id,
                     target_method: flow.method,
                     target_purpose,
+                    workspace_ownership_transfer: claimed.workspace_ownership_transfer,
                     handoff_id: claimed.handoff_id,
                     expires_at: claimed.expires_at,
                 })
@@ -645,10 +651,7 @@ pub async fn punks_start_sign_in(
         &app,
         &client,
         &store,
-        PendingAuthIntent::SignIn,
-        parse_method(&provider)?,
-        None,
-        None,
+        NativeAuthStart::basic(PendingAuthIntent::SignIn, parse_method(&provider)?),
     )
     .await
 }
@@ -665,15 +668,12 @@ pub async fn punks_start_account_switch(
         &app,
         &client,
         &store,
-        PendingAuthIntent::SwitchAccount,
-        parse_method(&provider)?,
-        None,
-        None,
+        NativeAuthStart::basic(PendingAuthIntent::SwitchAccount, parse_method(&provider)?),
     )
     .await
 }
 
-/// Starts a targeted reauthentication for one sensitive purpose.
+/// Starts a targeted reauthentication for one sensitive purpose and scope.
 #[tauri::command]
 pub async fn punks_start_reauthentication(
     app: tauri::AppHandle,
@@ -681,27 +681,20 @@ pub async fn punks_start_reauthentication(
     store: tauri::State<'_, Arc<KeyringSessionPersistence>>,
     method: String,
     purpose: String,
+    workspace_ownership_transfer: Option<WorkspaceOwnershipReauthenticationInput>,
 ) -> Result<CeremonyPhaseView, ClientFailure> {
-    let purpose = match purpose.as_str() {
-        "link_google" => PendingAuthPurpose::LinkGoogle,
-        "link_github" => PendingAuthPurpose::LinkGithub,
-        "register_passkey" => PendingAuthPurpose::RegisterPasskey,
-        "transfer_workspace_ownership" => PendingAuthPurpose::TransferWorkspaceOwnership,
-        _ => {
-            return Err(native_failure(
-                FailureKind::ContractViolation,
-                "unsupported reauthentication purpose",
-            ));
-        }
-    };
+    let purpose = parse_reauthentication_purpose(&purpose)?;
+    let workspace_ownership_transfer =
+        ownership_transfer_binding(purpose, workspace_ownership_transfer)?;
     start_authentication(
         &app,
         &client,
         &store,
-        PendingAuthIntent::Reauthenticate,
-        parse_method(&method)?,
-        Some(purpose),
-        None,
+        NativeAuthStart::reauthenticate(
+            parse_method(&method)?,
+            purpose,
+            workspace_ownership_transfer,
+        ),
     )
     .await
 }
@@ -741,10 +734,7 @@ pub async fn punks_start_identity_link(
         &app,
         &client,
         &store,
-        intent,
-        method,
-        None,
-        Some(authorization_id),
+        NativeAuthStart::authorized(intent, method, authorization_id),
     )
     .await
 }
@@ -761,10 +751,11 @@ pub async fn punks_start_passkey_registration(
         &app,
         &client,
         &store,
-        PendingAuthIntent::RegisterPasskey,
-        AuthenticationMethod::Passkey,
-        None,
-        Some(authorization_id),
+        NativeAuthStart::authorized(
+            PendingAuthIntent::RegisterPasskey,
+            AuthenticationMethod::Passkey,
+            authorization_id,
+        ),
     )
     .await
 }

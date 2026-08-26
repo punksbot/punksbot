@@ -163,10 +163,10 @@ releases:
         sha256: fd5f6868d0d9fd6324b5c4865b30ea0625a88cddeca934e18cd1cc6681e8c9e2
       schemas:
         version: 1
-        sha256: 49f1cefb3ad42e2b579a325225362502c5be3deff69eac68526f22ac2b073f20
+        sha256: 179641a87ff985c5e285354ac3e233ecf3c3be92f0909c62bd1d9a041d0bfab0
       generes:
         version: 1
-        sha256: 43025f8c3e6c2ae5e33f4e9fa90a0256eef95a198a963a8c7f6ec3ba3c0ae9af
+        sha256: 32b10bc31911377dd200d64d8727c2a21d7914fcba8a2b5e72c4835415200828
       profil:
         id: desktop-social-loop@1
         version: 1

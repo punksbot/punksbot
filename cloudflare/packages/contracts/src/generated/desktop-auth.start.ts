@@ -10,6 +10,12 @@ method: ("google" | "github" | "passkey")
 verifierCommitment: string
 purpose?: ("link_google" | "link_github" | "register_passkey" | "transfer_workspace_ownership")
 authorizationId?: string
+workspaceOwnershipTransfer?: DesktopWorkspaceOwnershipTransferBinding
+}
+export interface DesktopWorkspaceOwnershipTransferBinding {
+workspaceId: string
+targetPunkId: string
+expectedRevision: number
 }
 export interface DesktopAuthStartResponse {
 contract: "desktop-auth.start@1"

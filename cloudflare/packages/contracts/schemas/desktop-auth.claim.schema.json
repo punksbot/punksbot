@@ -133,8 +133,22 @@
             "transfer_workspace_ownership"
           ]
         },
+        "workspaceOwnershipTransfer": {
+          "$ref": "#/$defs/workspaceOwnershipTransfer"
+        },
         "handoffId": { "type": "string", "format": "uuid" },
         "expiresAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "workspaceOwnershipTransfer": {
+      "title": "DesktopWorkspaceOwnershipTransferBinding",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["workspaceId", "targetPunkId", "expectedRevision"],
+      "properties": {
+        "workspaceId": { "type": "string", "format": "uuid" },
+        "targetPunkId": { "type": "string", "format": "uuid" },
+        "expectedRevision": { "type": "integer", "minimum": 1 }
       }
     },
     "reauthorizationResponse": {

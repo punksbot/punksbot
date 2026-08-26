@@ -76,6 +76,21 @@ describe("desktop authentication contracts (issue #54)", () => {
         method: "passkey",
         verifierCommitment: COMMITMENT,
         purpose: "transfer_workspace_ownership",
+        workspaceOwnershipTransfer: {
+          workspaceId: UUID,
+          targetPunkId: "00000000-0000-8000-8000-000000000065",
+          expectedRevision: 7,
+        },
+      }).valid,
+    ).toBe(true);
+    expect(
+      validateContract(contract as never, {
+        contract: "desktop-auth.start@1",
+        message: "request",
+        intent: "reauthenticate",
+        method: "passkey",
+        verifierCommitment: COMMITMENT,
+        purpose: "transfer_workspace_ownership",
       }).valid,
     ).toBe(true);
   });

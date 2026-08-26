@@ -160,6 +160,13 @@ export async function claimDesktopAuth(
         punkId: claimed.flow.currentPunkId,
         intent: "reauthenticate",
         targetMethod: claimed.flow.purpose,
+        ...(claimed.flow.workspaceOwnershipTransfer === null ||
+        claimed.flow.workspaceOwnershipTransfer === undefined
+          ? {}
+          : {
+              workspaceOwnershipTransfer:
+                claimed.flow.workspaceOwnershipTransfer,
+            }),
         handoffId: claimed.flow.flowId,
         expiresAt: claimed.flow.authorizationExpiresAt,
       },
@@ -321,6 +328,8 @@ export async function confirmDesktopAuth(
         sessionId: confirmation.flow.currentSessionId,
         punkId: confirmation.flow.currentPunkId,
         targetMethod: confirmation.flow.purpose,
+        workspaceOwnershipTransfer:
+          confirmation.flow.workspaceOwnershipTransfer ?? null,
         handoffId: confirmation.flow.flowId,
         expiresAt,
       }))

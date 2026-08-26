@@ -5,6 +5,7 @@ import type { AuthProviderProfile } from "@punks/contracts";
 import { hash, randomToken } from "./crypto";
 import type { AuthEnv } from "./env";
 import { aggregateName } from "./session";
+import type { WorkspaceOwnershipTransferBinding } from "./desktop-reauth-grant-do";
 
 export type DesktopAuthIntent =
   | "sign_in"
@@ -76,6 +77,7 @@ export interface DesktopAuthFlowRecord {
     | "register_passkey"
     | "transfer_workspace_ownership"
     | null;
+  workspaceOwnershipTransfer: WorkspaceOwnershipTransferBinding | null;
   verifierCommitment: string;
   environment: "local" | "staging" | "production";
   phase: DesktopAuthPhase;
@@ -113,6 +115,7 @@ export interface CreateDesktopAuthFlow
     | "intent"
     | "method"
     | "purpose"
+    | "workspaceOwnershipTransfer"
     | "verifierCommitment"
     | "environment"
     | "currentSessionId"

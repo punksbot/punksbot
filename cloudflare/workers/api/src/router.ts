@@ -3936,14 +3936,6 @@ async function mutateMember(
   if (!result.ok) {
     return executeFailure(result);
   }
-  if (operation === "remove") {
-    try {
-      await env.PRESENCE.getByName(workspaceId).revokePunk(targetPunkId);
-    } catch {
-      // Presence is best effort and cannot turn access governance into a
-      // distributed transaction. Its bounded lease remains the final fence.
-    }
-  }
   const state = result.value.state;
   const memberCount =
     "members" in state ? state.members.length : state.memberCount;
@@ -4057,14 +4049,6 @@ async function mutateWorkspaceMembershipLifecycle(
     { sessionId: session.sessionId, punkId: session.punkId },
   );
   if (!result.ok) return executeFailure(result);
-  if (command.contract === "workspace.leave@1") {
-    try {
-      await env.PRESENCE.getByName(workspaceId).revokePunk(session.punkId);
-    } catch {
-      // The authoritative membership loss already fences every new operation.
-      // Presence cleanup is bounded by its short lease and remains best effort.
-    }
-  }
   const response: WorkspaceMembershipLifecycleResponse = {
     contract: "workspace.membership-lifecycle-response@1",
     workspaceId,

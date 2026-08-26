@@ -5,6 +5,7 @@ use punks_account_client::ceremony::{
     AuthenticationMethod, NativeVerifier, PendingAuthIntent, PendingAuthPhase, RevocationSecret,
     SessionMetadata, SessionSecret,
 };
+use punks_account_client::desktop_auth::WorkspaceOwnershipTransferBinding;
 
 pub(super) const ACCOUNT_STATE_VERSION: &str = "account-state-v1";
 pub(super) const MAX_REVOCATIONS: usize = 64;
@@ -30,6 +31,7 @@ pub(crate) struct PendingAuthFlow {
     pub(crate) intent: PendingAuthIntent,
     pub(crate) method: AuthenticationMethod,
     pub(crate) purpose: Option<PendingAuthPurpose>,
+    pub(crate) workspace_ownership_transfer: Option<WorkspaceOwnershipTransferBinding>,
     pub(crate) phase: PendingAuthPhase,
     pub(crate) phase_expires_at: SystemTime,
     pub(crate) absolute_expires_at: SystemTime,
@@ -74,6 +76,7 @@ pub(crate) struct PendingReauthorization {
     pub(crate) punk_id: String,
     pub(crate) target_method: AuthenticationMethod,
     pub(crate) target_purpose: PendingAuthPurpose,
+    pub(crate) workspace_ownership_transfer: Option<WorkspaceOwnershipTransferBinding>,
     pub(crate) handoff_id: String,
     pub(crate) expires_at: SystemTime,
 }
@@ -302,6 +305,8 @@ pub(super) struct StoredPendingAuthFlow {
     intent: PendingAuthIntent,
     method: AuthenticationMethod,
     purpose: Option<PendingAuthPurpose>,
+    #[serde(default)]
+    workspace_ownership_transfer: Option<WorkspaceOwnershipTransferBinding>,
     pub(super) phase: PendingAuthPhase,
     pub(super) phase_expires_at_seconds: u64,
     pub(super) absolute_expires_at_seconds: u64,
@@ -311,7 +316,12 @@ impl TryFrom<&PendingAuthFlow> for StoredPendingAuthFlow {
     type Error = String;
     fn try_from(flow: &PendingAuthFlow) -> Result<Self, String> {
         validate_uuid(&flow.flow_id)?;
-        validate_auth_coordinates(flow.intent, flow.method, flow.purpose)?;
+        validate_auth_coordinates(
+            flow.intent,
+            flow.method,
+            flow.purpose,
+            flow.workspace_ownership_transfer.as_ref(),
+        )?;
         let phase_expires_at_seconds = encode_time(flow.phase_expires_at)?;
         let absolute_expires_at_seconds = encode_time(flow.absolute_expires_at)?;
         if phase_expires_at_seconds > absolute_expires_at_seconds {
@@ -323,6 +333,7 @@ impl TryFrom<&PendingAuthFlow> for StoredPendingAuthFlow {
             intent: flow.intent,
             method: flow.method,
             purpose: flow.purpose,
+            workspace_ownership_transfer: flow.workspace_ownership_transfer.clone(),
             phase: flow.phase,
             phase_expires_at_seconds,
             absolute_expires_at_seconds,
@@ -334,7 +345,12 @@ impl TryFrom<StoredPendingAuthFlow> for PendingAuthFlow {
     type Error = String;
     fn try_from(flow: StoredPendingAuthFlow) -> Result<Self, String> {
         validate_uuid(&flow.flow_id)?;
-        validate_auth_coordinates(flow.intent, flow.method, flow.purpose)?;
+        validate_auth_coordinates(
+            flow.intent,
+            flow.method,
+            flow.purpose,
+            flow.workspace_ownership_transfer.as_ref(),
+        )?;
         if flow.phase_expires_at_seconds > flow.absolute_expires_at_seconds {
             return Err(invalid_state());
         }
@@ -344,6 +360,7 @@ impl TryFrom<StoredPendingAuthFlow> for PendingAuthFlow {
             intent: flow.intent,
             method: flow.method,
             purpose: flow.purpose,
+            workspace_ownership_transfer: flow.workspace_ownership_transfer,
             phase: flow.phase,
             phase_expires_at: decode_time(flow.phase_expires_at_seconds)?,
             absolute_expires_at: decode_time(flow.absolute_expires_at_seconds)?,
@@ -532,6 +549,8 @@ pub(super) struct StoredPendingReauthorization {
     pub(super) target_method: AuthenticationMethod,
     #[serde(default)]
     pub(super) target_purpose: Option<PendingAuthPurpose>,
+    #[serde(default)]
+    pub(super) workspace_ownership_transfer: Option<WorkspaceOwnershipTransferBinding>,
     pub(super) handoff_id: String,
     pub(super) expires_at_seconds: u64,
 }
@@ -543,12 +562,19 @@ impl TryFrom<&PendingReauthorization> for StoredPendingReauthorization {
         validate_uuid(&value.session_id)?;
         validate_uuid(&value.punk_id)?;
         validate_uuid(&value.handoff_id)?;
+        if !valid_reauthorization_binding(
+            value.target_purpose,
+            value.workspace_ownership_transfer.as_ref(),
+        ) {
+            return Err(invalid_state());
+        }
         Ok(Self {
             authorization_id: value.authorization_id.clone(),
             session_id: value.session_id.clone(),
             punk_id: value.punk_id.clone(),
             target_method: value.target_method,
             target_purpose: Some(value.target_purpose),
+            workspace_ownership_transfer: value.workspace_ownership_transfer.clone(),
             handoff_id: value.handoff_id.clone(),
             expires_at_seconds: encode_time(value.expires_at)?,
         })
@@ -567,12 +593,19 @@ impl TryFrom<StoredPendingReauthorization> for PendingReauthorization {
             AuthenticationMethod::Github => PendingAuthPurpose::LinkGithub,
             AuthenticationMethod::Passkey => PendingAuthPurpose::RegisterPasskey,
         });
+        if !valid_reauthorization_binding(
+            target_purpose,
+            value.workspace_ownership_transfer.as_ref(),
+        ) {
+            return Err(invalid_state());
+        }
         Ok(Self {
             authorization_id: value.authorization_id,
             session_id: value.session_id,
             punk_id: value.punk_id,
             target_method: value.target_method,
             target_purpose,
+            workspace_ownership_transfer: value.workspace_ownership_transfer,
             handoff_id: value.handoff_id,
             expires_at: decode_time(value.expires_at_seconds)?,
         })
@@ -689,6 +722,7 @@ fn validate_auth_coordinates(
     intent: PendingAuthIntent,
     method: AuthenticationMethod,
     purpose: Option<PendingAuthPurpose>,
+    workspace_ownership_transfer: Option<&WorkspaceOwnershipTransferBinding>,
 ) -> Result<(), String> {
     let valid = match intent {
         PendingAuthIntent::LinkGoogle => {
@@ -706,5 +740,25 @@ fn validate_auth_coordinates(
         PendingAuthIntent::Reauthenticate => purpose.is_some(),
         PendingAuthIntent::SignIn | PendingAuthIntent::SwitchAccount => purpose.is_none(),
     };
-    valid.then_some(()).ok_or_else(invalid_state)
+    let binding_valid = purpose
+        .is_none_or(|purpose| valid_reauthorization_binding(purpose, workspace_ownership_transfer))
+        && (purpose.is_some() || workspace_ownership_transfer.is_none());
+    (valid && binding_valid)
+        .then_some(())
+        .ok_or_else(invalid_state)
+}
+
+fn valid_reauthorization_binding(
+    purpose: PendingAuthPurpose,
+    workspace_ownership_transfer: Option<&WorkspaceOwnershipTransferBinding>,
+) -> bool {
+    matches!(purpose, PendingAuthPurpose::TransferWorkspaceOwnership)
+        == workspace_ownership_transfer.is_some()
+        && workspace_ownership_transfer.is_none_or(|binding| {
+            uuid::Uuid::parse_str(&binding.workspace_id)
+                .is_ok_and(|value| value.to_string() == binding.workspace_id)
+                && uuid::Uuid::parse_str(&binding.target_punk_id)
+                    .is_ok_and(|value| value.to_string() == binding.target_punk_id)
+                && binding.expected_revision > 0
+        })
 }

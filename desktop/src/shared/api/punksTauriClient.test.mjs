@@ -124,7 +124,11 @@ test("semantic authentication methods use only their dedicated typed IPC command
     { command: "punks_start_account_switch", args: { provider: "github" } },
     {
       command: "punks_start_reauthentication",
-      args: { method: "google", purpose: "account_merge" },
+      args: {
+        method: "google",
+        purpose: "account_merge",
+        workspaceOwnershipTransfer: undefined,
+      },
     },
     { command: "punks_start_identity_link", args: { provider: "github" } },
     { command: "punks_start_passkey_registration", args: {} },

@@ -216,6 +216,7 @@ async fn staged_delivery_resumes_after_process_restart_before_confirmation() {
             intent: PendingAuthIntent::SignIn,
             method: AuthenticationMethod::Google,
             purpose: None,
+            workspace_ownership_transfer: None,
             phase: PendingAuthPhase::Ready,
             phase_expires_at: UNIX_EPOCH + Duration::from_secs(4_100_000_000),
             absolute_expires_at: UNIX_EPOCH + Duration::from_secs(4_200_000_000),

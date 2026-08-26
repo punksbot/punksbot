@@ -348,6 +348,36 @@ enum DesktopAuthStartExchangeRequestPurpose {
   String toJson() => value;
 }
 
+class DesktopAuthStartExchangeWorkspaceOwnershipTransfer {
+  final String workspaceId;
+  final String targetPunkId;
+  final int expectedRevision;
+
+  const DesktopAuthStartExchangeWorkspaceOwnershipTransfer({
+    required this.workspaceId,
+    required this.targetPunkId,
+    required this.expectedRevision,
+  });
+
+  factory DesktopAuthStartExchangeWorkspaceOwnershipTransfer.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"workspaceId", "targetPunkId", "expectedRevision"}, "DesktopAuthStartExchangeWorkspaceOwnershipTransfer");
+    return DesktopAuthStartExchangeWorkspaceOwnershipTransfer(
+      workspaceId: _asString(_requiredKey(json, "workspaceId", "DesktopAuthStartExchangeWorkspaceOwnershipTransfer"), "DesktopAuthStartExchangeWorkspaceOwnershipTransfer.workspaceId"),
+      targetPunkId: _asString(_requiredKey(json, "targetPunkId", "DesktopAuthStartExchangeWorkspaceOwnershipTransfer"), "DesktopAuthStartExchangeWorkspaceOwnershipTransfer.targetPunkId"),
+      expectedRevision: _asInt(_requiredKey(json, "expectedRevision", "DesktopAuthStartExchangeWorkspaceOwnershipTransfer"), "DesktopAuthStartExchangeWorkspaceOwnershipTransfer.expectedRevision"),
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "workspaceId": workspaceId,
+      "targetPunkId": targetPunkId,
+      "expectedRevision": expectedRevision,
+    };
+    return json;
+  }
+}
+
 class DesktopAuthStartExchangeRequest extends DesktopAuthStartExchange {
   final String contract;
   final String message;
@@ -356,6 +386,7 @@ class DesktopAuthStartExchangeRequest extends DesktopAuthStartExchange {
   final String verifierCommitment;
   final DesktopAuthStartExchangeRequestPurpose? purpose;
   final String? authorizationId;
+  final DesktopAuthStartExchangeWorkspaceOwnershipTransfer? workspaceOwnershipTransfer;
 
   const DesktopAuthStartExchangeRequest({
     required this.contract,
@@ -365,10 +396,11 @@ class DesktopAuthStartExchangeRequest extends DesktopAuthStartExchange {
     required this.verifierCommitment,
     this.purpose,
     this.authorizationId,
+    this.workspaceOwnershipTransfer,
   }) : super();
 
   factory DesktopAuthStartExchangeRequest.fromJson(Map<String, Object?> json) {
-    _rejectUnknownKeys(json, const {"contract", "message", "intent", "method", "verifierCommitment", "purpose", "authorizationId"}, "DesktopAuthStartExchangeRequest");
+    _rejectUnknownKeys(json, const {"contract", "message", "intent", "method", "verifierCommitment", "purpose", "authorizationId", "workspaceOwnershipTransfer"}, "DesktopAuthStartExchangeRequest");
     return DesktopAuthStartExchangeRequest(
       contract: _expectStringConst(_requiredKey(json, "contract", "DesktopAuthStartExchangeRequest"), "desktop-auth.start@1", "DesktopAuthStartExchangeRequest.contract"),
       message: _expectStringConst(_requiredKey(json, "message", "DesktopAuthStartExchangeRequest"), "request", "DesktopAuthStartExchangeRequest.message"),
@@ -377,6 +409,7 @@ class DesktopAuthStartExchangeRequest extends DesktopAuthStartExchange {
       verifierCommitment: _asString(_requiredKey(json, "verifierCommitment", "DesktopAuthStartExchangeRequest"), "DesktopAuthStartExchangeRequest.verifierCommitment"),
       purpose: json.containsKey("purpose") ? DesktopAuthStartExchangeRequestPurpose.fromJson(json["purpose"], "DesktopAuthStartExchangeRequest.purpose") : null,
       authorizationId: json.containsKey("authorizationId") ? _asString(json["authorizationId"], "DesktopAuthStartExchangeRequest.authorizationId") : null,
+      workspaceOwnershipTransfer: json.containsKey("workspaceOwnershipTransfer") ? DesktopAuthStartExchangeWorkspaceOwnershipTransfer.fromJson(_asMap(json["workspaceOwnershipTransfer"], "DesktopAuthStartExchangeRequest.workspaceOwnershipTransfer")) : null,
     );
   }
 
@@ -394,6 +427,9 @@ class DesktopAuthStartExchangeRequest extends DesktopAuthStartExchange {
     }
     if (authorizationId != null) {
       json["authorizationId"] = authorizationId!;
+    }
+    if (workspaceOwnershipTransfer != null) {
+      json["workspaceOwnershipTransfer"] = workspaceOwnershipTransfer!.toJson();
     }
     return json;
   }
@@ -953,12 +989,43 @@ enum DesktopAuthClaimExchangeAuthorizationTargetMethod {
   String toJson() => value;
 }
 
+class DesktopAuthClaimExchangeWorkspaceOwnershipTransfer {
+  final String workspaceId;
+  final String targetPunkId;
+  final int expectedRevision;
+
+  const DesktopAuthClaimExchangeWorkspaceOwnershipTransfer({
+    required this.workspaceId,
+    required this.targetPunkId,
+    required this.expectedRevision,
+  });
+
+  factory DesktopAuthClaimExchangeWorkspaceOwnershipTransfer.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"workspaceId", "targetPunkId", "expectedRevision"}, "DesktopAuthClaimExchangeWorkspaceOwnershipTransfer");
+    return DesktopAuthClaimExchangeWorkspaceOwnershipTransfer(
+      workspaceId: _asString(_requiredKey(json, "workspaceId", "DesktopAuthClaimExchangeWorkspaceOwnershipTransfer"), "DesktopAuthClaimExchangeWorkspaceOwnershipTransfer.workspaceId"),
+      targetPunkId: _asString(_requiredKey(json, "targetPunkId", "DesktopAuthClaimExchangeWorkspaceOwnershipTransfer"), "DesktopAuthClaimExchangeWorkspaceOwnershipTransfer.targetPunkId"),
+      expectedRevision: _asInt(_requiredKey(json, "expectedRevision", "DesktopAuthClaimExchangeWorkspaceOwnershipTransfer"), "DesktopAuthClaimExchangeWorkspaceOwnershipTransfer.expectedRevision"),
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "workspaceId": workspaceId,
+      "targetPunkId": targetPunkId,
+      "expectedRevision": expectedRevision,
+    };
+    return json;
+  }
+}
+
 class DesktopAuthClaimExchangeAuthorization {
   final String authorizationId;
   final String sessionId;
   final String punkId;
   final String intent;
   final DesktopAuthClaimExchangeAuthorizationTargetMethod targetMethod;
+  final DesktopAuthClaimExchangeWorkspaceOwnershipTransfer? workspaceOwnershipTransfer;
   final String handoffId;
   final String expiresAt;
 
@@ -968,18 +1035,20 @@ class DesktopAuthClaimExchangeAuthorization {
     required this.punkId,
     required this.intent,
     required this.targetMethod,
+    this.workspaceOwnershipTransfer,
     required this.handoffId,
     required this.expiresAt,
   });
 
   factory DesktopAuthClaimExchangeAuthorization.fromJson(Map<String, Object?> json) {
-    _rejectUnknownKeys(json, const {"authorizationId", "sessionId", "punkId", "intent", "targetMethod", "handoffId", "expiresAt"}, "DesktopAuthClaimExchangeAuthorization");
+    _rejectUnknownKeys(json, const {"authorizationId", "sessionId", "punkId", "intent", "targetMethod", "workspaceOwnershipTransfer", "handoffId", "expiresAt"}, "DesktopAuthClaimExchangeAuthorization");
     return DesktopAuthClaimExchangeAuthorization(
       authorizationId: _asString(_requiredKey(json, "authorizationId", "DesktopAuthClaimExchangeAuthorization"), "DesktopAuthClaimExchangeAuthorization.authorizationId"),
       sessionId: _asString(_requiredKey(json, "sessionId", "DesktopAuthClaimExchangeAuthorization"), "DesktopAuthClaimExchangeAuthorization.sessionId"),
       punkId: _asString(_requiredKey(json, "punkId", "DesktopAuthClaimExchangeAuthorization"), "DesktopAuthClaimExchangeAuthorization.punkId"),
       intent: _expectStringConst(_requiredKey(json, "intent", "DesktopAuthClaimExchangeAuthorization"), "reauthenticate", "DesktopAuthClaimExchangeAuthorization.intent"),
       targetMethod: DesktopAuthClaimExchangeAuthorizationTargetMethod.fromJson(_requiredKey(json, "targetMethod", "DesktopAuthClaimExchangeAuthorization"), "DesktopAuthClaimExchangeAuthorization.targetMethod"),
+      workspaceOwnershipTransfer: json.containsKey("workspaceOwnershipTransfer") ? DesktopAuthClaimExchangeWorkspaceOwnershipTransfer.fromJson(_asMap(json["workspaceOwnershipTransfer"], "DesktopAuthClaimExchangeAuthorization.workspaceOwnershipTransfer")) : null,
       handoffId: _asString(_requiredKey(json, "handoffId", "DesktopAuthClaimExchangeAuthorization"), "DesktopAuthClaimExchangeAuthorization.handoffId"),
       expiresAt: _asString(_requiredKey(json, "expiresAt", "DesktopAuthClaimExchangeAuthorization"), "DesktopAuthClaimExchangeAuthorization.expiresAt"),
     );
@@ -995,6 +1064,9 @@ class DesktopAuthClaimExchangeAuthorization {
       "handoffId": handoffId,
       "expiresAt": expiresAt,
     };
+    if (workspaceOwnershipTransfer != null) {
+      json["workspaceOwnershipTransfer"] = workspaceOwnershipTransfer!.toJson();
+    }
     return json;
   }
 }

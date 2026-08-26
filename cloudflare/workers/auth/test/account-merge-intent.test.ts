@@ -295,6 +295,7 @@ describe("AccountMergeIntentDO", () => {
         targetMethod: "link_github",
         handoffId: crypto.randomUUID(),
         expiresAt: reauthorizationExpiresAt,
+        workspaceOwnershipTransfer: null,
       }),
     ).resolves.toBe(true);
     const authority = stub(value.intentId);
@@ -1118,6 +1119,7 @@ describe("AccountMergeIntentDO", () => {
         sessionId: value.survivorSessionId,
         punkId: value.survivorProof.punkId,
         targetMethod: "link_github",
+        workspaceOwnershipTransfer: null,
         handoffId: crypto.randomUUID(),
         expiresAt,
       }),

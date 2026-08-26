@@ -13,6 +13,7 @@ const operatorAuthorization = {
 };
 const ownerPunkId = "00000000-0000-8000-8000-000000000001";
 const invitedPunkId = "00000000-0000-8000-8000-000000000002";
+const thirdPunkId = "00000000-0000-8000-8000-000000000003";
 
 async function createWorkspace(slug: string): Promise<string> {
   const command: CreateWorkspaceCommand = {
@@ -196,6 +197,9 @@ describe("Punks Workspace departure and ownership transfer", () => {
           authorizationId: string;
           sessionId: string;
           punkId: string;
+          workspaceId: string;
+          targetPunkId: string;
+          expectedRevision: number;
         }): Promise<void>;
       };
     const rightsIndex =
@@ -218,6 +222,9 @@ describe("Punks Workspace departure and ownership transfer", () => {
       authorizationId: reauthorizationId,
       sessionId: "11111111-1111-8111-8111-111111111111",
       punkId: ownerPunkId,
+      workspaceId,
+      targetPunkId: invitedPunkId,
+      expectedRevision: 2,
     });
     const commandId = crypto.randomUUID();
     const transferred = await transferWorkspaceOwnership(
@@ -298,6 +305,63 @@ describe("Punks Workspace departure and ownership transfer", () => {
     ).toBe(409);
   });
 
+  it("binds ownership reauthorization to the exact Workspace, target and revision", async () => {
+    const workspaceId = await createWorkspace(`bind-${crypto.randomUUID()}`);
+    const admittedTarget = await setMemberRole(
+      workspaceId,
+      invitedPunkId,
+      "member",
+      1,
+    );
+    expect(admittedTarget.status, await admittedTarget.clone().text()).toBe(
+      200,
+    );
+    const admittedOther = await setMemberRole(
+      workspaceId,
+      thirdPunkId,
+      "member",
+      2,
+    );
+    expect(admittedOther.status, await admittedOther.clone().text()).toBe(200);
+
+    const auth =
+      env.WORKSPACE_OWNERSHIP_AUTHORITY as typeof env.WORKSPACE_OWNERSHIP_AUTHORITY & {
+        issueWorkspaceOwnershipTransferAuthorization(input: {
+          authorizationId: string;
+          sessionId: string;
+          punkId: string;
+          workspaceId: string;
+          targetPunkId: string;
+          expectedRevision: number;
+        }): Promise<void>;
+      };
+    const reauthorizationId = crypto.randomUUID();
+    await auth.issueWorkspaceOwnershipTransferAuthorization({
+      authorizationId: reauthorizationId,
+      sessionId: "11111111-1111-8111-8111-111111111111",
+      punkId: ownerPunkId,
+      workspaceId,
+      targetPunkId: invitedPunkId,
+      expectedRevision: 3,
+    });
+
+    const wrongTarget = await transferWorkspaceOwnership(
+      workspaceId,
+      thirdPunkId,
+      3,
+      reauthorizationId,
+    );
+    expect(wrongTarget.status, await wrongTarget.clone().text()).toBe(403);
+
+    const exactTarget = await transferWorkspaceOwnership(
+      workspaceId,
+      invitedPunkId,
+      3,
+      reauthorizationId,
+    );
+    expect(exactTarget.status, await exactTarget.clone().text()).toBe(200);
+  });
+
   it("serializes a target departure racing an ownership transfer", async () => {
     const workspaceId = await createWorkspace(`race-${crypto.randomUUID()}`);
     const admitted = await setMemberRole(
@@ -313,6 +377,9 @@ describe("Punks Workspace departure and ownership transfer", () => {
           authorizationId: string;
           sessionId: string;
           punkId: string;
+          workspaceId: string;
+          targetPunkId: string;
+          expectedRevision: number;
         }): Promise<void>;
       };
     const reauthorizationId = crypto.randomUUID();
@@ -320,6 +387,9 @@ describe("Punks Workspace departure and ownership transfer", () => {
       authorizationId: reauthorizationId,
       sessionId: "11111111-1111-8111-8111-111111111111",
       punkId: ownerPunkId,
+      workspaceId,
+      targetPunkId: invitedPunkId,
+      expectedRevision: 2,
     });
 
     const [transfer, departure] = await Promise.all([

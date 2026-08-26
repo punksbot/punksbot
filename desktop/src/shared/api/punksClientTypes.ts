@@ -130,6 +130,9 @@ export type TransferWorkspaceOwnershipInput = {
   targetPunkId: string;
   expectedRevision: number;
 };
+/** Exact ownership-transfer coordinates shown before native reauthentication. */
+export type WorkspaceOwnershipTransferReauthenticationInput =
+  TransferWorkspaceOwnershipInput & { workspaceId: string };
 export type WorkspaceGovernancePageInput = Pick<
   GetWorkspaceGovernanceQuery,
   "limit" | "cursor"
@@ -241,6 +244,7 @@ export interface PunksAccountClient {
   startReauthentication(
     method: AuthenticationMethod,
     purpose: string,
+    workspaceOwnershipTransfer?: WorkspaceOwnershipTransferReauthenticationInput,
   ): Promise<CeremonyPhaseView>;
   startIdentityLink(provider: IdentityLinkProvider): Promise<CeremonyPhaseView>;
   startPasskeyRegistration(): Promise<CeremonyPhaseView>;

@@ -52,6 +52,12 @@ sessionId: string
 punkId: string
 intent: "reauthenticate"
 targetMethod: ("link_google" | "link_github" | "register_passkey" | "transfer_workspace_ownership")
+workspaceOwnershipTransfer?: DesktopWorkspaceOwnershipTransferBinding
 handoffId: string
 expiresAt: string
+}
+export interface DesktopWorkspaceOwnershipTransferBinding {
+workspaceId: string
+targetPunkId: string
+expectedRevision: number
 }

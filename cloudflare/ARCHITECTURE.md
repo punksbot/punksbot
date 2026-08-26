@@ -432,6 +432,16 @@ external RPC. If an isolate restarts in `pumping-*`, its constructor advances
 the watchdog and the alarm normalizes and resumes the exact catch-up or live
 phase without relying on an in-memory socket registry.
 
+Before emitting `accepted`, each `ConversationDO` records one expiring,
+normalized revocation target in its authoritative `WorkspaceDO`. This is an
+internal callback index, not a public Workspace FOLLOW and not an access
+grant. A member removal or voluntary departure pages those targets in bounded
+batches and closes every matching hibernable socket with `1008` before the
+Workspace membership commit. A pending access reduction also refuses new
+registrations, closing the handshake race; normal per-frame reauthorization
+remains the final non-disclosure fence. The Workspace alarm closes, rather
+than merely forgets, callbacks whose last registered Session expires.
+
 ## Ephemeral Presence path
 
 `PresenceDO(workspaceId)` coordinates at most one live lease per Punk. The
@@ -447,7 +457,23 @@ credential. It stays in Rust and the WebSocket attachment. The renderer-safe
 device, role or historical cursor. Every active signal rechecks Session and
 Workspace access, typing additionally rechecks Conversation access, and every
 recipient is reauthorized before a patch is sent. Workspace removal and leave
-call the idempotent Presence fence after their authoritative commit.
+call the idempotent Presence fence before their authoritative commit, in the
+same bounded revocation preparation that closes registered FOLLOW sockets. If
+a managed callback is unavailable, the pending Workspace mutation remains
+uncommitted and can be retried idempotently.
+
+The Presence handshake itself performs a final Workspace-serialized
+registration after the lease row and socket exist but before sending
+`accepted`. A pending removal therefore rejects the handshake; a removal that
+starts just after registration finds and closes the prepared lease before its
+snapshot can be emitted.
+
+The pre-commit revocation fence closes every socket tagged for the departing
+Punk with `1008 authorization revoked`, even when a rejected replacement has
+already removed the current lease row. The native supervisor treats that exact
+close and rejected `401`/`403` handshakes as terminal, invalidates the active
+`WorkspaceSession`, and never reconnects it. Only ordinary transport loss
+enters the bounded degraded/backoff path.
 
 Typing is carried as a cursor-free `typing` variant of Conversation FOLLOW. It
 does not advance `appliedCursor`, require renderer confirmation or produce an

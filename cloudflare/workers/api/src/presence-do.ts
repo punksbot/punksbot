@@ -308,6 +308,31 @@ export class PresenceDO extends DurableObject<ApiEnv> {
       `session:${sessionId}`,
     ]);
     server.serializeAttachment(attachment);
+    let registered: boolean;
+    try {
+      registered = await this.env.WORKSPACES.getByName(
+        workspaceId,
+      ).authorizePresenceRegistration({
+        workspaceId,
+        punkId,
+        sessionId,
+        sessionExpiresAt: session.expiresAt,
+      });
+    } catch {
+      await this.discardPreparedLease(row);
+      server.close(1013, "realtime revocation registry unavailable");
+      return new Response("Realtime unavailable", { status: 503 });
+    }
+    const current = this.leaseForPunk(punkId);
+    if (
+      !registered ||
+      current?.connection_id !== row.connection_id ||
+      server.readyState !== WebSocket.OPEN
+    ) {
+      await this.discardPreparedLease(row);
+      server.close(1008, "authorization revoked");
+      return new Response("Forbidden", { status: 403 });
+    }
     this.send(server, {
       schemaVersion: 1,
       type: "accepted",
@@ -610,7 +635,7 @@ export class PresenceDO extends DurableObject<ApiEnv> {
     }));
   }
 
-  /** Idempotent best-effort fence called after authoritative access removal. */
+  /** Idempotent fence that closes every live Presence socket for one Punk. */
   async revokePunk(punkId: string): Promise<void> {
     const row = this.ctx.storage.sql
       .exec<LeaseRow>(
@@ -618,13 +643,22 @@ export class PresenceDO extends DurableObject<ApiEnv> {
         punkId,
       )
       .toArray()[0];
-    if (row === undefined) return;
-    await this.clearTypingForLease(row);
-    await this.broadcast(
-      toPresenceView(row, Date.now(), "offline", row.patch_sequence + 1),
-      row.lease_token,
-    );
-    this.closeLeaseSockets(row.lease_token, "authorization revoked");
+    if (row !== undefined) {
+      await this.clearTypingForLease(row);
+      await this.broadcast(
+        toPresenceView(row, Date.now(), "offline", row.patch_sequence + 1),
+        row.lease_token,
+      );
+    }
+    for (const socket of this.ctx.getWebSockets(`punk:${punkId}`)) {
+      const attachment = socketAttachment(socket.deserializeAttachment());
+      if (
+        attachment?.punkId === punkId &&
+        socket.readyState === WebSocket.OPEN
+      ) {
+        socket.close(1008, "authorization revoked");
+      }
+    }
     await this.scheduleNextAlarm();
   }
 
@@ -1081,6 +1115,23 @@ export class PresenceDO extends DurableObject<ApiEnv> {
     await this.broadcast(
       toPresenceView(row, Date.now(), "offline", row.patch_sequence + 1),
       row.lease_token,
+    );
+    await this.scheduleNextAlarm();
+  }
+
+  private async discardPreparedLease(row: LeaseRow): Promise<void> {
+    this.ctx.storage.sql.exec(
+      `DELETE FROM presence_typing
+       WHERE punk_id = ? AND lease_token = ?`,
+      row.punk_id,
+      row.lease_token,
+    );
+    this.ctx.storage.sql.exec(
+      `DELETE FROM presence_lease
+       WHERE punk_id = ? AND lease_token = ? AND connection_id = ?`,
+      row.punk_id,
+      row.lease_token,
+      row.connection_id,
     );
     await this.scheduleNextAlarm();
   }

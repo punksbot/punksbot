@@ -52,6 +52,7 @@ import type {
   RevokeWorkspaceInvitationInput,
   SetWorkspaceMemberRoleInput,
   TransferWorkspaceOwnershipInput,
+  WorkspaceOwnershipTransferReauthenticationInput,
 } from "./punksClient";
 
 const authenticationMethods = new Set<AuthenticationMethod>([
@@ -440,9 +441,14 @@ export class TauriPunksAccountClient implements PunksAccountClient {
   async startReauthentication(
     method: AuthenticationMethod,
     purpose: string,
+    workspaceOwnershipTransfer?: WorkspaceOwnershipTransferReauthenticationInput,
   ): Promise<CeremonyPhaseView> {
     return requireCeremonyPhaseView(
-      await invokePunks("punks_start_reauthentication", { method, purpose }),
+      await invokePunks("punks_start_reauthentication", {
+        method,
+        purpose,
+        workspaceOwnershipTransfer,
+      }),
     );
   }
 

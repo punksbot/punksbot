@@ -183,6 +183,22 @@ export async function startDesktopAuth(
     return problem(400, "invalid_input", "Desktop auth start is invalid");
   }
   const current = await getActiveSession(request, env);
+  const workspaceOwnershipTransfer =
+    command.purpose === "transfer_workspace_ownership"
+      ? (command.workspaceOwnershipTransfer ?? null)
+      : null;
+  if (
+    (command.purpose === "transfer_workspace_ownership" &&
+      workspaceOwnershipTransfer === null) ||
+    (command.purpose !== "transfer_workspace_ownership" &&
+      command.workspaceOwnershipTransfer !== undefined)
+  ) {
+    return problem(
+      400,
+      "invalid_input",
+      "Desktop ownership reauthentication binding is invalid",
+    );
+  }
   if (command.intent === "sign_in" && current !== null) {
     return problem(
       409,
@@ -222,6 +238,7 @@ export async function startDesktopAuth(
       sessionId: current.record.sessionId,
       punkId: current.record.punkId,
       targetMethod: target,
+      workspaceOwnershipTransfer: null,
       flowId,
     });
     if (!consumed.ok) {
@@ -239,6 +256,7 @@ export async function startDesktopAuth(
     intent: command.intent as DesktopAuthIntent,
     method: command.method as DesktopAuthMethod,
     purpose: command.purpose ?? null,
+    workspaceOwnershipTransfer,
     verifierCommitment: command.verifierCommitment,
     environment: env.ENVIRONMENT,
     currentSessionId: current?.record.sessionId ?? null,

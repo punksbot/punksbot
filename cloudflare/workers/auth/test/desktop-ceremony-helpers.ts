@@ -122,6 +122,11 @@ export async function startDesktop(
       | "register_passkey"
       | "transfer_workspace_ownership";
     authorizationId?: string;
+    workspaceOwnershipTransfer?: {
+      workspaceId: string;
+      targetPunkId: string;
+      expectedRevision: number;
+    };
     nativeHeader?: boolean;
   } = {},
 ): Promise<{ response: Response; started: StartedDesktop | null }> {
@@ -152,6 +157,9 @@ export async function startDesktop(
         ...(input.authorizationId === undefined
           ? {}
           : { authorizationId: input.authorizationId }),
+        ...(input.workspaceOwnershipTransfer === undefined
+          ? {}
+          : { workspaceOwnershipTransfer: input.workspaceOwnershipTransfer }),
       }),
     }),
     authEnv,
@@ -307,6 +315,11 @@ export async function reauthenticateFor(
     | "link_github"
     | "register_passkey"
     | "transfer_workspace_ownership",
+  workspaceOwnershipTransfer?: {
+    workspaceId: string;
+    targetPunkId: string;
+    expectedRevision: number;
+  },
 ): Promise<{
   started: StartedDesktop;
   deliveryId: string;
@@ -316,6 +329,9 @@ export async function reauthenticateFor(
     intent: "reauthenticate",
     method: "google",
     purpose,
+    ...(workspaceOwnershipTransfer === undefined
+      ? {}
+      : { workspaceOwnershipTransfer }),
     session,
   });
   if (started === null) throw new Error("reauth start absent");
@@ -324,8 +340,22 @@ export async function reauthenticateFor(
   expect(delivered.status).toBe(200);
   const body = (await delivered.json()) as {
     deliveryId: string;
-    authorization: { authorizationId: string };
+    authorization: {
+      authorizationId: string;
+      workspaceOwnershipTransfer?: {
+        workspaceId: string;
+        targetPunkId: string;
+        expectedRevision: number;
+      };
+    };
   };
+  if (workspaceOwnershipTransfer === undefined) {
+    expect(body.authorization).not.toHaveProperty("workspaceOwnershipTransfer");
+  } else {
+    expect(body.authorization.workspaceOwnershipTransfer).toEqual(
+      workspaceOwnershipTransfer,
+    );
+  }
   return {
     started,
     deliveryId: body.deliveryId,

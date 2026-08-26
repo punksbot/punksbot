@@ -480,8 +480,11 @@ export class WorkspaceOwnershipAuthorizationService extends WorkerEntrypoint<
       !exactObjectKeys(input, [
         "authorizationId",
         "commandId",
+        "expectedRevision",
         "punkId",
         "sessionId",
+        "targetPunkId",
+        "workspaceId",
       ])
     ) {
       return false;
@@ -495,7 +498,14 @@ export class WorkspaceOwnershipAuthorizationService extends WorkerEntrypoint<
       typeof request.punkId !== "string" ||
       !uuidPattern.test(request.punkId) ||
       typeof request.sessionId !== "string" ||
-      !opaqueUuidPattern.test(request.sessionId)
+      !opaqueUuidPattern.test(request.sessionId) ||
+      typeof request.workspaceId !== "string" ||
+      !uuidPattern.test(request.workspaceId) ||
+      typeof request.targetPunkId !== "string" ||
+      !uuidPattern.test(request.targetPunkId) ||
+      typeof request.expectedRevision !== "number" ||
+      !Number.isSafeInteger(request.expectedRevision) ||
+      request.expectedRevision < 1
     ) {
       return false;
     }
@@ -517,6 +527,11 @@ export class WorkspaceOwnershipAuthorizationService extends WorkerEntrypoint<
         sessionId: request.sessionId,
         punkId: request.punkId,
         targetMethod: "transfer_workspace_ownership",
+        workspaceOwnershipTransfer: {
+          workspaceId: request.workspaceId,
+          targetPunkId: request.targetPunkId,
+          expectedRevision: request.expectedRevision,
+        },
         flowId: request.commandId,
       });
       return consumed.ok;

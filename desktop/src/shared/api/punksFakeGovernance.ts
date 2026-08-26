@@ -21,6 +21,7 @@ import type {
   RemoveWorkspaceMemberInput,
   RevokeWorkspaceInvitationInput,
   SetWorkspaceMemberRoleInput,
+  TransferWorkspaceOwnershipInput,
   WorkspaceLease,
   WorkspaceGovernancePageInput,
 } from "./punksClientTypes";
@@ -111,7 +112,10 @@ export function createFakeGovernanceAuthority(
   seed: GovernanceSeed,
   assertCapability: (capability: string) => void,
   assertCurrent: (lease: WorkspaceLease) => void,
-  consumeOwnershipReauthorization: () => void,
+  consumeOwnershipReauthorization: (
+    lease: WorkspaceLease,
+    input: TransferWorkspaceOwnershipInput,
+  ) => void,
   invalidateWorkspace: (lease: WorkspaceLease) => void,
 ): GovernanceAuthority {
   const workspaces = initialGovernance(seed);
@@ -468,7 +472,7 @@ export function createFakeGovernanceAuthority(
             "Ownership transfer requires another current member",
           );
         }
-        consumeOwnershipReauthorization();
+        consumeOwnershipReauthorization(lease, input);
         const previousOwner = workspace.members.find(
           (member) => member.punkId === workspace.ownerPunkId,
         );

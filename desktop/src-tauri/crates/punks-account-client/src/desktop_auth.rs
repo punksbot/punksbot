@@ -79,9 +79,29 @@ pub struct ClaimedReauthorization {
     pub session_id: String,
     pub punk_id: String,
     pub target_method: String,
+    pub workspace_ownership_transfer: Option<WorkspaceOwnershipTransferBinding>,
     pub handoff_id: String,
     pub expires_at: SystemTime,
     pub delivery_expires_at: SystemTime,
+}
+
+/// Exact domain coordinates sealed by an ownership-transfer reauthentication.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WorkspaceOwnershipTransferBinding {
+    pub workspace_id: String,
+    pub target_punk_id: String,
+    pub expected_revision: u64,
+}
+
+/// Non-secret coordinates used to start one native authentication flow.
+#[derive(Debug, Clone, Copy)]
+pub struct DesktopAuthStartIntent<'a> {
+    pub intent: PendingAuthIntent,
+    pub method: AuthenticationMethod,
+    pub purpose: Option<&'a str>,
+    pub authorization_id: Option<&'a str>,
+    pub workspace_ownership_transfer: Option<&'a WorkspaceOwnershipTransferBinding>,
 }
 
 /// Les deux seules livraisons admises par `desktop-auth.claim@1`.
@@ -327,13 +347,38 @@ impl DesktopAuthClient {
     /// Starts one explicit human intent using only the verifier commitment.
     pub async fn start(
         &self,
-        intent: PendingAuthIntent,
-        method: AuthenticationMethod,
-        purpose: Option<&str>,
-        authorization_id: Option<&str>,
+        input: DesktopAuthStartIntent<'_>,
         verifier: &NativeVerifier,
         current_cookie: Option<&SessionSecret>,
     ) -> Result<DesktopAuthStart, ClientFailure> {
+        let DesktopAuthStartIntent {
+            intent,
+            method,
+            purpose,
+            authorization_id,
+            workspace_ownership_transfer,
+        } = input;
+        if (purpose == Some("transfer_workspace_ownership"))
+            != workspace_ownership_transfer.is_some()
+        {
+            return Err(contract_failure("desktop-auth.start@1"));
+        }
+        let workspace_ownership_transfer = workspace_ownership_transfer
+            .map(|binding| {
+                validate_uuid(&binding.workspace_id, "desktop-auth.start@1")?;
+                validate_uuid(&binding.target_punk_id, "desktop-auth.start@1")?;
+                if binding.expected_revision == 0 {
+                    return Err(contract_failure("desktop-auth.start@1"));
+                }
+                Ok(
+                    contracts::DesktopAuthStartExchangeWorkspaceOwnershipTransfer {
+                        workspace_id: binding.workspace_id.clone(),
+                        target_punk_id: binding.target_punk_id.clone(),
+                        expected_revision: binding.expected_revision,
+                    },
+                )
+            })
+            .transpose()?;
         let request = contracts::DesktopAuthStartRequest {
             contract: "desktop-auth.start@1".to_string(),
             message: "request".to_string(),
@@ -342,6 +387,7 @@ impl DesktopAuthClient {
             verifier_commitment: verifier.commitment(),
             purpose: purpose.map(start_purpose).transpose()?,
             authorization_id: authorization_id.map(str::to_string),
+            workspace_ownership_transfer,
         };
         let (_, response): (_, contracts::DesktopAuthStartResponse) = self
             .post("/api/auth/v1/desktop/start", &request, current_cookie)
@@ -456,27 +502,49 @@ impl DesktopAuthClient {
                 validate_uuid(&response.authorization.session_id, "desktop-auth.claim@1")?;
                 validate_uuid(&response.authorization.punk_id, "desktop-auth.claim@1")?;
                 validate_uuid(&response.authorization.handoff_id, "desktop-auth.claim@1")?;
+                let target_method = match response.authorization.target_method {
+                    contracts::DesktopAuthClaimExchangeAuthorizationTargetMethod::LinkGoogle => {
+                        "link_google"
+                    }
+                    contracts::DesktopAuthClaimExchangeAuthorizationTargetMethod::LinkGithub => {
+                        "link_github"
+                    }
+                    contracts::DesktopAuthClaimExchangeAuthorizationTargetMethod::RegisterPasskey => {
+                        "register_passkey"
+                    }
+                    contracts::DesktopAuthClaimExchangeAuthorizationTargetMethod::TransferWorkspaceOwnership => {
+                        "transfer_workspace_ownership"
+                    }
+                };
+                let workspace_ownership_transfer = response
+                    .authorization
+                    .workspace_ownership_transfer
+                    .map(|binding| {
+                        validate_uuid(&binding.workspace_id, "desktop-auth.claim@1")?;
+                        validate_uuid(&binding.target_punk_id, "desktop-auth.claim@1")?;
+                        if binding.expected_revision == 0 {
+                            return Err(contract_failure("desktop-auth.claim@1"));
+                        }
+                        Ok(WorkspaceOwnershipTransferBinding {
+                            workspace_id: binding.workspace_id,
+                            target_punk_id: binding.target_punk_id,
+                            expected_revision: binding.expected_revision,
+                        })
+                    })
+                    .transpose()?;
+                if (target_method == "transfer_workspace_ownership")
+                    != workspace_ownership_transfer.is_some()
+                {
+                    return Err(contract_failure("desktop-auth.claim@1"));
+                }
                 Ok(ClaimedDelivery::Reauthorization(ClaimedReauthorization {
                     flow_id: response.flow_id,
                     delivery_id: response.delivery_id,
                     authorization_id: response.authorization.authorization_id,
                     session_id: response.authorization.session_id,
                     punk_id: response.authorization.punk_id,
-                    target_method: match response.authorization.target_method {
-                        contracts::DesktopAuthClaimExchangeAuthorizationTargetMethod::LinkGoogle => {
-                            "link_google"
-                        }
-                        contracts::DesktopAuthClaimExchangeAuthorizationTargetMethod::LinkGithub => {
-                            "link_github"
-                        }
-                        contracts::DesktopAuthClaimExchangeAuthorizationTargetMethod::RegisterPasskey => {
-                            "register_passkey"
-                        }
-                        contracts::DesktopAuthClaimExchangeAuthorizationTargetMethod::TransferWorkspaceOwnership => {
-                            "transfer_workspace_ownership"
-                        }
-                    }
-                    .to_string(),
+                    target_method: target_method.to_string(),
+                    workspace_ownership_transfer,
                     handoff_id: response.authorization.handoff_id,
                     expires_at: parse_iso8601(&response.authorization.expires_at)?,
                     delivery_expires_at: parse_iso8601(&response.delivery_expires_at)?,

@@ -77,6 +77,7 @@ fn flow() -> PendingAuthFlow {
         intent: PendingAuthIntent::SignIn,
         method: AuthenticationMethod::Google,
         purpose: None,
+        workspace_ownership_transfer: None,
         phase: PendingAuthPhase::Ready,
         phase_expires_at: at(3_999_999_000),
         absolute_expires_at: at(4_000_000_000),
@@ -246,6 +247,7 @@ fn reauthorization_survives_restart_and_is_consumed_only_by_its_exact_target() {
         punk_id: "44444444-4444-4444-8444-444444444444".into(),
         target_method: AuthenticationMethod::Google,
         target_purpose: PendingAuthPurpose::LinkGoogle,
+        workspace_ownership_transfer: None,
         handoff_id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd".into(),
         expires_at: at(4_000_000_000),
     };
@@ -299,6 +301,13 @@ fn ownership_reauthorization_is_not_consumed_as_a_passkey_registration() {
         punk_id: "44444444-4444-4444-8444-444444444444".into(),
         target_method: AuthenticationMethod::Passkey,
         target_purpose: PendingAuthPurpose::TransferWorkspaceOwnership,
+        workspace_ownership_transfer: Some(
+            punks_account_client::desktop_auth::WorkspaceOwnershipTransferBinding {
+                workspace_id: "11111111-1111-4111-8111-111111111111".into(),
+                target_punk_id: "22222222-2222-4222-8222-222222222222".into(),
+                expected_revision: 9,
+            },
+        ),
         handoff_id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd".into(),
         expires_at: at(4_000_000_000),
     };
@@ -308,9 +317,37 @@ fn ownership_reauthorization_is_not_consumed_as_a_passkey_registration() {
         .take_reauthorization(PendingAuthPurpose::RegisterPasskey)
         .unwrap()
         .is_none());
+    let binding = handoff.workspace_ownership_transfer.as_ref().unwrap();
+    assert!(persistence
+        .take_workspace_ownership_reauthorization(
+            &punks_account_client::desktop_auth::WorkspaceOwnershipTransferBinding {
+                target_punk_id: "33333333-3333-4333-8333-333333333333".into(),
+                ..binding.clone()
+            },
+        )
+        .unwrap()
+        .is_none());
+    assert!(persistence
+        .take_workspace_ownership_reauthorization(
+            &punks_account_client::desktop_auth::WorkspaceOwnershipTransferBinding {
+                workspace_id: "33333333-3333-4333-8333-333333333333".into(),
+                ..binding.clone()
+            },
+        )
+        .unwrap()
+        .is_none());
+    assert!(persistence
+        .take_workspace_ownership_reauthorization(
+            &punks_account_client::desktop_auth::WorkspaceOwnershipTransferBinding {
+                expected_revision: 10,
+                ..binding.clone()
+            },
+        )
+        .unwrap()
+        .is_none());
     assert_eq!(
         persistence
-            .take_reauthorization(PendingAuthPurpose::TransferWorkspaceOwnership)
+            .take_workspace_ownership_reauthorization(binding)
             .unwrap()
             .unwrap()
             .authorization_id,

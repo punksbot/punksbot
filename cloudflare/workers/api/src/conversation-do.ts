@@ -576,6 +576,25 @@ export class ConversationDO extends DurableObject<ApiEnv> {
       pumpDeadlineAt: null,
     };
     server.serializeAttachment(attachment);
+    let registered: boolean;
+    try {
+      registered = await this.env.WORKSPACES.getByName(
+        workspaceId,
+      ).registerRealtimeRevocationTarget({
+        workspaceId,
+        conversationId,
+        punkId,
+        sessionId,
+        sessionExpiresAt,
+      });
+    } catch {
+      server.close(1013, "realtime revocation registry unavailable");
+      return new Response("Realtime capacity unavailable", { status: 503 });
+    }
+    if (!registered || server.readyState !== WebSocket.OPEN) {
+      server.close(1008, "authorization revoked");
+      return new Response("Forbidden", { status: 403 });
+    }
     this.sendFollowFrame(server, {
       schemaVersion: 1,
       type: "accepted",
@@ -623,6 +642,41 @@ export class ConversationDO extends DurableObject<ApiEnv> {
   /** Authorizes a typing intent before Presence makes it snapshot-visible. */
   async authorizeTypingPatch(input: unknown): Promise<{ ok: boolean }> {
     return { ok: (await this.authorizedTypingPatch(input)) !== null };
+  }
+
+  /** Closes every live follower for one Workspace Punk before access removal commits. */
+  revokeWorkspaceAccess(input: unknown): boolean {
+    if (
+      typeof input !== "object" ||
+      input === null ||
+      Array.isArray(input) ||
+      !["punkId,workspaceId", "punkId,sessionId,workspaceId"].includes(
+        Object.keys(input).sort().join(","),
+      )
+    ) {
+      return false;
+    }
+    const request = input as Record<string, unknown>;
+    if (
+      typeof request.workspaceId !== "string" ||
+      typeof request.punkId !== "string" ||
+      (request.sessionId !== undefined && typeof request.sessionId !== "string")
+    ) {
+      return false;
+    }
+    for (const socket of this.ctx.getWebSockets(`punk:${request.punkId}`)) {
+      const attachment = parseFollowAttachment(socket.deserializeAttachment());
+      if (
+        attachment?.workspaceId === request.workspaceId &&
+        attachment.punkId === request.punkId &&
+        (request.sessionId === undefined ||
+          attachment.sessionId === request.sessionId) &&
+        socket.readyState === WebSocket.OPEN
+      ) {
+        socket.close(1008, "authorization revoked");
+      }
+    }
+    return true;
   }
 
   /** Best-effort ephemeral patch accepted only from the Workspace PresenceDO. */
@@ -763,6 +817,7 @@ export class ConversationDO extends DurableObject<ApiEnv> {
     ) {
       throw new Error("Conversation follow frame violated its contract");
     }
+    if (socket.readyState !== WebSocket.OPEN) return;
     socket.send(JSON.stringify(frame));
   }
 

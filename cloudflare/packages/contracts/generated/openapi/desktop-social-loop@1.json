@@ -2650,6 +2650,9 @@
               "register_passkey",
               "transfer_workspace_ownership"
             ]
+          },
+          "workspaceOwnershipTransfer": {
+            "$ref": "#/components/schemas/DesktopAuthClaimExchangeWorkspaceOwnershipTransfer"
           }
         },
         "required": [
@@ -2880,6 +2883,30 @@
         "title": "DesktopAuthClaimResponse",
         "type": "object"
       },
+      "DesktopAuthClaimExchangeWorkspaceOwnershipTransfer": {
+        "additionalProperties": false,
+        "properties": {
+          "expectedRevision": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "targetPunkId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "workspaceId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspaceId",
+          "targetPunkId",
+          "expectedRevision"
+        ],
+        "title": "DesktopWorkspaceOwnershipTransferBinding",
+        "type": "object"
+      },
       "DesktopAuthConfirmExchange": {
         "oneOf": [
           {
@@ -3011,6 +3038,9 @@
           "verifierCommitment": {
             "pattern": "^[A-Za-z0-9_-]{43}$",
             "type": "string"
+          },
+          "workspaceOwnershipTransfer": {
+            "$ref": "#/components/schemas/DesktopAuthStartExchangeWorkspaceOwnershipTransfer"
           }
         },
         "required": [
@@ -3082,6 +3112,30 @@
           "expiresAt"
         ],
         "title": "DesktopAuthStartResponse",
+        "type": "object"
+      },
+      "DesktopAuthStartExchangeWorkspaceOwnershipTransfer": {
+        "additionalProperties": false,
+        "properties": {
+          "expectedRevision": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "targetPunkId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "workspaceId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspaceId",
+          "targetPunkId",
+          "expectedRevision"
+        ],
+        "title": "DesktopWorkspaceOwnershipTransferBinding",
         "type": "object"
       },
       "DesktopAuthStatusExchange": {

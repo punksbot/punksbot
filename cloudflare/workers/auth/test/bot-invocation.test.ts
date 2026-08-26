@@ -154,8 +154,11 @@ describe("role-separated private Auth RPC entrypoints", () => {
     const input = {
       authorizationId: crypto.randomUUID(),
       commandId: crypto.randomUUID(),
+      expectedRevision: 1,
       punkId: crypto.randomUUID(),
       sessionId: "10000000-0000-8000-8000-000000000001",
+      targetPunkId: crypto.randomUUID(),
+      workspaceId: crypto.randomUUID(),
     };
     for (const props of [
       undefined,

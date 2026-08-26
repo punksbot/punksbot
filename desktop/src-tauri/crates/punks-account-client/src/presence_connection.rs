@@ -13,7 +13,7 @@ use tokio::{
 };
 use tokio_tungstenite::{
     connect_async,
-    tungstenite::{client::IntoClientRequest, Message},
+    tungstenite::{client::IntoClientRequest, Error as WebSocketError, Message},
     MaybeTlsStream, WebSocketStream,
 };
 use tokio_util::sync::CancellationToken;
@@ -30,6 +30,47 @@ const PRESENCE_PROTOCOL: &str = "punks.presence.v1";
 const MAX_FRAME_BYTES: usize = 4_194_304;
 const INITIAL_RECONNECT_DELAY: Duration = Duration::from_millis(500);
 const MAXIMUM_RECONNECT_DELAY: Duration = Duration::from_secs(10);
+
+pub(crate) fn classify_presence_close(code: u16, reason: &str) -> FailureKind {
+    match (code, reason) {
+        (1008, "authorization revoked") => FailureKind::Problem,
+        (1008, _) => FailureKind::ContractViolation,
+        _ => FailureKind::Transport,
+    }
+}
+
+pub(crate) fn classify_presence_handshake_status(status: u16) -> FailureKind {
+    match status {
+        401 => FailureKind::SessionExpired,
+        403 => FailureKind::Problem,
+        _ => FailureKind::Transport,
+    }
+}
+
+fn classify_presence_connect_error(error: &WebSocketError) -> FailureKind {
+    match error {
+        WebSocketError::Http(response) => {
+            classify_presence_handshake_status(response.status().as_u16())
+        }
+        _ => FailureKind::Transport,
+    }
+}
+
+fn presence_close_failure(
+    frame: Option<&tokio_tungstenite::tungstenite::protocol::CloseFrame>,
+) -> ClientFailure {
+    let (code, reason) = frame
+        .map(|frame| (u16::from(frame.code), frame.reason.as_str()))
+        .unwrap_or((1005, ""));
+    ClientFailure::new(
+        classify_presence_close(code, reason),
+        if code == 1008 && reason == "authorization revoked" {
+            "Punks Presence authorization was revoked"
+        } else {
+            "Punks Presence connection ended"
+        },
+    )
+}
 
 enum PresenceCommand {
     SetStatus(Option<String>),
@@ -251,10 +292,15 @@ async fn open_presence(
                 "Punks Presence Workspace generation was cancelled",
             ));
         }
-        result = connect_async(request) => result.map_err(|_| {
+        result = connect_async(request) => result.map_err(|error| {
+            let kind = classify_presence_connect_error(&error);
             ClientFailure::new(
-                FailureKind::Transport,
-                "Punks Presence connection could not be opened",
+                kind,
+                match kind {
+                    FailureKind::SessionExpired => "Punks Account Session is no longer authorized",
+                    FailureKind::Problem => "Punks Workspace Presence is no longer authorized",
+                    _ => "Punks Presence connection could not be opened",
+                },
             )
         })?,
     };
@@ -327,12 +373,7 @@ async fn next_text_frame(socket: &mut PresenceSocket) -> Result<String, ClientFa
             Message::Ping(payload) => socket.send(Message::Pong(payload)).await.map_err(|_| {
                 ClientFailure::new(FailureKind::Transport, "Punks Presence heartbeat failed")
             })?,
-            Message::Close(_) => {
-                return Err(ClientFailure::new(
-                    FailureKind::Transport,
-                    "Punks Presence connection ended",
-                ))
-            }
+            Message::Close(frame) => return Err(presence_close_failure(frame.as_ref())),
             _ => return Err(ClientFailure::contract("presence.hold-server-frame@1")),
         }
     }
@@ -398,6 +439,12 @@ async fn run_presence_supervisor(
         match connection_exit {
             PhysicalConnectionExit::Stop => break,
             PhysicalConnectionExit::Terminal(error) => {
+                if matches!(
+                    error.kind,
+                    FailureKind::Problem | FailureKind::SessionExpired
+                ) {
+                    session.invalidate_departed_workspace().await;
+                }
                 let _ = deliveries.send(Err(error)).await;
                 break;
             }
@@ -545,9 +592,8 @@ async fn run_physical_presence(
                         }
                         continue;
                     }
-                    Some(Ok(Message::Close(_))) | None => {
-                        Err(ClientFailure::new(FailureKind::Transport, "Punks Presence connection ended"))
-                    }
+                    Some(Ok(Message::Close(frame))) => Err(presence_close_failure(frame.as_ref())),
+                    None => Err(ClientFailure::new(FailureKind::Transport, "Punks Presence connection ended")),
                     Some(Ok(_)) => Err(ClientFailure::contract("presence.hold-server-frame@1")),
                     Some(Err(_)) => Err(ClientFailure::new(FailureKind::Transport, "Punks Presence read failed")),
                 };

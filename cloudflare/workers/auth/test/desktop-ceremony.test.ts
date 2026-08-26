@@ -28,10 +28,23 @@ describe("DesktopAuthFlow protocol (issue #54)", () => {
   it("consomme une réauthentification de transfert seulement pour sa Session et sa commande", async () => {
     const subject = `desktop-transfer-${crypto.randomUUID()}`;
     const current = await provisionIdentity(subject);
+    const workspaceOwnershipTransfer = {
+      workspaceId: crypto.randomUUID(),
+      targetPunkId: crypto.randomUUID(),
+      expectedRevision: 7,
+    };
+    const missingBinding = await startDesktop({
+      intent: "reauthenticate",
+      method: "google",
+      purpose: "transfer_workspace_ownership",
+      session: current.cookie,
+    });
+    expect(missingBinding.response.status).toBe(400);
     const reauth = await reauthenticateFor(
       subject,
       current.cookie,
       "transfer_workspace_ownership",
+      workspaceOwnershipTransfer,
     );
     const session = await workerExports.PunkSessionService.resolveSessionCookie(
       current.cookie,
@@ -53,10 +66,20 @@ describe("DesktopAuthFlow protocol (issue #54)", () => {
       commandId,
       punkId: session.punkId,
       sessionId: session.sessionId,
+      ...workspaceOwnershipTransfer,
     };
 
     await expect(authority.consume(input)).resolves.toBe(false);
     expect((await confirm(reauth.started, reauth.deliveryId)).status).toBe(200);
+    await expect(
+      authority.consume({ ...input, targetPunkId: crypto.randomUUID() }),
+    ).resolves.toBe(false);
+    await expect(
+      authority.consume({ ...input, workspaceId: crypto.randomUUID() }),
+    ).resolves.toBe(false);
+    await expect(
+      authority.consume({ ...input, expectedRevision: 8 }),
+    ).resolves.toBe(false);
     await expect(authority.consume(input)).resolves.toBe(true);
     await expect(authority.consume(input)).resolves.toBe(true);
     await expect(
