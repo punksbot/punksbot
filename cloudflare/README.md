@@ -5,8 +5,9 @@ deliberately isolated from the legacy Rust relay: local development and CI must
 not start Docker, PostgreSQL, Redis, MinIO, or the Buzz relay.
 
 The imported Buzz workflow definitions are frozen in
-`.github/legacy-workflows`. The sole active workflow runs
-`pnpm cloudflare:check`, whose first gate enforces this managed-only boundary.
+`.github/legacy-workflows`. The two active Punks workflows are the managed
+Workers gate and the signed desktop-candidate pipeline; the boundary guard
+validates both before package or Worker checks run.
 
 ## Deterministic backend gate
 
@@ -123,13 +124,14 @@ claim of one multi-Worker end-to-end pool test.
 
 The API producer, Runtime consumer, Workflow and Runtime-to-API/Auth private
 Service Bindings are configured for local and staging. The source-only trigger
-named entrypoint has no staging caller binding. The staging Bot Wake Queue and
-dead-letter Queue are provisioned, but the Workflow and every Worker remain
-not deployed. R2 is not enabled on the Punks account, so none of the configured
-buckets is provisioned. No public trigger, Punks client integration,
-Installation discovery, general prompt surface, memory or schedules are
-claimed. This is not a claim of Buzz feature parity; subsequent slices preserve
-the same authority and projection boundaries.
+named entrypoint has no staging caller binding. R2 is enabled and the configured
+staging buckets are provisioned. The historical Bot Runtime, Queue consumer and
+Workflow observation is recorded canonically in [OPERATIONS.md](OPERATIONS.md);
+it is not proof of the current candidate and no remote inference is claimed. No
+public trigger, Punks client integration, Installation discovery, general
+prompt surface, memory or schedules are claimed. This is not a claim of Buzz
+feature parity; subsequent slices preserve the same authority and projection
+boundaries.
 
 ## Run the local backend
 

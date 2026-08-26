@@ -94,11 +94,18 @@ jointes, ni mémoire, ni schedule, ni outil GitHub. Cette limitation est
 volontaire : un index de découverte ou une nouvelle capacité fera l’objet d’une
 couture autoritaire et d’un ADR séparés.
 
-Cette verticale est implémentée et testée en source sous `workerd`. Les bindings
-API producteur, Runtime consommateur, Service Bindings et Workflow sont
-configurés pour local et staging, mais la Queue Bot Wake, sa dead-letter Queue
-et le Workflow ne sont pas provisionnés à distance ; aucun Worker n’est
-déployé. Les tests utilisent le fake déterministe et aucune inférence Workers
-AI distante n’a été exécutée. La preuve actuelle est composée de suites
-`workerd` ciblées sur chaque couture ; elle ne revendique pas un E2E
-multi-Worker dans un pool unique.
+Cette verticale est implémentée et testée en source sous `workerd`. Au moment de
+cette décision, les bindings API producteur, Runtime consommateur, Service
+Bindings et Workflow étaient configurés pour local et staging. La Queue Bot
+Wake et sa dead-letter Queue étaient déjà provisionnées sans consommateur ; le
+Workflow n’était pas provisionné et aucun Bot Runtime Worker n’était déployé.
+Les tests utilisaient le fake déterministe et aucune inférence Workers AI
+distante n’était revendiquée. La preuve était composée de suites `workerd`
+ciblées sur chaque couture, sans E2E multi-Worker dans un pool unique.
+
+Mise à jour opérationnelle du 2026-08-26 — sans modifier la décision :
+[OPERATIONS.md](../../cloudflare/OPERATIONS.md) enregistre l’observation
+distante historique de la Queue, de sa dead-letter Queue, du Runtime
+consommateur et du Workflow. Cette observation ne prouve ni le candidat
+courant, ni les Service Bindings à l’exécution, ni une inférence distante ; ces
+preuves et l’approbation séparée restent exigées.

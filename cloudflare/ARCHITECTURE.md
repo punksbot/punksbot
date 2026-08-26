@@ -135,8 +135,10 @@ Schnorr signature instead of overwriting it. Only then does a synchronous
 SQLite transaction append the contiguous manifest entry and remove the
 archived hot rows. Alarm repair resumes pending seals, R2 writes, manifest
 commits and capacity-driven archiving after isolate eviction. These four
-archive paths are implemented and tested in source; no staging Worker is
-deployed.
+archive paths are implemented and tested in source. Operational resource and
+deployment state is tracked separately in `OPERATIONS.md` and `PARITY.md`; no
+current-candidate archive/recovery exercise or compliance-retention proof is
+implied here.
 
 ## Message content path
 
@@ -308,8 +310,9 @@ a public cursor; malformed or unavailable index responses become
    `errored`; an inspection or restart that cannot be proven retries the Queue
    delivery.
    Local and staging Wrangler configure the producer, consumer, dead-letter
-   Queue and Workflow; those three remote resources are not provisioned and no
-   Worker is deployed.
+   Queue and Workflow. Remote deployment state is tracked separately in
+   `OPERATIONS.md` and `PARITY.md`; this architecture does not turn resource
+   existence into candidate or inference evidence.
 8. The Workflow claims the Wake through the private `BotHarnessService` and
    receives authoritative coordinates only from the Installation. One
    sensitive `read-context-and-decide` step reauthorizes the Installation,
@@ -361,8 +364,10 @@ journals, D1, R2, terminal receipts, errors, metrics and logs. This vertical
 slice supports only a fixed-model `skip` or one Message Reaction toggle. It
 does not implement public triggering, Installation discovery, Conversation
 history, authors, topics, attachments, memory, schedules, ACP/MCP, arbitrary
-Bot code, GitHub tools or the Punks UI. It is implemented and tested in source;
-the Workers and Bot Wake resources are not deployed or provisioned remotely.
+Bot code, GitHub tools or the Punks UI. It is implemented and tested in source.
+`OPERATIONS.md` and `PARITY.md` own remote deployment status; no
+current-candidate proof, authorized trigger or remote inference is implied by
+this architecture.
 
 ## Message Reaction path
 
