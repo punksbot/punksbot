@@ -23,6 +23,7 @@ const otherSessionId = "22222222-2222-8222-8222-222222222222";
 const thirdSessionId = "44444444-4444-8444-8444-444444444444";
 const revocableSessionId = "33333333-3333-8333-8333-333333333333";
 const revokedSessionIds = new Set();
+const unavailableSessionIds = new Set();
 const sessionResolutionHolds = new Map();
 const invocationTimes = new Map();
 const accountMergeRightsIndexCalls = [];
@@ -125,6 +126,14 @@ export class PunkSessionService extends WorkerEntrypoint {
     }
   }
 
+  setSessionUnavailable(sessionId, unavailable) {
+    if (unavailable) {
+      unavailableSessionIds.add(sessionId);
+    } else {
+      unavailableSessionIds.delete(sessionId);
+    }
+  }
+
   resolveSessionCookie(cookie) {
     if (cookie.includes("session-owner")) {
       return session("00000000-0000-8000-8000-000000000001");
@@ -151,6 +160,9 @@ export class PunkSessionService extends WorkerEntrypoint {
           await scheduler.wait(10);
         }
       }
+    }
+    if (unavailableSessionIds.has(sessionId)) {
+      throw new Error("session authority unavailable");
     }
     if (revokedSessionIds.has(sessionId)) {
       return null;

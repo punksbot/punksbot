@@ -12,6 +12,7 @@ import { createMediaUploadGrant } from "./media-upload-http-grant";
 import {
   callMediaUploadAuthority,
   currentMediaUploadSessionMatches as currentSessionMatches,
+  mediaUploadFinalAuthorizationStatus as finalAuthorizationStatus,
   mediaUploadStatusResponse as statusResponse,
   mediaUploadWorkspaceAccess as workspaceAccess,
   mediaUploadWorkspaceAccessProblem as workspaceAccessProblem,
@@ -191,9 +192,16 @@ async function finalizeUpload(
           { retry: "same_command" },
         );
       case "rejected":
+        if (begin.snapshot.failureCode === "authorization_lost") {
+          return problem(
+            403,
+            "forbidden",
+            "Media upload authorization was revoked",
+          );
+        }
         return problem(
           422,
-          initial.failureCode === "hash_invalid"
+          begin.snapshot.failureCode === "hash_invalid"
             ? "upload_hash_invalid"
             : "upload_conflict",
           "Media upload was rejected",
@@ -213,20 +221,81 @@ async function finalizeUpload(
     }
   }
   if (begin.action === "replay") {
+    const replayAuthorization = await finalAuthorizationStatus(
+      env,
+      session,
+      begin.snapshot,
+      token,
+    );
+    if (replayAuthorization === "unavailable") {
+      return problem(
+        503,
+        "temporarily_unavailable",
+        "Media upload authorization is temporarily unavailable",
+        { retry: "later" },
+      );
+    }
+    if (replayAuthorization === "denied") {
+      return problem(
+        403,
+        "forbidden",
+        "Media upload authorization was revoked",
+      );
+    }
     return statusResponse(begin.snapshot, 200);
   }
 
-  const ambiguous = async (title: string): Promise<Response> => {
-    await callMediaUploadAuthority(async () =>
-      authority.releaseFinalize({ attemptId: begin.attemptId }),
+  const releaseFinalize = async (
+    failureCode: "ambiguous" | "storage_unavailable" | "authorization_lost",
+  ): Promise<"committed" | "superseded" | "unavailable"> => {
+    const released = await callMediaUploadAuthority(async () =>
+      authority.releaseFinalize({
+        attemptId: begin.attemptId,
+        failureCode,
+      }),
     );
+    if (!released.reached) return "unavailable";
+    return released.value.ok ? "committed" : "superseded";
+  };
+  const ambiguous = async (title: string): Promise<Response> => {
+    await releaseFinalize("ambiguous");
     return problem(503, "upload_ambiguous", title, { retry: "same_command" });
   };
   const storageUnavailable = async (title: string): Promise<Response> => {
-    await callMediaUploadAuthority(async () =>
-      authority.releaseFinalize({ attemptId: begin.attemptId }),
-    );
+    if ((await releaseFinalize("storage_unavailable")) !== "committed") {
+      return problem(503, "upload_ambiguous", title, {
+        retry: "same_command",
+      });
+    }
     return problem(503, "storage_unavailable", title, { retry: "later" });
+  };
+  const finalAuthorizationProblem = async (): Promise<Response | null> => {
+    const status = await finalAuthorizationStatus(
+      env,
+      session,
+      begin.snapshot,
+      token,
+    );
+    if (status === "ok") return null;
+    const released = await releaseFinalize(
+      status === "unavailable" ? "ambiguous" : "authorization_lost",
+    );
+    if (released !== "committed") {
+      return problem(
+        503,
+        "upload_ambiguous",
+        "Media upload authorization result is ambiguous",
+        { retry: "same_command" },
+      );
+    }
+    return status === "unavailable"
+      ? problem(
+          503,
+          "temporarily_unavailable",
+          "Media upload authorization is temporarily unavailable",
+          { retry: "later" },
+        )
+      : problem(403, "forbidden", "Media upload authorization was revoked");
   };
 
   let candidate: R2Object | null;
@@ -245,7 +314,7 @@ async function finalizeUpload(
         code: "conflict",
       }),
     );
-    if (!rejectCall.reached) {
+    if (!rejectCall.reached || !rejectCall.value.ok) {
       return ambiguous("Media candidate conflict result is ambiguous");
     }
     return problem(409, "upload_conflict", "Media candidate key is occupied");
@@ -283,7 +352,7 @@ async function finalizeUpload(
           code: "conflict",
         }),
       );
-      if (!rejectCall.reached) {
+      if (!rejectCall.reached || !rejectCall.value.ok) {
         return ambiguous("Staging rejection result is ambiguous");
       }
       try {
@@ -318,7 +387,7 @@ async function finalizeUpload(
           code: "hash_invalid",
         }),
       );
-      if (!rejectCall.reached) {
+      if (!rejectCall.reached || !rejectCall.value.ok) {
         return ambiguous("Media hash rejection result is ambiguous");
       }
       try {
@@ -333,24 +402,8 @@ async function finalizeUpload(
       );
     }
 
-    const stillAuthorized =
-      (await currentSessionMatches(env, session)) &&
-      (await workspaceAccess(env, workspaceId, session.punkId)) === "ok" &&
-      (await verifyMediaUploadGrantToken(
-        env.MEDIA_UPLOAD_GRANT_KEY,
-        begin.snapshot,
-        token,
-      ));
-    if (!stillAuthorized) {
-      await callMediaUploadAuthority(async () =>
-        authority.releaseFinalize({ attemptId: begin.attemptId }),
-      );
-      return problem(
-        403,
-        "forbidden",
-        "Media upload authorization was revoked",
-      );
-    }
+    const authorizationProblem = await finalAuthorizationProblem();
+    if (authorizationProblem !== null) return authorizationProblem;
     const publishCall = await callMediaUploadAuthority(async () =>
       authority.authorizeCandidatePublish({ attemptId: begin.attemptId }),
     );
@@ -358,13 +411,8 @@ async function finalizeUpload(
       return ambiguous("Media candidate publication fence is ambiguous");
     }
     if (!publishCall.value.ok) {
-      await callMediaUploadAuthority(async () =>
-        authority.releaseFinalize({ attemptId: begin.attemptId }),
-      );
-      return problem(
-        403,
-        "forbidden",
-        "Media upload authorization was revoked",
+      return ambiguous(
+        "Media candidate publication authorization result is ambiguous",
       );
     }
 
@@ -413,6 +461,8 @@ async function finalizeUpload(
     }
   }
 
+  const authorizationProblem = await finalAuthorizationProblem();
+  if (authorizationProblem !== null) return authorizationProblem;
   const finalizedAt = new Date().toISOString();
   const commitCall = await callMediaUploadAuthority(async () =>
     authority.commitFinalize({
@@ -421,12 +471,7 @@ async function finalizeUpload(
     }),
   );
   if (!commitCall.reached) {
-    return problem(
-      503,
-      "upload_ambiguous",
-      "Media candidate commit result is ambiguous",
-      { retry: "same_command" },
-    );
+    return ambiguous("Media candidate commit result is ambiguous");
   }
   const committed = commitCall.value;
   if (!committed.ok) {

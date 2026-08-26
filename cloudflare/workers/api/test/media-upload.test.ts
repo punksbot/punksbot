@@ -11,18 +11,24 @@ import { validateContract } from "@punks/contracts";
 import { env, runDurableObjectAlarm, SELF } from "cloudflare:test";
 import { describe, expect, it, vi } from "vitest";
 
+import type { ApiEnv } from "../src/env";
+import { routeMediaUpload } from "../src/media-upload-http";
+
 const operatorAuthorization = {
   authorization:
     "Bearer operator-test-token-00000000000000000000000000000000000000000000",
 };
 const ownerPunkId = "00000000-0000-8000-8000-000000000001";
+const otherPunkId = "00000000-0000-8000-8000-000000000002";
 const ownerCookie = "__Host-punks_session=session-owner";
+const revocableCookie = "__Host-punks_session=session-revocable";
+const revocableSessionId = "33333333-3333-8333-8333-333333333333";
 
-async function createWorkspace(): Promise<string> {
+async function createWorkspace(owner = ownerPunkId): Promise<string> {
   const command: CreateWorkspaceCommand = {
     contract: "workspace.create@1",
     commandId: crypto.randomUUID(),
-    actor: { kind: "punk", punkId: ownerPunkId },
+    actor: { kind: "punk", punkId: owner },
     payload: {
       slug: `media-${crypto.randomUUID().slice(0, 8)}`,
       name: "Media Upload Workspace",
@@ -50,12 +56,13 @@ function grantCommand(
   workspaceId: string,
   commandId: string = crypto.randomUUID(),
   payload: Partial<CreateMediaUploadGrantCommand["payload"]> = {},
+  punkId = ownerPunkId,
 ): CreateMediaUploadGrantCommand {
   return {
     contract: "media-upload.grant-create@1",
     commandId,
     workspaceId,
-    actor: { kind: "punk", punkId: ownerPunkId },
+    actor: { kind: "punk", punkId },
     payload: {
       purpose: "message_attachment",
       byteLength: 8_388_609,
@@ -82,6 +89,7 @@ async function uploadPart(
   bytes: Uint8Array,
   partSha256: string,
   token = grant.credential.token,
+  cookie = ownerCookie,
 ): Promise<Response> {
   const path = grant.endpoints.partUrlTemplate.replace(
     "{partNumber}",
@@ -92,7 +100,7 @@ async function uploadPart(
     headers: {
       authorization: `PunksUpload ${token}`,
       "content-length": `${bytes.byteLength}`,
-      cookie: ownerCookie,
+      cookie,
       "x-punks-part-sha256": partSha256,
     },
     body: Uint8Array.from(bytes).buffer,
@@ -102,20 +110,22 @@ async function uploadPart(
 async function finalizeUpload(
   grant: MediaUploadGrant,
   commandId = crypto.randomUUID(),
+  punkId = ownerPunkId,
+  cookie = ownerCookie,
 ): Promise<Response> {
   const command: FinalizeMediaUploadCommand = {
     contract: "media-upload.finalize@1",
     commandId,
     workspaceId: grant.status.workspaceId,
     uploadId: grant.status.uploadId,
-    actor: { kind: "punk", punkId: ownerPunkId },
+    actor: { kind: "punk", punkId },
   };
   return SELF.fetch(`https://punks.bot${grant.endpoints.finalizeUrl}`, {
     method: "POST",
     headers: {
       authorization: `PunksUpload ${grant.credential.token}`,
       "content-type": "application/json",
-      cookie: ownerCookie,
+      cookie,
       "idempotency-key": commandId,
     },
     body: JSON.stringify(command),
@@ -161,6 +171,62 @@ async function createGrant(
       body: JSON.stringify(command),
     },
   );
+}
+
+async function prepareExistingCandidateForRevocablePunk(): Promise<MediaUploadGrant> {
+  const workspaceId = await createWorkspace(otherPunkId);
+  const bytes = new TextEncoder().encode("candidate awaiting final authority");
+  const sha256 = await digestHex(bytes);
+  const grantResponse = await createGrant(
+    grantCommand(
+      workspaceId,
+      crypto.randomUUID(),
+      { byteLength: bytes.byteLength, sha256 },
+      otherPunkId,
+    ),
+    revocableCookie,
+  );
+  expect(grantResponse.status, await grantResponse.clone().text()).toBe(201);
+  const grant = (await grantResponse.json()) as MediaUploadGrant;
+  expect(
+    (
+      await uploadPart(
+        grant,
+        1,
+        bytes,
+        sha256,
+        grant.credential.token,
+        revocableCookie,
+      )
+    ).status,
+  ).toBe(201);
+
+  const authority = env.MEDIA_UPLOADS.getByName(grant.status.uploadId);
+  const snapshot = await authority.inspect();
+  if (snapshot === null) throw new TypeError("Upload intent is absent");
+  const checksum = Uint8Array.from({ length: 32 }, (_, index) =>
+    Number.parseInt(sha256.slice(index * 2, index * 2 + 2), 16),
+  );
+  const candidate = await env.CONTENT_BUCKET.put(
+    snapshot.candidateKey,
+    Uint8Array.from(bytes).buffer,
+    {
+      onlyIf: new Headers({ "if-none-match": "*" }),
+      httpMetadata: {
+        contentType: snapshot.contentType,
+        cacheControl: "no-store",
+      },
+      customMetadata: {
+        "punks-schema": "media-candidate@1",
+        "upload-id": snapshot.uploadId,
+        "media-id": snapshot.mediaId,
+        "verified-sha256": snapshot.sha256,
+      },
+      sha256: checksum,
+    },
+  );
+  expect(candidate).not.toBeNull();
+  return grant;
 }
 
 describe("granted R2 media uploads", () => {
@@ -301,6 +367,139 @@ describe("granted R2 media uploads", () => {
       state: "candidate",
       candidate: { mediaId: candidate.candidate?.mediaId },
     });
+  });
+
+  it("reauthorizes a stale Session before committing an existing candidate", async () => {
+    const grant = await prepareExistingCandidateForRevocablePunk();
+    const auth = env.AUTH_SERVICE as typeof env.AUTH_SERVICE & {
+      setSessionRevoked(sessionId: string, revoked: boolean): Promise<void>;
+    };
+    await auth.setSessionRevoked(revocableSessionId, true);
+    try {
+      const commandId = crypto.randomUUID();
+      const finalized = await finalizeUpload(
+        grant,
+        commandId,
+        otherPunkId,
+        revocableCookie,
+      );
+      expect(finalized.status, await finalized.clone().text()).toBe(403);
+      await expect(finalized.json()).resolves.toMatchObject({
+        code: "forbidden",
+      });
+
+      const status = await SELF.fetch(
+        `https://punks.bot${grant.endpoints.statusUrl}`,
+        { headers: { cookie: revocableCookie } },
+      );
+      expect(status.status, await status.clone().text()).toBe(200);
+      await expect(status.json()).resolves.toMatchObject({
+        state: "rejected",
+        candidate: null,
+        failure: { code: "authorization_lost", retry: "never" },
+      });
+
+      await expect(
+        env.MEDIA_UPLOADS.getByName(grant.status.uploadId).beginFinalize({
+          workspaceId: grant.status.workspaceId,
+          punkId: otherPunkId,
+          commandId,
+        }),
+      ).resolves.toMatchObject({
+        ok: false,
+        code: "rejected",
+        snapshot: { failureCode: "authorization_lost" },
+      });
+
+      const replay = await finalizeUpload(
+        grant,
+        commandId,
+        otherPunkId,
+        revocableCookie,
+      );
+      expect(replay.status, await replay.clone().text()).toBe(403);
+      await expect(replay.json()).resolves.toMatchObject({ code: "forbidden" });
+    } finally {
+      await auth.setSessionRevoked(revocableSessionId, false);
+    }
+  });
+
+  it("reauthorizes a terminal replay without altering its candidate", async () => {
+    const grant = await prepareExistingCandidateForRevocablePunk();
+    const commandId = crypto.randomUUID();
+    const finalized = await finalizeUpload(
+      grant,
+      commandId,
+      otherPunkId,
+      revocableCookie,
+    );
+    expect(finalized.status, await finalized.clone().text()).toBe(201);
+    const candidate = (await finalized.json()) as MediaUploadStatus;
+
+    const auth = env.AUTH_SERVICE as typeof env.AUTH_SERVICE & {
+      setSessionRevoked(sessionId: string, revoked: boolean): Promise<void>;
+    };
+    await auth.setSessionRevoked(revocableSessionId, true);
+    try {
+      const replay = await finalizeUpload(
+        grant,
+        commandId,
+        otherPunkId,
+        revocableCookie,
+      );
+      expect(replay.status, await replay.clone().text()).toBe(403);
+      await expect(replay.json()).resolves.toMatchObject({ code: "forbidden" });
+    } finally {
+      await auth.setSessionRevoked(revocableSessionId, false);
+    }
+
+    const status = await SELF.fetch(
+      `https://punks.bot${grant.endpoints.statusUrl}`,
+      { headers: { cookie: revocableCookie } },
+    );
+    expect(status.status, await status.clone().text()).toBe(200);
+    await expect(status.json()).resolves.toMatchObject({
+      state: "candidate",
+      candidate: { mediaId: candidate.candidate?.mediaId },
+      failure: null,
+    });
+  });
+
+  it("keeps a transient Session authority outage recoverable", async () => {
+    const grant = await prepareExistingCandidateForRevocablePunk();
+    const auth = env.AUTH_SERVICE as typeof env.AUTH_SERVICE & {
+      setSessionUnavailable(
+        sessionId: string,
+        unavailable: boolean,
+      ): Promise<void>;
+    };
+    await auth.setSessionUnavailable(revocableSessionId, true);
+    try {
+      const finalized = await finalizeUpload(
+        grant,
+        crypto.randomUUID(),
+        otherPunkId,
+        revocableCookie,
+      );
+      expect(finalized.status, await finalized.clone().text()).toBe(503);
+      await expect(finalized.json()).resolves.toMatchObject({
+        code: "temporarily_unavailable",
+        retry: "later",
+      });
+
+      const status = await SELF.fetch(
+        `https://punks.bot${grant.endpoints.statusUrl}`,
+        { headers: { cookie: revocableCookie } },
+      );
+      expect(status.status, await status.clone().text()).toBe(200);
+      await expect(status.json()).resolves.toMatchObject({
+        state: "finalizing",
+        candidate: null,
+        failure: { code: "ambiguous", retry: "same_command" },
+      });
+    } finally {
+      await auth.setSessionUnavailable(revocableSessionId, false);
+    }
   });
 
   it("rejects a mismatched content hash without publishing a candidate", async () => {
@@ -467,6 +666,125 @@ describe("granted R2 media uploads", () => {
     });
   });
 
+  it("keeps a finalization storage outage distinct in recovery status", async () => {
+    const workspaceId = await createWorkspace();
+    const bytes = new TextEncoder().encode("recoverable R2 finalization loss");
+    const sha256 = await digestHex(bytes);
+    const grantResponse = await createGrant(
+      grantCommand(workspaceId, crypto.randomUUID(), {
+        byteLength: bytes.byteLength,
+        sha256,
+      }),
+    );
+    const grant = (await grantResponse.json()) as MediaUploadGrant;
+    expect((await uploadPart(grant, 1, bytes, sha256)).status).toBe(201);
+
+    const command: FinalizeMediaUploadCommand = {
+      contract: "media-upload.finalize@1",
+      commandId: crypto.randomUUID(),
+      workspaceId,
+      uploadId: grant.status.uploadId,
+      actor: { kind: "punk", punkId: ownerPunkId },
+    };
+    // cloudflare:test types Service bindings generically even though this
+    // fixture provides every ApiEnv RPC refinement inside workerd.
+    const workerdEnv = env as typeof env & ApiEnv;
+    // Every binding remains workerd-backed; only the otherwise unreachable R2
+    // outage is injected at the typed binding method consumed by this route.
+    const unavailableBucket = new Proxy(workerdEnv.CONTENT_BUCKET, {
+      get(target, property, receiver) {
+        if (property === "head") {
+          return async () => {
+            throw new Error("simulated R2 outage");
+          };
+        }
+        const value = Reflect.get(target, property, receiver);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    const unavailableEnv = new Proxy(workerdEnv, {
+      get(target, property, receiver) {
+        return property === "CONTENT_BUCKET"
+          ? unavailableBucket
+          : Reflect.get(target, property, receiver);
+      },
+    });
+    const unavailable = await routeMediaUpload(
+      new Request(`https://punks.bot${grant.endpoints.finalizeUrl}`, {
+        method: "POST",
+        headers: {
+          authorization: `PunksUpload ${grant.credential.token}`,
+          "content-type": "application/json",
+          cookie: ownerCookie,
+          "idempotency-key": command.commandId,
+        },
+        body: JSON.stringify(command),
+      }),
+      unavailableEnv,
+      grant.endpoints.finalizeUrl,
+    );
+    if (unavailable === null) throw new TypeError("Media route was not found");
+    expect(unavailable.status, await unavailable.clone().text()).toBe(503);
+    await expect(unavailable.json()).resolves.toMatchObject({
+      code: "storage_unavailable",
+      retry: "later",
+    });
+
+    const status = await SELF.fetch(
+      `https://punks.bot${grant.endpoints.statusUrl}`,
+      { headers: { cookie: ownerCookie } },
+    );
+    await expect(status.json()).resolves.toMatchObject({
+      state: "finalizing",
+      failure: { code: "storage_unavailable", retry: "later" },
+    });
+  });
+
+  it("does not claim that a superseded finalization release was persisted", async () => {
+    const workspaceId = await createWorkspace();
+    const bytes = new TextEncoder().encode("superseded release fence");
+    const sha256 = await digestHex(bytes);
+    const grantResponse = await createGrant(
+      grantCommand(workspaceId, crypto.randomUUID(), {
+        byteLength: bytes.byteLength,
+        sha256,
+      }),
+    );
+    const grant = (await grantResponse.json()) as MediaUploadGrant;
+    expect((await uploadPart(grant, 1, bytes, sha256)).status).toBe(201);
+
+    const authority = env.MEDIA_UPLOADS.getByName(grant.status.uploadId);
+    const begun = await authority.beginFinalize({
+      workspaceId,
+      punkId: ownerPunkId,
+      commandId: crypto.randomUUID(),
+    });
+    expect(begun).toMatchObject({ ok: true, action: "finalize" });
+    if (!begun.ok || begun.action !== "finalize") return;
+    await expect(
+      authority.rejectFinalize({
+        attemptId: crypto.randomUUID(),
+        code: "conflict",
+      }),
+    ).resolves.toEqual({ ok: false, code: "superseded" });
+    await expect(
+      authority.releaseFinalize({
+        attemptId: crypto.randomUUID(),
+        failureCode: "storage_unavailable",
+      }),
+    ).resolves.toEqual({ ok: false, code: "superseded" });
+
+    const status = await SELF.fetch(
+      `https://punks.bot${grant.endpoints.statusUrl}`,
+      { headers: { cookie: ownerCookie } },
+    );
+    await expect(status.json()).resolves.toMatchObject({
+      state: "finalizing",
+      failure: { code: "ambiguous", retry: "same_command" },
+    });
+    await authority.releaseFinalize({ attemptId: begun.attemptId });
+  });
+
   it("exposes and recovers an ambiguous finalization through status", async () => {
     const workspaceId = await createWorkspace();
     const bytes = new TextEncoder().encode("ambiguous then recovered");
@@ -489,7 +807,6 @@ describe("granted R2 media uploads", () => {
     });
     expect(begun).toMatchObject({ ok: true, action: "finalize" });
     if (!begun.ok || begun.action !== "finalize") return;
-    await authority.releaseFinalize({ attemptId: begun.attemptId });
 
     const ambiguousStatus = await SELF.fetch(
       `https://punks.bot${grant.endpoints.statusUrl}`,
@@ -500,6 +817,7 @@ describe("granted R2 media uploads", () => {
       failure: { code: "ambiguous", retry: "same_command" },
     });
 
+    await authority.releaseFinalize({ attemptId: begun.attemptId });
     const recovered = await finalizeUpload(grant, commandId);
     expect(recovered.status, await recovered.clone().text()).toBe(201);
     await expect(recovered.json()).resolves.toMatchObject({

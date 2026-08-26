@@ -3,6 +3,7 @@ import { validateContract } from "@punks/contracts";
 
 import type { ApiEnv } from "./env";
 import { json, problem } from "./http";
+import { verifyMediaUploadGrantToken } from "./media-upload-security";
 import type { MediaUploadInternalSnapshot } from "./media-upload-state";
 
 type WorkspaceAccess = "ok" | "not_found" | "forbidden" | "unavailable";
@@ -55,19 +56,54 @@ export function mediaUploadWorkspaceAccessProblem(
   }
 }
 
+export type MediaUploadSessionStatus = "ok" | "denied" | "unavailable";
+
+export async function currentMediaUploadSessionStatus(
+  env: ApiEnv,
+  session: AuthSession,
+): Promise<MediaUploadSessionStatus> {
+  try {
+    const current = await env.AUTH_SERVICE.resolveSessionId(session.sessionId);
+    return current?.sessionId === session.sessionId &&
+      current.punkId === session.punkId
+      ? "ok"
+      : "denied";
+  } catch {
+    return "unavailable";
+  }
+}
+
 export async function currentMediaUploadSessionMatches(
   env: ApiEnv,
   session: AuthSession,
 ): Promise<boolean> {
-  try {
-    const current = await env.AUTH_SERVICE.resolveSessionId(session.sessionId);
-    return (
-      current?.sessionId === session.sessionId &&
-      current.punkId === session.punkId
-    );
-  } catch {
-    return false;
-  }
+  return (await currentMediaUploadSessionStatus(env, session)) === "ok";
+}
+
+export type MediaUploadAuthorizationStatus = "ok" | "denied" | "unavailable";
+
+export async function mediaUploadFinalAuthorizationStatus(
+  env: ApiEnv,
+  session: AuthSession,
+  snapshot: MediaUploadInternalSnapshot,
+  token: string,
+): Promise<MediaUploadAuthorizationStatus> {
+  const currentSession = await currentMediaUploadSessionStatus(env, session);
+  if (currentSession !== "ok") return currentSession;
+  const currentWorkspaceAccess = await mediaUploadWorkspaceAccess(
+    env,
+    snapshot.workspaceId,
+    session.punkId,
+  );
+  if (currentWorkspaceAccess === "unavailable") return "unavailable";
+  if (currentWorkspaceAccess !== "ok") return "denied";
+  return (await verifyMediaUploadGrantToken(
+    env.MEDIA_UPLOAD_GRANT_KEY,
+    snapshot,
+    token,
+  ))
+    ? "ok"
+    : "denied";
 }
 
 export function publicMediaUploadStatus(

@@ -17,6 +17,7 @@ pub type PunkProfile = contracts_profile::Punk;
 
 /// Generated allowlisted presentation sidecar visible to an authorized Punk.
 pub type PunkPublicSummary = contracts_profile::PunkSummaryBatchResponseSummary;
+/// Generated bounded page of allowlisted Punk summaries.
 pub type PunkSummaryPage = contracts_profile::PunkSummaryBatchResponse;
 
 /// Closed private-search intent supported by the Workspace session.

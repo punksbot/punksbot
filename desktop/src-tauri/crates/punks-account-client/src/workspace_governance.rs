@@ -30,13 +30,20 @@ pub enum WorkspaceRole {
 
 /// Generated, bounded response DTOs transported unchanged through Tauri IPC.
 pub type WorkspaceGovernanceMetadata = contracts_profile::WorkspaceGovernanceView;
+/// Generated bounded Workspace governance page transported through Tauri IPC.
 pub type WorkspaceGovernancePage = contracts_profile::WorkspaceGovernanceResponse;
+/// Generated Workspace invitation view transported through Tauri IPC.
 pub type WorkspaceInvitationView = contracts_profile::WorkspaceInvitationView;
+/// Generated result of creating a Workspace invitation.
 pub type CreateWorkspaceInvitationResult = contracts_profile::CreateWorkspaceInvitationResponse;
+/// Generated result of revoking a Workspace invitation.
 pub type RevokeWorkspaceInvitationResult = contracts_profile::RevokeWorkspaceInvitationResponse;
+/// Generated result of a Workspace membership mutation.
 pub type WorkspaceMembershipMutationResult = contracts_profile::WorkspaceMembershipMutationResponse;
+/// Generated result of leaving or transferring ownership of a Workspace.
 pub type WorkspaceMembershipLifecycleResult =
     contracts_profile::WorkspaceMembershipLifecycleResponse;
+/// Generated result of claiming a Workspace invitation.
 pub type ClaimWorkspaceInvitationResult = contracts_profile::ClaimWorkspaceInvitationResponse;
 
 fn valid_timestamp(value: &str) -> bool {

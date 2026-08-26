@@ -79,13 +79,17 @@ type BeginFinalizeResult =
     }
   | {
       ok: false;
+      code: "rejected";
+      snapshot: MediaUploadInternalSnapshot;
+    }
+  | {
+      ok: false;
       code:
         | "invalid_request"
         | "idempotency_conflict"
         | "in_progress"
         | "expired"
         | "parts_missing"
-        | "rejected"
         | "not_uploading";
     };
 
@@ -457,7 +461,11 @@ export class MediaUploadDO extends DurableObject<ApiEnv> {
       };
     }
     if (current.state === "rejected") {
-      return { ok: false, code: "rejected" };
+      return {
+        ok: false,
+        code: "rejected",
+        snapshot: mediaUploadSnapshot(current, this.parts()),
+      };
     }
     const now = Date.now();
     if (current.expires_at_ms <= now) {
@@ -500,7 +508,7 @@ export class MediaUploadDO extends DurableObject<ApiEnv> {
       `UPDATE media_upload_intent
           SET state = 'finalizing', finalize_command_id = ?,
               operation_attempt_id = ?, operation_started_at_ms = ?,
-              failure_code = NULL
+              failure_code = 'ambiguous'
         WHERE singleton = 1`,
       input.commandId,
       attemptId,
@@ -577,7 +585,9 @@ export class MediaUploadDO extends DurableObject<ApiEnv> {
       : { ok: true, snapshot: mediaUploadSnapshot(committed, this.parts()) };
   }
 
-  rejectFinalize(input: unknown): { ok: boolean } {
+  rejectFinalize(
+    input: unknown,
+  ): { ok: true } | { ok: false; code: "invalid_request" | "superseded" } {
     if (
       typeof input !== "object" ||
       input === null ||
@@ -586,9 +596,9 @@ export class MediaUploadDO extends DurableObject<ApiEnv> {
       typeof input.attemptId !== "string" ||
       (input.code !== "hash_invalid" && input.code !== "conflict")
     ) {
-      return { ok: false };
+      return { ok: false, code: "invalid_request" };
     }
-    this.ctx.storage.sql.exec(
+    const rejected = this.ctx.storage.sql.exec(
       `UPDATE media_upload_intent
           SET state = 'rejected', failure_code = ?,
               operation_attempt_id = NULL, operation_started_at_ms = NULL
@@ -598,27 +608,58 @@ export class MediaUploadDO extends DurableObject<ApiEnv> {
       input.code,
       input.attemptId,
     );
-    return { ok: true };
+    return rejected.rowsWritten === 1
+      ? { ok: true }
+      : { ok: false, code: "superseded" };
   }
 
-  releaseFinalize(input: unknown): { ok: boolean } {
+  async releaseFinalize(
+    input: unknown,
+  ): Promise<
+    { ok: true } | { ok: false; code: "invalid_request" | "superseded" }
+  > {
     if (
       typeof input !== "object" ||
       input === null ||
       !("attemptId" in input) ||
-      typeof input.attemptId !== "string"
+      typeof input.attemptId !== "string" ||
+      ("failureCode" in input &&
+        input.failureCode !== "ambiguous" &&
+        input.failureCode !== "storage_unavailable" &&
+        input.failureCode !== "authorization_lost")
     ) {
-      return { ok: false };
+      return { ok: false, code: "invalid_request" };
     }
-    this.ctx.storage.sql.exec(
+    const failureCode =
+      "failureCode" in input ? input.failureCode : "ambiguous";
+    if (failureCode === "authorization_lost") {
+      const released = this.ctx.storage.sql.exec(
+        `UPDATE media_upload_intent
+            SET state = 'rejected', failure_code = 'authorization_lost',
+                cleanup_target = 'rejected', operation_attempt_id = NULL,
+                operation_started_at_ms = NULL
+          WHERE singleton = 1 AND state = 'finalizing'
+            AND operation_attempt_id = ?`,
+        input.attemptId,
+      );
+      if (released.rowsWritten !== 1) {
+        return { ok: false, code: "superseded" };
+      }
+      await this.ctx.storage.setAlarm(Date.now());
+      return { ok: true };
+    }
+    const released = this.ctx.storage.sql.exec(
       `UPDATE media_upload_intent
-          SET failure_code = 'ambiguous', operation_attempt_id = NULL,
+          SET failure_code = ?, operation_attempt_id = NULL,
               operation_started_at_ms = NULL
         WHERE singleton = 1 AND state = 'finalizing'
           AND operation_attempt_id = ?`,
+      failureCode,
       input.attemptId,
     );
-    return { ok: true };
+    return released.rowsWritten === 1
+      ? { ok: true }
+      : { ok: false, code: "superseded" };
   }
 
   beginAbandon(input: unknown): BeginAbandonResult {
