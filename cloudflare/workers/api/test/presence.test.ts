@@ -18,6 +18,8 @@ import { describe, expect, it, vi } from "vitest";
 
 const ownerPunkId = "00000000-0000-8000-8000-000000000001";
 const otherPunkId = "00000000-0000-8000-8000-000000000002";
+const ownerSessionId = "11111111-1111-8111-8111-111111111111";
+const otherSessionId = "22222222-2222-8222-8222-222222222222";
 const operatorHeaders = {
   authorization:
     "Bearer operator-test-token-00000000000000000000000000000000000000000000",
@@ -502,6 +504,177 @@ describe("ephemeral Presence", () => {
     socket?.close(1000, "test complete");
   });
 
+  it("fences an in-flight signal when the same hold reconnects", async () => {
+    const workspaceId = await createWorkspace();
+    const coordinates = {
+      deviceId: crypto.randomUUID(),
+      clientGeneration: 7,
+      holdId: crypto.randomUUID(),
+    };
+    const firstResponse = await holdPresence(
+      workspaceId,
+      "session-owner",
+      coordinates,
+    );
+    const firstSocket = firstResponse.webSocket;
+    expect(firstSocket).not.toBeNull();
+    if (firstSocket === null) return;
+    const firstFrames = frameQueue(firstSocket);
+    firstSocket.accept();
+    const first = await firstFrames.next();
+    if (first.type !== "accepted") return;
+
+    const auth = env.AUTH_SERVICE as typeof env.AUTH_SERVICE & {
+      holdSessionResolution(
+        sessionId: string,
+        callNumber: number,
+      ): Promise<void>;
+      sessionResolutionHoldReached(sessionId: string): Promise<boolean>;
+      releaseSessionResolution(sessionId: string): Promise<void>;
+    };
+    await auth.holdSessionResolution(ownerSessionId, 1);
+    try {
+      firstSocket.send(
+        JSON.stringify({
+          contract: "presence.status.set@1",
+          leaseToken: first.leaseToken,
+          sequence: 1,
+          status: "stale connection",
+        }),
+      );
+      await expect
+        .poll(() => auth.sessionResolutionHoldReached(ownerSessionId))
+        .toBe(true);
+
+      const replayResponse = await holdPresence(
+        workspaceId,
+        "session-owner",
+        coordinates,
+      );
+      expect(replayResponse.status).toBe(101);
+      const replaySocket = replayResponse.webSocket;
+      expect(replaySocket).not.toBeNull();
+      if (replaySocket === null) return;
+      const replayFrames = frameQueue(replaySocket);
+      replaySocket.accept();
+      const replay = await replayFrames.next();
+      expect(replay).toMatchObject({
+        type: "accepted",
+        presences: [
+          expect.objectContaining({ punkId: ownerPunkId, status: null }),
+        ],
+      });
+
+      await auth.releaseSessionResolution(ownerSessionId);
+      await scheduler.wait(50);
+      replaySocket.send(
+        JSON.stringify({
+          contract: "presence.hold@1",
+          type: "heartbeat",
+          leaseToken: first.leaseToken,
+          sequence: 1,
+        }),
+      );
+      const delivered = await Promise.race([
+        replayFrames.next(),
+        scheduler.wait(200).then(() => null),
+      ]);
+      expect(delivered).toMatchObject({
+        type: "presence",
+        presence: {
+          punkId: ownerPunkId,
+          state: "online",
+          status: null,
+          leaseGeneration: first.leaseGeneration,
+          sequence: 2,
+        },
+      });
+      replaySocket.close(1000, "test complete");
+    } finally {
+      await auth.releaseSessionResolution(ownerSessionId);
+    }
+  });
+
+  it("withdraws a published typing signal when a fresh lease replaces it in flight", async () => {
+    const workspaceId = await createWorkspace();
+    await addOtherMember(workspaceId);
+    const conversation = await createConversation(workspaceId);
+    const followResponse = await followConversation(
+      workspaceId,
+      conversation.id,
+      "session-other",
+      conversation.cursor,
+    );
+    const followSocket = followResponse.webSocket;
+    expect(followSocket).not.toBeNull();
+    if (followSocket === null) return;
+    const followFrames = followFrameQueue(followSocket);
+    followSocket.accept();
+    await expect(followFrames.next()).resolves.toMatchObject({
+      type: "accepted",
+    });
+    await expect(followFrames.next()).resolves.toMatchObject({ type: "ready" });
+
+    const firstResponse = await holdPresence(workspaceId);
+    const firstSocket = firstResponse.webSocket;
+    expect(firstSocket).not.toBeNull();
+    if (firstSocket === null) return;
+    const firstFrames = frameQueue(firstSocket);
+    firstSocket.accept();
+    const accepted = await firstFrames.next();
+    if (accepted.type !== "accepted") return;
+
+    const auth = env.AUTH_SERVICE as typeof env.AUTH_SERVICE & {
+      holdSessionResolution(
+        sessionId: string,
+        callNumber: number,
+      ): Promise<void>;
+      sessionResolutionHoldReached(sessionId: string): Promise<boolean>;
+      releaseSessionResolution(sessionId: string): Promise<void>;
+    };
+    await auth.holdSessionResolution(otherSessionId, 1);
+    try {
+      firstSocket.send(
+        JSON.stringify({
+          contract: "presence.typing.signal@1",
+          leaseToken: accepted.leaseToken,
+          sequence: 1,
+          workspaceId,
+          conversationId: conversation.id,
+          active: true,
+        }),
+      );
+      await expect
+        .poll(() => auth.sessionResolutionHoldReached(otherSessionId))
+        .toBe(true);
+
+      const replacementResponse = await holdPresence(workspaceId);
+      expect(replacementResponse.status).toBe(101);
+      replacementResponse.webSocket?.accept();
+      const firstTypingFrame = followFrames.next();
+      await scheduler.wait(50);
+      await auth.releaseSessionResolution(otherSessionId);
+      await expect(firstTypingFrame).resolves.toMatchObject({
+        type: "typing",
+        patch: {
+          punkId: ownerPunkId,
+          active: false,
+          leaseGeneration: accepted.leaseGeneration,
+        },
+      });
+      const latePatch = await Promise.race([
+        followFrames.next(),
+        scheduler.wait(200).then(() => null),
+      ]);
+      expect(latePatch).toBeNull();
+      replacementResponse.webSocket?.close(1000, "test complete");
+    } finally {
+      await auth.releaseSessionResolution(otherSessionId);
+      firstSocket.close(1000, "test complete");
+      followSocket.close(1000, "test complete");
+    }
+  });
+
   it("keeps the previous lease usable when a replacement snapshot exceeds capacity", async () => {
     const workspaceId = await createWorkspace();
     const coordinates = {
@@ -746,7 +919,7 @@ describe("ephemeral Presence", () => {
           punkId: ownerPunkId,
           active: true,
           leaseGeneration: 1,
-          sequence: 1,
+          sequence: 2,
           expiresAt: "2032-01-01T00:00:05.000Z",
         },
       });
@@ -763,10 +936,212 @@ describe("ephemeral Presence", () => {
           punkId: ownerPunkId,
           active: false,
           leaseGeneration: 1,
-          sequence: 2,
+          sequence: 3,
           expiresAt: null,
         },
       });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("orders a renewed typing signal after an in-flight expiration", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date("2032-01-01T00:00:00.000Z"));
+      const workspaceId = await createWorkspace();
+      await addOtherMember(workspaceId);
+      const conversation = await createConversation(workspaceId);
+
+      const followResponse = await followConversation(
+        workspaceId,
+        conversation.id,
+        "session-other",
+        conversation.cursor,
+      );
+      const followSocket = followResponse.webSocket;
+      expect(followSocket).not.toBeNull();
+      if (followSocket === null) return;
+      const followFrames = followFrameQueue(followSocket);
+      followSocket.accept();
+      await expect(followFrames.next()).resolves.toMatchObject({
+        type: "accepted",
+      });
+      await expect(followFrames.next()).resolves.toMatchObject({
+        type: "ready",
+      });
+
+      const presenceResponse = await holdPresence(workspaceId);
+      const presenceSocket = presenceResponse.webSocket;
+      expect(presenceSocket).not.toBeNull();
+      if (presenceSocket === null) return;
+      const presenceFrames = frameQueue(presenceSocket);
+      presenceSocket.accept();
+      const accepted = await presenceFrames.next();
+      if (accepted.type !== "accepted") return;
+      presenceSocket.send(
+        JSON.stringify({
+          contract: "presence.typing.signal@1",
+          leaseToken: accepted.leaseToken,
+          sequence: 1,
+          workspaceId,
+          conversationId: conversation.id,
+          active: true,
+        }),
+      );
+      await expect(followFrames.next()).resolves.toMatchObject({
+        type: "typing",
+        patch: { active: true },
+      });
+
+      const auth = env.AUTH_SERVICE as typeof env.AUTH_SERVICE & {
+        holdSessionResolution(
+          sessionId: string,
+          callNumber: number,
+        ): Promise<void>;
+        sessionResolutionHoldReached(sessionId: string): Promise<boolean>;
+        releaseSessionResolution(sessionId: string): Promise<void>;
+      };
+      await auth.holdSessionResolution(otherSessionId, 1);
+      vi.setSystemTime(new Date("2032-01-01T00:00:06.000Z"));
+      const alarm = runDurableObjectAlarm(env.PRESENCE.getByName(workspaceId));
+      try {
+        await expect
+          .poll(() => auth.sessionResolutionHoldReached(otherSessionId))
+          .toBe(true);
+        presenceSocket.send(
+          JSON.stringify({
+            contract: "presence.typing.signal@1",
+            leaseToken: accepted.leaseToken,
+            sequence: 2,
+            workspaceId,
+            conversationId: conversation.id,
+            active: true,
+          }),
+        );
+        await scheduler.wait(50);
+        await auth.releaseSessionResolution(otherSessionId);
+        await alarm;
+        const renewed = await followFrames.next();
+        expect(renewed).toMatchObject({
+          type: "typing",
+          patch: { active: true, sequence: 4 },
+        });
+        const staleExpiration = await Promise.race([
+          followFrames.next(),
+          scheduler.wait(200).then(() => null),
+        ]);
+        expect(staleExpiration).toBeNull();
+      } finally {
+        await auth.releaseSessionResolution(otherSessionId);
+        presenceSocket.close(1000, "test complete");
+        followSocket.close(1000, "test complete");
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("fences an expired lease before asynchronous typing cleanup", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date("2032-01-01T00:00:00.000Z"));
+      const workspaceId = await createWorkspace();
+      await addOtherMember(workspaceId);
+      const conversation = await createConversation(workspaceId);
+
+      const ownerResponse = await holdPresence(workspaceId);
+      const ownerSocket = ownerResponse.webSocket;
+      expect(ownerSocket).not.toBeNull();
+      if (ownerSocket === null) return;
+      const ownerFrames = frameQueue(ownerSocket);
+      ownerSocket.accept();
+      const ownerAccepted = await ownerFrames.next();
+      if (ownerAccepted.type !== "accepted") return;
+
+      const observerResponse = await holdPresence(workspaceId, "session-other");
+      const observerSocket = observerResponse.webSocket;
+      expect(observerSocket).not.toBeNull();
+      if (observerSocket === null) return;
+      const observerFrames = frameQueue(observerSocket);
+      observerSocket.accept();
+      await expect(observerFrames.next()).resolves.toMatchObject({
+        type: "accepted",
+      });
+      await expect(ownerFrames.next()).resolves.toMatchObject({
+        type: "presence",
+        presence: { punkId: otherPunkId, state: "online" },
+      });
+
+      const followResponse = await followConversation(
+        workspaceId,
+        conversation.id,
+        "session-other",
+        conversation.cursor,
+      );
+      const followSocket = followResponse.webSocket;
+      expect(followSocket).not.toBeNull();
+      if (followSocket === null) return;
+      const followFrames = followFrameQueue(followSocket);
+      followSocket.accept();
+      await expect(followFrames.next()).resolves.toMatchObject({
+        type: "accepted",
+      });
+      await expect(followFrames.next()).resolves.toMatchObject({
+        type: "ready",
+      });
+      ownerSocket.send(
+        JSON.stringify({
+          contract: "presence.typing.signal@1",
+          leaseToken: ownerAccepted.leaseToken,
+          sequence: 1,
+          workspaceId,
+          conversationId: conversation.id,
+          active: true,
+        }),
+      );
+      await expect(followFrames.next()).resolves.toMatchObject({
+        type: "typing",
+        patch: { active: true },
+      });
+
+      const auth = env.AUTH_SERVICE as typeof env.AUTH_SERVICE & {
+        holdSessionResolution(
+          sessionId: string,
+          callNumber: number,
+        ): Promise<void>;
+        sessionResolutionHoldReached(sessionId: string): Promise<boolean>;
+        releaseSessionResolution(sessionId: string): Promise<void>;
+      };
+      await auth.holdSessionResolution(otherSessionId, 1);
+      vi.setSystemTime(new Date("2032-01-01T00:01:01.000Z"));
+      const alarm = runDurableObjectAlarm(env.PRESENCE.getByName(workspaceId));
+      try {
+        await expect
+          .poll(() => auth.sessionResolutionHoldReached(otherSessionId))
+          .toBe(true);
+        const nextObserverFrame = observerFrames.next();
+        ownerSocket.send(
+          JSON.stringify({
+            contract: "presence.hold@1",
+            type: "heartbeat",
+            leaseToken: ownerAccepted.leaseToken,
+            sequence: 2,
+          }),
+        );
+        await scheduler.wait(50);
+        await auth.releaseSessionResolution(otherSessionId);
+        await alarm;
+        await expect(nextObserverFrame).resolves.toMatchObject({
+          type: "presence",
+          presence: { punkId: ownerPunkId, state: "offline" },
+        });
+      } finally {
+        await auth.releaseSessionResolution(otherSessionId);
+        ownerSocket.close(1000, "test complete");
+        observerSocket.close(1000, "test complete");
+        followSocket.close(1000, "test complete");
+      }
     } finally {
       vi.useRealTimers();
     }
@@ -818,7 +1193,7 @@ describe("ephemeral Presence", () => {
         punkId: ownerPunkId,
         active: true,
         leaseGeneration: accepted.leaseGeneration,
-        sequence: 1,
+        sequence: 2,
       },
     });
 
@@ -830,7 +1205,7 @@ describe("ephemeral Presence", () => {
         punkId: ownerPunkId,
         active: false,
         leaseGeneration: accepted.leaseGeneration,
-        sequence: 2,
+        sequence: 3,
         expiresAt: null,
       },
     });

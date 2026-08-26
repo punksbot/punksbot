@@ -398,7 +398,32 @@ type SearchCandidatePreparation =
       code: "not_found" | "forbidden" | "content_unavailable" | "internal";
     };
 
+interface TypingPatchInput {
+  patch: PresenceTypingPatch;
+  sessionId: string | null;
+}
+
+function parseTypingPatchInput(input: unknown): TypingPatchInput | null {
+  if (
+    typeof input !== "object" ||
+    input === null ||
+    Array.isArray(input) ||
+    !("patch" in input) ||
+    !("sessionId" in input) ||
+    !validateContract("punks://contracts/presence.typing.patch@1", input.patch)
+      .valid ||
+    (typeof input.sessionId !== "string" && input.sessionId !== null)
+  ) {
+    return null;
+  }
+  return {
+    patch: input.patch as PresenceTypingPatch,
+    sessionId: input.sessionId,
+  };
+}
+
 const FOLLOW_PROTOCOL = "punks.follow.v1";
+const MAX_TYPING_DELIVERY_FENCES = 10_000;
 const MESSAGE_SEARCH_MAX_CANDIDATE_BUDGET = 400;
 const MESSAGE_SEARCH_MIN_CANDIDATE_BUDGET = 4;
 const MESSAGE_SEARCH_CANDIDATE_FILL_FACTOR = 4;
@@ -447,6 +472,10 @@ const commandContracts = {
 export class ConversationDO extends DurableObject<ApiEnv> {
   private alarmScheduling: Promise<void> = Promise.resolve();
   private legacyRequiredOriginalContentCommitment = false;
+  private readonly typingDeliveryFences = new Map<
+    string,
+    PresenceTypingPatch
+  >();
 
   constructor(ctx: DurableObjectState, env: ApiEnv) {
     super(ctx, env);
@@ -591,70 +620,19 @@ export class ConversationDO extends DurableObject<ApiEnv> {
     });
   }
 
+  /** Authorizes a typing intent before Presence makes it snapshot-visible. */
+  async authorizeTypingPatch(input: unknown): Promise<{ ok: boolean }> {
+    return { ok: (await this.authorizedTypingPatch(input)) !== null };
+  }
+
   /** Best-effort ephemeral patch accepted only from the Workspace PresenceDO. */
   async publishTypingPatch(input: unknown): Promise<{ ok: boolean }> {
-    if (
-      typeof input !== "object" ||
-      input === null ||
-      Array.isArray(input) ||
-      !("patch" in input) ||
-      !("sessionId" in input) ||
-      !validateContract(
-        "punks://contracts/presence.typing.patch@1",
-        input.patch,
-      ).valid
-    ) {
-      return { ok: false };
-    }
-    const { patch, sessionId } = input as {
-      patch: PresenceTypingPatch;
-      sessionId: unknown;
-    };
-    const state = this.effectiveState();
-    if (
-      state === null ||
-      state.status !== "active" ||
-      state.id !== patch.conversationId ||
-      state.workspaceId !== patch.workspaceId
-    ) {
-      return { ok: false };
-    }
-    if (typeof sessionId === "string") {
-      let session: Awaited<
-        ReturnType<ApiEnv["AUTH_SERVICE"]["resolveSessionId"]>
-      >;
-      try {
-        session = await this.env.AUTH_SERVICE.resolveSessionId(sessionId);
-      } catch {
-        return { ok: false };
-      }
-      if (
-        session === null ||
-        !validateContract("punks://contracts/auth.session@1", session).valid ||
-        session.sessionId !== sessionId ||
-        session.punkId !== patch.punkId ||
-        Date.parse(session.expiresAt) <= Date.now() ||
-        !canReadConversation(state, patch.punkId)
-      ) {
-        return { ok: false };
-      }
-      try {
-        const authorization = await this.env.WORKSPACES.getByName(
-          patch.workspaceId,
-        ).authorize({
-          workspaceId: patch.workspaceId,
-          punkId: patch.punkId,
-          permission: "workspace.read",
-        });
-        if (validateSearchWorkspaceAuthorization(authorization)?.ok !== true) {
-          return { ok: false };
-        }
-      } catch {
-        return { ok: false };
-      }
-    } else if (patch.active || sessionId !== null) {
-      return { ok: false };
-    }
+    const authorized = await this.authorizedTypingPatch(input);
+    if (authorized === null) return { ok: false };
+    const { patch } = authorized;
+    const fence = this.claimTypingDeliveryFence(patch);
+    if (fence === "capacity") return { ok: false };
+    if (fence === "stale") return { ok: true };
 
     for (const socket of this.ctx.getWebSockets()) {
       const attachment = parseFollowAttachment(socket.deserializeAttachment());
@@ -663,7 +641,10 @@ export class ConversationDO extends DurableObject<ApiEnv> {
         continue;
       }
       const authorization = await this.authorizeFollower(attachment);
-      if (authorization.status === "active") {
+      if (
+        authorization.status === "active" &&
+        this.isCurrentTypingDelivery(patch)
+      ) {
         this.sendFollowFrame(socket, {
           schemaVersion: 1,
           type: "typing",
@@ -674,6 +655,87 @@ export class ConversationDO extends DurableObject<ApiEnv> {
       }
     }
     return { ok: true };
+  }
+
+  private async authorizedTypingPatch(
+    input: unknown,
+  ): Promise<TypingPatchInput | null> {
+    const parsed = parseTypingPatchInput(input);
+    if (parsed === null) return null;
+    const { patch, sessionId } = parsed;
+    const state = this.effectiveState();
+    if (
+      state === null ||
+      state.status !== "active" ||
+      state.id !== patch.conversationId ||
+      state.workspaceId !== patch.workspaceId
+    ) {
+      return null;
+    }
+    if (typeof sessionId === "string") {
+      let session: Awaited<
+        ReturnType<ApiEnv["AUTH_SERVICE"]["resolveSessionId"]>
+      >;
+      try {
+        session = await this.env.AUTH_SERVICE.resolveSessionId(sessionId);
+      } catch {
+        return null;
+      }
+      if (
+        session === null ||
+        !validateContract("punks://contracts/auth.session@1", session).valid ||
+        session.sessionId !== sessionId ||
+        session.punkId !== patch.punkId ||
+        Date.parse(session.expiresAt) <= Date.now() ||
+        !canReadConversation(state, patch.punkId)
+      ) {
+        return null;
+      }
+      try {
+        const authorization = await this.env.WORKSPACES.getByName(
+          patch.workspaceId,
+        ).authorize({
+          workspaceId: patch.workspaceId,
+          punkId: patch.punkId,
+          permission: "workspace.read",
+        });
+        if (validateSearchWorkspaceAuthorization(authorization)?.ok !== true) {
+          return null;
+        }
+      } catch {
+        return null;
+      }
+    } else if (patch.active || sessionId !== null) {
+      return null;
+    }
+    return parsed;
+  }
+
+  private claimTypingDeliveryFence(
+    patch: PresenceTypingPatch,
+  ): "current" | "stale" | "capacity" {
+    const current = this.typingDeliveryFences.get(patch.punkId);
+    if (current !== undefined) {
+      if (
+        patch.leaseGeneration < current.leaseGeneration ||
+        (patch.leaseGeneration === current.leaseGeneration &&
+          patch.sequence <= current.sequence)
+      ) {
+        return "stale";
+      }
+    } else if (this.typingDeliveryFences.size >= MAX_TYPING_DELIVERY_FENCES) {
+      return "capacity";
+    }
+    this.typingDeliveryFences.set(patch.punkId, patch);
+    return "current";
+  }
+
+  private isCurrentTypingDelivery(patch: PresenceTypingPatch): boolean {
+    const current = this.typingDeliveryFences.get(patch.punkId);
+    return (
+      current?.leaseGeneration === patch.leaseGeneration &&
+      current.sequence === patch.sequence
+    );
   }
 
   private visibleHighWaterCursor(aggregateCursor: number): number {

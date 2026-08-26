@@ -107,6 +107,36 @@ fn presence_reducer_fences_generations_sequences_and_tokens_before_ipc() {
     let ignored = reduce_presence_frame(&reduced.state, reordered)
         .expect("reordered patch is safely omitted");
     assert!(matches!(ignored.effect, PresenceEffect::None));
+
+    let offline = frame(json!({
+        "schemaVersion": 1,
+        "type": "presence",
+        "presence": {
+            "punkId": PUNK_ID,
+            "state": "offline",
+            "status": null,
+            "leaseGeneration": 4,
+            "sequence": 3,
+            "expiresAt": null
+        }
+    }));
+    let offline = reduce_presence_frame(&reduced.state, offline).expect("offline tombstone");
+    assert!(matches!(offline.effect, PresenceEffect::Delivery(_)));
+    let delayed_online = frame(json!({
+        "schemaVersion": 1,
+        "type": "presence",
+        "presence": {
+            "punkId": PUNK_ID,
+            "state": "online",
+            "status": null,
+            "leaseGeneration": 4,
+            "sequence": 2,
+            "expiresAt": "2032-01-01T00:04:00.000Z"
+        }
+    }));
+    let ignored = reduce_presence_frame(&offline.state, delayed_online)
+        .expect("a delayed online patch cannot cross the offline tombstone");
+    assert!(matches!(ignored.effect, PresenceEffect::None));
 }
 
 #[test]

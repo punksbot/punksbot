@@ -332,12 +332,11 @@ pub fn reduce_presence_frame(
                 }
             }
             let mut next = state.clone();
-            if presence.state == PresenceAvailability::Offline {
-                next.views.remove(&presence.punk_id);
-            } else {
-                next.views
-                    .insert(presence.punk_id.clone(), presence.clone());
-            }
+            // Retain offline tombstones natively so a delayed online frame
+            // from the same Bail cannot cross IPC after the visible state was
+            // removed by the renderer.
+            next.views
+                .insert(presence.punk_id.clone(), presence.clone());
             Ok(PresenceReduction {
                 state: next,
                 effect: PresenceEffect::Delivery(PresenceDelivery::Presence { presence }),

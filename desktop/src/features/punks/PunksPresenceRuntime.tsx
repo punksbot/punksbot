@@ -7,7 +7,7 @@ import {
   type ReactNode,
 } from "react";
 
-import type { PresenceTypingPatch, PresenceView } from "@punks/contracts";
+import type { PresenceTypingPatch } from "@punks/contracts";
 import type { PunksPresence } from "@/shared/api/punksClient";
 
 import {
@@ -18,6 +18,8 @@ import {
 import {
   applyPresenceDelivery,
   applyTypingPatch as reduceTypingPatch,
+  emptyPresenceSignalState,
+  emptyTypingSignalState,
   pruneExpiredSignals,
 } from "./punksPresenceState";
 import { usePunksWorkspace } from "./PunksRuntime";
@@ -31,24 +33,22 @@ export default function PunksPresenceRuntime({
   const { scope, manager } = usePunksWorkspace();
   const [status, setRealtimeStatus] =
     useState<PunksRealtimeStatus>("connecting");
-  const [presences, setPresences] = useState<ReadonlyMap<string, PresenceView>>(
-    () => new Map(),
-  );
-  const [typing, setTyping] = useState<
-    ReadonlyMap<string, PresenceTypingPatch>
-  >(() => new Map());
+  const [presenceState, setPresenceState] = useState(emptyPresenceSignalState);
+  const [typingState, setTypingState] = useState(emptyTypingSignalState);
+  const presences = presenceState.visible;
+  const typing = typingState.visible;
   const presenceRef = useRef<PunksPresence | null>(null);
-  const presencesRef = useRef(presences);
+  const presenceStateRef = useRef(presenceState);
 
   useEffect(() => {
     let active = true;
     let opened: PunksPresence | null = null;
 
     const clearSignals = () => {
-      const emptyPresences = new Map<string, PresenceView>();
-      presencesRef.current = emptyPresences;
-      setPresences(emptyPresences);
-      setTyping(new Map());
+      const emptyPresences = emptyPresenceSignalState();
+      presenceStateRef.current = emptyPresences;
+      setPresenceState(emptyPresences);
+      setTypingState(emptyTypingSignalState());
     };
 
     const run = async () => {
@@ -69,7 +69,7 @@ export default function PunksPresenceRuntime({
             continue;
           }
           const reduction = applyPresenceDelivery(
-            presencesRef.current,
+            presenceStateRef.current,
             delivery,
             scope.lease.generation,
           );
@@ -79,8 +79,8 @@ export default function PunksPresenceRuntime({
             break;
           }
           if (reduction.kind === "applied") {
-            presencesRef.current = reduction.state;
-            setPresences(reduction.state);
+            presenceStateRef.current = reduction.state;
+            setPresenceState(reduction.state);
           }
           if (delivery.kind === "accepted") setRealtimeStatus("live");
         }
@@ -104,8 +104,8 @@ export default function PunksPresenceRuntime({
   }, [manager, scope]);
 
   useEffect(() => {
-    presencesRef.current = presences;
-  }, [presences]);
+    presenceStateRef.current = presenceState;
+  }, [presenceState]);
 
   useEffect(() => {
     const deadlines = [
@@ -120,15 +120,15 @@ export default function PunksPresenceRuntime({
     if (!Number.isFinite(nextDeadline)) return;
     const timer = window.setTimeout(
       () => {
-        const pruned = pruneExpiredSignals(presences, typing);
-        presencesRef.current = pruned.presences;
-        setPresences(pruned.presences);
-        setTyping(pruned.typing);
+        const pruned = pruneExpiredSignals(presenceState, typingState);
+        presenceStateRef.current = pruned.presences;
+        setPresenceState(pruned.presences);
+        setTypingState(pruned.typing);
       },
       Math.max(0, nextDeadline - Date.now() + 1),
     );
     return () => window.clearTimeout(timer);
-  }, [presences, typing]);
+  }, [presenceState, presences, typing, typingState]);
 
   const setStatus = useCallback(
     async (nextStatus: string | null) => {
@@ -160,7 +160,7 @@ export default function PunksPresenceRuntime({
 
   const applyTypingPatch = useCallback(
     (patch: PresenceTypingPatch) => {
-      setTyping((current) => {
+      setTypingState((current) => {
         const reduction = reduceTypingPatch(
           current,
           patch,

@@ -147,7 +147,9 @@ export class PunkSessionService extends WorkerEntrypoint {
       hold.remaining -= 1;
       if (hold.remaining === 0) {
         hold.reached = true;
-        await scheduler.wait(3_000);
+        while (sessionResolutionHolds.get(sessionId) === hold) {
+          await scheduler.wait(10);
+        }
       }
     }
     if (revokedSessionIds.has(sessionId)) {

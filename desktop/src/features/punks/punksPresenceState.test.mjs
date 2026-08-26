@@ -4,6 +4,8 @@ import test from "node:test";
 import {
   applyPresenceDelivery,
   applyTypingPatch,
+  emptyPresenceSignalState,
+  emptyTypingSignalState,
   pruneExpiredSignals,
 } from "./punksPresenceState.ts";
 
@@ -13,7 +15,7 @@ const punkId = "00000000-0000-8000-8000-000000000003";
 
 test("Presence replaces atomically then rejects stale lease generations", () => {
   const accepted = applyPresenceDelivery(
-    new Map(),
+    emptyPresenceSignalState(),
     {
       kind: "accepted",
       clientGeneration: 4,
@@ -35,7 +37,7 @@ test("Presence replaces atomically then rejects stale lease generations", () => 
     4,
   );
   assert.equal(accepted.kind, "applied");
-  assert.equal(accepted.state.get(punkId)?.state, "online");
+  assert.equal(accepted.state.visible.get(punkId)?.state, "online");
 
   const stale = applyPresenceDelivery(
     accepted.state,
@@ -53,7 +55,7 @@ test("Presence replaces atomically then rejects stale lease generations", () => 
     4,
   );
   assert.equal(stale.kind, "ignored");
-  assert.equal(stale.state.get(punkId)?.state, "online");
+  assert.equal(stale.state.visible.get(punkId)?.state, "online");
 
   const offline = applyPresenceDelivery(
     stale.state,
@@ -71,12 +73,30 @@ test("Presence replaces atomically then rejects stale lease generations", () => 
     4,
   );
   assert.equal(offline.kind, "applied");
-  assert.equal(offline.state.has(punkId), false);
+  assert.equal(offline.state.visible.has(punkId), false);
+
+  const delayedOnline = applyPresenceDelivery(
+    offline.state,
+    {
+      kind: "presence",
+      presence: {
+        punkId,
+        state: "online",
+        status: "delayed",
+        leaseGeneration: 2,
+        sequence: 3,
+        expiresAt: "2032-01-01T00:03:00.000Z",
+      },
+    },
+    4,
+  );
+  assert.equal(delayedOnline.kind, "ignored");
+  assert.equal(delayedOnline.state.visible.has(punkId), false);
 });
 
 test("typing is scoped, monotone and expires locally without replay", () => {
   const active = applyTypingPatch(
-    new Map(),
+    emptyTypingSignalState(),
     {
       workspaceId,
       conversationId,
@@ -89,7 +109,7 @@ test("typing is scoped, monotone and expires locally without replay", () => {
     workspaceId,
   );
   assert.equal(active.kind, "applied");
-  assert.equal(active.state.size, 1);
+  assert.equal(active.state.visible.size, 1);
 
   const stale = applyTypingPatch(
     active.state,
@@ -105,12 +125,43 @@ test("typing is scoped, monotone and expires locally without replay", () => {
     workspaceId,
   );
   assert.equal(stale.kind, "ignored");
-  assert.equal(stale.state.size, 1);
+  assert.equal(stale.state.visible.size, 1);
 
   const expired = pruneExpiredSignals(
-    new Map(),
+    emptyPresenceSignalState(),
     stale.state,
     Date.parse("2032-01-01T00:00:06.000Z"),
   );
-  assert.equal(expired.typing.size, 0);
+  assert.equal(expired.typing.visible.size, 0);
+
+  const stopped = applyTypingPatch(
+    active.state,
+    {
+      workspaceId,
+      conversationId,
+      punkId,
+      active: false,
+      leaseGeneration: 2,
+      sequence: 4,
+      expiresAt: null,
+    },
+    workspaceId,
+  );
+  assert.equal(stopped.kind, "applied");
+  assert.equal(stopped.state.visible.size, 0);
+  const delayed = applyTypingPatch(
+    stopped.state,
+    {
+      workspaceId,
+      conversationId,
+      punkId,
+      active: true,
+      leaseGeneration: 2,
+      sequence: 3,
+      expiresAt: "2032-01-01T00:00:10.000Z",
+    },
+    workspaceId,
+  );
+  assert.equal(delayed.kind, "ignored");
+  assert.equal(delayed.state.visible.size, 0);
 });

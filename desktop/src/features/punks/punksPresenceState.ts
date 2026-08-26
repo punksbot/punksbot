@@ -7,6 +7,16 @@ import type {
 export type PresenceMap = ReadonlyMap<string, PresenceView>;
 export type TypingMap = ReadonlyMap<string, PresenceTypingPatch>;
 
+export interface PresenceSignalState {
+  visible: PresenceMap;
+  latest: PresenceMap;
+}
+
+export interface TypingSignalState {
+  visible: TypingMap;
+  latest: TypingMap;
+}
+
 export type SignalReduction<T> = {
   kind: "applied" | "ignored" | "violation";
   state: T;
@@ -27,13 +37,21 @@ function sameSignal(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
+export function emptyPresenceSignalState(): PresenceSignalState {
+  return { visible: new Map(), latest: new Map() };
+}
+
+export function emptyTypingSignalState(): TypingSignalState {
+  return { visible: new Map(), latest: new Map() };
+}
+
 export function applyPresenceDelivery(
-  current: PresenceMap,
+  current: PresenceSignalState,
   delivery: DesktopPresenceDelivery,
   generation: number,
-): SignalReduction<PresenceMap> {
+): SignalReduction<PresenceSignalState> {
   if (delivery.kind === "realtime_degraded") {
-    return { kind: "applied", state: new Map() };
+    return { kind: "applied", state: emptyPresenceSignalState() };
   }
   if (delivery.kind === "accepted") {
     if (delivery.clientGeneration !== generation) {
@@ -46,11 +64,14 @@ export function applyPresenceDelivery(
       }
       next.set(presence.punkId, presence);
     }
-    return { kind: "applied", state: next };
+    return {
+      kind: "applied",
+      state: { visible: next, latest: new Map(next) },
+    };
   }
 
   const candidate = delivery.presence;
-  const existing = current.get(candidate.punkId);
+  const existing = current.latest.get(candidate.punkId);
   if (existing !== undefined) {
     const order = newerThan(candidate, existing);
     if (order < 0) return { kind: "ignored", state: current };
@@ -61,10 +82,12 @@ export function applyPresenceDelivery(
       };
     }
   }
-  const next = new Map(current);
-  if (candidate.state === "offline") next.delete(candidate.punkId);
-  else next.set(candidate.punkId, candidate);
-  return { kind: "applied", state: next };
+  const visible = new Map(current.visible);
+  if (candidate.state === "offline") visible.delete(candidate.punkId);
+  else visible.set(candidate.punkId, candidate);
+  const latest = new Map(current.latest);
+  latest.set(candidate.punkId, candidate);
+  return { kind: "applied", state: { visible, latest } };
 }
 
 export function typingKey(patch: PresenceTypingPatch): string {
@@ -72,15 +95,15 @@ export function typingKey(patch: PresenceTypingPatch): string {
 }
 
 export function applyTypingPatch(
-  current: TypingMap,
+  current: TypingSignalState,
   patch: PresenceTypingPatch,
   workspaceId: string,
-): SignalReduction<TypingMap> {
+): SignalReduction<TypingSignalState> {
   if (patch.workspaceId !== workspaceId) {
     return { kind: "violation", state: current };
   }
   const key = typingKey(patch);
-  const existing = current.get(key);
+  const existing = current.latest.get(key);
   if (existing !== undefined) {
     const order = newerThan(patch, existing);
     if (order < 0) return { kind: "ignored", state: current };
@@ -91,28 +114,33 @@ export function applyTypingPatch(
       };
     }
   }
-  const next = new Map(current);
-  if (patch.active) next.set(key, patch);
-  else next.delete(key);
-  return { kind: "applied", state: next };
+  const visible = new Map(current.visible);
+  if (patch.active) visible.set(key, patch);
+  else visible.delete(key);
+  const latest = new Map(current.latest);
+  latest.set(key, patch);
+  return { kind: "applied", state: { visible, latest } };
 }
 
 export function pruneExpiredSignals(
-  presences: PresenceMap,
-  typing: TypingMap,
+  presences: PresenceSignalState,
+  typing: TypingSignalState,
   now = Date.now(),
-): { presences: PresenceMap; typing: TypingMap } {
+): { presences: PresenceSignalState; typing: TypingSignalState } {
   const nextPresences = new Map(
-    [...presences].filter(([, presence]) => {
+    [...presences.visible].filter(([, presence]) => {
       const expiresAt = Date.parse(presence.expiresAt ?? "");
       return Number.isFinite(expiresAt) && expiresAt > now;
     }),
   );
   const nextTyping = new Map(
-    [...typing].filter(([, patch]) => {
+    [...typing.visible].filter(([, patch]) => {
       const expiresAt = Date.parse(patch.expiresAt ?? "");
       return patch.active && Number.isFinite(expiresAt) && expiresAt > now;
     }),
   );
-  return { presences: nextPresences, typing: nextTyping };
+  return {
+    presences: { visible: nextPresences, latest: presences.latest },
+    typing: { visible: nextTyping, latest: typing.latest },
+  };
 }

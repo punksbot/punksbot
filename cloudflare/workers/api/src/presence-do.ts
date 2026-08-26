@@ -345,13 +345,10 @@ export class PresenceDO extends DurableObject<ApiEnv> {
         now,
       )
       .toArray();
-    for (const row of expired) {
+    for (const candidate of expired) {
+      const row = this.claimExpiredLease(candidate, now);
+      if (row === null) continue;
       await this.clearTypingForLease(row);
-      this.ctx.storage.sql.exec(
-        "DELETE FROM presence_lease WHERE punk_id = ? AND lease_token = ?",
-        row.punk_id,
-        row.lease_token,
-      );
       await this.broadcast(
         toPresenceView(row, now, "offline", row.patch_sequence + 1),
       );
@@ -367,17 +364,12 @@ export class PresenceDO extends DurableObject<ApiEnv> {
         now,
       )
       .toArray();
-    for (const row of away) {
-      const sequence = row.patch_sequence + 1;
-      this.ctx.storage.sql.exec(
-        `UPDATE presence_lease
-         SET away_emitted = 1, patch_sequence = ?
-         WHERE punk_id = ? AND lease_token = ?`,
-        sequence,
-        row.punk_id,
-        row.lease_token,
+    for (const candidate of away) {
+      const row = this.claimAwayTransition(candidate, now);
+      if (row === null) continue;
+      await this.broadcast(
+        toPresenceView(row, now, "away", row.patch_sequence),
       );
-      await this.broadcast(toPresenceView(row, now, "away", sequence));
     }
 
     const expiredTyping = this.ctx.storage.sql
@@ -388,22 +380,8 @@ export class PresenceDO extends DurableObject<ApiEnv> {
       )
       .toArray();
     for (const row of expiredTyping) {
-      this.ctx.storage.sql.exec(
-        `DELETE FROM presence_typing
-         WHERE punk_id = ? AND conversation_id = ? AND lease_token = ?`,
-        row.punk_id,
-        row.conversation_id,
-        row.lease_token,
-      );
-      await this.publishTypingPatch({
-        workspaceId: this.ctx.id.name ?? "",
-        conversationId: row.conversation_id,
-        punkId: row.punk_id,
-        active: false,
-        leaseGeneration: row.lease_generation,
-        sequence: row.sequence + 1,
-        expiresAt: null,
-      });
+      const patch = this.claimExpiredTyping(row, now);
+      if (patch !== null) await this.publishTypingPatch(patch);
     }
     await this.scheduleNextAlarm();
   }
@@ -453,17 +431,17 @@ export class PresenceDO extends DurableObject<ApiEnv> {
       socket.close(1008, "stale presence lease");
       return;
     }
-    const current = this.leaseForPunk(attachment.punkId);
+    const observed = this.leaseForPunk(attachment.punkId);
     if (
-      current === null ||
-      current.lease_token !== attachment.leaseToken ||
-      current.lease_generation !== attachment.leaseGeneration ||
-      current.connection_id !== attachment.connectionId
+      observed === null ||
+      observed.lease_token !== attachment.leaseToken ||
+      observed.lease_generation !== attachment.leaseGeneration ||
+      observed.connection_id !== attachment.connectionId
     ) {
       socket.close(1008, "stale presence lease");
       return;
     }
-    if (signal.sequence <= current.last_client_sequence) return;
+    if (signal.sequence <= observed.last_client_sequence) return;
 
     const authorization = await this.authorizeSocket(attachment);
     if (authorization.status === "unavailable") {
@@ -486,6 +464,21 @@ export class PresenceDO extends DurableObject<ApiEnv> {
         role: authorization.role,
       } satisfies PresenceSocketAttachment);
     }
+
+    // Authorization crosses Service Binding boundaries and can interleave with
+    // a replayed hold or a newer frame. Re-read the socket fence before any
+    // mutation so the superseded connection cannot affect the current Bail.
+    const current = this.leaseForPunk(attachment.punkId);
+    if (
+      current === null ||
+      current.lease_token !== attachment.leaseToken ||
+      current.lease_generation !== attachment.leaseGeneration ||
+      current.connection_id !== attachment.connectionId
+    ) {
+      socket.close(1008, "stale presence lease");
+      return;
+    }
+    if (signal.sequence <= current.last_client_sequence) return;
 
     const now = Date.now();
     if (typingValid) {
@@ -619,14 +612,14 @@ export class PresenceDO extends DurableObject<ApiEnv> {
 
   /** Idempotent best-effort fence called after authoritative access removal. */
   async revokePunk(punkId: string): Promise<void> {
-    const row = this.leaseForPunk(punkId);
-    if (row === null) return;
+    const row = this.ctx.storage.sql
+      .exec<LeaseRow>(
+        "DELETE FROM presence_lease WHERE punk_id = ? RETURNING *",
+        punkId,
+      )
+      .toArray()[0];
+    if (row === undefined) return;
     await this.clearTypingForLease(row);
-    this.ctx.storage.sql.exec(
-      "DELETE FROM presence_lease WHERE punk_id = ? AND lease_token = ?",
-      row.punk_id,
-      row.lease_token,
-    );
     await this.broadcast(
       toPresenceView(row, Date.now(), "offline", row.patch_sequence + 1),
       row.lease_token,
@@ -654,23 +647,38 @@ export class PresenceDO extends DurableObject<ApiEnv> {
     const signalsInWindow = windowExpired
       ? 0
       : current.typing_signals_in_window;
-    this.ctx.storage.sql.exec(
-      `UPDATE presence_lease
-       SET last_client_sequence = ?, typing_window_started_at = ?
-       WHERE punk_id = ? AND lease_token = ?`,
-      signal.sequence,
-      windowStartedAt,
-      current.punk_id,
-      current.lease_token,
-    );
-    if (signalsInWindow >= MAX_TYPING_SIGNALS_PER_WINDOW) return;
-    this.ctx.storage.sql.exec(
-      `UPDATE presence_lease SET typing_signals_in_window = ?
-       WHERE punk_id = ? AND lease_token = ?`,
-      signalsInWindow + 1,
-      current.punk_id,
-      current.lease_token,
-    );
+    if (signalsInWindow >= MAX_TYPING_SIGNALS_PER_WINDOW) {
+      this.ctx.storage.sql.exec(
+        `UPDATE presence_lease
+         SET last_client_sequence = ?, typing_window_started_at = ?
+         WHERE punk_id = ? AND lease_token = ? AND connection_id = ?`,
+        signal.sequence,
+        windowStartedAt,
+        current.punk_id,
+        current.lease_token,
+        current.connection_id,
+      );
+      return;
+    }
+    const patchSequence = this.ctx.storage.sql
+      .exec<{ patch_sequence: number }>(
+        `UPDATE presence_lease
+         SET last_client_sequence = ?, patch_sequence = patch_sequence + 1,
+             typing_window_started_at = ?, typing_signals_in_window = ?
+         WHERE punk_id = ? AND lease_token = ? AND connection_id = ?
+         RETURNING patch_sequence`,
+        signal.sequence,
+        windowStartedAt,
+        signalsInWindow + 1,
+        current.punk_id,
+        current.lease_token,
+        current.connection_id,
+      )
+      .toArray()[0]?.patch_sequence;
+    if (patchSequence === undefined) {
+      socket.close(1008, "stale presence lease");
+      return;
+    }
 
     const patch: PresenceTypingPatch = {
       workspaceId: attachment.workspaceId,
@@ -678,40 +686,93 @@ export class PresenceDO extends DurableObject<ApiEnv> {
       punkId: attachment.punkId,
       active: signal.active,
       leaseGeneration: attachment.leaseGeneration,
-      sequence: signal.sequence,
+      sequence: patchSequence,
       expiresAt: signal.active
         ? new Date(now + TYPING_TTL_MS).toISOString()
         : null,
     };
-    const published = await this.publishTypingPatch(
+    const authorized = await this.authorizeTypingPatch(
       patch,
       attachment.sessionId,
     );
-    if (!published.ok) return;
+    if (!authorized.ok) return;
+
+    const finalLease = this.leaseForPunk(attachment.punkId);
+    if (
+      finalLease === null ||
+      finalLease.lease_token !== attachment.leaseToken ||
+      finalLease.lease_generation !== attachment.leaseGeneration ||
+      finalLease.connection_id !== attachment.connectionId ||
+      finalLease.patch_sequence !== patchSequence
+    ) {
+      return;
+    }
 
     if (signal.active) {
       this.ctx.storage.sql.exec(
-        `INSERT OR REPLACE INTO presence_typing (
+        `INSERT INTO presence_typing (
            punk_id, conversation_id, lease_token, lease_generation, sequence,
            expires_at
-         ) VALUES (?, ?, ?, ?, ?, ?)`,
+         ) VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(punk_id, conversation_id) DO UPDATE SET
+           lease_token = excluded.lease_token,
+           lease_generation = excluded.lease_generation,
+           sequence = excluded.sequence,
+           expires_at = excluded.expires_at
+         WHERE presence_typing.lease_generation < excluded.lease_generation
+            OR (
+              presence_typing.lease_generation = excluded.lease_generation
+              AND presence_typing.sequence < excluded.sequence
+            )`,
         attachment.punkId,
         signal.conversationId,
         attachment.leaseToken,
         attachment.leaseGeneration,
-        signal.sequence,
+        patchSequence,
         now + TYPING_TTL_MS,
       );
     } else {
       this.ctx.storage.sql.exec(
         `DELETE FROM presence_typing
-         WHERE punk_id = ? AND conversation_id = ? AND lease_token = ?`,
+         WHERE punk_id = ? AND conversation_id = ? AND lease_token = ?
+           AND lease_generation = ? AND sequence < ?`,
         attachment.punkId,
         signal.conversationId,
         attachment.leaseToken,
+        attachment.leaseGeneration,
+        patchSequence,
+      );
+    }
+    const published = await this.publishTypingPatch(
+      patch,
+      attachment.sessionId,
+    );
+    if (!published.ok && signal.active) {
+      this.ctx.storage.sql.exec(
+        `DELETE FROM presence_typing
+         WHERE punk_id = ? AND conversation_id = ? AND lease_token = ?
+           AND lease_generation = ? AND sequence = ?`,
+        attachment.punkId,
+        signal.conversationId,
+        attachment.leaseToken,
+        attachment.leaseGeneration,
+        patchSequence,
       );
     }
     await this.scheduleNextAlarm();
+  }
+
+  private async authorizeTypingPatch(
+    patch: PresenceTypingPatch,
+    sessionId: string,
+  ): Promise<{ ok: boolean }> {
+    try {
+      return await this.env.CONVERSATIONS.getByName(
+        patch.conversationId,
+      ).authorizeTypingPatch({ patch, sessionId });
+    } catch {
+      return { ok: false };
+    }
   }
 
   private async publishTypingPatch(
@@ -725,6 +786,109 @@ export class PresenceDO extends DurableObject<ApiEnv> {
     } catch {
       return { ok: false };
     }
+  }
+
+  private claimExpiredLease(candidate: LeaseRow, now: number): LeaseRow | null {
+    return this.ctx.storage.transactionSync(() => {
+      const current = this.leaseForPunk(candidate.punk_id);
+      if (
+        current === null ||
+        current.lease_token !== candidate.lease_token ||
+        current.expires_at > now
+      ) {
+        return null;
+      }
+      return (
+        this.ctx.storage.sql
+          .exec<LeaseRow>(
+            `DELETE FROM presence_lease
+             WHERE punk_id = ? AND lease_token = ? AND expires_at <= ?
+             RETURNING *`,
+            current.punk_id,
+            current.lease_token,
+            now,
+          )
+          .toArray()[0] ?? null
+      );
+    });
+  }
+
+  private claimAwayTransition(
+    candidate: LeaseRow,
+    now: number,
+  ): LeaseRow | null {
+    return (
+      this.ctx.storage.sql
+        .exec<LeaseRow>(
+          `UPDATE presence_lease
+           SET away_emitted = 1, patch_sequence = patch_sequence + 1
+           WHERE punk_id = ? AND lease_token = ? AND away_emitted = 0
+             AND away_at <= ? AND expires_at > ?
+           RETURNING *`,
+          candidate.punk_id,
+          candidate.lease_token,
+          now,
+          now,
+        )
+        .toArray()[0] ?? null
+    );
+  }
+
+  private claimExpiredTyping(
+    candidate: TypingRow,
+    now: number,
+  ): PresenceTypingPatch | null {
+    return this.ctx.storage.transactionSync(() => {
+      const current = this.ctx.storage.sql
+        .exec<TypingRow>(
+          `SELECT * FROM presence_typing
+           WHERE punk_id = ? AND conversation_id = ? AND lease_token = ?`,
+          candidate.punk_id,
+          candidate.conversation_id,
+          candidate.lease_token,
+        )
+        .toArray()[0];
+      if (current === undefined || current.expires_at > now) return null;
+
+      const leaseSequence = this.ctx.storage.sql
+        .exec<{ patch_sequence: number }>(
+          `UPDATE presence_lease
+           SET patch_sequence = MAX(patch_sequence, ?) + 1
+           WHERE punk_id = ? AND lease_token = ? AND lease_generation = ?
+           RETURNING patch_sequence`,
+          current.sequence,
+          current.punk_id,
+          current.lease_token,
+          current.lease_generation,
+        )
+        .toArray()[0]?.patch_sequence;
+      const sequence = leaseSequence ?? current.sequence + 1;
+      const deleted = this.ctx.storage.sql
+        .exec<{ punk_id: string }>(
+          `DELETE FROM presence_typing
+           WHERE punk_id = ? AND conversation_id = ? AND lease_token = ?
+             AND lease_generation = ? AND sequence = ? AND expires_at <= ?
+           RETURNING punk_id`,
+          current.punk_id,
+          current.conversation_id,
+          current.lease_token,
+          current.lease_generation,
+          current.sequence,
+          now,
+        )
+        .toArray()[0];
+      return deleted === undefined
+        ? null
+        : {
+            workspaceId: this.ctx.id.name ?? "",
+            conversationId: current.conversation_id,
+            punkId: current.punk_id,
+            active: false,
+            leaseGeneration: current.lease_generation,
+            sequence,
+            expiresAt: null,
+          };
+    });
   }
 
   private async clearTypingForLease(row: LeaseRow): Promise<void> {
@@ -902,20 +1066,18 @@ export class PresenceDO extends DurableObject<ApiEnv> {
   private async releaseSocket(socket: WebSocket): Promise<void> {
     const attachment = socketAttachment(socket.deserializeAttachment());
     if (attachment === null) return;
-    const row = this.leaseForPunk(attachment.punkId);
-    if (
-      row === null ||
-      row.lease_token !== attachment.leaseToken ||
-      row.connection_id !== attachment.connectionId
-    ) {
-      return;
-    }
+    const row = this.ctx.storage.sql
+      .exec<LeaseRow>(
+        `DELETE FROM presence_lease
+         WHERE punk_id = ? AND lease_token = ? AND connection_id = ?
+         RETURNING *`,
+        attachment.punkId,
+        attachment.leaseToken,
+        attachment.connectionId,
+      )
+      .toArray()[0];
+    if (row === undefined) return;
     await this.clearTypingForLease(row);
-    this.ctx.storage.sql.exec(
-      "DELETE FROM presence_lease WHERE punk_id = ? AND lease_token = ?",
-      row.punk_id,
-      row.lease_token,
-    );
     await this.broadcast(
       toPresenceView(row, Date.now(), "offline", row.patch_sequence + 1),
       row.lease_token,
