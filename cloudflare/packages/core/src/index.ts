@@ -293,6 +293,7 @@ export {
   type WorkspaceRole,
 } from "./permissions";
 export {
+  decideApplyAccountMergeToWorkspaceV2,
   decideCreateWorkspace,
   decideCreateWorkspaceV2,
   decideClaimWorkspaceInvitation,
@@ -312,5 +313,6 @@ export {
   type WorkspaceDecision,
   type WorkspaceDecisionV2,
   type WorkspaceDecisionContext,
+  type ApplyAccountMergeToWorkspaceInput,
   type WorkspaceDomainErrorCode,
 } from "./workspace";

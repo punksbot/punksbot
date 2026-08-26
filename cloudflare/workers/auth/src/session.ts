@@ -54,6 +54,38 @@ export function canonicalPunk(value: unknown): Punk {
   return value as Punk;
 }
 
+/** Resolves a bounded historical alias chain to its one active Compte Punks. */
+export async function resolveActivePunk(
+  env: AuthEnv,
+  punkId: string,
+): Promise<Punk | null> {
+  const seen = new Set<string>();
+  let currentId = punkId;
+  for (let hop = 0; hop < 8; hop += 1) {
+    if (seen.has(currentId)) return null;
+    seen.add(currentId);
+    let raw: unknown;
+    try {
+      raw = await env.PUNKS.getByName(currentId).readForResolution();
+    } catch {
+      return null;
+    }
+    if (
+      !validateContract("punks://contracts/punk@1", raw).valid ||
+      typeof raw !== "object" ||
+      raw === null ||
+      Reflect.get(raw, "id") !== currentId
+    ) {
+      return null;
+    }
+    const state = raw as Punk;
+    if (state.status === "active") return state;
+    if (state.status !== "merged" || state.mergedInto === null) return null;
+    currentId = state.mergedInto;
+  }
+  return null;
+}
+
 export async function aggregateName(
   domain:
     | "identity"

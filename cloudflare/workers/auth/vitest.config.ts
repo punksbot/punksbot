@@ -1,6 +1,15 @@
 import { cloudflareTest } from "@cloudflare/vitest-pool-workers";
 import { defineConfig } from "vitest/config";
 
+const receiptFixture = new URL(
+  "./test/account-merge-receipt-fixture.mjs",
+  import.meta.url,
+).pathname;
+const workspaceFixture = new URL(
+  "./test/account-merge-workspace-fixture.mjs",
+  import.meta.url,
+).pathname;
+
 export default defineConfig({
   plugins: [
     cloudflareTest({
@@ -18,8 +27,45 @@ export default defineConfig({
           WEBAUTHN_RP_ID: "auth.punks.test",
           WEBAUTHN_RP_NAME: "Punks Bot",
         },
+        serviceBindings: {
+          ACCOUNT_MERGE_RECEIPTS: {
+            name: "punks-erasure",
+            entrypoint: "AccountMergeReceiptRegistryService",
+            props: {
+              role: "punks-account-merge-receipt-writer",
+              environment: "local",
+            },
+          },
+          ACCOUNT_MERGE_WORKSPACES: {
+            name: "punks-api",
+            entrypoint: "AccountMergeWorkspaceService",
+            props: {
+              role: "punks-account-merge-workspace-applicator",
+              environment: "local",
+            },
+          },
+        },
+        workers: [
+          {
+            name: "punks-erasure",
+            modules: true,
+            scriptPath: receiptFixture,
+            compatibilityDate: "2026-08-20",
+          },
+          {
+            name: "punks-api",
+            modules: true,
+            scriptPath: workspaceFixture,
+            compatibilityDate: "2026-08-20",
+          },
+        ],
       },
     }),
   ],
-  test: { include: ["test/**/*.test.ts"] },
+  test: {
+    include: ["test/**/*.test.ts"],
+    // This pool boots Auth plus two named service fixtures. Keep the same cold
+    // workerd allowance as the serial API pool so a full gate is deterministic.
+    testTimeout: 15_000,
+  },
 });

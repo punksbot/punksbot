@@ -32,6 +32,7 @@ import {
   canonicalPunk,
   getActiveSession,
   newSession,
+  resolveActivePunk,
   sameOrigin,
   sameDesktopDistribution,
   type ActiveSession,
@@ -175,11 +176,11 @@ async function signIn(
   const identityClaim = env.IDENTITY_CLAIMS.getByName(identityName);
   const resolution = await identityClaim.resolve();
   if (resolution.status === "active") {
-    const punk = await env.PUNKS.getByName(resolution.punkId).query();
-    if (!punk.ok) {
+    const punk = await resolveActivePunk(env, resolution.punkId);
+    if (punk === null) {
       return fail("temporarily_unavailable");
     }
-    const session = await newSession(env, canonicalPunk(punk.state));
+    const session = await newSession(env, canonicalPunk(punk));
     return resultRedirect(env, transaction, state, "signed_in", [
       session.cookie,
     ]);
@@ -462,6 +463,54 @@ async function getSession(request: Request, env: AuthEnv): Promise<Response> {
   let punk = active?.punk ?? null;
   if (record === null || punk === null) {
     const token = sessionToken(request, env);
+    if (token !== null) {
+      const sessionId = await aggregateName("session", token);
+      const punkId =
+        await env.SESSIONS.getByName(sessionId).readPunkIdForTerminalResolution(
+          sessionId,
+        );
+      if (punkId !== null) {
+        try {
+          const lookup =
+            await env.ACCOUNT_MERGE_RECEIPTS.lookupAccountMergeReceipt({
+              absorbedPunkId: punkId,
+            });
+          if (
+            typeof lookup !== "object" ||
+            lookup === null ||
+            Array.isArray(lookup) ||
+            Reflect.get(lookup, "ok") !== true
+          ) {
+            return problem(
+              503,
+              "temporarily_unavailable",
+              "Punk merge authority is unavailable",
+            );
+          }
+          const receipt = Reflect.get(lookup, "receipt");
+          if (
+            receipt !== null &&
+            validateContract(
+              "punks://contracts/account-merge.receipt@1",
+              receipt,
+            ).valid &&
+            Reflect.get(receipt, "absorbedPunkId") === punkId
+          ) {
+            return problem(
+              409,
+              "account_merged",
+              "This Punk Account was merged; sign in to the surviving Account",
+            );
+          }
+        } catch {
+          return problem(
+            503,
+            "temporarily_unavailable",
+            "Punk merge authority is unavailable",
+          );
+        }
+      }
+    }
     if (token === null || !sameDesktopDistribution(request, env)) {
       return problem(401, "unauthenticated", "No readable Punk session");
     }

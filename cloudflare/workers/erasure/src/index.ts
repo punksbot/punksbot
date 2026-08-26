@@ -3,6 +3,8 @@ import { WorkerEntrypoint } from "cloudflare:workers";
 const SCHEMA_VERSION = 1 as const;
 const MAX_CONTENT_KEY_IDS = 1_000;
 const MAX_TOMBSTONE_BYTES = 64 * 1024;
+const MAX_ACCOUNT_MERGE_ENVELOPE_BYTES = 1024 * 1024;
+const MAX_ACCOUNT_MERGE_RECOVERY_DESCRIPTOR_BYTES = 900 * 1024;
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const hashPattern = /^[0-9a-f]{64}$/;
@@ -30,6 +32,38 @@ const tombstoneKeys = [
   "schemaVersion",
   "tombstoneHash",
   "workspaceId",
+] as const;
+const accountMergeReceiptLookupKeys = ["absorbedPunkId"] as const;
+const accountMergeReceiptRecordKeys = [
+  "absorbedPunkId",
+  "accountRevisions",
+  "commitCommandId",
+  "intentId",
+  "planDigest",
+  "planId",
+  "receiptId",
+  "recoveryDescriptor",
+  "survivorPunkId",
+] as const;
+const accountMergeReceiptKeys = [
+  "absorbedPunkId",
+  "accountRevisions",
+  "commitCommandId",
+  "committedAt",
+  "contract",
+  "intentId",
+  "planDigest",
+  "planId",
+  "receiptHash",
+  "receiptId",
+  "schemaVersion",
+  "survivorPunkId",
+] as const;
+const accountMergeRecoveryEnvelopeKeys = [
+  "envelopeHash",
+  "receipt",
+  "recoveryDescriptor",
+  "schemaVersion",
 ] as const;
 
 /** Scope that uniquely identifies one Message erasure generation. */
@@ -71,10 +105,84 @@ export type LookupErasureResult =
       code: "invalid_request" | "corrupt_tombstone" | "storage_unavailable";
     };
 
+/** Irreversible account-merge decision bound into the terminal receipt. */
+export interface AccountMergeReceiptDecision {
+  receiptId: string;
+  intentId: string;
+  planId: string;
+  planDigest: string;
+  commitCommandId: string;
+  survivorPunkId: string;
+  absorbedPunkId: string;
+  accountRevisions: { survivor: number; absorbed: number };
+}
+
+/** Private write carrying the canonical recovery descriptor stored cold. */
+export interface RecordAccountMergeReceiptInput
+  extends AccountMergeReceiptDecision {
+  recoveryDescriptor: string;
+}
+
+/** Minimal create-only proof preventing an absorbed account from reviving. */
+export interface AccountMergeReceipt extends AccountMergeReceiptDecision {
+  contract: "account-merge.receipt@1";
+  schemaVersion: 1;
+  committedAt: string;
+  receiptHash: string;
+}
+
+/** Result of a create-only terminal receipt write or exact replay. */
+export type RecordAccountMergeReceiptResult =
+  | { ok: true; receipt: AccountMergeReceipt; replayed: boolean }
+  | {
+      ok: false;
+      code:
+        | "invalid_request"
+        | "conflict"
+        | "corrupt_receipt"
+        | "storage_unavailable";
+    };
+
+/** Result of a bounded terminal receipt lookup by absorbed Punk. */
+export type LookupAccountMergeReceiptResult =
+  | { ok: true; receipt: AccountMergeReceipt | null }
+  | {
+      ok: false;
+      code: "invalid_request" | "corrupt_receipt" | "storage_unavailable";
+    };
+
+/** Cold Plan/manifest material returned only to the merge intent authority. */
+export type LookupAccountMergeRecoveryResult =
+  | {
+      ok: true;
+      receipt: AccountMergeReceipt | null;
+      recoveryDescriptor: string | null;
+    }
+  | {
+      ok: false;
+      code: "invalid_request" | "corrupt_receipt" | "storage_unavailable";
+    };
+
 type TombstoneDraft = Omit<ErasureTombstone, "tombstoneHash">;
 type StoredRead =
   | { status: "missing" }
   | { status: "valid"; tombstone: ErasureTombstone }
+  | { status: "scope_mismatch" }
+  | { status: "corrupt" }
+  | { status: "unavailable" };
+type AccountMergeReceiptDraft = Omit<AccountMergeReceipt, "receiptHash">;
+type AccountMergeRecoveryEnvelopeDraft = {
+  schemaVersion: 1;
+  receipt: AccountMergeReceipt;
+  recoveryDescriptor: string;
+};
+interface AccountMergeRecoveryEnvelope
+  extends AccountMergeRecoveryEnvelopeDraft {
+  envelopeHash: string;
+}
+type StoredAccountMergeReceiptRead =
+  | { status: "missing" }
+  | { status: "valid"; envelope: AccountMergeRecoveryEnvelope }
   | { status: "scope_mismatch" }
   | { status: "corrupt" }
   | { status: "unavailable" };
@@ -169,8 +277,401 @@ export default class ErasureRegistry extends WorkerEntrypoint<CloudflareBindings
 
   /** Refuses every HTTP request; callers must use a service binding RPC. */
   override fetch(_request: Request): Response {
-    return new Response(null, { status: 404 });
+    return new Response(null, {
+      status: 404,
+      headers: { "cache-control": "no-store" },
+    });
   }
+}
+
+/** Exact capability props required by the terminal receipt registry. */
+export type AccountMergeReceiptRegistryProps = {
+  role: "punks-account-merge-receipt-writer";
+  environment: "local" | "staging" | "production";
+};
+
+/** Capability-separated registry for Account Merge terminal decisions. */
+export class AccountMergeReceiptRegistryService extends WorkerEntrypoint<
+  CloudflareBindings,
+  AccountMergeReceiptRegistryProps
+> {
+  #allowed(): boolean {
+    const props = this.ctx.props;
+    return (
+      typeof props === "object" &&
+      props !== null &&
+      !Array.isArray(props) &&
+      Object.keys(props).sort().join(",") === "environment,role" &&
+      props.role === "punks-account-merge-receipt-writer" &&
+      props.environment === this.env.ENVIRONMENT
+    );
+  }
+
+  /** Records the point-of-no-return for one absorbed Compte Punks. */
+  async recordAccountMergeReceipt(
+    input: unknown,
+  ): Promise<RecordAccountMergeReceiptResult> {
+    if (!this.#allowed()) return { ok: false, code: "invalid_request" };
+    const request = validateAccountMergeReceiptInput(input);
+    if (request === null) return { ok: false, code: "invalid_request" };
+
+    const draft: AccountMergeReceiptDraft = {
+      contract: "account-merge.receipt@1",
+      schemaVersion: 1,
+      receiptId: request.receiptId,
+      intentId: request.intentId,
+      planId: request.planId,
+      planDigest: request.planDigest,
+      commitCommandId: request.commitCommandId,
+      survivorPunkId: request.survivorPunkId,
+      absorbedPunkId: request.absorbedPunkId,
+      accountRevisions: request.accountRevisions,
+      committedAt: new Date().toISOString(),
+    };
+    const receipt: AccountMergeReceipt = {
+      ...draft,
+      receiptHash: await digestHex(canonicalJson(draft)),
+    };
+    const envelopeDraft: AccountMergeRecoveryEnvelopeDraft = {
+      schemaVersion: 1,
+      receipt,
+      recoveryDescriptor: request.recoveryDescriptor,
+    };
+    const envelope: AccountMergeRecoveryEnvelope = {
+      ...envelopeDraft,
+      envelopeHash: await digestHex(canonicalJson(envelopeDraft)),
+    };
+    const body = canonicalJson(envelope);
+    const path = accountMergeReceiptPath(request.absorbedPunkId);
+    let created: R2Object | null;
+    try {
+      created = await this.env.ERASURE_TOMBSTONES.put(path, body, {
+        onlyIf: { etagDoesNotMatch: "*" },
+        httpMetadata: { contentType: "application/json" },
+      });
+    } catch {
+      return { ok: false, code: "storage_unavailable" };
+    }
+    if (created !== null) {
+      return { ok: true, receipt, replayed: false };
+    }
+
+    const existing = await readStoredAccountMergeReceipt(
+      this.env.ERASURE_TOMBSTONES,
+      request.absorbedPunkId,
+    );
+    if (existing.status === "unavailable" || existing.status === "missing") {
+      return { ok: false, code: "storage_unavailable" };
+    }
+    if (existing.status === "corrupt") {
+      return { ok: false, code: "corrupt_receipt" };
+    }
+    if (
+      existing.status === "scope_mismatch" ||
+      !sameAccountMergeDecision(existing.envelope.receipt, request) ||
+      existing.envelope.recoveryDescriptor !== request.recoveryDescriptor
+    ) {
+      return { ok: false, code: "conflict" };
+    }
+    return {
+      ok: true,
+      receipt: existing.envelope.receipt,
+      replayed: true,
+    };
+  }
+
+  /** Looks up the terminal decision by the absorbed Punk only. */
+  async lookupAccountMergeReceipt(
+    input: unknown,
+  ): Promise<LookupAccountMergeReceiptResult> {
+    if (
+      !this.#allowed() ||
+      !isExactRecord(input, accountMergeReceiptLookupKeys)
+    ) {
+      return { ok: false, code: "invalid_request" };
+    }
+    const absorbedPunkId = input.absorbedPunkId;
+    if (
+      typeof absorbedPunkId !== "string" ||
+      !uuidPattern.test(absorbedPunkId)
+    ) {
+      return { ok: false, code: "invalid_request" };
+    }
+    const stored = await readStoredAccountMergeReceipt(
+      this.env.ERASURE_TOMBSTONES,
+      absorbedPunkId,
+    );
+    if (stored.status === "unavailable") {
+      return { ok: false, code: "storage_unavailable" };
+    }
+    if (stored.status === "corrupt" || stored.status === "scope_mismatch") {
+      return { ok: false, code: "corrupt_receipt" };
+    }
+    return {
+      ok: true,
+      receipt: stored.status === "missing" ? null : stored.envelope.receipt,
+    };
+  }
+
+  /** Returns the cold recovery descriptor only to the exact private caller. */
+  async lookupAccountMergeRecovery(
+    input: unknown,
+  ): Promise<LookupAccountMergeRecoveryResult> {
+    if (
+      !this.#allowed() ||
+      !isExactRecord(input, accountMergeReceiptLookupKeys)
+    ) {
+      return { ok: false, code: "invalid_request" };
+    }
+    const absorbedPunkId = input.absorbedPunkId;
+    if (
+      typeof absorbedPunkId !== "string" ||
+      !uuidPattern.test(absorbedPunkId)
+    ) {
+      return { ok: false, code: "invalid_request" };
+    }
+    const stored = await readStoredAccountMergeReceipt(
+      this.env.ERASURE_TOMBSTONES,
+      absorbedPunkId,
+    );
+    if (stored.status === "unavailable") {
+      return { ok: false, code: "storage_unavailable" };
+    }
+    if (stored.status === "corrupt" || stored.status === "scope_mismatch") {
+      return { ok: false, code: "corrupt_receipt" };
+    }
+    return stored.status === "missing"
+      ? { ok: true, receipt: null, recoveryDescriptor: null }
+      : {
+          ok: true,
+          receipt: stored.envelope.receipt,
+          recoveryDescriptor: stored.envelope.recoveryDescriptor,
+        };
+  }
+
+  /** Refuses every HTTP request; callers must use a service binding RPC. */
+  override fetch(_request: Request): Response {
+    return new Response(null, {
+      status: 404,
+      headers: { "cache-control": "no-store" },
+    });
+  }
+}
+
+function validateAccountMergeReceiptInput(
+  input: unknown,
+): RecordAccountMergeReceiptInput | null {
+  if (!isExactRecord(input, accountMergeReceiptRecordKeys)) return null;
+  if (
+    typeof input.receiptId !== "string" ||
+    !uuidPattern.test(input.receiptId) ||
+    typeof input.intentId !== "string" ||
+    !uuidPattern.test(input.intentId) ||
+    typeof input.planId !== "string" ||
+    !uuidPattern.test(input.planId) ||
+    typeof input.planDigest !== "string" ||
+    !hashPattern.test(input.planDigest) ||
+    typeof input.commitCommandId !== "string" ||
+    !uuidPattern.test(input.commitCommandId) ||
+    typeof input.survivorPunkId !== "string" ||
+    !uuidPattern.test(input.survivorPunkId) ||
+    typeof input.absorbedPunkId !== "string" ||
+    !uuidPattern.test(input.absorbedPunkId) ||
+    input.survivorPunkId === input.absorbedPunkId ||
+    !validAccountRevisions(input.accountRevisions) ||
+    typeof input.recoveryDescriptor !== "string" ||
+    !canonicalBoundedRecoveryDescriptor(input.recoveryDescriptor)
+  ) {
+    return null;
+  }
+  return {
+    receiptId: input.receiptId,
+    intentId: input.intentId,
+    planId: input.planId,
+    planDigest: input.planDigest,
+    commitCommandId: input.commitCommandId,
+    survivorPunkId: input.survivorPunkId,
+    absorbedPunkId: input.absorbedPunkId,
+    accountRevisions: input.accountRevisions,
+    recoveryDescriptor: input.recoveryDescriptor,
+  };
+}
+
+function canonicalBoundedRecoveryDescriptor(value: string): boolean {
+  if (
+    new TextEncoder().encode(value).byteLength >
+    MAX_ACCOUNT_MERGE_RECOVERY_DESCRIPTOR_BYTES
+  ) {
+    return false;
+  }
+  try {
+    return canonicalJson(JSON.parse(value)) === value;
+  } catch {
+    return false;
+  }
+}
+
+function validAccountRevisions(
+  value: unknown,
+): value is RecordAccountMergeReceiptInput["accountRevisions"] {
+  return (
+    isExactRecord(value, ["absorbed", "survivor"] as const) &&
+    Number.isSafeInteger(value.survivor) &&
+    Number(value.survivor) >= 1 &&
+    Number.isSafeInteger(value.absorbed) &&
+    Number(value.absorbed) >= 1
+  );
+}
+
+async function readStoredAccountMergeReceipt(
+  bucket: R2Bucket,
+  absorbedPunkId: string,
+): Promise<StoredAccountMergeReceiptRead> {
+  let object: R2ObjectBody | null;
+  try {
+    object = await bucket.get(accountMergeReceiptPath(absorbedPunkId));
+  } catch {
+    return { status: "unavailable" };
+  }
+  if (object === null) return { status: "missing" };
+  if (object.size > MAX_ACCOUNT_MERGE_ENVELOPE_BYTES) {
+    return { status: "corrupt" };
+  }
+  let text: string;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true }).decode(
+      await object.arrayBuffer(),
+    );
+  } catch {
+    return { status: "corrupt" };
+  }
+  const envelope = await validateStoredAccountMergeReceipt(text);
+  if (envelope === null) return { status: "corrupt" };
+  return envelope.receipt.absorbedPunkId === absorbedPunkId
+    ? { status: "valid", envelope }
+    : { status: "scope_mismatch" };
+}
+
+/**
+ * Revalidates the complete canonical object independently at the R2 boundary.
+ * The cold anti-PITR authority deliberately does not depend on the generated
+ * application validator: a structurally valid but non-canonical or rehashed
+ * object must never become a terminal decision after restoration.
+ */
+async function validateStoredAccountMergeReceipt(
+  text: string,
+): Promise<AccountMergeRecoveryEnvelope | null> {
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (
+    !isExactRecord(value, accountMergeRecoveryEnvelopeKeys) ||
+    value.schemaVersion !== 1 ||
+    typeof value.recoveryDescriptor !== "string" ||
+    !canonicalBoundedRecoveryDescriptor(value.recoveryDescriptor) ||
+    typeof value.envelopeHash !== "string" ||
+    !hashPattern.test(value.envelopeHash)
+  ) {
+    return null;
+  }
+  const receipt = await validateCanonicalAccountMergeReceipt(
+    canonicalJson(value.receipt),
+    value.recoveryDescriptor,
+  );
+  if (receipt === null) return null;
+  const draft: AccountMergeRecoveryEnvelopeDraft = {
+    schemaVersion: 1,
+    receipt,
+    recoveryDescriptor: value.recoveryDescriptor,
+  };
+  const expectedHash = await digestHex(canonicalJson(draft));
+  const envelope: AccountMergeRecoveryEnvelope = {
+    ...draft,
+    envelopeHash: value.envelopeHash,
+  };
+  return expectedHash === value.envelopeHash && canonicalJson(envelope) === text
+    ? envelope
+    : null;
+}
+
+async function validateCanonicalAccountMergeReceipt(
+  text: string,
+  recoveryDescriptor: string,
+): Promise<AccountMergeReceipt | null> {
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (
+    !isExactRecord(value, accountMergeReceiptKeys) ||
+    value.contract !== "account-merge.receipt@1" ||
+    value.schemaVersion !== 1 ||
+    typeof value.committedAt !== "string" ||
+    !isCanonicalTimestamp(value.committedAt) ||
+    typeof value.receiptHash !== "string" ||
+    !hashPattern.test(value.receiptHash)
+  ) {
+    return null;
+  }
+  const request = validateAccountMergeReceiptInput({
+    receiptId: value.receiptId,
+    intentId: value.intentId,
+    planId: value.planId,
+    planDigest: value.planDigest,
+    commitCommandId: value.commitCommandId,
+    survivorPunkId: value.survivorPunkId,
+    absorbedPunkId: value.absorbedPunkId,
+    accountRevisions: value.accountRevisions,
+    recoveryDescriptor,
+  });
+  if (request === null) return null;
+  const draft: AccountMergeReceiptDraft = {
+    contract: "account-merge.receipt@1",
+    schemaVersion: 1,
+    receiptId: request.receiptId,
+    intentId: request.intentId,
+    planId: request.planId,
+    planDigest: request.planDigest,
+    commitCommandId: request.commitCommandId,
+    survivorPunkId: request.survivorPunkId,
+    absorbedPunkId: request.absorbedPunkId,
+    accountRevisions: request.accountRevisions,
+    committedAt: value.committedAt,
+  };
+  const expectedHash = await digestHex(canonicalJson(draft));
+  const receipt: AccountMergeReceipt = {
+    ...draft,
+    receiptHash: value.receiptHash,
+  };
+  return expectedHash === value.receiptHash && canonicalJson(receipt) === text
+    ? receipt
+    : null;
+}
+
+function sameAccountMergeDecision(
+  receipt: AccountMergeReceipt,
+  request: RecordAccountMergeReceiptInput,
+): boolean {
+  return (
+    receipt.receiptId === request.receiptId &&
+    receipt.intentId === request.intentId &&
+    receipt.planId === request.planId &&
+    receipt.planDigest === request.planDigest &&
+    receipt.commitCommandId === request.commitCommandId &&
+    receipt.survivorPunkId === request.survivorPunkId &&
+    receipt.absorbedPunkId === request.absorbedPunkId &&
+    receipt.accountRevisions.survivor === request.accountRevisions.survivor &&
+    receipt.accountRevisions.absorbed === request.accountRevisions.absorbed
+  );
+}
+
+function accountMergeReceiptPath(absorbedPunkId: string): string {
+  return `account-merges/v1/absorbed/${absorbedPunkId}/receipt.json`;
 }
 
 function validateRecordInput(input: unknown): RecordErasureInput | null {

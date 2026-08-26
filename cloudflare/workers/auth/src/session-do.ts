@@ -169,6 +169,17 @@ export class SessionDO extends DurableObject<AuthEnv> {
     }
   }
 
+  /**
+   * Returns only the Punk coordinate for terminal alias recovery. This never
+   * makes a revoked, expired, or prepared Session active again.
+   */
+  readPunkIdForTerminalResolution(sessionId: string): string | null {
+    const row = this.row();
+    return row !== undefined && row.session_id === sessionId
+      ? String(row.punk_id)
+      : null;
+  }
+
   /** Reads a prepared or active Session only for the native delivery protocol. */
   readForDesktopDelivery(): {
     record: SessionRecord;

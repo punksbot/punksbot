@@ -260,6 +260,62 @@ export class AccountMergePlanningService extends WorkerEntrypoint {
     };
   }
 
+  commitAccountMergePlan(input) {
+    const command = input.command;
+    const committedAt = "2032-01-01T00:00:00.000Z";
+    const receipt = {
+      contract: "account-merge.receipt@1",
+      schemaVersion: 1,
+      receiptId: "70000000-0000-8000-8000-000000000061",
+      intentId: command.intentId,
+      planId: command.planId,
+      planDigest: command.planDigest,
+      commitCommandId: command.commandId,
+      survivorPunkId: command.survivorPunkId,
+      absorbedPunkId: command.absorbedPunkId,
+      accountRevisions: command.accountRevisions,
+      committedAt,
+      receiptHash: "f".repeat(64),
+    };
+    return {
+      contract: "account-merge.commit-response@1",
+      ok: true,
+      replayed: false,
+      state: {
+        contract: "account-merge.state@1",
+        schemaVersion: 1,
+        intentId: command.intentId,
+        planId: command.planId,
+        planDigest: command.planDigest,
+        status: "applying",
+        survivorPunkId: command.survivorPunkId,
+        absorbedPunkId: command.absorbedPunkId,
+        applicationCursor: 2,
+        applicationTotal: 5,
+        receipt,
+        lastFailure: null,
+        committedAt,
+        completedAt: null,
+        updatedAt: "2032-01-01T00:00:01.000Z",
+      },
+    };
+  }
+
+  readAccountMergeState(input) {
+    return this.commitAccountMergePlan({
+      command: {
+        contract: "account-merge.commit@1",
+        commandId: "80000000-0000-8000-8000-000000000061",
+        intentId: input.intentId,
+        planId: input.planId,
+        planDigest: "a".repeat(64),
+        survivorPunkId: input.callerPunkId,
+        absorbedPunkId: "90000000-0000-8000-8000-000000000061",
+        accountRevisions: { survivor: 1, absorbed: 1 },
+      },
+    });
+  }
+
   readAccountMergePlan() {
     return null;
   }

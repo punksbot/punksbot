@@ -149,6 +149,29 @@ export class SessionRotationDO extends DurableObject<AuthEnv> {
     };
   }
 
+  /** Cancels this exact pending rotation during merge roll-forward. */
+  async cancelForAccountMerge(input: {
+    handoffId: string;
+    punkId: string;
+    kind: "session-renewal";
+    state: "pending" | "prepared";
+    expiresAt: string;
+  }): Promise<boolean> {
+    const current = await this.readForAccountMerge();
+    if (current === null) return true;
+    if (
+      input.handoffId !== this.ctx.id.name ||
+      current.punkId !== input.punkId ||
+      current.kind !== input.kind ||
+      current.state !== input.state ||
+      current.expiresAt !== input.expiresAt
+    ) {
+      return false;
+    }
+    await this.alarm();
+    return (await this.readForAccountMerge()) === null;
+  }
+
   override async alarm(): Promise<void> {
     const record = await this.read();
     if (record !== null && record.confirmedAt === null) {

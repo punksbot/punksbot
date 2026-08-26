@@ -28,6 +28,7 @@ export const PUNKS_EVENT_KINDS = {
   journalSegmentSealed: 50002,
   workspaceMemberRoleSet: 50003,
   workspaceMemberRemoved: 50004,
+  workspaceAccountMerged: 50005,
   conversationCreated: 50100,
   conversationMemberJoined: 50101,
   conversationMemberAccessSet: 50102,
@@ -729,7 +730,6 @@ export async function decideLeaveWorkspaceV2(
     ],
   );
 }
-
 export function decideTransferWorkspaceOwnership(
   current: Workspace | null,
   command: TransferWorkspaceOwnershipCommand,
@@ -858,6 +858,157 @@ export async function decideTransferWorkspaceOwnershipV2(
     [
       { punkId: previousOwner.punkId, present: true, role: "member" },
       { punkId: target.punkId, present: true, role: "owner" },
+    ],
+  );
+}
+
+/** Exact authority snapshot held by one Workspace during Account Merge. */
+export interface ApplyAccountMergeToWorkspaceInput {
+  workspaceId: string;
+  planId: string;
+  receiptId: string;
+  commitCommandId: string;
+  survivorPunkId: string;
+  absorbedPunkId: string;
+  expectedRevision: number;
+  survivorRole: WorkspaceRole | null;
+  absorbedRole: WorkspaceRole;
+  resultingRole: WorkspaceRole;
+}
+
+const ACCOUNT_MERGE_ROLE_STRENGTH = {
+  guest: 0,
+  member: 1,
+  moderator: 2,
+  owner: 3,
+} as const satisfies Readonly<Record<WorkspaceRole, number>>;
+
+function strongestAccountMergeRole(
+  survivorRole: WorkspaceRole | null,
+  absorbedRole: WorkspaceRole,
+): WorkspaceRole {
+  return survivorRole !== null &&
+    ACCOUNT_MERGE_ROLE_STRENGTH[survivorRole] >=
+      ACCOUNT_MERGE_ROLE_STRENGTH[absorbedRole]
+    ? survivorRole
+    : absorbedRole;
+}
+
+/**
+ * Moves only current Workspace authority. Prior journal entries keep the
+ * absorbed Punk ID and are never rewritten.
+ */
+export async function decideApplyAccountMergeToWorkspaceV2(
+  current: Workspace | null,
+  input: ApplyAccountMergeToWorkspaceInput,
+  context: WorkspaceDecisionContext,
+): Promise<WorkspaceDecisionV2> {
+  if (
+    current === null ||
+    current.id !== input.workspaceId ||
+    context.workspaceId !== input.workspaceId ||
+    current.status !== "active"
+  ) {
+    throw new WorkspaceDomainError("not_found", "Workspace does not exist");
+  }
+  if (
+    current.revision !== input.expectedRevision ||
+    input.survivorPunkId === input.absorbedPunkId
+  ) {
+    throw new WorkspaceDomainError(
+      "revision_conflict",
+      "Workspace authority changed before Account Merge",
+    );
+  }
+  const survivor = current.members.find(
+    (member) => member.punkId === input.survivorPunkId,
+  );
+  const absorbed = current.members.find(
+    (member) => member.punkId === input.absorbedPunkId,
+  );
+  if (
+    (survivor?.role ?? null) !== input.survivorRole ||
+    absorbed?.role !== input.absorbedRole ||
+    strongestAccountMergeRole(input.survivorRole, input.absorbedRole) !==
+      input.resultingRole
+  ) {
+    throw new WorkspaceDomainError(
+      "revision_conflict",
+      "Workspace roles changed before Account Merge",
+    );
+  }
+  const members: Workspace["members"] = [
+    { punkId: input.survivorPunkId, role: input.resultingRole },
+    ...current.members.filter(
+      (member) =>
+        member.punkId !== input.survivorPunkId &&
+        member.punkId !== input.absorbedPunkId,
+    ),
+  ];
+  const nextState: Workspace = {
+    ...current,
+    ownerPunkId:
+      current.ownerPunkId === input.absorbedPunkId
+        ? input.survivorPunkId
+        : current.ownerPunkId,
+    members,
+    revision: current.revision + 1,
+    cursor: context.cursor,
+    updatedAt: context.now.toISOString(),
+  };
+  const decision: WorkspaceDecision = {
+    nextState,
+    event: {
+      created_at: Math.floor(context.now.getTime() / 1000),
+      kind: PUNKS_EVENT_KINDS.workspaceAccountMerged,
+      tags: [
+        ["workspace", input.workspaceId],
+        ["cursor", String(context.cursor)],
+        ["command", input.commitCommandId],
+        ["contract", "account-merge.commit@1"],
+        ["actor", "system", "account-merge"],
+        ["plan", input.planId],
+        ["receipt", input.receiptId],
+        ["survivor", "punk", input.survivorPunkId],
+        ["absorbed", "punk", input.absorbedPunkId],
+      ],
+      content: canonicalJson({
+        schemaVersion: 1,
+        planId: input.planId,
+        receiptId: input.receiptId,
+        survivorPunkId: input.survivorPunkId,
+        absorbedPunkId: input.absorbedPunkId,
+        survivorPreviousRole: input.survivorRole,
+        absorbedPreviousRole: input.absorbedRole,
+        resultingRole: input.resultingRole,
+        workspace: nextState,
+      }),
+    },
+  };
+  return workspaceDecisionV2(
+    decision,
+    context,
+    {
+      type: "account-merge-applied",
+      planId: input.planId,
+      receiptId: input.receiptId,
+      survivorPunkId: input.survivorPunkId,
+      absorbedPunkId: input.absorbedPunkId,
+      survivorPreviousRole: input.survivorRole,
+      absorbedPreviousRole: input.absorbedRole,
+      resultingRole: input.resultingRole,
+    },
+    [
+      {
+        punkId: input.absorbedPunkId,
+        present: false,
+        role: input.absorbedRole,
+      },
+      {
+        punkId: input.survivorPunkId,
+        present: true,
+        role: input.resultingRole,
+      },
     ],
   );
 }

@@ -551,6 +551,7 @@ fn closed_failure_taxonomy_is_serialized_in_profile_spelling() {
         FailureKind::Cancelled,
         FailureKind::StaleWorkspace,
         FailureKind::SessionExpired,
+        FailureKind::AccountMerged,
         FailureKind::Ambiguous,
     ];
     assert_eq!(
@@ -562,6 +563,7 @@ fn closed_failure_taxonomy_is_serialized_in_profile_spelling() {
             "cancelled",
             "stale_workspace",
             "session_expired",
+            "account_merged",
             "ambiguous"
         ])
     );
@@ -723,6 +725,7 @@ fn kind_trace(kind: FailureKind) -> &'static str {
         FailureKind::Cancelled => "cancelled",
         FailureKind::StaleWorkspace => "stale_workspace",
         FailureKind::SessionExpired => "session_expired",
+        FailureKind::AccountMerged => "account_merged",
         FailureKind::Ambiguous => "ambiguous",
     }
 }

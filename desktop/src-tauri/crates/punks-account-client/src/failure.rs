@@ -13,6 +13,7 @@ pub enum FailureKind {
     Cancelled,
     StaleWorkspace,
     SessionExpired,
+    AccountMerged,
     Ambiguous,
 }
 

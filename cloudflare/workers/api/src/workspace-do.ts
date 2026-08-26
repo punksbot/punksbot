@@ -30,6 +30,7 @@ import type {
 import { validateContract } from "@punks/contracts";
 import {
   canonicalJson,
+  decideApplyAccountMergeToWorkspaceV2,
   decideClaimWorkspaceInvitation,
   decideClaimWorkspaceInvitationV2,
   decideCreateWorkspace,
@@ -56,6 +57,7 @@ import {
   type WorkspacePermission,
   type WorkspaceRole,
   type WorkspaceDecisionV2,
+  type ApplyAccountMergeToWorkspaceInput,
   WorkspaceDomainError,
 } from "@punks/core";
 import { DurableObject } from "cloudflare:workers";
@@ -139,6 +141,11 @@ type AccountMergeRightsOutboxRow = Record<
   "operation_id" | "change_json",
   string
 >;
+type AccountMergeApplicationRow = Record<
+  "plan_id" | "input_json" | "status" | "result_json",
+  string | null
+> &
+  Record<"prepared_revision", number | null>;
 type PendingArchiveRow = Record<
   | "start_cursor"
   | "end_cursor"
@@ -173,6 +180,7 @@ const DEFAULT_INVITATION_TTL_SECONDS = 7 * 24 * 60 * 60;
 const DEFAULT_INVITATION_MAX_USES = 1;
 const MAXIMUM_ACTIVE_INVITATIONS = 100;
 const MAXIMUM_INVITATION_ROWS = 4_096;
+const MAXIMUM_ACCOUNT_MERGE_APPLICATION_RESULTS = 256;
 // The primary owner is immutable. Every other member consumes exactly one
 // terminal receipt slot per strict role reduction still available before
 // removal, so each real demotion or removal releases at least its own slot.
@@ -278,6 +286,87 @@ interface AccountMergeWorkspaceMembershipChange {
     readonly role: WorkspaceRole;
     readonly revision: number;
   };
+}
+
+/** Typed result of a prepared or applied Account Merge membership transfer. */
+export type WorkspaceAccountMergeResult =
+  | {
+      ok: true;
+      workspaceId: string;
+      role: WorkspaceRole;
+      revision: number;
+      replayed: boolean;
+    }
+  | {
+      ok: false;
+      code:
+        | "invalid_request"
+        | "revision_conflict"
+        | "idempotency_conflict"
+        | "command_in_progress"
+        | "authority_unavailable";
+    };
+
+function accountMergeApplicationInput(
+  value: unknown,
+): ApplyAccountMergeToWorkspaceInput | null {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value) ||
+    Object.keys(value).sort().join(",") !==
+      [
+        "absorbedPunkId",
+        "absorbedRole",
+        "commitCommandId",
+        "expectedRevision",
+        "planId",
+        "receiptId",
+        "resultingRole",
+        "survivorPunkId",
+        "survivorRole",
+        "workspaceId",
+      ]
+        .sort()
+        .join(",")
+  ) {
+    return null;
+  }
+  const input = value as Record<string, unknown>;
+  const role = (candidate: unknown): candidate is WorkspaceRole =>
+    typeof candidate === "string" &&
+    ["owner", "moderator", "member", "guest"].includes(candidate);
+  return typeof input.workspaceId === "string" &&
+    UUID.test(input.workspaceId) &&
+    typeof input.planId === "string" &&
+    UUID.test(input.planId) &&
+    typeof input.receiptId === "string" &&
+    UUID.test(input.receiptId) &&
+    typeof input.commitCommandId === "string" &&
+    UUID.test(input.commitCommandId) &&
+    typeof input.survivorPunkId === "string" &&
+    UUID.test(input.survivorPunkId) &&
+    typeof input.absorbedPunkId === "string" &&
+    UUID.test(input.absorbedPunkId) &&
+    input.survivorPunkId !== input.absorbedPunkId &&
+    Number.isSafeInteger(input.expectedRevision) &&
+    Number(input.expectedRevision) >= 1 &&
+    (input.survivorRole === null || role(input.survivorRole)) &&
+    role(input.absorbedRole) &&
+    role(input.resultingRole)
+    ? {
+        workspaceId: input.workspaceId,
+        planId: input.planId,
+        receiptId: input.receiptId,
+        commitCommandId: input.commitCommandId,
+        survivorPunkId: input.survivorPunkId,
+        absorbedPunkId: input.absorbedPunkId,
+        expectedRevision: Number(input.expectedRevision),
+        survivorRole: input.survivorRole,
+        absorbedRole: input.absorbedRole,
+        resultingRole: input.resultingRole,
+      }
+    : null;
 }
 
 function accountMergeWorkspaceMembershipChanges(
@@ -390,6 +479,278 @@ export class WorkspaceDO extends DurableObject<ApiEnv> {
     return this.executeWorkspaceCommand(command, authorization, null);
   }
 
+  /** Reserves the exact Workspace membership snapshot before merge commit. */
+  async prepareAccountMerge(
+    value: unknown,
+  ): Promise<WorkspaceAccountMergeResult> {
+    const input = accountMergeApplicationInput(value);
+    if (input === null || input.workspaceId !== this.ctx.id.name) {
+      return { ok: false, code: "invalid_request" };
+    }
+    const inputJson = canonicalJson(input);
+    const existing = this.accountMergeApplication(input.planId);
+    if (existing !== undefined) {
+      if (
+        existing.plan_id !== input.planId ||
+        existing.input_json !== inputJson
+      ) {
+        return { ok: false, code: "idempotency_conflict" };
+      }
+      if (existing.status === "applied") {
+        return this.accountMergeResult(existing, true);
+      }
+      const state = this.state();
+      return state === null ||
+        existing.prepared_revision === null ||
+        state.revision !== existing.prepared_revision
+        ? { ok: false, code: "authority_unavailable" }
+        : {
+            ok: true,
+            workspaceId: state.id,
+            role: input.resultingRole,
+            revision: existing.prepared_revision + 1,
+            replayed: true,
+          };
+    }
+    if (
+      this.pending() !== undefined ||
+      !(await this.flushAccountMergeRightsOutbox())
+    ) {
+      return { ok: false, code: "command_in_progress" };
+    }
+    const current = this.state();
+    if (current === null) {
+      return { ok: false, code: "authority_unavailable" };
+    }
+    try {
+      await decideApplyAccountMergeToWorkspaceV2(
+        current,
+        { ...input, expectedRevision: current.revision },
+        {
+          workspaceId: input.workspaceId,
+          cursor: current.cursor + 1,
+          now: new Date(),
+        },
+      );
+    } catch (error) {
+      return error instanceof WorkspaceDomainError &&
+        error.code === "revision_conflict"
+        ? { ok: false, code: "revision_conflict" }
+        : { ok: false, code: "authority_unavailable" };
+    }
+    let failure: "command_in_progress" | "revision_conflict" | null = null;
+    this.ctx.storage.transactionSync(() => {
+      if (
+        this.pending() !== undefined ||
+        this.accountMergeApplication()?.status === "prepared"
+      ) {
+        failure = "command_in_progress";
+        return;
+      }
+      if (!sameWorkspaceSnapshot(this.state(), current)) {
+        failure = "revision_conflict";
+        return;
+      }
+      this.ctx.storage.sql.exec(
+        `INSERT INTO account_merge_application
+          (plan_id, input_json, status, result_json, prepared_revision,
+           prepared_at, applied_at)
+         VALUES (?, ?, 'prepared', NULL, ?, ?, NULL)`,
+        input.planId,
+        inputJson,
+        current.revision,
+        new Date().toISOString(),
+      );
+    });
+    if (failure !== null) {
+      const replay = this.accountMergeApplication(input.planId);
+      if (
+        replay?.status === "prepared" &&
+        replay.input_json === inputJson &&
+        replay.prepared_revision !== null
+      ) {
+        return {
+          ok: true,
+          workspaceId: input.workspaceId,
+          role: input.resultingRole,
+          revision: replay.prepared_revision + 1,
+          replayed: true,
+        };
+      }
+      return { ok: false, code: failure };
+    }
+    return {
+      ok: true,
+      workspaceId: input.workspaceId,
+      role: input.resultingRole,
+      revision: current.revision + 1,
+      replayed: false,
+    };
+  }
+
+  /** Applies one prepared membership transfer and journals it additively. */
+  async applyAccountMerge(
+    value: unknown,
+  ): Promise<WorkspaceAccountMergeResult> {
+    const input = accountMergeApplicationInput(value);
+    if (input === null || input.workspaceId !== this.ctx.id.name) {
+      return { ok: false, code: "invalid_request" };
+    }
+    const inputJson = canonicalJson(input);
+    const operation = this.accountMergeApplication(input.planId);
+    if (
+      operation === undefined ||
+      operation.plan_id !== input.planId ||
+      operation.input_json !== inputJson ||
+      operation.prepared_revision === null
+    ) {
+      return { ok: false, code: "idempotency_conflict" };
+    }
+    if (operation.status === "applied") {
+      return this.accountMergeResult(operation, true);
+    }
+    if (this.pending() !== undefined || !(await this.ensureJournalCapacity())) {
+      return { ok: false, code: "command_in_progress" };
+    }
+    const current = this.state();
+    let decision: WorkspaceDecisionV2;
+    try {
+      decision = await decideApplyAccountMergeToWorkspaceV2(
+        current,
+        { ...input, expectedRevision: operation.prepared_revision },
+        {
+          workspaceId: input.workspaceId,
+          cursor: (current?.cursor ?? 0) + 1,
+          now: new Date(),
+        },
+      );
+    } catch (error) {
+      return error instanceof WorkspaceDomainError &&
+        error.code === "revision_conflict"
+        ? { ok: false, code: "revision_conflict" }
+        : { ok: false, code: "authority_unavailable" };
+    }
+    let signedEvent: SignedNostrEvent;
+    try {
+      signedEvent = await this.attest(decision.event);
+    } catch {
+      return { ok: false, code: "authority_unavailable" };
+    }
+    const projections = workspaceProjectionChunks(decision, signedEvent);
+    if (!validWorkspaceProjectionChunks(projections)) {
+      return { ok: false, code: "authority_unavailable" };
+    }
+    const projectionWrite = workspaceProjectionWriteCost({
+      event: signedEvent,
+      projections,
+    });
+    if (
+      !this.hasProjectionCommitCapacity(
+        current,
+        decision.nextState,
+        projectionWrite,
+        true,
+      )
+    ) {
+      return { ok: false, code: "authority_unavailable" };
+    }
+    const result: Exclude<WorkspaceAccountMergeResult, { ok: false }> = {
+      ok: true,
+      workspaceId: input.workspaceId,
+      role: input.resultingRole,
+      revision: decision.nextState.revision,
+      replayed: false,
+    };
+    let committed = false;
+    this.ctx.storage.transactionSync(() => {
+      const latest = this.accountMergeApplication(input.planId);
+      if (
+        latest === undefined ||
+        latest.status !== "prepared" ||
+        latest.input_json !== inputJson ||
+        !sameWorkspaceSnapshot(this.state(), current)
+      ) {
+        return;
+      }
+      const now = new Date().toISOString();
+      if (!this.persistNormalizedWorkspace(decision.nextState, projections)) {
+        return;
+      }
+      this.ctx.storage.sql.exec(
+        `INSERT INTO journal
+          (cursor, event_id, event_kind, event_json, chunks_json, committed_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        decision.nextState.cursor,
+        signedEvent.id,
+        signedEvent.kind,
+        JSON.stringify(signedEvent),
+        canonicalJson(projections),
+        now,
+      );
+      for (const [chunkIndex, projection] of projections.entries()) {
+        this.ctx.storage.sql.exec(
+          `INSERT INTO outbox
+            (event_id, chunk_index, chunk_count, cursor, payload_json,
+             delivered_at, attempts)
+           VALUES (?, ?, ?, ?, ?, NULL, 0)`,
+          signedEvent.id,
+          chunkIndex,
+          projections.length,
+          decision.nextState.cursor,
+          canonicalJson(projection),
+        );
+      }
+      this.ctx.storage.sql.exec(
+        `UPDATE account_merge_application
+         SET status = 'applied', result_json = ?, applied_at = ?
+         WHERE plan_id = ? AND status = 'prepared' AND input_json = ?`,
+        canonicalJson(result),
+        now,
+        input.planId,
+        inputJson,
+      );
+      this.ctx.storage.sql.exec(
+        `DELETE FROM account_merge_application
+         WHERE status = 'applied' AND plan_id NOT IN (
+           SELECT plan_id FROM account_merge_application
+           WHERE status = 'applied' ORDER BY applied_at DESC LIMIT ?
+         )`,
+        MAXIMUM_ACCOUNT_MERGE_APPLICATION_RESULTS,
+      );
+      committed = true;
+    });
+    if (!committed) {
+      const replay = this.accountMergeApplication(input.planId);
+      return replay?.status === "applied"
+        ? this.accountMergeResult(replay, true)
+        : { ok: false, code: "command_in_progress" };
+    }
+    this.scheduleAlarm(0);
+    this.ctx.waitUntil(this.flushOutbox());
+    return result;
+  }
+
+  /** Releases only a prepared pre-commit Workspace fence. */
+  abortAccountMerge(value: unknown): boolean {
+    const input = accountMergeApplicationInput(value);
+    if (input === null || input.workspaceId !== this.ctx.id.name) return false;
+    const operation = this.accountMergeApplication(input.planId);
+    if (operation === undefined) return true;
+    if (
+      operation.status !== "prepared" ||
+      operation.plan_id !== input.planId ||
+      operation.input_json !== canonicalJson(input)
+    ) {
+      return false;
+    }
+    return (
+      this.ctx.storage.sql.exec(
+        "DELETE FROM account_merge_application WHERE plan_id = ? AND status = 'prepared'",
+        input.planId,
+      ).rowsWritten === 1
+    );
+  }
+
   private async executeWorkspaceCommand(
     command: WorkspaceCommand,
     authorization: WorkspaceMutationAuthorization | null,
@@ -400,6 +761,10 @@ export class WorkspaceDO extends DurableObject<ApiEnv> {
       invitation === null
     ) {
       return { ok: false, code: "invalid_contract" };
+    }
+
+    if (this.accountMergeApplication()?.status === "prepared") {
+      return { ok: false, code: "command_in_progress" };
     }
 
     if (!(await this.flushAccountMergeRightsOutbox())) {
@@ -1361,6 +1726,18 @@ export class WorkspaceDO extends DurableObject<ApiEnv> {
         created_at TEXT NOT NULL
       ) STRICT;
 
+      CREATE TABLE IF NOT EXISTS account_merge_application (
+        plan_id TEXT PRIMARY KEY,
+        input_json TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('prepared', 'applied')),
+        result_json TEXT,
+        prepared_revision INTEGER NOT NULL CHECK (prepared_revision >= 1),
+        prepared_at TEXT NOT NULL,
+        applied_at TEXT
+      ) STRICT;
+      CREATE UNIQUE INDEX IF NOT EXISTS account_merge_single_prepared
+        ON account_merge_application (status) WHERE status = 'prepared';
+
       CREATE TABLE IF NOT EXISTS projection_delivery_state (
         singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
         enqueued_through_cursor INTEGER NOT NULL CHECK (
@@ -1397,6 +1774,18 @@ export class WorkspaceDO extends DurableObject<ApiEnv> {
         created_at TEXT NOT NULL
       ) STRICT;
     `);
+    const accountMergeColumns = this.ctx.storage.sql
+      .exec<{ name: string }>("PRAGMA table_info(account_merge_application)")
+      .toArray();
+    if (
+      !accountMergeColumns.some((column) => column.name === "prepared_revision")
+    ) {
+      // Existing in-flight rows predate the exact Workspace fence revision and
+      // therefore remain null/fail-closed; a new explicit intent can prepare.
+      this.ctx.storage.sql.exec(
+        "ALTER TABLE account_merge_application ADD COLUMN prepared_revision INTEGER",
+      );
+    }
     const pendingColumns = this.ctx.storage.sql
       .exec<{ name: string }>("PRAGMA table_info(pending_command)")
       .toArray();
@@ -1540,6 +1929,38 @@ export class WorkspaceDO extends DurableObject<ApiEnv> {
        )`,
     );
     this.normalizeLegacyWorkspaceState();
+  }
+
+  private accountMergeApplication(
+    planId?: string,
+  ): AccountMergeApplicationRow | undefined {
+    return this.ctx.storage.sql
+      .exec<AccountMergeApplicationRow>(
+        `SELECT plan_id, input_json, status, result_json, prepared_revision
+         FROM account_merge_application
+         WHERE (? IS NOT NULL AND plan_id = ?)
+            OR (? IS NULL AND status = 'prepared')
+         ORDER BY prepared_at DESC LIMIT 1`,
+        planId ?? null,
+        planId ?? null,
+        planId ?? null,
+      )
+      .toArray()[0];
+  }
+
+  private accountMergeResult(
+    row: AccountMergeApplicationRow,
+    replayed: boolean,
+  ): WorkspaceAccountMergeResult {
+    if (row.result_json === null) {
+      return { ok: false, code: "authority_unavailable" };
+    }
+    try {
+      const result = JSON.parse(row.result_json) as WorkspaceAccountMergeResult;
+      return result.ok ? { ...result, replayed } : result;
+    } catch {
+      return { ok: false, code: "authority_unavailable" };
+    }
   }
 
   private normalizeLegacyWorkspaceState(): void {

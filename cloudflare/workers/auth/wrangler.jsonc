@@ -46,6 +46,26 @@
       { "name": "PASSKEY_CREDENTIALS", "class_name": "PasskeyCredentialDO" }
     ]
   },
+  "services": [
+    {
+      "binding": "ACCOUNT_MERGE_RECEIPTS",
+      "service": "punks-erasure",
+      "entrypoint": "AccountMergeReceiptRegistryService",
+      "props": {
+        "role": "punks-account-merge-receipt-writer",
+        "environment": "local"
+      }
+    },
+    {
+      "binding": "ACCOUNT_MERGE_WORKSPACES",
+      "service": "punks-api",
+      "entrypoint": "AccountMergeWorkspaceService",
+      "props": {
+        "role": "punks-account-merge-workspace-applicator",
+        "environment": "local"
+      }
+    }
+  ],
   "migrations": [
     {
       "tag": "v1",
@@ -124,14 +144,40 @@
           { "name": "EMAIL_CLAIMS", "class_name": "EmailClaimDO" },
           { "name": "AUTH_TRANSACTIONS", "class_name": "AuthTransactionDO" },
           { "name": "DESKTOP_AUTH_FLOWS", "class_name": "DesktopAuthFlowDO" },
-          { "name": "DESKTOP_REAUTH_GRANTS", "class_name": "DesktopReauthGrantDO" },
-          { "name": "SESSION_REVOCATIONS", "class_name": "SessionRevocationDO" },
+          {
+            "name": "DESKTOP_REAUTH_GRANTS",
+            "class_name": "DesktopReauthGrantDO"
+          },
+          {
+            "name": "SESSION_REVOCATIONS",
+            "class_name": "SessionRevocationDO"
+          },
           { "name": "SESSION_ROTATIONS", "class_name": "SessionRotationDO" },
           { "name": "SESSIONS", "class_name": "SessionDO" },
           { "name": "PASSKEY_CEREMONIES", "class_name": "PasskeyCeremonyDO" },
           { "name": "PASSKEY_CREDENTIALS", "class_name": "PasskeyCredentialDO" }
         ]
-      }
+      },
+      "services": [
+        {
+          "binding": "ACCOUNT_MERGE_RECEIPTS",
+          "service": "punks-erasure-staging",
+          "entrypoint": "AccountMergeReceiptRegistryService",
+          "props": {
+            "role": "punks-account-merge-receipt-writer",
+            "environment": "staging"
+          }
+        },
+        {
+          "binding": "ACCOUNT_MERGE_WORKSPACES",
+          "service": "punks-api-staging",
+          "entrypoint": "AccountMergeWorkspaceService",
+          "props": {
+            "role": "punks-account-merge-workspace-applicator",
+            "environment": "staging"
+          }
+        }
+      ]
     }
   }
 }

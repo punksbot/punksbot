@@ -1,9 +1,11 @@
 import type {
+  AccountMergeCommitResponse,
   ArchiveConversationCommand,
   AddMessageReactionCommand,
   Bot,
   BotInstallation,
   ConfigureBotInstallationCommand,
+  CommitAccountMergeCommand,
   Conversation,
   ConversationView,
   DesktopCompatibilityQuery,
@@ -145,6 +147,194 @@ const STAGING_RUNTIME_PROBES = [
 ] as const;
 const DESKTOP_CAPABILITIES = DESKTOP_SOCIAL_LOOP_CAPABILITIES;
 const PUNK_SEARCH_CANDIDATE_SCAN_LIMIT = 101;
+
+function accountMergeFailureResponse(
+  response: Extract<AccountMergeCommitResponse, { ok: false }>,
+): Response {
+  switch (response.code) {
+    case "invalid_request":
+      return problem(400, "invalid_input", "Account Merge commit is invalid", {
+        correlationId: response.correlationId,
+      });
+    case "plan_unavailable":
+      return problem(404, "not_found", "Account Merge Plan is unavailable", {
+        correlationId: response.correlationId,
+      });
+    case "plan_expired":
+      return problem(
+        409,
+        "idempotency_conflict",
+        "Account Merge Plan expired",
+        {
+          correlationId: response.correlationId,
+        },
+      );
+    case "revision_conflict":
+      return problem(
+        409,
+        "revision_conflict",
+        "Account authority changed after the Plan",
+        { correlationId: response.correlationId },
+      );
+    case "blocking_conflict":
+      return problem(
+        409,
+        "idempotency_conflict",
+        "Account Merge Plan contains a blocking conflict",
+        { correlationId: response.correlationId },
+      );
+    case "idempotency_conflict":
+    case "receipt_conflict":
+      return problem(
+        409,
+        "idempotency_conflict",
+        "Account Merge command conflicts with its terminal decision",
+        { correlationId: response.correlationId },
+      );
+    case "authority_unavailable":
+      return problem(
+        503,
+        "temporarily_unavailable",
+        "Account Merge authority is unavailable",
+        { correlationId: response.correlationId, retry: "later" },
+      );
+  }
+}
+
+async function commitAccountMerge(
+  request: Request,
+  env: ApiEnv,
+  intentId: string,
+): Promise<Response> {
+  if (!uuidPattern.test(intentId)) {
+    return problem(400, "invalid_input", "Account Merge intent is invalid");
+  }
+  const session = await authenticatedPunkSession(request, env);
+  if (session === null) {
+    return problem(401, "unauthenticated", "Punk authentication is required");
+  }
+  let body: unknown;
+  try {
+    body = await readJson(request);
+  } catch {
+    return problem(
+      400,
+      "invalid_input",
+      "Account Merge commit body is invalid",
+    );
+  }
+  if (
+    !validateContract("punks://contracts/account-merge.commit@1", body).valid
+  ) {
+    return problem(400, "invalid_input", "Account Merge commit is invalid");
+  }
+  const command = body as CommitAccountMergeCommand;
+  const idempotencyFailure = requireMatchingIdempotencyKey(
+    request,
+    command.commandId,
+  );
+  if (idempotencyFailure !== null) return idempotencyFailure;
+  if (
+    command.intentId !== intentId ||
+    command.survivorPunkId !== session.punkId
+  ) {
+    return problem(403, "forbidden", "Only the surviving Account can commit");
+  }
+  let result: unknown;
+  try {
+    result = await env.ACCOUNT_MERGE_AUTHORITY.commitAccountMergePlan({
+      intentId,
+      command,
+      callerSessionId: session.sessionId,
+      correlationId: crypto.randomUUID(),
+    });
+  } catch {
+    return problem(
+      503,
+      "temporarily_unavailable",
+      "Account Merge authority is unavailable",
+      { retry: "later" },
+    );
+  }
+  if (
+    !validateContract(
+      "punks://contracts/account-merge.commit-response@1",
+      result,
+    ).valid
+  ) {
+    return problem(
+      503,
+      "temporarily_unavailable",
+      "Account Merge authority violated its contract",
+      { retry: "later" },
+    );
+  }
+  const response = result as AccountMergeCommitResponse;
+  if (!response.ok) return accountMergeFailureResponse(response);
+  return json(response, response.state.status === "completed" ? 200 : 202, {
+    "cache-control": "no-store",
+  });
+}
+
+async function readAccountMergeState(
+  request: Request,
+  env: ApiEnv,
+  intentId: string,
+): Promise<Response> {
+  if (!uuidPattern.test(intentId)) {
+    return problem(400, "invalid_input", "Account Merge intent is invalid");
+  }
+  const params = new URL(request.url).searchParams;
+  if (
+    [...params.keys()].some((key) => key !== "planId") ||
+    params.getAll("planId").length !== 1
+  ) {
+    return problem(
+      400,
+      "invalid_input",
+      "Account Merge state query is invalid",
+    );
+  }
+  const planId = params.get("planId");
+  if (planId === null || !uuidPattern.test(planId)) {
+    return problem(400, "invalid_input", "Account Merge Plan is invalid");
+  }
+  const session = await authenticatedPunkSession(request, env);
+  if (session === null) {
+    return problem(401, "unauthenticated", "Punk authentication is required");
+  }
+  let result: unknown;
+  try {
+    result = await env.ACCOUNT_MERGE_AUTHORITY.readAccountMergeState({
+      intentId,
+      planId,
+      callerPunkId: session.punkId,
+    });
+  } catch {
+    return problem(
+      503,
+      "temporarily_unavailable",
+      "Account Merge authority is unavailable",
+      { retry: "later" },
+    );
+  }
+  if (
+    !validateContract(
+      "punks://contracts/account-merge.commit-response@1",
+      result,
+    ).valid
+  ) {
+    return problem(
+      503,
+      "temporarily_unavailable",
+      "Account Merge authority violated its contract",
+    );
+  }
+  const response = result as AccountMergeCommitResponse;
+  return response.ok
+    ? json(response, 200, { "cache-control": "no-store" })
+    : accountMergeFailureResponse(response);
+}
 
 function semanticVersionAtLeast(candidate: string, minimum: string): boolean {
   const parse = (value: string): readonly number[] | null => {
@@ -5523,6 +5713,21 @@ export async function route(request: Request, env: ApiEnv): Promise<Response> {
   }
   if (request.method === "PATCH" && path === "/api/v1/punk") {
     return updatePunkProfile(request, env);
+  }
+  const accountMerge = path.match(/^\/api\/v1\/account-merges\/([^/]+)$/);
+  if (accountMerge?.[1] !== undefined) {
+    let intentId: string;
+    try {
+      intentId = decodeURIComponent(accountMerge[1]);
+    } catch {
+      return problem(400, "invalid_input", "Account Merge intent is invalid");
+    }
+    if (request.method === "POST") {
+      return commitAccountMerge(request, env, intentId);
+    }
+    if (request.method === "GET") {
+      return readAccountMergeState(request, env, intentId);
+    }
   }
   if (request.method === "GET" && path === "/api/v1/workspaces") {
     return listWorkspaces(request, env);

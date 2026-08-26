@@ -7,9 +7,13 @@ import authPasskeyFinish from "../schemas/auth.passkey-finish.schema.json";
 import authPasskeyOptions from "../schemas/auth.passkey-options.schema.json";
 import authSession from "../schemas/auth.session.schema.json";
 import accountMergeFreshProof from "../schemas/account-merge.fresh-proof.schema.json";
+import accountMergeCommit from "../schemas/account-merge.commit.schema.json";
+import accountMergeCommitResponseSource from "../schemas/account-merge.commit-response.schema.json";
 import accountMergePlanCreateSource from "../schemas/account-merge.plan-create.schema.json";
 import accountMergePlanResponseSource from "../schemas/account-merge.plan-response.schema.json";
 import accountMergePlan from "../schemas/account-merge.plan.schema.json";
+import accountMergeReceipt from "../schemas/account-merge.receipt.schema.json";
+import accountMergeState from "../schemas/account-merge.state.schema.json";
 import authStartResponse from "../schemas/auth.start-response.schema.json";
 import authStart from "../schemas/auth.start.schema.json";
 import desktopAuthCancel from "../schemas/desktop-auth.cancel.schema.json";
@@ -227,6 +231,28 @@ const accountMergePlanResponse = {
       },
     },
     accountMergePlanFailure,
+  ],
+};
+
+const [accountMergeCommitSuccess, accountMergeCommitFailure] =
+  accountMergeCommitResponseSource.oneOf;
+if (
+  accountMergeCommitSuccess === undefined ||
+  accountMergeCommitFailure === undefined
+) {
+  throw new Error("account-merge.commit-response@1 must remain a closed union");
+}
+const accountMergeCommitResponse = {
+  ...accountMergeCommitResponseSource,
+  oneOf: [
+    {
+      ...accountMergeCommitSuccess,
+      properties: {
+        ...accountMergeCommitSuccess.properties,
+        state: accountMergeState,
+      },
+    },
+    accountMergeCommitFailure,
   ],
 };
 
@@ -608,6 +634,11 @@ export const contractSchemas = {
   "punks://contracts/account-merge.plan-create@1": accountMergePlanCreate,
   "punks://contracts/account-merge.plan@1": accountMergePlan,
   "punks://contracts/account-merge.plan-response@1": accountMergePlanResponse,
+  "punks://contracts/account-merge.commit@1": accountMergeCommit,
+  "punks://contracts/account-merge.receipt@1": accountMergeReceipt,
+  "punks://contracts/account-merge.state@1": accountMergeState,
+  "punks://contracts/account-merge.commit-response@1":
+    accountMergeCommitResponse,
   "punks://contracts/desktop.compatibility@1": desktopCompatibility,
   "punks://contracts/desktop.compatibility-response@1":
     desktopCompatibilityResponse,

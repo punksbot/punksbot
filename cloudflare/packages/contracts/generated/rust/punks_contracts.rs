@@ -1018,6 +1018,76 @@ mod const_checkers {
         }
     }
 
+    pub(super) fn expect_const_account_merge_commit_1<'de, D>(
+        deserializer: D,
+    ) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "account-merge.commit@1" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_merge_accounts_irreversibly<'de, D>(
+        deserializer: D,
+    ) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "merge_accounts_irreversibly" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_account_merge_receipt_1<'de, D>(
+        deserializer: D,
+    ) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "account-merge.receipt@1" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_account_merge_state_1<'de, D>(
+        deserializer: D,
+    ) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "account-merge.state@1" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_account_merge_commit_response_1<'de, D>(
+        deserializer: D,
+    ) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "account-merge.commit-response@1" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
     pub(super) fn expect_const_workspace_member_set_role_1<'de, D>(
         deserializer: D,
     ) -> Result<String, D::Error>
@@ -3334,6 +3404,8 @@ pub enum PunksProblemCode {
     PayloadTooLarge,
     #[serde(rename = "unauthenticated")]
     Unauthenticated,
+    #[serde(rename = "account_merged")]
+    AccountMerged,
     #[serde(rename = "forbidden")]
     Forbidden,
     #[serde(rename = "not_found")]
@@ -4396,6 +4468,272 @@ pub struct AccountMergePlanResponseFailure {
 pub enum AccountMergePlanResponse {
     AccountMergePlanResponseSuccess(AccountMergePlanResponseSuccess),
     AccountMergePlanResponseFailure(AccountMergePlanResponseFailure),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct CommitAccountMergeCommandAccountRevisions {
+    pub survivor: u64,
+    pub absorbed: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct CommitAccountMergeCommand {
+    #[serde(
+        rename = "contract",
+        deserialize_with = "const_checkers::expect_const_account_merge_commit_1"
+    )]
+    pub contract: String,
+    #[serde(rename = "commandId")]
+    pub command_id: String,
+    #[serde(rename = "intentId")]
+    pub intent_id: String,
+    #[serde(rename = "planId")]
+    pub plan_id: String,
+    #[serde(rename = "planDigest")]
+    pub plan_digest: String,
+    #[serde(rename = "survivorPunkId")]
+    pub survivor_punk_id: String,
+    #[serde(rename = "absorbedPunkId")]
+    pub absorbed_punk_id: String,
+    #[serde(rename = "accountRevisions")]
+    pub account_revisions: CommitAccountMergeCommandAccountRevisions,
+    #[serde(
+        rename = "confirmation",
+        deserialize_with = "const_checkers::expect_const_merge_accounts_irreversibly"
+    )]
+    pub confirmation: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct AccountMergeReceiptAccountRevisions {
+    pub survivor: u64,
+    pub absorbed: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct AccountMergeReceipt {
+    #[serde(
+        rename = "contract",
+        deserialize_with = "const_checkers::expect_const_account_merge_receipt_1"
+    )]
+    pub contract: String,
+    #[serde(
+        rename = "schemaVersion",
+        deserialize_with = "const_checkers::expect_const_u1"
+    )]
+    pub schema_version: u64,
+    #[serde(rename = "receiptId")]
+    pub receipt_id: String,
+    #[serde(rename = "intentId")]
+    pub intent_id: String,
+    #[serde(rename = "planId")]
+    pub plan_id: String,
+    #[serde(rename = "planDigest")]
+    pub plan_digest: String,
+    #[serde(rename = "commitCommandId")]
+    pub commit_command_id: String,
+    #[serde(rename = "survivorPunkId")]
+    pub survivor_punk_id: String,
+    #[serde(rename = "absorbedPunkId")]
+    pub absorbed_punk_id: String,
+    #[serde(rename = "accountRevisions")]
+    pub account_revisions: AccountMergeReceiptAccountRevisions,
+    #[serde(rename = "committedAt")]
+    pub committed_at: String,
+    #[serde(rename = "receiptHash")]
+    pub receipt_hash: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum AccountMergeStateStatus {
+    #[serde(rename = "planned")]
+    Planned,
+    #[serde(rename = "preparing")]
+    Preparing,
+    #[serde(rename = "committed")]
+    Committed,
+    #[serde(rename = "applying")]
+    Applying,
+    #[serde(rename = "completed")]
+    Completed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct AccountMergeStateAccountRevisions {
+    pub survivor: u64,
+    pub absorbed: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct AccountMergeStateReceipt {
+    #[serde(
+        rename = "contract",
+        deserialize_with = "const_checkers::expect_const_account_merge_receipt_1"
+    )]
+    pub contract: String,
+    #[serde(
+        rename = "schemaVersion",
+        deserialize_with = "const_checkers::expect_const_u1"
+    )]
+    pub schema_version: u64,
+    #[serde(rename = "receiptId")]
+    pub receipt_id: String,
+    #[serde(rename = "intentId")]
+    pub intent_id: String,
+    #[serde(rename = "planId")]
+    pub plan_id: String,
+    #[serde(rename = "planDigest")]
+    pub plan_digest: String,
+    #[serde(rename = "commitCommandId")]
+    pub commit_command_id: String,
+    #[serde(rename = "survivorPunkId")]
+    pub survivor_punk_id: String,
+    #[serde(rename = "absorbedPunkId")]
+    pub absorbed_punk_id: String,
+    #[serde(rename = "accountRevisions")]
+    pub account_revisions: AccountMergeStateAccountRevisions,
+    #[serde(rename = "committedAt")]
+    pub committed_at: String,
+    #[serde(rename = "receiptHash")]
+    pub receipt_hash: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum AccountMergeStateFailureCode {
+    #[serde(rename = "plan_expired")]
+    PlanExpired,
+    #[serde(rename = "revision_conflict")]
+    RevisionConflict,
+    #[serde(rename = "blocking_conflict")]
+    BlockingConflict,
+    #[serde(rename = "authority_unavailable")]
+    AuthorityUnavailable,
+    #[serde(rename = "idempotency_conflict")]
+    IdempotencyConflict,
+    #[serde(rename = "receipt_conflict")]
+    ReceiptConflict,
+    #[serde(rename = "application_pending")]
+    ApplicationPending,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct AccountMergeStateFailure {
+    pub code: AccountMergeStateFailureCode,
+    #[serde(rename = "correlationId")]
+    pub correlation_id: String,
+    #[serde(rename = "recordedAt")]
+    pub recorded_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct AccountMergeState {
+    #[serde(
+        rename = "contract",
+        deserialize_with = "const_checkers::expect_const_account_merge_state_1"
+    )]
+    pub contract: String,
+    #[serde(
+        rename = "schemaVersion",
+        deserialize_with = "const_checkers::expect_const_u1"
+    )]
+    pub schema_version: u64,
+    #[serde(rename = "intentId")]
+    pub intent_id: String,
+    #[serde(rename = "planId")]
+    pub plan_id: String,
+    #[serde(rename = "planDigest")]
+    pub plan_digest: String,
+    pub status: AccountMergeStateStatus,
+    #[serde(rename = "survivorPunkId")]
+    pub survivor_punk_id: String,
+    #[serde(rename = "absorbedPunkId")]
+    pub absorbed_punk_id: String,
+    #[serde(rename = "applicationCursor")]
+    pub application_cursor: u64,
+    #[serde(rename = "applicationTotal")]
+    pub application_total: u64,
+    pub receipt: Option<AccountMergeStateReceipt>,
+    #[serde(rename = "lastFailure")]
+    pub last_failure: Option<AccountMergeStateFailure>,
+    #[serde(rename = "committedAt")]
+    pub committed_at: Option<String>,
+    #[serde(rename = "completedAt")]
+    pub completed_at: Option<String>,
+    #[serde(rename = "updatedAt")]
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct AccountMergeCommitResponseSuccess {
+    #[serde(
+        rename = "contract",
+        deserialize_with = "const_checkers::expect_const_account_merge_commit_response_1"
+    )]
+    pub contract: String,
+    #[serde(
+        rename = "ok",
+        deserialize_with = "const_checkers::expect_const_r_true"
+    )]
+    pub ok: bool,
+    pub state: AccountMergeState,
+    pub replayed: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum AccountMergeCommitResponseFailureCode {
+    #[serde(rename = "invalid_request")]
+    InvalidRequest,
+    #[serde(rename = "plan_unavailable")]
+    PlanUnavailable,
+    #[serde(rename = "plan_expired")]
+    PlanExpired,
+    #[serde(rename = "revision_conflict")]
+    RevisionConflict,
+    #[serde(rename = "blocking_conflict")]
+    BlockingConflict,
+    #[serde(rename = "authority_unavailable")]
+    AuthorityUnavailable,
+    #[serde(rename = "idempotency_conflict")]
+    IdempotencyConflict,
+    #[serde(rename = "receipt_conflict")]
+    ReceiptConflict,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct AccountMergeCommitResponseFailure {
+    #[serde(
+        rename = "contract",
+        deserialize_with = "const_checkers::expect_const_account_merge_commit_response_1"
+    )]
+    pub contract: String,
+    #[serde(
+        rename = "ok",
+        deserialize_with = "const_checkers::expect_const_r_false"
+    )]
+    pub ok: bool,
+    pub code: AccountMergeCommitResponseFailureCode,
+    #[serde(rename = "correlationId")]
+    pub correlation_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum AccountMergeCommitResponse {
+    AccountMergeCommitResponseSuccess(AccountMergeCommitResponseSuccess),
+    AccountMergeCommitResponseFailure(AccountMergeCommitResponseFailure),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -5554,6 +5892,26 @@ pub fn decode_profile_contract(contract: &str, payload: serde_json::Value) -> Re
         }
         "punks://contracts/account-merge.plan-response@1" => {
             serde_json::from_value::<AccountMergePlanResponse>(payload)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        }
+        "punks://contracts/account-merge.commit@1" => {
+            serde_json::from_value::<CommitAccountMergeCommand>(payload)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        }
+        "punks://contracts/account-merge.receipt@1" => {
+            serde_json::from_value::<AccountMergeReceipt>(payload)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        }
+        "punks://contracts/account-merge.state@1" => {
+            serde_json::from_value::<AccountMergeState>(payload)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        }
+        "punks://contracts/account-merge.commit-response@1" => {
+            serde_json::from_value::<AccountMergeCommitResponse>(payload)
                 .map(|_| ())
                 .map_err(|error| error.to_string())
         }

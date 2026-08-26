@@ -187,7 +187,10 @@ export interface ApiEnv extends CloudflareBindings {
     RuntimeIdentityService;
   BOT_RUNTIME_IDENTITY: CloudflareBindings["BOT_RUNTIME_IDENTITY"] &
     RuntimeIdentityService;
-  ACCOUNT_MERGE_AUTHORITY: CloudflareBindings["ACCOUNT_MERGE_AUTHORITY"];
+  ACCOUNT_MERGE_AUTHORITY: CloudflareBindings["ACCOUNT_MERGE_AUTHORITY"] & {
+    commitAccountMergePlan(input: unknown): Promise<unknown>;
+    readAccountMergeState(input: unknown): Promise<unknown>;
+  };
   WORKSPACE_OWNERSHIP_AUTHORITY: CloudflareBindings["WORKSPACE_OWNERSHIP_AUTHORITY"] & {
     consume(input: unknown): Promise<boolean>;
   };

@@ -50,7 +50,8 @@ that failure instead of presenting the rerun as the candidate's proof.
   Punks-operated Bots; the Worker has no route, storage or secret.
 - `workers/projector`: idempotent D1 projection consumer.
 - `workers/search`: private, Conversation-scoped D1 candidate lookup service.
-- `workers/erasure`: private create-only anti-PITR erasure registry.
+- `workers/erasure`: private create-only anti-PITR registry for Message
+  erasure tombstones and terminal Account Merge receipts.
 - `workers/dev-gateway`: local-only HTTP gateway for the API and the private
   known-Installation Bot Wake test seam; it has no staging deployment target.
 
@@ -61,6 +62,42 @@ Installation journal archives.
 
 Global Punk authentication covers Google, GitHub identity-only OAuth, optional
 passkeys, explicit linking and opaque sessions.
+
+Account Merge application is implemented as an Auth-owned fenced saga. The
+private Erasure Worker records a terminal create-only envelope before any
+authority changes. Its public result remains the minimal receipt, while an
+exact private recovery descriptor lets Auth reconstruct a lost Plan/manifest
+and the Punk/Workspace fences. Durable Objects then roll forward idempotently,
+and restored absorbed Sessions fail as `account_merged`.
+
+### Commit or recover an Account Merge
+
+`POST /api/v1/account-merges/{intentId}` accepts only a current Session for the
+surviving Compte Punks. Send an `account-merge.commit@1` body whose `intentId`
+matches the path and whose `survivorPunkId` matches that Session, plus an
+`Idempotency-Key` header exactly equal to the body `commandId`. The command must
+repeat the immutable `planId`, Plan digest, both account revisions and the
+literal `merge_accounts_irreversibly` confirmation. A typed
+`account-merge.commit-response@1` is returned with HTTP 202 while work remains
+and HTTP 200 at `completed`.
+
+After an ambiguous response or a fresh sign-in, read the same bounded state
+with `GET /api/v1/account-merges/{intentId}?planId={planId}`. The query must
+contain exactly that one `planId`, and only the current surviving Punk can read
+it. If PITR removed the intent's local Plan, first resubmit the exact original
+POST so Auth can locate the cold descriptor by absorbed Punk and reconstruct
+the Plan/manifest; GET can then observe the resumed cursor. Both methods
+disable caching. Failures use the generated `problem@1`
+contract: 400 for malformed input or idempotency, 401 without authentication,
+403 when the POST Session is not the survivor, 404 when the Plan/state is not
+available to the caller, 409 for revision or idempotency conflicts before the
+terminal decision, and 503 for an unavailable authority. Once the receipt
+exists, retries always roll forward even if the Plan has since expired.
+
+This recovery surface does not advertise Account Merge as a generally
+available desktop capability. The desktop currently handles only the terminal
+`account_merged` state by discarding the absorbed Session and requiring a fresh
+sign-in.
 
 The first autonomous Bot slice is implemented and tested in source. A narrow
 private trigger accepts only one known

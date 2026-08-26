@@ -1,9 +1,13 @@
 export type { AttestationRequest } from "./generated/attestation.request";
 export type { AttestationResponse } from "./generated/attestation.response";
 export type { AccountMergeFreshProof } from "./generated/account-merge.fresh-proof";
+export type { CommitAccountMergeCommand } from "./generated/account-merge.commit";
+export type { AccountMergeCommitResponse } from "./generated/account-merge.commit-response";
 export type { CreateAccountMergePlanCommand } from "./generated/account-merge.plan-create";
 export type { AccountMergePlanResponse } from "./generated/account-merge.plan-response";
 export type { AccountMergePlan } from "./generated/account-merge.plan";
+export type { AccountMergeReceipt } from "./generated/account-merge.receipt";
+export type { AccountMergeState } from "./generated/account-merge.state";
 export type { AuthProviderProfile } from "./generated/auth.provider-profile";
 export type { FinishPasskeyCommand } from "./generated/auth.passkey-finish";
 export type { PasskeyOptionsResponse } from "./generated/auth.passkey-options";

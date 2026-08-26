@@ -106,9 +106,10 @@ function navigatePunks(route: PunksRoute, replace = false): void {
   window.dispatchEvent(new PopStateEvent("popstate"));
 }
 
-function isSessionExpired(error: unknown): boolean {
+function requiresFreshSignIn(error: unknown): boolean {
   return (
-    error instanceof PunksDesktopFailure && error.kind === "session_expired"
+    error instanceof PunksDesktopFailure &&
+    (error.kind === "session_expired" || error.kind === "account_merged")
   );
 }
 
@@ -227,7 +228,7 @@ function PunksAccountProvider({
       });
     } catch (error) {
       if (bootstrapGeneration.current !== generation) return;
-      if (isSessionExpired(error)) {
+      if (requiresFreshSignIn(error)) {
         navigatePunks({ kind: "home" }, true);
         setState((current) => ({
           ...current,

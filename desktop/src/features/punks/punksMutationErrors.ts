@@ -17,6 +17,7 @@ export function mutationErrorMessage(error: unknown): string | null {
     case "stale_workspace":
       return "The Workspace changed while the action was running. Reopen the current Workspace before trying again.";
     case "session_expired":
+    case "account_merged":
       return "The Punk session expired before the action completed. Sign in again before retrying.";
     case "ambiguous":
       return "The mutation result is ambiguous. Do not retry automatically; refresh the Message state first.";

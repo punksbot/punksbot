@@ -55,6 +55,152 @@ async function provisionPunk(punkId: string, now: string) {
 }
 
 describe("Punk account-merge inventory coverage", () => {
+  it("locks both account roles and applies the survivor plus inert alias idempotently", async () => {
+    const survivorPunkId = crypto.randomUUID();
+    const absorbedPunkId = crypto.randomUUID();
+    const intentId = crypto.randomUUID();
+    const planId = crypto.randomUUID();
+    const receiptId = crypto.randomUUID();
+    const now = new Date().toISOString();
+    const survivor = await provisionPunk(survivorPunkId, now);
+    const absorbed = authEnv.PUNKS.getByName(absorbedPunkId);
+    await expect(
+      absorbed.provision({
+        punkId: absorbedPunkId,
+        identity: {
+          profile: {
+            provider: "github",
+            subject: "absorbed-subject",
+            verifiedEmail: "absorbed@example.test",
+            displayName: "Absorbed Punk",
+            avatarUrl: null,
+            username: "absorbed-punk",
+          },
+          subjectHash: digest("c"),
+          emailHash: digest("d"),
+        },
+        now,
+      }),
+    ).resolves.toMatchObject({ ok: true, replayed: false });
+    const absorbedBeforeFence = await absorbed.readForResolution();
+    if (absorbedBeforeFence === null) {
+      throw new TypeError("Absorbed Punk is missing");
+    }
+
+    const coordinate = {
+      intentId,
+      planId,
+      receiptId,
+      survivorPunkId,
+      absorbedPunkId,
+    };
+    await expect(
+      survivor.prepareAccountMerge({
+        ...coordinate,
+        accountRole: "survivor",
+        expectedRevision: 1,
+      }),
+    ).resolves.toBe(true);
+    await expect(
+      absorbed.prepareAccountMerge({
+        ...coordinate,
+        accountRole: "absorbed",
+        expectedRevision: 1,
+      }),
+    ).resolves.toBe(true);
+    await expect(survivor.query()).resolves.toMatchObject({ ok: true });
+    await expect(absorbed.query()).resolves.toEqual({
+      ok: false,
+      code: "inactive",
+    });
+    await expect(absorbed.readForResolution()).resolves.toBeNull();
+    await expect(
+      survivor.recordAccountMergeSession({
+        sessionId: "10000000-0000-8000-8000-000000000061",
+        punkId: survivorPunkId,
+        clientKind: "desktop",
+        authenticatedAt: now,
+        expiresAt: "2099-01-01T00:00:00.000Z",
+      }),
+    ).resolves.toBe(false);
+
+    await expect(
+      survivor.applyAccountMergeWorkspaceRight({
+        ...coordinate,
+        workspaceId: "20000000-0000-8000-8000-000000000061",
+        membership: { role: "owner", revision: 8 },
+      }),
+    ).resolves.toBe(true);
+    expect(absorbedBeforeFence.identities).toHaveLength(1);
+    await expect(
+      survivor.applyAccountMergeAsSurvivor({
+        ...coordinate,
+        expectedRevision: 1,
+        absorbedIdentities: absorbedBeforeFence.identities,
+        appliedAt: "2032-01-01T00:00:00.000Z",
+      }),
+    ).resolves.toBe(true);
+    await expect(
+      absorbed.applyAccountMergeAsAbsorbed({
+        ...coordinate,
+        expectedRevision: 1,
+        appliedAt: "2032-01-01T00:00:00.000Z",
+      }),
+    ).resolves.toBe(true);
+    await expect(
+      absorbed.applyAccountMergeAsAbsorbed({
+        ...coordinate,
+        expectedRevision: 1,
+        appliedAt: "2032-01-01T00:00:00.000Z",
+      }),
+    ).resolves.toBe(true);
+    await expect(
+      authEnv.ACCOUNT_MERGE_RECEIPTS.recordAccountMergeReceipt({
+        receiptId,
+        intentId,
+        planId,
+        planDigest: digest("e"),
+        commitCommandId: crypto.randomUUID(),
+        survivorPunkId,
+        absorbedPunkId,
+        accountRevisions: { survivor: 1, absorbed: 1 },
+        recoveryDescriptor: "{}",
+      }),
+    ).resolves.toMatchObject({ ok: true });
+
+    await expect(survivor.query()).resolves.toMatchObject({
+      ok: true,
+      state: {
+        status: "active",
+        revision: 2,
+        identities: expect.arrayContaining([
+          expect.objectContaining({ provider: "google" }),
+          expect.objectContaining({ provider: "github" }),
+        ]),
+      },
+    });
+    await expect(absorbed.query()).resolves.toEqual({
+      ok: false,
+      code: "inactive",
+    });
+    await expect(absorbed.readForResolution()).resolves.toMatchObject({
+      id: absorbedPunkId,
+      status: "merged",
+      mergedInto: survivorPunkId,
+      revision: 2,
+    });
+    await expect(survivor.accountMergeInventory()).resolves.toMatchObject({
+      complete: true,
+      rights: [
+        {
+          workspaceId: "20000000-0000-8000-8000-000000000061",
+          role: "owner",
+          revision: 8,
+        },
+      ],
+    });
+  });
+
   it("is complete immediately for a Punk provisioned with the inventory index", async () => {
     const punk = await provisionPunk(
       crypto.randomUUID(),

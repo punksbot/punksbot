@@ -90,3 +90,19 @@ une reprise idempotente en roll-forward peut atteindre `completed`. Le Compte
 absorbé devient alors un alias inerte, ses Sessions et handoffs sont révoqués,
 et un Reçu terminal create-only lie le Plan et le survivant afin qu’un PITR,
 une réparation ou un rejeu tardif ne puisse jamais ressusciter l’absorbé.
+
+L’implémentation matérialise ce point avec le Reçu
+`account-merge.receipt@1`, écrit conditionnellement par le Worker privé
+d’effacement sous une clé R2 déterminée par le Compte absorbé. Cette écriture
+précède les effets et constitue le point `committed`. L’objet R2 privé enveloppe
+ce Reçu public minimal avec un descripteur canonique et borné du Plan et du
+manifeste d’autorité ; seul le service Auth de Fusion peut relire ce descripteur,
+qui ne contient aucun jeton de Session, secret de preuve ou credential
+réutilisable. Ainsi, le même POST exact peut reconstruire le Plan et les fences
+même si le SQLite de l’intention a été restauré avant leur écriture.
+`AccountMergeIntentDO`
+conserve ensuite un curseur borné et reprend par alarme chaque transfert de
+droit Workspace, copie de claim courant, transformation en alias et révocation
+de Session/handoff. Un Reçu déjà présent domine tout état SQLite restauré : il
+reconstruit le fence de commit et interdit à `PunkDO` ou à la route de Session
+de rendre l’absorbé actif.

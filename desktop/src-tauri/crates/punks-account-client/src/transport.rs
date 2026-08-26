@@ -159,7 +159,9 @@ fn classify_request_failure(safety: RequestSafety, phase: RequestFailurePhase) -
 /// Taxonomie fermée partagée : l'échec d'authentification prime toujours sur
 /// l'indice de rejeu `same_command` (mêmes sémantiques que le client TS).
 pub(crate) fn problem_failure_kind(status: u16, code: &str, retry: &str) -> FailureKind {
-    if status == 401 || code == "unauthenticated" {
+    if code == "account_merged" {
+        FailureKind::AccountMerged
+    } else if status == 401 || code == "unauthenticated" {
         FailureKind::SessionExpired
     } else if retry == "same_command" {
         FailureKind::Ambiguous
@@ -208,6 +210,14 @@ mod tests {
         assert_eq!(
             classify_request_failure(RequestSafety::Mutation, RequestFailurePhase::AfterConnect),
             FailureKind::Ambiguous,
+        );
+    }
+
+    #[test]
+    fn account_merge_is_distinct_from_an_ordinary_expired_session() {
+        assert_eq!(
+            super::problem_failure_kind(409, "account_merged", "never"),
+            crate::FailureKind::AccountMerged,
         );
     }
 }

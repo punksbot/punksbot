@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/account-merge.commit-response@1",
+  "title": "AccountMergeCommitResponse",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract", "ok", "state", "replayed"],
+      "properties": {
+        "contract": { "const": "account-merge.commit-response@1" },
+        "ok": { "const": true },
+        "state": { "$ref": "schemas/account-merge.state.schema.json" },
+        "replayed": { "type": "boolean" }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract", "ok", "code", "correlationId"],
+      "properties": {
+        "contract": { "const": "account-merge.commit-response@1" },
+        "ok": { "const": false },
+        "code": {
+          "enum": [
+            "invalid_request",
+            "plan_unavailable",
+            "plan_expired",
+            "revision_conflict",
+            "blocking_conflict",
+            "authority_unavailable",
+            "idempotency_conflict",
+            "receipt_conflict"
+          ]
+        },
+        "correlationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    }
+  ]
+}

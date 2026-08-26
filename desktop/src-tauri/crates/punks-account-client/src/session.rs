@@ -122,7 +122,10 @@ impl PunksAccountClient {
         let session = match self.get_session().await {
             Ok(session) => session,
             Err(error) => {
-                if matches!(error.kind, FailureKind::SessionExpired) {
+                if matches!(
+                    error.kind,
+                    FailureKind::SessionExpired | FailureKind::AccountMerged
+                ) {
                     self.clear_account_session().await;
                 }
                 return Err(error);

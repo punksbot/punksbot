@@ -47,6 +47,70 @@
         "title": "AbandonMediaUploadCommand",
         "type": "object"
       },
+      "AccountMergeCommitResponse": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "contract": {
+                "const": "account-merge.commit-response@1"
+              },
+              "ok": {
+                "const": true
+              },
+              "replayed": {
+                "type": "boolean"
+              },
+              "state": {
+                "$ref": "#/components/schemas/AccountMergeState"
+              }
+            },
+            "required": [
+              "contract",
+              "ok",
+              "state",
+              "replayed"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "enum": [
+                  "invalid_request",
+                  "plan_unavailable",
+                  "plan_expired",
+                  "revision_conflict",
+                  "blocking_conflict",
+                  "authority_unavailable",
+                  "idempotency_conflict",
+                  "receipt_conflict"
+                ]
+              },
+              "contract": {
+                "const": "account-merge.commit-response@1"
+              },
+              "correlationId": {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "contract",
+              "ok",
+              "code",
+              "correlationId"
+            ],
+            "type": "object"
+          }
+        ],
+        "title": "AccountMergeCommitResponse"
+      },
       "AccountMergeFreshProof": {
         "additionalProperties": false,
         "maxProperties": 12,
@@ -648,6 +712,415 @@
         "format": "uuid",
         "type": "string"
       },
+      "AccountMergeReceipt": {
+        "additionalProperties": false,
+        "properties": {
+          "absorbedPunkId": {
+            "$ref": "#/components/schemas/AccountMergeReceiptUuid"
+          },
+          "accountRevisions": {
+            "$ref": "#/components/schemas/AccountMergeReceiptAccountRevisions"
+          },
+          "commitCommandId": {
+            "$ref": "#/components/schemas/AccountMergeReceiptUuid"
+          },
+          "committedAt": {
+            "$ref": "#/components/schemas/AccountMergeReceiptTimestamp"
+          },
+          "contract": {
+            "const": "account-merge.receipt@1"
+          },
+          "intentId": {
+            "$ref": "#/components/schemas/AccountMergeReceiptUuid"
+          },
+          "planDigest": {
+            "$ref": "#/components/schemas/AccountMergeReceiptHexDigest"
+          },
+          "planId": {
+            "$ref": "#/components/schemas/AccountMergeReceiptUuid"
+          },
+          "receiptHash": {
+            "$ref": "#/components/schemas/AccountMergeReceiptHexDigest"
+          },
+          "receiptId": {
+            "$ref": "#/components/schemas/AccountMergeReceiptUuid"
+          },
+          "schemaVersion": {
+            "const": 1
+          },
+          "survivorPunkId": {
+            "$ref": "#/components/schemas/AccountMergeReceiptUuid"
+          }
+        },
+        "required": [
+          "contract",
+          "schemaVersion",
+          "receiptId",
+          "intentId",
+          "planId",
+          "planDigest",
+          "commitCommandId",
+          "survivorPunkId",
+          "absorbedPunkId",
+          "accountRevisions",
+          "committedAt",
+          "receiptHash"
+        ],
+        "title": "AccountMergeReceipt",
+        "type": "object"
+      },
+      "AccountMergeReceiptAccountRevisions": {
+        "additionalProperties": false,
+        "properties": {
+          "absorbed": {
+            "$ref": "#/components/schemas/AccountMergeReceiptRevision"
+          },
+          "survivor": {
+            "$ref": "#/components/schemas/AccountMergeReceiptRevision"
+          }
+        },
+        "required": [
+          "survivor",
+          "absorbed"
+        ],
+        "type": "object"
+      },
+      "AccountMergeReceiptHexDigest": {
+        "maxLength": 64,
+        "minLength": 64,
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "AccountMergeReceiptRevision": {
+        "maximum": 9007199254740991,
+        "minimum": 1,
+        "type": "integer"
+      },
+      "AccountMergeReceiptTimestamp": {
+        "format": "date-time",
+        "maxLength": 24,
+        "minLength": 24,
+        "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$",
+        "type": "string"
+      },
+      "AccountMergeReceiptUuid": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "AccountMergeState": {
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "enum": [
+                    "planned",
+                    "preparing"
+                  ]
+                }
+              },
+              "required": [
+                "status"
+              ]
+            },
+            "then": {
+              "properties": {
+                "committedAt": {
+                  "type": "null"
+                },
+                "completedAt": {
+                  "type": "null"
+                },
+                "receipt": {
+                  "type": "null"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "enum": [
+                    "committed",
+                    "applying"
+                  ]
+                }
+              },
+              "required": [
+                "status"
+              ]
+            },
+            "then": {
+              "properties": {
+                "committedAt": {
+                  "$ref": "#/components/schemas/AccountMergeStateTimestamp"
+                },
+                "completedAt": {
+                  "type": "null"
+                },
+                "receipt": {
+                  "$ref": "#/components/schemas/AccountMergeStateReceipt"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "completed"
+                }
+              },
+              "required": [
+                "status"
+              ]
+            },
+            "then": {
+              "properties": {
+                "committedAt": {
+                  "$ref": "#/components/schemas/AccountMergeStateTimestamp"
+                },
+                "completedAt": {
+                  "$ref": "#/components/schemas/AccountMergeStateTimestamp"
+                },
+                "receipt": {
+                  "$ref": "#/components/schemas/AccountMergeStateReceipt"
+                }
+              }
+            }
+          }
+        ],
+        "properties": {
+          "absorbedPunkId": {
+            "$ref": "#/components/schemas/AccountMergeStateUuid"
+          },
+          "applicationCursor": {
+            "maximum": 1024,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "applicationTotal": {
+            "maximum": 1024,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "committedAt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AccountMergeStateTimestamp"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "completedAt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AccountMergeStateTimestamp"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "contract": {
+            "const": "account-merge.state@1"
+          },
+          "intentId": {
+            "$ref": "#/components/schemas/AccountMergeStateUuid"
+          },
+          "lastFailure": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AccountMergeStateFailure"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "planDigest": {
+            "$ref": "#/components/schemas/AccountMergeStateHexDigest"
+          },
+          "planId": {
+            "$ref": "#/components/schemas/AccountMergeStateUuid"
+          },
+          "receipt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AccountMergeStateReceipt"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "schemaVersion": {
+            "const": 1
+          },
+          "status": {
+            "enum": [
+              "planned",
+              "preparing",
+              "committed",
+              "applying",
+              "completed"
+            ]
+          },
+          "survivorPunkId": {
+            "$ref": "#/components/schemas/AccountMergeStateUuid"
+          },
+          "updatedAt": {
+            "$ref": "#/components/schemas/AccountMergeStateTimestamp"
+          }
+        },
+        "required": [
+          "contract",
+          "schemaVersion",
+          "intentId",
+          "planId",
+          "planDigest",
+          "status",
+          "survivorPunkId",
+          "absorbedPunkId",
+          "applicationCursor",
+          "applicationTotal",
+          "receipt",
+          "lastFailure",
+          "committedAt",
+          "completedAt",
+          "updatedAt"
+        ],
+        "title": "AccountMergeState",
+        "type": "object"
+      },
+      "AccountMergeStateAccountRevisions": {
+        "additionalProperties": false,
+        "properties": {
+          "absorbed": {
+            "$ref": "#/components/schemas/AccountMergeStateRevision"
+          },
+          "survivor": {
+            "$ref": "#/components/schemas/AccountMergeStateRevision"
+          }
+        },
+        "required": [
+          "survivor",
+          "absorbed"
+        ],
+        "type": "object"
+      },
+      "AccountMergeStateFailure": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "enum": [
+              "plan_expired",
+              "revision_conflict",
+              "blocking_conflict",
+              "authority_unavailable",
+              "idempotency_conflict",
+              "receipt_conflict",
+              "application_pending"
+            ]
+          },
+          "correlationId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "recordedAt": {
+            "$ref": "#/components/schemas/AccountMergeStateTimestamp"
+          }
+        },
+        "required": [
+          "code",
+          "correlationId",
+          "recordedAt"
+        ],
+        "type": "object"
+      },
+      "AccountMergeStateHexDigest": {
+        "maxLength": 64,
+        "minLength": 64,
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "AccountMergeStateReceipt": {
+        "additionalProperties": false,
+        "properties": {
+          "absorbedPunkId": {
+            "$ref": "#/components/schemas/AccountMergeStateUuid"
+          },
+          "accountRevisions": {
+            "$ref": "#/components/schemas/AccountMergeStateAccountRevisions"
+          },
+          "commitCommandId": {
+            "$ref": "#/components/schemas/AccountMergeStateUuid"
+          },
+          "committedAt": {
+            "$ref": "#/components/schemas/AccountMergeStateTimestamp"
+          },
+          "contract": {
+            "const": "account-merge.receipt@1"
+          },
+          "intentId": {
+            "$ref": "#/components/schemas/AccountMergeStateUuid"
+          },
+          "planDigest": {
+            "$ref": "#/components/schemas/AccountMergeStateHexDigest"
+          },
+          "planId": {
+            "$ref": "#/components/schemas/AccountMergeStateUuid"
+          },
+          "receiptHash": {
+            "$ref": "#/components/schemas/AccountMergeStateHexDigest"
+          },
+          "receiptId": {
+            "$ref": "#/components/schemas/AccountMergeStateUuid"
+          },
+          "schemaVersion": {
+            "const": 1
+          },
+          "survivorPunkId": {
+            "$ref": "#/components/schemas/AccountMergeStateUuid"
+          }
+        },
+        "required": [
+          "contract",
+          "schemaVersion",
+          "receiptId",
+          "intentId",
+          "planId",
+          "planDigest",
+          "commitCommandId",
+          "survivorPunkId",
+          "absorbedPunkId",
+          "accountRevisions",
+          "committedAt",
+          "receiptHash"
+        ],
+        "type": "object"
+      },
+      "AccountMergeStateRevision": {
+        "maximum": 9007199254740991,
+        "minimum": 1,
+        "type": "integer"
+      },
+      "AccountMergeStateTimestamp": {
+        "format": "date-time",
+        "maxLength": 24,
+        "minLength": 24,
+        "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$",
+        "type": "string"
+      },
+      "AccountMergeStateUuid": {
+        "format": "uuid",
+        "type": "string"
+      },
       "AddMessageReactionCommand": {
         "additionalProperties": false,
         "properties": {
@@ -970,6 +1443,82 @@
         ],
         "title": "ClaimWorkspaceInvitationResponse",
         "type": "object"
+      },
+      "CommitAccountMergeCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "absorbedPunkId": {
+            "$ref": "#/components/schemas/CommitAccountMergeCommandUuid"
+          },
+          "accountRevisions": {
+            "$ref": "#/components/schemas/CommitAccountMergeCommandAccountRevisions"
+          },
+          "commandId": {
+            "$ref": "#/components/schemas/CommitAccountMergeCommandUuid"
+          },
+          "confirmation": {
+            "const": "merge_accounts_irreversibly"
+          },
+          "contract": {
+            "const": "account-merge.commit@1"
+          },
+          "intentId": {
+            "$ref": "#/components/schemas/CommitAccountMergeCommandUuid"
+          },
+          "planDigest": {
+            "$ref": "#/components/schemas/CommitAccountMergeCommandHexDigest"
+          },
+          "planId": {
+            "$ref": "#/components/schemas/CommitAccountMergeCommandUuid"
+          },
+          "survivorPunkId": {
+            "$ref": "#/components/schemas/CommitAccountMergeCommandUuid"
+          }
+        },
+        "required": [
+          "contract",
+          "commandId",
+          "intentId",
+          "planId",
+          "planDigest",
+          "survivorPunkId",
+          "absorbedPunkId",
+          "accountRevisions",
+          "confirmation"
+        ],
+        "title": "CommitAccountMergeCommand",
+        "type": "object"
+      },
+      "CommitAccountMergeCommandAccountRevisions": {
+        "additionalProperties": false,
+        "properties": {
+          "absorbed": {
+            "$ref": "#/components/schemas/CommitAccountMergeCommandRevision"
+          },
+          "survivor": {
+            "$ref": "#/components/schemas/CommitAccountMergeCommandRevision"
+          }
+        },
+        "required": [
+          "survivor",
+          "absorbed"
+        ],
+        "type": "object"
+      },
+      "CommitAccountMergeCommandHexDigest": {
+        "maxLength": 64,
+        "minLength": 64,
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "CommitAccountMergeCommandRevision": {
+        "maximum": 9007199254740991,
+        "minimum": 1,
+        "type": "integer"
+      },
+      "CommitAccountMergeCommandUuid": {
+        "format": "uuid",
+        "type": "string"
       },
       "Conversation": {
         "additionalProperties": false,
@@ -5981,6 +6530,7 @@
               "invalid_input",
               "payload_too_large",
               "unauthenticated",
+              "account_merged",
               "forbidden",
               "not_found",
               "slug_claimed",

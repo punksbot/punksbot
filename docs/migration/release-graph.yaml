@@ -160,17 +160,17 @@ releases:
     materiaux:
       registre-contrats:
         version: 1
-        sha256: e8530cf803f101f5d3767d1a3640db5a2c3c51c020c8a8e80661c46809b62894
+        sha256: fd5f6868d0d9fd6324b5c4865b30ea0625a88cddeca934e18cd1cc6681e8c9e2
       schemas:
         version: 1
-        sha256: 122fc83063f355609b4feb9c5cfb622aa66860cea99fddd720ec37ddd593909d
+        sha256: 49f1cefb3ad42e2b579a325225362502c5be3deff69eac68526f22ac2b073f20
       generes:
         version: 1
-        sha256: 7d297c3e57bb8c3ea345eb332830692be30f10dd14014a36e4b279adfd9901c0
+        sha256: 43025f8c3e6c2ae5e33f4e9fa90a0256eef95a198a963a8c7f6ec3ba3c0ae9af
       profil:
         id: desktop-social-loop@1
         version: 1
-        sha256: 4024e9ad9883df026d13054a1f3e82899ab2ec17adc2e909bf743e467ce6131e
+        sha256: af4acfd973d0956ac7c52af8a7a9a6d3c454483cd2ed57a18d55a6d6a858e093
       registre-goldens:
         version: 1
         sha256: e317ab42ffa0c0aaea7bc7b6ebe5d8ede446a4f0cc9738ed750c96f73d75e483

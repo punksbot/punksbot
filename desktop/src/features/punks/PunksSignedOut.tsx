@@ -207,6 +207,13 @@ export function PunksSignedOut({
             Finish authorization in your system browser…
           </p>
         ) : null}
+        {authentication.phase === "failed" &&
+        authentication.code === "account_merged" ? (
+          <p className="mt-3 text-sm text-muted-foreground" role="status">
+            This Account was merged. Sign in again to continue with the
+            surviving Account.
+          </p>
+        ) : null}
         {failure ? (
           <p className="mt-3 text-sm text-destructive" role="alert">
             The sign-in ceremony could not be started.

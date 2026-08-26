@@ -143,6 +143,29 @@ export class PasskeyCeremonyDO extends DurableObject<AuthEnv> {
     };
   }
 
+  /** Cancels this exact active handoff after the merge point of no return. */
+  async cancelForAccountMerge(input: {
+    handoffId: string;
+    punkId: string;
+    kind: "passkey-ceremony";
+    state: "pending" | "prepared";
+    expiresAt: string;
+  }): Promise<boolean> {
+    const current = this.readForAccountMerge();
+    if (current === null) return true;
+    if (
+      input.handoffId !== this.ctx.id.name ||
+      current.punkId !== input.punkId ||
+      current.kind !== input.kind ||
+      current.state !== input.state ||
+      current.expiresAt !== input.expiresAt
+    ) {
+      return false;
+    }
+    await this.alarm();
+    return this.readForAccountMerge() === null;
+  }
+
   override async alarm(): Promise<void> {
     const row = this.row();
     if (row !== undefined) {

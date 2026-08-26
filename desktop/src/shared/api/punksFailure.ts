@@ -6,6 +6,7 @@ export type PunksFailureKind =
   | "cancelled"
   | "stale_workspace"
   | "session_expired"
+  | "account_merged"
   | "ambiguous";
 
 /** Stable failure envelope shared by the native and fake Punks adapters. */

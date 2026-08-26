@@ -21,10 +21,7 @@
       "enum": ["owner", "moderator", "member", "guest"]
     },
     "nullableWorkspaceRole": {
-      "oneOf": [
-        { "$ref": "#/$defs/workspaceRole" },
-        { "type": "null" }
-      ]
+      "oneOf": [{ "$ref": "#/$defs/workspaceRole" }, { "type": "null" }]
     },
     "workspaceMetadata": {
       "type": "object",
@@ -159,6 +156,40 @@
               "maxItems": 2,
               "items": { "$ref": "#/$defs/memberUpsertedTransition" }
             }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "planId",
+            "receiptId",
+            "survivorPunkId",
+            "absorbedPunkId",
+            "survivorPreviousRole",
+            "absorbedPreviousRole",
+            "resultingRole"
+          ],
+          "properties": {
+            "type": { "const": "account-merge-applied" },
+            "planId": { "type": "string", "format": "uuid" },
+            "receiptId": { "type": "string", "format": "uuid" },
+            "survivorPunkId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "absorbedPunkId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "survivorPreviousRole": {
+              "$ref": "#/$defs/nullableWorkspaceRole"
+            },
+            "absorbedPreviousRole": { "$ref": "#/$defs/workspaceRole" },
+            "resultingRole": { "$ref": "#/$defs/workspaceRole" }
           }
         }
       ]

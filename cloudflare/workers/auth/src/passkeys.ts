@@ -28,6 +28,7 @@ import {
   canonicalPunk,
   getActiveSession,
   newSession,
+  resolveActivePunk,
   sameOrigin,
 } from "./session";
 
@@ -386,11 +387,11 @@ async function finishAuthentication(
     }
     return json({ verified: true, session: current.record }, 200);
   }
-  const punk = await env.PUNKS.getByName(verified.punkId).query();
-  if (!punk.ok) {
+  const punk = await resolveActivePunk(env, verified.punkId);
+  if (punk === null) {
     return problem(401, "unauthenticated", "Passkey Punk is unavailable");
   }
-  const session = await newSession(env, canonicalPunk(punk.state));
+  const session = await newSession(env, canonicalPunk(punk));
   return json({ verified: true, session: session.value }, 200, {
     "set-cookie": session.cookie,
   });

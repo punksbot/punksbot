@@ -22,6 +22,8 @@ decisions and `PARITY.md` remains the authority for migration status.
 | Message content keys and version lifecycle | `MessageContentDO(messageId)` SQLite | AES-GCM ciphertext create-only in R2; no plaintext projection |
 | Media upload intention, multipart part ledger, integrity decision and cleanup fence | `MediaUploadDO(uploadId)` SQLite | Short HMAC grant; raw R2 staging and candidate objects remain private quarantine inputs until T18-B encrypts or purges them |
 | Global Punk identity | `PunkDO(punkId)` SQLite | Deliberately no public identity projection yet |
+| Account Merge Plan, preparation fence and roll-forward cursor | `AccountMergeIntentDO(intentId)` SQLite | No projection; the immutable public Plan and bounded saga state are readable through private Auth RPC |
+| Terminal Account Merge decision | Create-only receipt under `account-merges/v1/absorbed/{punkId}/receipt.json` through the private Erasure Worker | No delete/overwrite RPC; cold receipt is authoritative over restored Auth/Workspace SQLite |
 | Provider subject and verified e-mail ownership | One opaque `IdentityClaimDO` or `EmailClaimDO` per claim | No eventually consistent security copy |
 | OAuth transaction and Punk session | One `AuthTransactionDO` or `SessionDO` per opaque credential | No KV session authority |
 | Passkey ceremony and credential | One short-lived `PasskeyCeremonyDO` or authoritative `PasskeyCredentialDO` per credential | Punk identity link only; no reusable private material |
@@ -496,6 +498,83 @@ holds a separate revoke-only capability; `SessionRotationDO` implements the
 same prepare/readback/confirm discipline for foreground renewal. Target-bound
 five-minute `DesktopReauthGrantDO` grants replace a generic recent-reauth flag
 for identity linking and passkey registration.
+
+## Account Merge roll-forward path
+
+1. `AccountMergeIntentDO(intentId)` stores the immutable Plan and its private,
+   bounded authority manifest. The commit command repeats the Plan digest, both
+   Punk IDs and both account revisions and carries the literal irreversible
+   confirmation.
+2. Before the point of no return, Auth revalidates the Plan digest and derived
+   ID, both consumed proof descriptors, the exact surviving Session, both Punk
+   revisions and inventories, and every affected Workspace role/revision.
+   `PunkDO` and `WorkspaceDO` create idempotent preparation fences that reject
+   new account-scoped or Workspace mutations until commit or explicit abort.
+   Per-Punk rights-index revisions may legitimately differ because each entry
+   records the last mutation of that member. `WorkspaceDO` therefore rechecks
+   both planned roles and freezes its own current global revision atomically;
+   it never treats either member-index revision as the Workspace revision.
+3. The private Erasure Worker conditionally writes the minimal
+   `account-merge.receipt@1` plus a private canonical Plan/authority-manifest
+   recovery descriptor in one R2 envelope. This create-only write is the point
+   of no return and precedes every authority mutation. Ordinary Punk/Session
+   lookups receive only the minimal receipt; only the exact Auth merge
+   capability can read the bounded descriptor needed to reconstruct a Plan,
+   cursor and fences after PITR. An exact replay returns the same receipt; a
+   divergent or corrupt envelope fails closed.
+4. The intent advances only `committed → applying → completed`. One alarm-safe
+   effect moves each current Workspace membership to the survivor with two
+   bounded projection deltas, copies current login identities without changing
+   historical origin, turns the absorbed Punk into `merged → mergedInto`, and
+   revokes every planned Session and handoff at its exact source. The Workspace
+   transition is attested as internal kind `50005` (`workspaceAccountMerged`):
+   its tags bind `workspace`, `cursor`, `command`, contract, system actor,
+   `plan`, `receipt`, `survivor` and `absorbed`; its canonical content records
+   the prior roles, resulting role and complete next Workspace state without
+   rewriting any historical event.
+5. Alarms are idempotent and at-least-once. If PITR restores the intent,
+   Workspace, Punk or Session SQLite, the external receipt reconstructs the
+   committed fence and forces the same effects forward. `PunkDO` and the Auth
+   Session route consult that receipt, so restored absorbed state is returned
+   only as an alias and a restored cookie becomes `account_merged`, never an
+   active Session.
+
+### Public Account Merge commit and recovery API
+
+The API exposes one path, `/api/v1/account-merges/{intentId}`, with two exact
+methods. Both responses are `cache-control: no-store` and require a current
+opaque Session for the surviving Compte Punks. An absorbed Session is rejected
+by Auth as `account_merged` before it can reach either operation.
+
+- `POST` starts or resumes the irreversible saga. Its JSON body must validate
+  as `account-merge.commit@1`, repeat the path `intentId`, identify the
+  authenticated Punk as `survivorPunkId`, repeat the immutable `planId`, Plan
+  digest, both account revisions and the literal confirmation
+  `merge_accounts_irreversibly`. The required `Idempotency-Key` header must be
+  exactly the body `commandId`. It returns the typed
+  `account-merge.commit-response@1`: HTTP 202 while the state is `preparing`,
+  `committed` or `applying`, and HTTP 200 when it is `completed`. An exact
+  replay returns the same bounded state with `replayed: true`; after a terminal
+  receipt exists, Plan expiry cannot turn that replay into rollback. If PITR
+  removed the intent's local Plan entirely, resubmitting this exact POST uses
+  the command's absorbed coordinate to load and validate the cold descriptor,
+  restore the Plan/manifest and restart the alarm-safe cursor.
+- `GET` is the explicit recovery read after an ambiguous response or fresh
+  sign-in. It requires exactly one `planId` query parameter and no other query
+  keys. The authenticated surviving Punk receives HTTP 200 with the same
+  `account-merge.commit-response@1` state; another Punk receives no merge
+  inventory or progress. After complete loss of the local Plan, the exact POST
+  must reconstruct it before this bounded GET can observe progress again.
+
+Errors use the generated `problem@1` envelope: HTTP 400 `invalid_input` for a
+malformed path, query, body or idempotency key; HTTP 401 `unauthenticated` for
+an absent Session; HTTP 403 `forbidden` when a POST is not made by the declared
+survivor; HTTP 404 `not_found` for an unavailable Plan or unauthorized state
+read; HTTP 409 `revision_conflict` or `idempotency_conflict` for pre-receipt
+revision/expiry/blocking conflicts and divergent command or receipt decisions;
+and HTTP 503 `temporarily_unavailable` when an authority or its typed contract
+is unavailable. A 503 may be retried only by reading state or resubmitting the
+same exact command; it never authorizes a different mutation automatically.
 
 ## Desktop compatibility runtime identity
 

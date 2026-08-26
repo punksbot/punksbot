@@ -2,6 +2,12 @@ import { env } from "cloudflare:test";
 import { exports } from "cloudflare:workers";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type {
+  LookupAccountMergeRecoveryResult,
+  LookupAccountMergeReceiptResult,
+  RecordAccountMergeReceiptResult,
+} from "../src";
+
 const workspaceId = "00000000-0000-8000-8000-000000000101";
 const secondWorkspaceId = "00000000-0000-8000-8000-000000000201";
 const conversationId = "00000000-0000-8000-8000-000000000102";
@@ -11,6 +17,12 @@ const conflictingCommandId = "00000000-0000-8000-8000-000000000204";
 const firstContentKeyId = "00000000-0000-8000-8000-000000000105";
 const secondContentKeyId = "00000000-0000-8000-8000-000000000106";
 const conflictingContentKeyId = "00000000-0000-8000-8000-000000000205";
+const mergeReceiptId = "10000000-0000-8000-8000-000000000061";
+const mergeIntentId = "20000000-0000-8000-8000-000000000061";
+const mergePlanId = "30000000-0000-8000-8000-000000000061";
+const mergeCommandId = "40000000-0000-8000-8000-000000000061";
+const survivorPunkId = "50000000-0000-8000-8000-000000000061";
+const absorbedPunkId = "60000000-0000-8000-8000-000000000061";
 
 const scope = {
   workspaceId,
@@ -23,6 +35,33 @@ const request = {
   erasureCommandId,
   expectedContentKeyIds: [secondContentKeyId, firstContentKeyId],
 };
+
+function accountMergeRegistry(...args: [] | [unknown]) {
+  type Rpc = {
+    recordAccountMergeReceipt(
+      input: unknown,
+    ): Promise<RecordAccountMergeReceiptResult>;
+    lookupAccountMergeReceipt(
+      input: unknown,
+    ): Promise<LookupAccountMergeReceiptResult>;
+    lookupAccountMergeRecovery(
+      input: unknown,
+    ): Promise<LookupAccountMergeRecoveryResult>;
+    fetch(request: Request): Promise<Response>;
+  };
+  const factory = exports.AccountMergeReceiptRegistryService as (options: {
+    props: unknown;
+  }) => Rpc;
+  return factory({
+    props:
+      args.length === 0
+        ? {
+            role: "punks-account-merge-receipt-writer",
+            environment: "local",
+          }
+        : args[0],
+  });
+}
 
 describe("ErasureRegistry RPC", () => {
   beforeEach(async () => {
@@ -331,8 +370,152 @@ describe("ErasureRegistry RPC", () => {
   });
 });
 
+describe("Account Merge anti-resurrection receipts", () => {
+  const mergeReceiptDecision = {
+    receiptId: mergeReceiptId,
+    intentId: mergeIntentId,
+    planId: mergePlanId,
+    planDigest: "a".repeat(64),
+    commitCommandId: mergeCommandId,
+    survivorPunkId,
+    absorbedPunkId,
+    accountRevisions: { survivor: 7, absorbed: 4 },
+  };
+  const mergeReceiptRequest = {
+    ...mergeReceiptDecision,
+    recoveryDescriptor: '{"authorityManifest":{},"plan":{},"schemaVersion":1}',
+  };
+
+  beforeEach(async () => {
+    const existing = await env.ERASURE_TOMBSTONES.list();
+    if (existing.objects.length > 0) {
+      await env.ERASURE_TOMBSTONES.delete(
+        existing.objects.map(({ key }) => key),
+      );
+    }
+  });
+
+  it("records, replays, and looks up one canonical terminal receipt", async () => {
+    const recorded =
+      await accountMergeRegistry().recordAccountMergeReceipt(
+        mergeReceiptRequest,
+      );
+    expect(recorded).toMatchObject({
+      ok: true,
+      replayed: false,
+      receipt: {
+        contract: "account-merge.receipt@1",
+        schemaVersion: 1,
+        ...mergeReceiptDecision,
+      },
+    });
+    if (!recorded.ok) throw new TypeError("Expected a merge receipt");
+    expect(recorded.receipt).not.toHaveProperty("recoveryDescriptor");
+    expect(recorded.receipt.committedAt).toMatch(
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/,
+    );
+    expect(recorded.receipt.receiptHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(
+      await accountMergeRegistry().lookupAccountMergeReceipt({
+        absorbedPunkId,
+      }),
+    ).toEqual({ ok: true, receipt: recorded.receipt });
+    await expect(
+      accountMergeRegistry().lookupAccountMergeRecovery({ absorbedPunkId }),
+    ).resolves.toEqual({
+      ok: true,
+      receipt: recorded.receipt,
+      recoveryDescriptor: mergeReceiptRequest.recoveryDescriptor,
+    });
+    await expect(
+      accountMergeRegistry().recordAccountMergeReceipt(mergeReceiptRequest),
+    ).resolves.toEqual({
+      ok: true,
+      replayed: true,
+      receipt: recorded.receipt,
+    });
+    await expect(env.ERASURE_TOMBSTONES.list()).resolves.toMatchObject({
+      objects: [{ key: accountMergeReceiptPath(absorbedPunkId) }],
+    });
+  });
+
+  it("fails closed for a conflicting decision or corrupt stored receipt", async () => {
+    await expect(
+      accountMergeRegistry().recordAccountMergeReceipt(mergeReceiptRequest),
+    ).resolves.toMatchObject({ ok: true });
+    await expect(
+      accountMergeRegistry().recordAccountMergeReceipt({
+        ...mergeReceiptRequest,
+        survivorPunkId: crypto.randomUUID(),
+      }),
+    ).resolves.toEqual({ ok: false, code: "conflict" });
+    await expect(
+      accountMergeRegistry().recordAccountMergeReceipt({
+        ...mergeReceiptRequest,
+        recoveryDescriptor: "{}",
+      }),
+    ).resolves.toEqual({ ok: false, code: "conflict" });
+
+    await env.ERASURE_TOMBSTONES.put(
+      accountMergeReceiptPath(absorbedPunkId),
+      "not-json",
+    );
+    await expect(
+      accountMergeRegistry().lookupAccountMergeReceipt({ absorbedPunkId }),
+    ).resolves.toEqual({ ok: false, code: "corrupt_receipt" });
+  });
+
+  it("rejects expanded or cross-account lookup input without writing", async () => {
+    await expect(
+      accountMergeRegistry().recordAccountMergeReceipt({
+        ...mergeReceiptRequest,
+        sessionToken: "must-not-cross-registry-boundary",
+      }),
+    ).resolves.toEqual({ ok: false, code: "invalid_request" });
+    await expect(
+      accountMergeRegistry().recordAccountMergeReceipt({
+        ...mergeReceiptRequest,
+        recoveryDescriptor: '{"schemaVersion":1, "plan":{}}',
+      }),
+    ).resolves.toEqual({ ok: false, code: "invalid_request" });
+    await expect(
+      accountMergeRegistry().lookupAccountMergeReceipt({
+        absorbedPunkId,
+        survivorPunkId,
+      }),
+    ).resolves.toEqual({ ok: false, code: "invalid_request" });
+    expect((await env.ERASURE_TOMBSTONES.list()).objects).toHaveLength(0);
+  });
+
+  it("rejects missing, cross-environment, or widened receipt-writer props", async () => {
+    for (const props of [
+      undefined,
+      {},
+      {
+        role: "punks-account-merge-receipt-writer",
+        environment: "staging",
+      },
+      {
+        role: "punks-account-merge-receipt-writer",
+        environment: "local",
+        delete: true,
+      },
+    ]) {
+      await expect(
+        accountMergeRegistry(props).recordAccountMergeReceipt(
+          mergeReceiptRequest,
+        ),
+      ).resolves.toEqual({ ok: false, code: "invalid_request" });
+    }
+  });
+});
+
 function tombstonePath(value: typeof scope): string {
   return `workspaces/${value.workspaceId}/conversations/${value.conversationId}/messages/${value.messageId}/erasure-tombstone.json`;
+}
+
+function accountMergeReceiptPath(punkId: string): string {
+  return `account-merges/v1/absorbed/${punkId}/receipt.json`;
 }
 
 async function sha256(value: string): Promise<string> {

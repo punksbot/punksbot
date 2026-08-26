@@ -9,6 +9,7 @@ const failureKinds = new Set<PunksFailureKind>([
   "cancelled",
   "stale_workspace",
   "session_expired",
+  "account_merged",
   "ambiguous",
 ]);
 

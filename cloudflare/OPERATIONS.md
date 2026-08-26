@@ -222,7 +222,17 @@ operations are serialized by the Durable Object across registry and R2 I/O to
 close the read/destroy race; Cloudflare applies a 30-second
 `blockConcurrencyWhile` timeout, so registry latency and errors must be
 monitored before API rollout. The Auth deployment must be withheld if any OAuth
-credential is absent. The erasure registry itself has no secret; its security
+credential is absent. It must also be withheld unless its private
+`ACCOUNT_MERGE_RECEIPTS` binding can perform exact lookup/create-only replay and
+its `ACCOUNT_MERGE_WORKSPACES` binding resolves the environment-scoped API
+entrypoint. Deploy first the additive Erasure RPC, then the additive API
+entrypoint, then Auth with both bindings, and finally the API routes that call
+the new Auth RPC; do not remove the older entrypoints during this expansion.
+Exercise a disposable two-Punk merge,
+force at least one alarm resume, verify the cold minimal receipt, then restore
+the intent before its Plan and confirm that the exact private recovery lookup
+reconstructs the Plan/manifest and completes roll-forward. The erasure registry
+itself has no secret; its security
 boundary is the exclusive R2 binding and private Worker reachability. Realtime,
 media and sharing Workers will be added as their vertical slices become
 deployable. The Auth Worker and native client now contain the recoverable

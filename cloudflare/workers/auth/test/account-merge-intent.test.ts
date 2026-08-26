@@ -1,12 +1,22 @@
 import type {
+  AccountMergeCommitResponse,
   AccountMergeFreshProof,
   AccountMergePlanResponse,
+  CommitAccountMergeCommand,
   CreateAccountMergePlanCommand,
 } from "@punks/contracts";
-import type { AccountMergePunkSnapshot } from "@punks/core";
-import { env, runDurableObjectAlarm } from "cloudflare:test";
+import {
+  canonicalJson,
+  deriveOpaqueUuid,
+  type AccountMergePunkSnapshot,
+} from "@punks/core";
+import {
+  env,
+  runDurableObjectAlarm,
+  runInDurableObject,
+} from "cloudflare:test";
 import { exports as workerExports } from "cloudflare:workers";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { AuthEnv } from "../src/env";
 
@@ -241,6 +251,533 @@ describe("AccountMergeIntentDO", () => {
         correlationId: "replay",
       }),
     ).resolves.toEqual(failure("replay"));
+  });
+
+  it("rolls a committed receipt forward until the absorbed Punk is an inert alias", async () => {
+    const value = fixture();
+    await seedAuthorities(value);
+    const absorbedBeforeMerge = await authEnv.PUNKS.getByName(
+      value.absorbedProof.punkId,
+    ).readForResolution();
+    if (absorbedBeforeMerge === null) {
+      throw new TypeError("Absorbed Punk fixture is missing");
+    }
+    const workspaceId = crypto.randomUUID();
+    for (const [punkId, role, revision] of [
+      [value.survivorProof.punkId, "member", 2],
+      [value.absorbedProof.punkId, "moderator", 7],
+    ] as const) {
+      const operationId = crypto.randomUUID();
+      const punk = authEnv.PUNKS.getByName(punkId);
+      await expect(
+        punk.prepareAccountMergeRightsChange({
+          operationId,
+          workspaceId,
+          punkId,
+        }),
+      ).resolves.toBe(true);
+      await expect(
+        punk.commitAccountMergeRightsChange({
+          operationId,
+          workspaceId,
+          punkId,
+          membership: { role, revision },
+        }),
+      ).resolves.toBe(true);
+    }
+    const reauthorizationId = crypto.randomUUID();
+    const reauthorizationExpiresAt = timestamp(Date.now() + 120_000);
+    await expect(
+      authEnv.DESKTOP_REAUTH_GRANTS.getByName(reauthorizationId).create({
+        authorizationId: reauthorizationId,
+        sessionId: value.absorbedSessionId,
+        punkId: value.absorbedProof.punkId,
+        targetMethod: "link_github",
+        handoffId: crypto.randomUUID(),
+        expiresAt: reauthorizationExpiresAt,
+      }),
+    ).resolves.toBe(true);
+    const authority = stub(value.intentId);
+    await authority.recordFreshProof(
+      value.survivorProof,
+      sourceSession(value, value.survivorProof),
+    );
+    await authority.recordFreshProof(
+      value.absorbedProof,
+      sourceSession(value, value.absorbedProof),
+    );
+    const planned = await authority.preparePlan({
+      command: value.command(),
+      correlationId: "commit-plan",
+    });
+    expect(planned.ok).toBe(true);
+    if (!planned.ok) throw new TypeError("Expected a merge Plan");
+    const command: CommitAccountMergeCommand = {
+      contract: "account-merge.commit@1",
+      commandId: crypto.randomUUID(),
+      intentId: planned.plan.intentId,
+      planId: planned.plan.planId,
+      planDigest: planned.plan.planDigest,
+      survivorPunkId: planned.plan.survivorPunkId,
+      absorbedPunkId: planned.plan.absorbedPunkId,
+      accountRevisions: planned.plan.accountRevisions,
+      confirmation: "merge_accounts_irreversibly",
+    };
+
+    let committed = (await authority.commitPlan({
+      command,
+      callerSessionId: value.survivorSessionId,
+      correlationId: "commit",
+    })) as AccountMergeCommitResponse;
+    expect(committed).toMatchObject({
+      ok: true,
+      state: {
+        status: "applying",
+        receipt: { contract: "account-merge.receipt@1" },
+      },
+    });
+    for (let attempt = 0; attempt < 16; attempt += 1) {
+      if (committed.ok && committed.state.status === "completed") break;
+      expect(await runDurableObjectAlarm(authority)).toBe(true);
+      committed = (await authority.readMergeState({
+        planId: planned.plan.planId,
+        callerPunkId: value.survivorProof.punkId,
+      })) as AccountMergeCommitResponse;
+    }
+
+    expect(committed).toMatchObject({
+      ok: true,
+      state: {
+        status: "completed",
+        survivorPunkId: value.survivorProof.punkId,
+        absorbedPunkId: value.absorbedProof.punkId,
+        receipt: {
+          contract: "account-merge.receipt@1",
+          planId: planned.plan.planId,
+        },
+      },
+    });
+    await expect(
+      authEnv.PUNKS.getByName(value.absorbedProof.punkId).readForResolution(),
+    ).resolves.toMatchObject({
+      status: "merged",
+      mergedInto: value.survivorProof.punkId,
+    });
+    await expect(
+      authEnv.PUNKS.getByName(value.survivorProof.punkId).query(),
+    ).resolves.toMatchObject({
+      ok: true,
+      state: {
+        identities: expect.arrayContaining([
+          expect.objectContaining({ provider: "github" }),
+          expect.objectContaining({ provider: "google" }),
+        ]),
+      },
+    });
+    await expect(
+      authEnv.PUNKS.getByName(
+        value.survivorProof.punkId,
+      ).accountMergeInventory(),
+    ).resolves.toMatchObject({
+      rights: [{ workspaceId, role: "moderator", revision: 8 }],
+    });
+    await expect(
+      authEnv.PUNKS.getByName(
+        value.absorbedProof.punkId,
+      ).accountMergeInventory(),
+    ).resolves.toMatchObject({ rights: [] });
+    await expect(
+      authEnv.SESSIONS.getByName(value.absorbedSessionId).get(),
+    ).resolves.toBeNull();
+    await expect(
+      authEnv.DESKTOP_REAUTH_GRANTS.getByName(
+        reauthorizationId,
+      ).readForAccountMerge(),
+    ).resolves.toBeNull();
+    await expect(
+      authority.commitPlan({
+        command,
+        callerSessionId: value.survivorSessionId,
+        correlationId: "replay",
+      }),
+    ).resolves.toMatchObject({ ok: true, replayed: true });
+
+    const absorbed = authEnv.PUNKS.getByName(value.absorbedProof.punkId);
+    await runInDurableObject(absorbed, (_instance, state) => {
+      state.storage.sql.exec(
+        "UPDATE punk_state SET state_json = ? WHERE singleton = 1",
+        JSON.stringify(absorbedBeforeMerge),
+      );
+    });
+    await expect(absorbed.query()).resolves.toEqual({
+      ok: false,
+      code: "inactive",
+    });
+    await expect(absorbed.readForResolution()).resolves.toMatchObject({
+      status: "merged",
+      mergedInto: value.survivorProof.punkId,
+    });
+  });
+
+  it("rolls forward a receipt-backed retry after the Plan expires", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date("2042-01-01T00:00:00.000Z"));
+      const value = fixture();
+      await seedAuthorities(value);
+      const authority = stub(value.intentId);
+      await authority.recordFreshProof(
+        value.survivorProof,
+        sourceSession(value, value.survivorProof),
+      );
+      await authority.recordFreshProof(
+        value.absorbedProof,
+        sourceSession(value, value.absorbedProof),
+      );
+      const planned = await authority.preparePlan({
+        command: value.command(),
+        correlationId: "expiring-plan",
+      });
+      if (!planned.ok) throw new TypeError("Expected a merge Plan");
+      const command: CommitAccountMergeCommand = {
+        contract: "account-merge.commit@1",
+        commandId: crypto.randomUUID(),
+        intentId: planned.plan.intentId,
+        planId: planned.plan.planId,
+        planDigest: planned.plan.planDigest,
+        survivorPunkId: planned.plan.survivorPunkId,
+        absorbedPunkId: planned.plan.absorbedPunkId,
+        accountRevisions: planned.plan.accountRevisions,
+        confirmation: "merge_accounts_irreversibly",
+      };
+
+      const committed = await authority.commitPlan({
+        command,
+        callerSessionId: value.survivorSessionId,
+        correlationId: "initial-commit",
+      });
+      expect(committed).toMatchObject({
+        ok: true,
+        state: {
+          status: "applying",
+          receipt: { planId: planned.plan.planId },
+        },
+      });
+
+      vi.setSystemTime(new Date(Date.parse(planned.plan.expiresAt) + 1));
+      let retried = (await authority.commitPlan({
+        command,
+        callerSessionId: value.survivorSessionId,
+        correlationId: "expired-retry",
+      })) as AccountMergeCommitResponse;
+      expect(retried).toMatchObject({
+        ok: true,
+        replayed: true,
+        state: {
+          receipt: { planId: planned.plan.planId },
+          lastFailure: null,
+        },
+      });
+
+      for (let attempt = 0; attempt < 16; attempt += 1) {
+        if (retried.ok && retried.state.status === "completed") break;
+        expect(await runDurableObjectAlarm(authority)).toBe(true);
+        retried = (await authority.readMergeState({
+          planId: planned.plan.planId,
+          callerPunkId: value.survivorProof.punkId,
+        })) as AccountMergeCommitResponse;
+      }
+      expect(retried).toMatchObject({
+        ok: true,
+        state: {
+          status: "completed",
+          receipt: { planId: planned.plan.planId },
+          lastFailure: null,
+        },
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reconstructs missing authority fences from the terminal receipt", async () => {
+    const value = fixture();
+    await seedAuthorities(value);
+    const authority = stub(value.intentId);
+    await authority.recordFreshProof(
+      value.survivorProof,
+      sourceSession(value, value.survivorProof),
+    );
+    await authority.recordFreshProof(
+      value.absorbedProof,
+      sourceSession(value, value.absorbedProof),
+    );
+    const planned = await authority.preparePlan({
+      command: value.command(),
+      correlationId: "restored-plan",
+    });
+    if (!planned.ok) throw new TypeError("Expected a merge Plan");
+    const command: CommitAccountMergeCommand = {
+      contract: "account-merge.commit@1",
+      commandId: crypto.randomUUID(),
+      intentId: planned.plan.intentId,
+      planId: planned.plan.planId,
+      planDigest: planned.plan.planDigest,
+      survivorPunkId: planned.plan.survivorPunkId,
+      absorbedPunkId: planned.plan.absorbedPunkId,
+      accountRevisions: planned.plan.accountRevisions,
+      confirmation: "merge_accounts_irreversibly",
+    };
+    const receiptId = await deriveOpaqueUuid(
+      "punks.account-merge-receipt.v1",
+      canonicalJson({
+        planId: planned.plan.planId,
+        planDigest: planned.plan.planDigest,
+      }),
+    );
+    await expect(
+      authEnv.ACCOUNT_MERGE_RECEIPTS.recordAccountMergeReceipt({
+        receiptId,
+        intentId: planned.plan.intentId,
+        planId: planned.plan.planId,
+        planDigest: planned.plan.planDigest,
+        commitCommandId: command.commandId,
+        survivorPunkId: planned.plan.survivorPunkId,
+        absorbedPunkId: planned.plan.absorbedPunkId,
+        accountRevisions: planned.plan.accountRevisions,
+        recoveryDescriptor: canonicalJson({
+          authorityManifest: {},
+          plan: planned.plan,
+          schemaVersion: 1,
+        }),
+      }),
+    ).resolves.toMatchObject({ ok: true, replayed: false });
+
+    let state = (await authority.commitPlan({
+      command,
+      callerSessionId: value.survivorSessionId,
+      correlationId: "receipt-restored",
+    })) as AccountMergeCommitResponse;
+    for (let attempt = 0; attempt < 16; attempt += 1) {
+      if (state.ok && state.state.status === "completed") break;
+      expect(await runDurableObjectAlarm(authority)).toBe(true);
+      state = (await authority.readMergeState({
+        planId: planned.plan.planId,
+        callerPunkId: value.survivorProof.punkId,
+      })) as AccountMergeCommitResponse;
+    }
+
+    expect(state).toMatchObject({
+      ok: true,
+      state: {
+        status: "completed",
+        receipt: { receiptId, planId: planned.plan.planId },
+        lastFailure: null,
+      },
+    });
+    await expect(
+      authEnv.PUNKS.getByName(value.absorbedProof.punkId).query(),
+    ).resolves.toEqual({ ok: false, code: "inactive" });
+  });
+
+  it("recovers the Plan and manifest after intent storage is restored", async () => {
+    const value = fixture();
+    await seedAuthorities(value);
+    const survivor = authEnv.PUNKS.getByName(value.survivorProof.punkId);
+    const absorbed = authEnv.PUNKS.getByName(value.absorbedProof.punkId);
+    const survivorBefore = await survivor.readForResolution();
+    const absorbedBefore = await absorbed.readForResolution();
+    if (survivorBefore === null || absorbedBefore === null) {
+      throw new TypeError("Expected both Punk authorities before the merge");
+    }
+    const authority = stub(value.intentId);
+    await authority.recordFreshProof(
+      value.survivorProof,
+      sourceSession(value, value.survivorProof),
+    );
+    await authority.recordFreshProof(
+      value.absorbedProof,
+      sourceSession(value, value.absorbedProof),
+    );
+    const planned = await authority.preparePlan({
+      command: value.command(),
+      correlationId: "cold-recovery-plan",
+    });
+    if (!planned.ok) throw new TypeError("Expected a merge Plan");
+    const command: CommitAccountMergeCommand = {
+      contract: "account-merge.commit@1",
+      commandId: crypto.randomUUID(),
+      intentId: planned.plan.intentId,
+      planId: planned.plan.planId,
+      planDigest: planned.plan.planDigest,
+      survivorPunkId: planned.plan.survivorPunkId,
+      absorbedPunkId: planned.plan.absorbedPunkId,
+      accountRevisions: planned.plan.accountRevisions,
+      confirmation: "merge_accounts_irreversibly",
+    };
+    await expect(
+      authority.commitPlan({
+        command,
+        callerSessionId: value.survivorSessionId,
+        correlationId: "cold-recovery-commit",
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      state: { receipt: { planId: planned.plan.planId } },
+    });
+
+    await runInDurableObject(authority, (_instance, state) => {
+      state.storage.sql.exec("DELETE FROM account_merge_saga");
+      state.storage.sql.exec("DELETE FROM account_merge_plan");
+      state.storage.sql.exec("DELETE FROM account_merge_proof");
+    });
+    for (const [punk, snapshot] of [
+      [survivor, survivorBefore],
+      [absorbed, absorbedBefore],
+    ] as const) {
+      await runInDurableObject(punk, (_instance, state) => {
+        state.storage.sql.exec(
+          "UPDATE punk_state SET state_json = ? WHERE singleton = 1",
+          JSON.stringify(snapshot),
+        );
+        state.storage.sql.exec("DELETE FROM account_merge_operation");
+      });
+    }
+
+    let recovered = (await authority.commitPlan({
+      command,
+      callerSessionId: value.survivorSessionId,
+      correlationId: "cold-recovery-retry",
+    })) as AccountMergeCommitResponse;
+    for (let attempt = 0; attempt < 16; attempt += 1) {
+      if (recovered.ok && recovered.state.status === "completed") break;
+      expect(await runDurableObjectAlarm(authority)).toBe(true);
+      recovered = (await authority.readMergeState({
+        planId: planned.plan.planId,
+        callerPunkId: value.survivorProof.punkId,
+      })) as AccountMergeCommitResponse;
+    }
+
+    expect(recovered).toMatchObject({
+      ok: true,
+      state: {
+        status: "completed",
+        planId: planned.plan.planId,
+        receipt: { planId: planned.plan.planId },
+        lastFailure: null,
+      },
+    });
+  });
+
+  it("refuses a stale account revision before writing the terminal receipt", async () => {
+    const value = fixture();
+    await seedAuthorities(value);
+    const authority = stub(value.intentId);
+    await authority.recordFreshProof(
+      value.survivorProof,
+      sourceSession(value, value.survivorProof),
+    );
+    await authority.recordFreshProof(
+      value.absorbedProof,
+      sourceSession(value, value.absorbedProof),
+    );
+    const planned = await authority.preparePlan({
+      command: value.command(),
+      correlationId: "stale-plan",
+    });
+    if (!planned.ok) throw new TypeError("Expected a merge Plan");
+    await expect(
+      authEnv.PUNKS.getByName(value.survivorProof.punkId).updateProfile({
+        contract: "punk.update@1",
+        commandId: crypto.randomUUID(),
+        expectedRevision: 1,
+        displayName: "Changed after planning",
+        avatarUrl: null,
+      }),
+    ).resolves.toMatchObject({ ok: true });
+    const command: CommitAccountMergeCommand = {
+      contract: "account-merge.commit@1",
+      commandId: crypto.randomUUID(),
+      intentId: planned.plan.intentId,
+      planId: planned.plan.planId,
+      planDigest: planned.plan.planDigest,
+      survivorPunkId: planned.plan.survivorPunkId,
+      absorbedPunkId: planned.plan.absorbedPunkId,
+      accountRevisions: planned.plan.accountRevisions,
+      confirmation: "merge_accounts_irreversibly",
+    };
+
+    await expect(
+      authority.commitPlan({
+        command,
+        callerSessionId: value.survivorSessionId,
+        correlationId: "stale-commit",
+      }),
+    ).resolves.toEqual({
+      contract: "account-merge.commit-response@1",
+      ok: false,
+      code: "revision_conflict",
+      correlationId: "stale-commit",
+    });
+    await expect(
+      authEnv.ACCOUNT_MERGE_RECEIPTS.lookupAccountMergeReceipt({
+        absorbedPunkId: value.absorbedProof.punkId,
+      }),
+    ).resolves.toEqual({ ok: true, receipt: null });
+    await expect(
+      authEnv.PUNKS.getByName(value.absorbedProof.punkId).query(),
+    ).resolves.toMatchObject({ ok: true });
+  });
+
+  it("types a missing proof Session as authority unavailable", async () => {
+    const value = fixture();
+    await seedAuthorities(value);
+    const authority = stub(value.intentId);
+    await authority.recordFreshProof(
+      value.survivorProof,
+      sourceSession(value, value.survivorProof),
+    );
+    await authority.recordFreshProof(
+      value.absorbedProof,
+      sourceSession(value, value.absorbedProof),
+    );
+    const planned = await authority.preparePlan({
+      command: value.command(),
+      correlationId: "authority-plan",
+    });
+    if (!planned.ok) throw new TypeError("Expected a merge Plan");
+    await expect(
+      authEnv.SESSIONS.getByName(value.absorbedSessionId).revoke(),
+    ).resolves.toBe(true);
+    const command: CommitAccountMergeCommand = {
+      contract: "account-merge.commit@1",
+      commandId: crypto.randomUUID(),
+      intentId: planned.plan.intentId,
+      planId: planned.plan.planId,
+      planDigest: planned.plan.planDigest,
+      survivorPunkId: planned.plan.survivorPunkId,
+      absorbedPunkId: planned.plan.absorbedPunkId,
+      accountRevisions: planned.plan.accountRevisions,
+      confirmation: "merge_accounts_irreversibly",
+    };
+
+    await expect(
+      authority.commitPlan({
+        command,
+        callerSessionId: value.survivorSessionId,
+        correlationId: "missing-proof-session",
+      }),
+    ).resolves.toEqual({
+      contract: "account-merge.commit-response@1",
+      ok: false,
+      code: "authority_unavailable",
+      correlationId: "missing-proof-session",
+    });
+    await expect(
+      authEnv.ACCOUNT_MERGE_RECEIPTS.lookupAccountMergeReceipt({
+        absorbedPunkId: value.absorbedProof.punkId,
+      }),
+    ).resolves.toEqual({ ok: true, receipt: null });
   });
 
   it("allows exactly one winner between concurrent preparation calls", async () => {

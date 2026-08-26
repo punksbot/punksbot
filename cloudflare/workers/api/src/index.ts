@@ -17,6 +17,7 @@ export {
   BotWakeTriggerService,
 } from "./bot-harness-service";
 export { LocalDevApiBootstrapService } from "./local-dev-bootstrap";
+export { AccountMergeWorkspaceService } from "./account-merge-workspace-service";
 
 export default {
   fetch(request: Request, env: ApiEnv): Promise<Response> {

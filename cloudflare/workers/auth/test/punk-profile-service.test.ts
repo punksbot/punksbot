@@ -130,6 +130,19 @@ describe("PunkSessionService profile authority", () => {
         }),
       );
     });
+    await expect(
+      authEnv.ACCOUNT_MERGE_RECEIPTS.recordAccountMergeReceipt({
+        receiptId: "c3000000-0000-8000-8000-000000000003",
+        intentId: "c4000000-0000-8000-8000-000000000004",
+        planId: "c5000000-0000-8000-8000-000000000005",
+        planDigest: "c".repeat(64),
+        commitCommandId: "c6000000-0000-8000-8000-000000000006",
+        survivorPunkId: survivorId,
+        absorbedPunkId: aliasId,
+        accountRevisions: { survivor: 1, absorbed: 1 },
+        recoveryDescriptor: "{}",
+      }),
+    ).resolves.toMatchObject({ ok: true });
 
     await expect(
       workerExports.PunkSessionService.resolvePunkSummary(aliasId),

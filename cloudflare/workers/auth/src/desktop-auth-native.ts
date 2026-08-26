@@ -20,6 +20,7 @@ import {
   aggregateName,
   canonicalPunk,
   prepareDesktopSessionForToken,
+  resolveActivePunk,
   sameDesktopDistribution,
 } from "./session";
 
@@ -171,13 +172,13 @@ export async function claimDesktopAuth(
   if (claimed.flow.punkId === null) {
     return problem(500, "internal", "Desktop claim has no Punk");
   }
-  const punkResult = await env.PUNKS.getByName(claimed.flow.punkId).query();
-  if (!punkResult.ok) {
+  const punk = await resolveActivePunk(env, claimed.flow.punkId);
+  if (punk === null) {
     return problem(401, "unauthenticated", "Desktop Punk is unavailable");
   }
   const prepared = await prepareDesktopSessionForToken(
     env,
-    canonicalPunk(punkResult.state),
+    canonicalPunk(punk),
     claimed.sessionToken,
   );
   if (

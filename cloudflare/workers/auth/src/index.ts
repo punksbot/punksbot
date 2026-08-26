@@ -4,10 +4,12 @@ import {
   canonicalPunk,
   ensureSessionForToken,
   getActiveSession,
+  resolveActivePunk,
 } from "./session";
 import { WorkerEntrypoint } from "cloudflare:workers";
 import {
   type AccountMergeFreshProof,
+  type AccountMergeCommitResponse,
   type AccountMergePlan,
   type AccountMergePlanResponse,
   type AuthSession,
@@ -64,6 +66,14 @@ export interface RecordAccountMergeFreshProofInput {
 export interface PrepareAccountMergePlanAuthorityInput {
   readonly intentId: string;
   readonly command: unknown;
+  readonly correlationId: string;
+}
+
+/** Private authority input for the irreversible Plan commit. */
+export interface CommitAccountMergePlanAuthorityInput {
+  readonly intentId: string;
+  readonly command: unknown;
+  readonly callerSessionId: string;
   readonly correlationId: string;
 }
 
@@ -436,43 +446,16 @@ export class PunkSessionService extends WorkerEntrypoint<AuthEnv> {
     ) {
       return null;
     }
-    const seen = new Set<string>();
-    let currentId = punkId;
-    for (let hop = 0; hop < 2; hop += 1) {
-      if (seen.has(currentId)) return null;
-      seen.add(currentId);
-      let state: Punk | null;
-      try {
-        const raw =
-          await this.env.PUNKS.getByName(currentId).readForResolution();
-        state =
-          raw !== null &&
-          validateContract("punks://contracts/punk@1", raw).valid
-            ? (raw as unknown as Punk)
-            : null;
-      } catch {
-        return null;
-      }
-      if (state === null || state.id !== currentId) return null;
-      if (state.status === "active") {
-        return {
+    const state = await resolveActivePunk(this.env, punkId);
+    return state === null
+      ? null
+      : {
           id: state.id,
           displayName: state.displayName,
           avatarUrl: state.avatarUrl,
           revision: state.revision,
           updatedAt: state.updatedAt,
         };
-      }
-      if (
-        state.status !== "merged" ||
-        state.mergedInto === null ||
-        !uuidPattern.test(state.mergedInto)
-      ) {
-        return null;
-      }
-      currentId = state.mergedInto;
-    }
-    return null;
   }
 }
 
@@ -772,6 +755,98 @@ export class AccountMergePlanningService extends WorkerEntrypoint<
       uuidPattern.test(intentId)
       ? this.env.ACCOUNT_MERGE_INTENTS.getByName(intentId).readPlan()
       : null;
+  }
+
+  /** Commits one exact Plan through its canonical intent authority. */
+  async commitAccountMergePlan(
+    input: unknown,
+  ): Promise<AccountMergeCommitResponse> {
+    if (
+      !this.#allowed() ||
+      typeof input !== "object" ||
+      input === null ||
+      Array.isArray(input) ||
+      !exactObjectKeys(input, [
+        "callerSessionId",
+        "command",
+        "correlationId",
+        "intentId",
+      ])
+    ) {
+      return {
+        contract: "account-merge.commit-response@1",
+        ok: false,
+        code: "invalid_request",
+        correlationId: "account-merge",
+      };
+    }
+    const request = input as CommitAccountMergePlanAuthorityInput;
+    if (
+      !uuidPattern.test(request.intentId) ||
+      !opaqueUuidPattern.test(request.callerSessionId) ||
+      typeof request.correlationId !== "string" ||
+      request.correlationId.length === 0 ||
+      request.correlationId.length > 128 ||
+      typeof request.command !== "object" ||
+      request.command === null ||
+      Reflect.get(request.command, "intentId") !== request.intentId
+    ) {
+      return {
+        contract: "account-merge.commit-response@1",
+        ok: false,
+        code: "invalid_request",
+        correlationId: "account-merge",
+      };
+    }
+    return this.env.ACCOUNT_MERGE_INTENTS.getByName(
+      request.intentId,
+    ).commitPlan({
+      command: request.command,
+      callerSessionId: request.callerSessionId,
+      correlationId: request.correlationId,
+    });
+  }
+
+  /** Reads post-commit progress after an ambiguous response or reauthentication. */
+  async readAccountMergeState(
+    input: unknown,
+  ): Promise<AccountMergeCommitResponse> {
+    if (
+      !this.#allowed() ||
+      typeof input !== "object" ||
+      input === null ||
+      Array.isArray(input) ||
+      !exactObjectKeys(input, ["callerPunkId", "intentId", "planId"])
+    ) {
+      return {
+        contract: "account-merge.commit-response@1",
+        ok: false,
+        code: "invalid_request",
+        correlationId: "account-merge-read",
+      };
+    }
+    const intentId = Reflect.get(input, "intentId");
+    const planId = Reflect.get(input, "planId");
+    const callerPunkId = Reflect.get(input, "callerPunkId");
+    if (
+      typeof intentId !== "string" ||
+      !uuidPattern.test(intentId) ||
+      typeof planId !== "string" ||
+      !opaqueUuidPattern.test(planId) ||
+      typeof callerPunkId !== "string" ||
+      !uuidPattern.test(callerPunkId)
+    ) {
+      return {
+        contract: "account-merge.commit-response@1",
+        ok: false,
+        code: "invalid_request",
+        correlationId: "account-merge-read",
+      };
+    }
+    return this.env.ACCOUNT_MERGE_INTENTS.getByName(intentId).readMergeState({
+      planId,
+      callerPunkId,
+    });
   }
 }
 

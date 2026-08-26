@@ -422,6 +422,30 @@ export class DesktopAuthFlowDO extends DurableObject<AuthEnv> {
     };
   }
 
+  /** Cancels this exact active native flow during merge roll-forward. */
+  async cancelForAccountMerge(input: {
+    handoffId: string;
+    punkId: string;
+    kind: "desktop-auth-flow";
+    state: "pending" | "prepared" | "deliverable";
+    expiresAt: string;
+  }): Promise<boolean> {
+    const current = await this.readForAccountMerge();
+    if (current === null) return true;
+    if (
+      input.handoffId !== this.ctx.id.name ||
+      current.punkId !== input.punkId ||
+      current.kind !== input.kind ||
+      current.state !== input.state ||
+      current.expiresAt !== input.expiresAt
+    ) {
+      return false;
+    }
+    const flow = await this.read();
+    if (flow === null) return true;
+    return (await this.cancel(flow.verifierCommitment)) !== null;
+  }
+
   async claim(verifierCommitment: string): Promise<ClaimDesktopAuthFlowResult> {
     const flow = await this.current();
     if (flow === null) return { ok: false, code: "missing" };

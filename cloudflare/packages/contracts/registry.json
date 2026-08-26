@@ -379,6 +379,30 @@
       "generationTargets": ["typescript", "rust", "dart", "openapi"]
     },
     {
+      "id": "punks://contracts/account-merge.commit@1",
+      "file": "schemas/account-merge.commit.schema.json",
+      "kind": "command",
+      "generationTargets": ["typescript", "rust", "dart", "openapi"]
+    },
+    {
+      "id": "punks://contracts/account-merge.receipt@1",
+      "file": "schemas/account-merge.receipt.schema.json",
+      "kind": "state",
+      "generationTargets": ["typescript", "rust", "dart", "openapi"]
+    },
+    {
+      "id": "punks://contracts/account-merge.state@1",
+      "file": "schemas/account-merge.state.schema.json",
+      "kind": "state",
+      "generationTargets": ["typescript", "rust", "dart", "openapi"]
+    },
+    {
+      "id": "punks://contracts/account-merge.commit-response@1",
+      "file": "schemas/account-merge.commit-response.schema.json",
+      "kind": "response",
+      "generationTargets": ["typescript", "rust", "dart", "openapi"]
+    },
+    {
       "id": "punks://contracts/desktop.compatibility@1",
       "file": "schemas/desktop.compatibility.schema.json",
       "kind": "query"

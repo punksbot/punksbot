@@ -27,6 +27,7 @@ describe("desktop-social-loop@1 profile", () => {
         "cancelled",
         "stale_workspace",
         "session_expired",
+        "account_merged",
         "ambiguous",
       ],
     });

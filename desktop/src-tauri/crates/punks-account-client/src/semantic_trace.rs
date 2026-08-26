@@ -88,6 +88,7 @@ fn failure_name(kind: FailureKind) -> &'static str {
         FailureKind::Cancelled => "cancelled",
         FailureKind::StaleWorkspace => "stale_workspace",
         FailureKind::SessionExpired => "session_expired",
+        FailureKind::AccountMerged => "account_merged",
         FailureKind::Ambiguous => "ambiguous",
     }
 }

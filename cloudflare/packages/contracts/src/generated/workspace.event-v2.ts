@@ -16,6 +16,15 @@ type: "ownership-transferred"
  * @maxItems 2
  */
 memberTransitions: [MemberUpsertedTransition, MemberUpsertedTransition]
+} | {
+type: "account-merge-applied"
+planId: string
+receiptId: string
+survivorPunkId: string
+absorbedPunkId: string
+survivorPreviousRole: NullableWorkspaceRole
+absorbedPreviousRole: WorkspaceRole
+resultingRole: WorkspaceRole
 })
 export type NullableWorkspaceRole = (WorkspaceRole | null)
 export type WorkspaceRole = ("owner" | "moderator" | "member" | "guest")

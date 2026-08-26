@@ -1,4 +1,5 @@
 import type {
+  AccountMergeReceipt,
   AuthProviderProfile,
   Punk,
   UpdatePunkProfileCommand,
@@ -38,7 +39,20 @@ type RightsOperationRow = {
   membership_revision: number | null;
 };
 type ProfileCommandRow = Record<"payload_json" | "response_json", string>;
+type AccountMergeOperationRow = Record<
+  | "intent_id"
+  | "plan_id"
+  | "receipt_id"
+  | "survivor_punk_id"
+  | "absorbed_punk_id"
+  | "account_role"
+  | "status"
+  | "applied_at",
+  string | null
+> &
+  Record<"expected_revision", number>;
 
+/** Typed result of the public Punk profile mutation. */
 export type PunkProfileUpdateResult =
   | { ok: true; state: Punk; replayed: boolean }
   | {
@@ -47,24 +61,49 @@ export type PunkProfileUpdateResult =
     }
   | { ok: false; code: "revision_conflict"; currentRevision: number };
 
+/** Workspace roles that may participate in an Account Merge transfer. */
 export type AccountMergeWorkspaceRole =
   | "owner"
   | "moderator"
   | "member"
   | "guest";
 
+/** Coordinate for one prepared change to the authoritative rights index. */
 export interface AccountMergeRightsChangeInput {
   readonly operationId: string;
   readonly workspaceId: string;
   readonly punkId: string;
 }
 
+/** Final value for one previously prepared rights-index change. */
 export interface CommitAccountMergeRightsChangeInput
   extends AccountMergeRightsChangeInput {
   readonly membership: {
     readonly role: AccountMergeWorkspaceRole;
     readonly revision: number;
   } | null;
+}
+
+/** Immutable coordinate shared by every fenced Punk merge effect. */
+export interface PunkAccountMergeCoordinate {
+  readonly intentId: string;
+  readonly planId: string;
+  readonly receiptId: string;
+  readonly survivorPunkId: string;
+  readonly absorbedPunkId: string;
+}
+
+/** Punk fence request bound to one role and one observed account revision. */
+export interface PreparePunkAccountMergeInput
+  extends PunkAccountMergeCoordinate {
+  readonly accountRole: "survivor" | "absorbed";
+  readonly expectedRevision: number;
+}
+
+/** Exact fenced Punk snapshot revalidated after preparation. */
+export interface PreparedPunkAccountMergeSnapshot {
+  readonly state: Punk;
+  readonly inventory: PunkAccountMergeInventory;
 }
 
 /** Bounded authoritative Session and handoff index for one Compte Punks. */
@@ -102,6 +141,7 @@ const MAX_PENDING_ACCOUNT_MERGE_RIGHTS_OPERATIONS = 64;
 const MAX_TERMINAL_ACCOUNT_MERGE_RIGHTS_OPERATIONS = 256;
 const MAX_WORKSPACE_REVISION = 2_147_483_647;
 const MAX_PROFILE_COMMAND_RESULTS = 256;
+const MAX_ACCOUNT_MERGE_OPERATION_RESULTS = 256;
 const LEGACY_SESSION_COVERAGE_MILLISECONDS = 30 * 24 * 60 * 60 * 1_000;
 const OPAQUE_UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -179,6 +219,67 @@ function validCommitRightsChange(
   );
 }
 
+function validAccountMergeCoordinate(
+  value: unknown,
+): value is PunkAccountMergeCoordinate {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const input = value as Record<string, unknown>;
+  return (
+    typeof input.intentId === "string" &&
+    UUID.test(input.intentId) &&
+    typeof input.planId === "string" &&
+    UUID.test(input.planId) &&
+    typeof input.receiptId === "string" &&
+    UUID.test(input.receiptId) &&
+    typeof input.survivorPunkId === "string" &&
+    UUID.test(input.survivorPunkId) &&
+    typeof input.absorbedPunkId === "string" &&
+    UUID.test(input.absorbedPunkId) &&
+    input.survivorPunkId !== input.absorbedPunkId
+  );
+}
+
+function validPreparePunkAccountMergeInput(
+  value: unknown,
+  punkId: string | undefined,
+): value is PreparePunkAccountMergeInput {
+  if (!validAccountMergeCoordinate(value)) return false;
+  const input = value as PreparePunkAccountMergeInput;
+  return (
+    exactObjectKeys(input, [
+      "absorbedPunkId",
+      "accountRole",
+      "expectedRevision",
+      "intentId",
+      "planId",
+      "receiptId",
+      "survivorPunkId",
+    ]) &&
+    (input.accountRole === "survivor" || input.accountRole === "absorbed") &&
+    Number.isSafeInteger(input.expectedRevision) &&
+    input.expectedRevision >= 1 &&
+    punkId ===
+      (input.accountRole === "survivor"
+        ? input.survivorPunkId
+        : input.absorbedPunkId)
+  );
+}
+
+function accountMergeOperationMatches(
+  row: AccountMergeOperationRow,
+  input: PunkAccountMergeCoordinate,
+): boolean {
+  return (
+    row.intent_id === input.intentId &&
+    row.plan_id === input.planId &&
+    row.receipt_id === input.receiptId &&
+    row.survivor_punk_id === input.survivorPunkId &&
+    row.absorbed_punk_id === input.absorbedPunkId
+  );
+}
+
 function identity(
   input: IdentityInput,
   linkedAt: string,
@@ -251,15 +352,34 @@ export class PunkDO extends DurableObject<AuthEnv> {
         payload_json TEXT NOT NULL,
         response_json TEXT NOT NULL,
         committed_at TEXT NOT NULL
-      ) STRICT
+      ) STRICT;
+      CREATE TABLE IF NOT EXISTS account_merge_operation (
+        intent_id TEXT NOT NULL,
+        plan_id TEXT PRIMARY KEY,
+        receipt_id TEXT NOT NULL,
+        survivor_punk_id TEXT NOT NULL,
+        absorbed_punk_id TEXT NOT NULL,
+        account_role TEXT NOT NULL CHECK (account_role IN ('survivor', 'absorbed')),
+        expected_revision INTEGER NOT NULL CHECK (expected_revision >= 1),
+        status TEXT NOT NULL CHECK (status IN ('prepared', 'applied')),
+        applied_at TEXT
+      ) STRICT;
+      CREATE UNIQUE INDEX IF NOT EXISTS account_merge_single_prepared
+        ON account_merge_operation (status) WHERE status = 'prepared';
     `);
   }
 
-  provision(input: {
+  async provision(input: {
     punkId: string;
     identity: IdentityInput;
     now: string;
-  }): PunkResult {
+  }): Promise<PunkResult> {
+    if ((await this.accountMergeReceipt()) !== null) {
+      return { ok: false, code: "inactive" };
+    }
+    if (this.accountMergePrepared()) {
+      return { ok: false, code: "inactive" };
+    }
     const current = this.state();
     if (current !== null) {
       if (
@@ -304,7 +424,16 @@ export class PunkDO extends DurableObject<AuthEnv> {
     return { ok: true, state: next, replayed: false };
   }
 
-  linkIdentity(input: { identity: IdentityInput; now: string }): PunkResult {
+  async linkIdentity(input: {
+    identity: IdentityInput;
+    now: string;
+  }): Promise<PunkResult> {
+    if ((await this.accountMergeReceipt()) !== null) {
+      return { ok: false, code: "inactive" };
+    }
+    if (this.accountMergePrepared()) {
+      return { ok: false, code: "inactive" };
+    }
     const current = this.state();
     if (current === null) {
       return { ok: false, code: "not_found" };
@@ -336,12 +465,18 @@ export class PunkDO extends DurableObject<AuthEnv> {
     return { ok: true, state: next, replayed: false };
   }
 
-  linkPasskey(input: {
+  async linkPasskey(input: {
     credentialId: string;
     subjectHash: string;
     emailHash: string;
     now: string;
-  }): PunkResult {
+  }): Promise<PunkResult> {
+    if ((await this.accountMergeReceipt()) !== null) {
+      return { ok: false, code: "inactive" };
+    }
+    if (this.accountMergePrepared()) {
+      return { ok: false, code: "inactive" };
+    }
     const current = this.state();
     if (current === null) {
       return { ok: false, code: "not_found" };
@@ -384,28 +519,72 @@ export class PunkDO extends DurableObject<AuthEnv> {
     return { ok: true, state: next, replayed: false };
   }
 
-  query(): PunkResult {
-    const state = this.state();
-    if (state === null) {
+  async query(): Promise<PunkResult> {
+    if (this.state() === null) {
       return { ok: false, code: "not_found" };
     }
-    if (state.status !== "active") {
+    const receipt = await this.accountMergeReceipt();
+    const state = this.state();
+    if (
+      state === null ||
+      state.status !== "active" ||
+      this.accountMergePreparedAsAbsorbed() ||
+      receipt !== null
+    ) {
       return { ok: false, code: "inactive" };
     }
     return { ok: true, state, replayed: true };
   }
 
   /** Private authority read used only for bounded alias resolution. */
-  readForResolution(): Punk | null {
+  async readForResolution(): Promise<Punk | null> {
+    const initial = this.state();
+    if (
+      initial === null ||
+      !validateContract("punks://contracts/punk@1", initial).valid
+    ) {
+      return null;
+    }
+    const receipt = await this.accountMergeReceipt();
     const state = this.state();
-    return state !== null &&
-      validateContract("punks://contracts/punk@1", state).valid
-      ? state
+    if (
+      state === null ||
+      !validateContract("punks://contracts/punk@1", state).valid
+    ) {
+      return null;
+    }
+    if (state.status === "merged") {
+      return receipt !== "unavailable" &&
+        receipt !== null &&
+        state.mergedInto === receipt.survivorPunkId
+        ? state
+        : null;
+    }
+    if (state.status !== "active") return state;
+    if (receipt === "unavailable") return null;
+    if (receipt === null) {
+      return this.accountMergePreparedAsAbsorbed() ? null : state;
+    }
+    const alias: Punk = {
+      ...state,
+      status: "merged",
+      mergedInto: receipt.survivorPunkId,
+      revision: receipt.accountRevisions.absorbed + 1,
+      updatedAt: receipt.committedAt,
+    };
+    return validateContract("punks://contracts/punk@1", alias).valid
+      ? alias
       : null;
   }
 
   /** Applies one self-profile command atomically at its expected revision. */
-  updateProfile(input: unknown): PunkProfileUpdateResult {
+  async updateProfile(input: unknown): Promise<PunkProfileUpdateResult> {
+    if ((await this.accountMergeReceipt()) !== null) {
+      return { ok: false, code: "inactive" };
+    }
+    if (this.accountMergePrepared()) {
+      return { ok: false, code: "inactive" };
+    }
     if (!validateContract("punks://contracts/punk.update@1", input).valid) {
       return { ok: false, code: "invalid_input" };
     }
@@ -492,10 +671,11 @@ export class PunkDO extends DurableObject<AuthEnv> {
     return { ok: true, state: next, replayed: false };
   }
 
-  hasIdentity(input: {
+  async hasIdentity(input: {
     provider: AuthProviderProfile["provider"];
     subjectHash: string;
-  }): boolean {
+  }): Promise<boolean> {
+    if ((await this.accountMergeReceipt()) !== null) return false;
     return (
       this.state()?.identities.some(
         (item) =>
@@ -505,14 +685,16 @@ export class PunkDO extends DurableObject<AuthEnv> {
     );
   }
 
-  hasVerifiedEmail(emailHash: string): boolean {
+  async hasVerifiedEmail(emailHash: string): Promise<boolean> {
+    if ((await this.accountMergeReceipt()) !== null) return false;
     return (
       this.state()?.identities.some((item) => item.emailHash === emailHash) ??
       false
     );
   }
 
-  hasPasskey(subjectHash: string): boolean {
+  async hasPasskey(subjectHash: string): Promise<boolean> {
+    if ((await this.accountMergeReceipt()) !== null) return false;
     return (
       this.state()?.identities.some(
         (item) =>
@@ -521,7 +703,8 @@ export class PunkDO extends DurableObject<AuthEnv> {
     );
   }
 
-  passkeyCredentialIds(): string[] {
+  async passkeyCredentialIds(): Promise<string[]> {
+    if ((await this.accountMergeReceipt()) !== null) return [];
     return (this.state()?.identities ?? []).flatMap((item) =>
       item.provider === "passkey" && item.credentialId !== null
         ? [item.credentialId]
@@ -530,14 +713,16 @@ export class PunkDO extends DurableObject<AuthEnv> {
   }
 
   /** Registers one authoritative Session coordinate for future merge planning. */
-  recordAccountMergeSession(input: {
+  async recordAccountMergeSession(input: {
     sessionId: string;
     punkId: string;
     clientKind: "browser" | "desktop" | "mobile" | "api";
     authenticatedAt: string;
     expiresAt: string;
-  }): boolean {
+  }): Promise<boolean> {
     if (
+      (await this.accountMergeReceipt()) !== null ||
+      this.accountMergePrepared() ||
       input.punkId !== this.ctx.id.name ||
       !OPAQUE_UUID.test(input.sessionId) ||
       !["browser", "desktop", "mobile", "api"].includes(input.clientKind) ||
@@ -577,14 +762,16 @@ export class PunkDO extends DurableObject<AuthEnv> {
   }
 
   /** Registers one active, account-bound ceremony or delivery handoff. */
-  recordAccountMergeHandoff(input: {
+  async recordAccountMergeHandoff(input: {
     handoffId: string;
     punkId: string;
     kind: PunkAccountMergeInventory["handoffs"][number]["kind"];
     state: PunkAccountMergeInventory["handoffs"][number]["state"];
     expiresAt: string;
-  }): boolean {
+  }): Promise<boolean> {
     if (
+      (await this.accountMergeReceipt()) !== null ||
+      this.accountMergePrepared() ||
       input.punkId !== this.ctx.id.name ||
       !(UUID.test(input.handoffId) || OPAQUE_UUID.test(input.handoffId)) ||
       ![
@@ -629,10 +816,12 @@ export class PunkDO extends DurableObject<AuthEnv> {
   }
 
   /** Prepares one exact Workspace membership index transition. */
-  prepareAccountMergeRightsChange(
+  async prepareAccountMergeRightsChange(
     input: AccountMergeRightsChangeInput,
-  ): boolean {
+  ): Promise<boolean> {
     if (
+      (await this.accountMergeReceipt()) !== null ||
+      this.accountMergePrepared() ||
       !validRightsChangeCoordinate(input) ||
       input.punkId !== this.ctx.id.name ||
       this.state()?.status !== "active"
@@ -672,10 +861,11 @@ export class PunkDO extends DurableObject<AuthEnv> {
   }
 
   /** Atomically applies one prepared Workspace membership index transition. */
-  commitAccountMergeRightsChange(
+  async commitAccountMergeRightsChange(
     input: CommitAccountMergeRightsChangeInput,
-  ): boolean {
+  ): Promise<boolean> {
     if (
+      (await this.accountMergeReceipt()) !== null ||
       !validCommitRightsChange(input) ||
       input.punkId !== this.ctx.id.name ||
       this.state()?.status !== "active"
@@ -796,7 +986,86 @@ export class PunkDO extends DurableObject<AuthEnv> {
   }
 
   /** Returns the bounded authoritative index used by account-merge planning. */
-  accountMergeInventory(): PunkAccountMergeInventory {
+  async accountMergeInventory(): Promise<PunkAccountMergeInventory> {
+    const state = this.state();
+    if (
+      state === null ||
+      state.status !== "active" ||
+      (await this.accountMergeReceipt()) !== null
+    ) {
+      return { complete: false, rights: [], sessions: [], handoffs: [] };
+    }
+    return this.currentAccountMergeInventory();
+  }
+
+  /** Fences every new account-scoped authority before the merge commit. */
+  prepareAccountMerge(input: PreparePunkAccountMergeInput): boolean {
+    if (!validPreparePunkAccountMergeInput(input, this.ctx.id.name)) {
+      return false;
+    }
+    const existing = this.accountMergeOperation(input.planId);
+    if (existing !== undefined) {
+      return (
+        accountMergeOperationMatches(existing, input) &&
+        existing.account_role === input.accountRole &&
+        existing.expected_revision === input.expectedRevision
+      );
+    }
+    const state = this.state();
+    if (
+      state === null ||
+      state.status !== "active" ||
+      state.revision !== input.expectedRevision ||
+      this.ctx.storage.sql
+        .exec<{ operation_id: string }>(
+          `SELECT operation_id FROM account_merge_rights_operations
+           WHERE status = 'pending' LIMIT 1`,
+        )
+        .toArray()[0] !== undefined
+    ) {
+      return false;
+    }
+    this.ctx.storage.sql.exec(
+      `INSERT INTO account_merge_operation
+        (intent_id, plan_id, receipt_id, survivor_punk_id,
+         absorbed_punk_id, account_role, expected_revision, status, applied_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'prepared', NULL)`,
+      input.intentId,
+      input.planId,
+      input.receiptId,
+      input.survivorPunkId,
+      input.absorbedPunkId,
+      input.accountRole,
+      input.expectedRevision,
+    );
+    return true;
+  }
+
+  /** Reads state and inventory atomically while the exact Punk fence is held. */
+  readPreparedAccountMerge(
+    input: PreparePunkAccountMergeInput,
+  ): PreparedPunkAccountMergeSnapshot | null {
+    if (!validPreparePunkAccountMergeInput(input, this.ctx.id.name)) {
+      return null;
+    }
+    const operation = this.accountMergeOperation(input.planId);
+    const state = this.state();
+    if (
+      operation === undefined ||
+      operation.status !== "prepared" ||
+      !accountMergeOperationMatches(operation, input) ||
+      operation.account_role !== input.accountRole ||
+      operation.expected_revision !== input.expectedRevision ||
+      state === null ||
+      state.status !== "active" ||
+      state.revision !== input.expectedRevision
+    ) {
+      return null;
+    }
+    return { state, inventory: this.currentAccountMergeInventory() };
+  }
+
+  private currentAccountMergeInventory(): PunkAccountMergeInventory {
     const now = new Date().toISOString();
     const sessionInventoryComplete =
       this.accountMergeSessionInventoryComplete(now);
@@ -871,6 +1140,239 @@ export class PunkDO extends DurableObject<AuthEnv> {
     };
   }
 
+  /** Releases only a pre-commit fence; an applied merge can never be undone. */
+  abortAccountMerge(input: PunkAccountMergeCoordinate): boolean {
+    if (
+      !validAccountMergeCoordinate(input) ||
+      !exactObjectKeys(input, [
+        "absorbedPunkId",
+        "intentId",
+        "planId",
+        "receiptId",
+        "survivorPunkId",
+      ])
+    ) {
+      return false;
+    }
+    const operation = this.accountMergeOperation(input.planId);
+    if (operation === undefined) return true;
+    if (
+      !accountMergeOperationMatches(operation, input) ||
+      operation.status !== "prepared"
+    ) {
+      return false;
+    }
+    return (
+      this.ctx.storage.sql.exec(
+        "DELETE FROM account_merge_operation WHERE plan_id = ? AND status = 'prepared'",
+        input.planId,
+      ).rowsWritten === 1
+    );
+  }
+
+  /** Applies one post-commit Workspace right while the Punk fence is held. */
+  applyAccountMergeWorkspaceRight(
+    input: PunkAccountMergeCoordinate & {
+      workspaceId: string;
+      membership: { role: AccountMergeWorkspaceRole; revision: number } | null;
+    },
+  ): boolean {
+    if (
+      !validAccountMergeCoordinate(input) ||
+      !exactObjectKeys(input, [
+        "absorbedPunkId",
+        "intentId",
+        "membership",
+        "planId",
+        "receiptId",
+        "survivorPunkId",
+        "workspaceId",
+      ]) ||
+      !UUID.test(input.workspaceId) ||
+      (input.membership !== null && !validMembership(input.membership))
+    ) {
+      return false;
+    }
+    const operation = this.accountMergeOperation(input.planId);
+    if (
+      operation === undefined ||
+      !accountMergeOperationMatches(operation, input) ||
+      (operation.status !== "prepared" && operation.status !== "applied")
+    ) {
+      return false;
+    }
+    if (input.membership === null) {
+      this.ctx.storage.sql.exec(
+        "DELETE FROM account_merge_rights_inventory WHERE workspace_id = ?",
+        input.workspaceId,
+      );
+      return true;
+    }
+    this.ctx.storage.sql.exec(
+      `INSERT INTO account_merge_rights_inventory
+        (workspace_id, role, revision) VALUES (?, ?, ?)
+       ON CONFLICT(workspace_id) DO UPDATE SET
+         role = excluded.role,
+         revision = excluded.revision`,
+      input.workspaceId,
+      input.membership.role,
+      input.membership.revision,
+    );
+    return true;
+  }
+
+  /** Adds the absorbed login identities without changing historical origin. */
+  applyAccountMergeAsSurvivor(
+    input: PunkAccountMergeCoordinate & {
+      expectedRevision: number;
+      absorbedIdentities: readonly Punk["identities"][number][];
+      appliedAt: string;
+    },
+  ): boolean {
+    if (
+      !validAccountMergeCoordinate(input) ||
+      !exactObjectKeys(input, [
+        "absorbedIdentities",
+        "absorbedPunkId",
+        "appliedAt",
+        "expectedRevision",
+        "intentId",
+        "planId",
+        "receiptId",
+        "survivorPunkId",
+      ]) ||
+      !Number.isSafeInteger(input.expectedRevision) ||
+      input.expectedRevision < 1 ||
+      !canonicalTimestamp(input.appliedAt) ||
+      !Array.isArray(input.absorbedIdentities) ||
+      input.absorbedIdentities.length > 64
+    ) {
+      return false;
+    }
+    const operation = this.accountMergeOperation(input.planId);
+    if (
+      operation === undefined ||
+      operation.account_role !== "survivor" ||
+      operation.expected_revision !== input.expectedRevision ||
+      !accountMergeOperationMatches(operation, input)
+    ) {
+      return false;
+    }
+    if (operation.status === "applied") return true;
+    const current = this.state();
+    if (
+      current === null ||
+      current.status !== "active" ||
+      current.revision !== input.expectedRevision
+    ) {
+      return false;
+    }
+    const identities: Punk["identities"] = [
+      current.identities[0],
+      ...current.identities.slice(1),
+    ];
+    const coordinates = new Set(
+      identities.map((item) => `${item.provider}\u0000${item.subjectHash}`),
+    );
+    for (const candidate of input.absorbedIdentities) {
+      const coordinate = `${candidate.provider}\u0000${candidate.subjectHash}`;
+      if (!coordinates.has(coordinate)) {
+        identities.push(candidate);
+        coordinates.add(coordinate);
+      }
+    }
+    const next: Punk = {
+      ...current,
+      identities,
+      revision: current.revision + 1,
+      updatedAt: input.appliedAt,
+    };
+    if (!validateContract("punks://contracts/punk@1", next).valid) return false;
+    this.ctx.storage.transactionSync(() => {
+      this.ctx.storage.sql.exec(
+        "UPDATE punk_state SET state_json = ? WHERE singleton = 1",
+        JSON.stringify(next),
+      );
+      this.ctx.storage.sql.exec(
+        `UPDATE account_merge_operation
+         SET status = 'applied', applied_at = ? WHERE plan_id = ?`,
+        input.appliedAt,
+        input.planId,
+      );
+      this.trimAccountMergeOperations();
+    });
+    return true;
+  }
+
+  /** Converts the absorbed account into an immutable inactive alias. */
+  applyAccountMergeAsAbsorbed(
+    input: PunkAccountMergeCoordinate & {
+      expectedRevision: number;
+      appliedAt: string;
+    },
+  ): boolean {
+    if (
+      !validAccountMergeCoordinate(input) ||
+      !exactObjectKeys(input, [
+        "absorbedPunkId",
+        "appliedAt",
+        "expectedRevision",
+        "intentId",
+        "planId",
+        "receiptId",
+        "survivorPunkId",
+      ]) ||
+      !Number.isSafeInteger(input.expectedRevision) ||
+      input.expectedRevision < 1 ||
+      !canonicalTimestamp(input.appliedAt)
+    ) {
+      return false;
+    }
+    const operation = this.accountMergeOperation(input.planId);
+    if (
+      operation === undefined ||
+      operation.account_role !== "absorbed" ||
+      operation.expected_revision !== input.expectedRevision ||
+      !accountMergeOperationMatches(operation, input)
+    ) {
+      return false;
+    }
+    if (operation.status === "applied") return true;
+    const current = this.state();
+    if (
+      current === null ||
+      current.status !== "active" ||
+      current.revision !== input.expectedRevision
+    ) {
+      return false;
+    }
+    const next: Punk = {
+      ...current,
+      status: "merged",
+      mergedInto: input.survivorPunkId,
+      revision: current.revision + 1,
+      updatedAt: input.appliedAt,
+    };
+    if (!validateContract("punks://contracts/punk@1", next).valid) return false;
+    this.ctx.storage.transactionSync(() => {
+      this.ctx.storage.sql.exec(
+        "UPDATE punk_state SET state_json = ? WHERE singleton = 1",
+        JSON.stringify(next),
+      );
+      this.ctx.storage.sql.exec("DELETE FROM account_merge_rights_inventory");
+      this.ctx.storage.sql.exec("DELETE FROM account_merge_session_inventory");
+      this.ctx.storage.sql.exec("DELETE FROM account_merge_handoff_inventory");
+      this.ctx.storage.sql.exec(
+        `UPDATE account_merge_operation
+         SET status = 'applied', applied_at = ? WHERE plan_id = ?`,
+        input.appliedAt,
+        input.planId,
+      );
+      this.trimAccountMergeOperations();
+    });
+    return true;
+  }
+
   private accountMergeSessionInventoryComplete(now: string): boolean {
     const coverage = this.ctx.storage.sql
       .exec<SessionInventoryCoverageRow>(
@@ -896,6 +1398,80 @@ export class PunkDO extends DurableObject<AuthEnv> {
       ).toISOString(),
     );
     return false;
+  }
+
+  private accountMergeOperation(
+    planId?: string,
+  ): AccountMergeOperationRow | undefined {
+    return this.ctx.storage.sql
+      .exec<AccountMergeOperationRow>(
+        `SELECT intent_id, plan_id, receipt_id, survivor_punk_id,
+                absorbed_punk_id, account_role, expected_revision,
+                status, applied_at
+         FROM account_merge_operation
+         WHERE (? IS NOT NULL AND plan_id = ?)
+            OR (? IS NULL AND status = 'prepared')
+         ORDER BY rowid DESC LIMIT 1`,
+        planId ?? null,
+        planId ?? null,
+        planId ?? null,
+      )
+      .toArray()[0];
+  }
+
+  private async accountMergeReceipt(): Promise<
+    AccountMergeReceipt | null | "unavailable"
+  > {
+    const absorbedPunkId = this.ctx.id.name;
+    if (typeof absorbedPunkId !== "string" || !UUID.test(absorbedPunkId)) {
+      return "unavailable";
+    }
+    try {
+      const result =
+        await this.env.ACCOUNT_MERGE_RECEIPTS.lookupAccountMergeReceipt({
+          absorbedPunkId,
+        });
+      if (
+        typeof result !== "object" ||
+        result === null ||
+        Array.isArray(result) ||
+        Reflect.get(result, "ok") !== true
+      ) {
+        return "unavailable";
+      }
+      const receipt = Reflect.get(result, "receipt");
+      if (receipt === null) return null;
+      return validateContract(
+        "punks://contracts/account-merge.receipt@1",
+        receipt,
+      ).valid && Reflect.get(receipt, "absorbedPunkId") === absorbedPunkId
+        ? (receipt as AccountMergeReceipt)
+        : "unavailable";
+    } catch {
+      return "unavailable";
+    }
+  }
+
+  private accountMergePrepared(): boolean {
+    return this.accountMergeOperation()?.status === "prepared";
+  }
+
+  private accountMergePreparedAsAbsorbed(): boolean {
+    const operation = this.accountMergeOperation();
+    return (
+      operation?.status === "prepared" && operation.account_role === "absorbed"
+    );
+  }
+
+  private trimAccountMergeOperations(): void {
+    this.ctx.storage.sql.exec(
+      `DELETE FROM account_merge_operation
+       WHERE status = 'applied' AND plan_id NOT IN (
+         SELECT plan_id FROM account_merge_operation
+         WHERE status = 'applied' ORDER BY applied_at DESC LIMIT ?
+       )`,
+      MAX_ACCOUNT_MERGE_OPERATION_RESULTS,
+    );
   }
 
   private accountMergeRightsInventoryComplete(): boolean {

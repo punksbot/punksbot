@@ -1,5 +1,7 @@
 //! Native orchestration for the recoverable desktop authentication ceremony.
 
+mod account_state;
+
 #[cfg(test)]
 mod tests;
 
@@ -24,6 +26,7 @@ use crate::punks_session_store::{
     KeyringSessionPersistence, PendingAuthFlow, PendingAuthPurpose, PendingReauthorization,
     PendingRenewal, QueuedRevocation, StagedActivation,
 };
+use account_state::account_state_from_store;
 
 fn native_failure(kind: FailureKind, message: &'static str) -> ClientFailure {
     ClientFailure::native(kind, message)
@@ -628,39 +631,6 @@ pub async fn punks_get_account_session_state(
     }
     let phase = client.authentication.lock().await.last_phase.clone();
     account_state_from_store(&client, &store, phase).await
-}
-
-async fn account_state_from_store(
-    client: &PunksDesktopClient,
-    store: &KeyringSessionPersistence,
-    phase: CeremonyPhaseView,
-) -> Result<AccountSessionStateView, ClientFailure> {
-    let Some(active) = store.load_active_session().map_err(|_| store_failure())? else {
-        return Ok(AccountSessionStateView::SignedOut {
-            authentication: phase,
-            resume_available: false,
-        });
-    };
-    let session = match client
-        .account()?
-        .restore_session(&active.cookie, &active.metadata)
-        .await
-    {
-        Ok(session) => session,
-        Err(failure) if failure.kind == FailureKind::SessionExpired => {
-            store.sign_out_local().map_err(|_| store_failure())?;
-            return Ok(AccountSessionStateView::SignedOut {
-                authentication: CeremonyPhaseView::Idle,
-                resume_available: false,
-            });
-        }
-        Err(failure) => return Err(failure),
-    };
-    Ok(AccountSessionStateView::Authenticated {
-        session,
-        authentication: phase,
-        resume_available: false,
-    })
 }
 
 /// Starts an explicit sign-in in the system browser.

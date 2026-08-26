@@ -4257,6 +4257,7 @@ enum PunksProblemCode {
   invalidInput("invalid_input"),
   payloadTooLarge("payload_too_large"),
   unauthenticated("unauthenticated"),
+  accountMerged("account_merged"),
   forbidden("forbidden"),
   notFound("not_found"),
   slugClaimed("slug_claimed"),
@@ -6396,6 +6397,539 @@ sealed class AccountMergePlanResponse {
         return AccountMergePlanResponseFalse.fromJson(json);
       default:
         throw FormatException('AccountMergePlanResponse.ok has no matching variant');
+    }
+  }
+
+  Map<String, Object?> toJson();
+}
+
+class CommitAccountMergeCommandAccountRevisions {
+  final int survivor;
+  final int absorbed;
+
+  const CommitAccountMergeCommandAccountRevisions({
+    required this.survivor,
+    required this.absorbed,
+  });
+
+  factory CommitAccountMergeCommandAccountRevisions.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"survivor", "absorbed"}, "CommitAccountMergeCommandAccountRevisions");
+    return CommitAccountMergeCommandAccountRevisions(
+      survivor: _asInt(_requiredKey(json, "survivor", "CommitAccountMergeCommandAccountRevisions"), "CommitAccountMergeCommandAccountRevisions.survivor"),
+      absorbed: _asInt(_requiredKey(json, "absorbed", "CommitAccountMergeCommandAccountRevisions"), "CommitAccountMergeCommandAccountRevisions.absorbed"),
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "survivor": survivor,
+      "absorbed": absorbed,
+    };
+    return json;
+  }
+}
+
+class CommitAccountMergeCommand {
+  final String contract;
+  final String commandId;
+  final String intentId;
+  final String planId;
+  final String planDigest;
+  final String survivorPunkId;
+  final String absorbedPunkId;
+  final CommitAccountMergeCommandAccountRevisions accountRevisions;
+  final String confirmation;
+
+  const CommitAccountMergeCommand({
+    required this.contract,
+    required this.commandId,
+    required this.intentId,
+    required this.planId,
+    required this.planDigest,
+    required this.survivorPunkId,
+    required this.absorbedPunkId,
+    required this.accountRevisions,
+    required this.confirmation,
+  });
+
+  factory CommitAccountMergeCommand.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"contract", "commandId", "intentId", "planId", "planDigest", "survivorPunkId", "absorbedPunkId", "accountRevisions", "confirmation"}, "CommitAccountMergeCommand");
+    return CommitAccountMergeCommand(
+      contract: _expectStringConst(_requiredKey(json, "contract", "CommitAccountMergeCommand"), "account-merge.commit@1", "CommitAccountMergeCommand.contract"),
+      commandId: _asString(_requiredKey(json, "commandId", "CommitAccountMergeCommand"), "CommitAccountMergeCommand.commandId"),
+      intentId: _asString(_requiredKey(json, "intentId", "CommitAccountMergeCommand"), "CommitAccountMergeCommand.intentId"),
+      planId: _asString(_requiredKey(json, "planId", "CommitAccountMergeCommand"), "CommitAccountMergeCommand.planId"),
+      planDigest: _asString(_requiredKey(json, "planDigest", "CommitAccountMergeCommand"), "CommitAccountMergeCommand.planDigest"),
+      survivorPunkId: _asString(_requiredKey(json, "survivorPunkId", "CommitAccountMergeCommand"), "CommitAccountMergeCommand.survivorPunkId"),
+      absorbedPunkId: _asString(_requiredKey(json, "absorbedPunkId", "CommitAccountMergeCommand"), "CommitAccountMergeCommand.absorbedPunkId"),
+      accountRevisions: CommitAccountMergeCommandAccountRevisions.fromJson(_asMap(_requiredKey(json, "accountRevisions", "CommitAccountMergeCommand"), "CommitAccountMergeCommand.accountRevisions")),
+      confirmation: _expectStringConst(_requiredKey(json, "confirmation", "CommitAccountMergeCommand"), "merge_accounts_irreversibly", "CommitAccountMergeCommand.confirmation"),
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "contract": contract,
+      "commandId": commandId,
+      "intentId": intentId,
+      "planId": planId,
+      "planDigest": planDigest,
+      "survivorPunkId": survivorPunkId,
+      "absorbedPunkId": absorbedPunkId,
+      "accountRevisions": accountRevisions.toJson(),
+      "confirmation": confirmation,
+    };
+    return json;
+  }
+}
+
+class AccountMergeReceiptAccountRevisions {
+  final int survivor;
+  final int absorbed;
+
+  const AccountMergeReceiptAccountRevisions({
+    required this.survivor,
+    required this.absorbed,
+  });
+
+  factory AccountMergeReceiptAccountRevisions.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"survivor", "absorbed"}, "AccountMergeReceiptAccountRevisions");
+    return AccountMergeReceiptAccountRevisions(
+      survivor: _asInt(_requiredKey(json, "survivor", "AccountMergeReceiptAccountRevisions"), "AccountMergeReceiptAccountRevisions.survivor"),
+      absorbed: _asInt(_requiredKey(json, "absorbed", "AccountMergeReceiptAccountRevisions"), "AccountMergeReceiptAccountRevisions.absorbed"),
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "survivor": survivor,
+      "absorbed": absorbed,
+    };
+    return json;
+  }
+}
+
+class AccountMergeReceipt {
+  final String contract;
+  final int schemaVersion;
+  final String receiptId;
+  final String intentId;
+  final String planId;
+  final String planDigest;
+  final String commitCommandId;
+  final String survivorPunkId;
+  final String absorbedPunkId;
+  final AccountMergeReceiptAccountRevisions accountRevisions;
+  final String committedAt;
+  final String receiptHash;
+
+  const AccountMergeReceipt({
+    required this.contract,
+    required this.schemaVersion,
+    required this.receiptId,
+    required this.intentId,
+    required this.planId,
+    required this.planDigest,
+    required this.commitCommandId,
+    required this.survivorPunkId,
+    required this.absorbedPunkId,
+    required this.accountRevisions,
+    required this.committedAt,
+    required this.receiptHash,
+  });
+
+  factory AccountMergeReceipt.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"contract", "schemaVersion", "receiptId", "intentId", "planId", "planDigest", "commitCommandId", "survivorPunkId", "absorbedPunkId", "accountRevisions", "committedAt", "receiptHash"}, "AccountMergeReceipt");
+    return AccountMergeReceipt(
+      contract: _expectStringConst(_requiredKey(json, "contract", "AccountMergeReceipt"), "account-merge.receipt@1", "AccountMergeReceipt.contract"),
+      schemaVersion: _expectIntConst(_requiredKey(json, "schemaVersion", "AccountMergeReceipt"), 1, "AccountMergeReceipt.schemaVersion"),
+      receiptId: _asString(_requiredKey(json, "receiptId", "AccountMergeReceipt"), "AccountMergeReceipt.receiptId"),
+      intentId: _asString(_requiredKey(json, "intentId", "AccountMergeReceipt"), "AccountMergeReceipt.intentId"),
+      planId: _asString(_requiredKey(json, "planId", "AccountMergeReceipt"), "AccountMergeReceipt.planId"),
+      planDigest: _asString(_requiredKey(json, "planDigest", "AccountMergeReceipt"), "AccountMergeReceipt.planDigest"),
+      commitCommandId: _asString(_requiredKey(json, "commitCommandId", "AccountMergeReceipt"), "AccountMergeReceipt.commitCommandId"),
+      survivorPunkId: _asString(_requiredKey(json, "survivorPunkId", "AccountMergeReceipt"), "AccountMergeReceipt.survivorPunkId"),
+      absorbedPunkId: _asString(_requiredKey(json, "absorbedPunkId", "AccountMergeReceipt"), "AccountMergeReceipt.absorbedPunkId"),
+      accountRevisions: AccountMergeReceiptAccountRevisions.fromJson(_asMap(_requiredKey(json, "accountRevisions", "AccountMergeReceipt"), "AccountMergeReceipt.accountRevisions")),
+      committedAt: _asString(_requiredKey(json, "committedAt", "AccountMergeReceipt"), "AccountMergeReceipt.committedAt"),
+      receiptHash: _asString(_requiredKey(json, "receiptHash", "AccountMergeReceipt"), "AccountMergeReceipt.receiptHash"),
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "contract": contract,
+      "schemaVersion": schemaVersion,
+      "receiptId": receiptId,
+      "intentId": intentId,
+      "planId": planId,
+      "planDigest": planDigest,
+      "commitCommandId": commitCommandId,
+      "survivorPunkId": survivorPunkId,
+      "absorbedPunkId": absorbedPunkId,
+      "accountRevisions": accountRevisions.toJson(),
+      "committedAt": committedAt,
+      "receiptHash": receiptHash,
+    };
+    return json;
+  }
+}
+
+enum AccountMergeStateStatus {
+  planned("planned"),
+  preparing("preparing"),
+  committed("committed"),
+  applying("applying"),
+  completed("completed"),
+  ;
+
+  const AccountMergeStateStatus(this.value);
+
+  final String value;
+
+  factory AccountMergeStateStatus.fromJson(Object? value, String path) {
+    for (final candidate in values) {
+      if (candidate.value == value) return candidate;
+    }
+    throw FormatException('$path must be a AccountMergeStateStatus value');
+  }
+
+  String toJson() => value;
+}
+
+class AccountMergeStateAccountRevisions {
+  final int survivor;
+  final int absorbed;
+
+  const AccountMergeStateAccountRevisions({
+    required this.survivor,
+    required this.absorbed,
+  });
+
+  factory AccountMergeStateAccountRevisions.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"survivor", "absorbed"}, "AccountMergeStateAccountRevisions");
+    return AccountMergeStateAccountRevisions(
+      survivor: _asInt(_requiredKey(json, "survivor", "AccountMergeStateAccountRevisions"), "AccountMergeStateAccountRevisions.survivor"),
+      absorbed: _asInt(_requiredKey(json, "absorbed", "AccountMergeStateAccountRevisions"), "AccountMergeStateAccountRevisions.absorbed"),
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "survivor": survivor,
+      "absorbed": absorbed,
+    };
+    return json;
+  }
+}
+
+class AccountMergeStateReceipt {
+  final String contract;
+  final int schemaVersion;
+  final String receiptId;
+  final String intentId;
+  final String planId;
+  final String planDigest;
+  final String commitCommandId;
+  final String survivorPunkId;
+  final String absorbedPunkId;
+  final AccountMergeStateAccountRevisions accountRevisions;
+  final String committedAt;
+  final String receiptHash;
+
+  const AccountMergeStateReceipt({
+    required this.contract,
+    required this.schemaVersion,
+    required this.receiptId,
+    required this.intentId,
+    required this.planId,
+    required this.planDigest,
+    required this.commitCommandId,
+    required this.survivorPunkId,
+    required this.absorbedPunkId,
+    required this.accountRevisions,
+    required this.committedAt,
+    required this.receiptHash,
+  });
+
+  factory AccountMergeStateReceipt.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"contract", "schemaVersion", "receiptId", "intentId", "planId", "planDigest", "commitCommandId", "survivorPunkId", "absorbedPunkId", "accountRevisions", "committedAt", "receiptHash"}, "AccountMergeStateReceipt");
+    return AccountMergeStateReceipt(
+      contract: _expectStringConst(_requiredKey(json, "contract", "AccountMergeStateReceipt"), "account-merge.receipt@1", "AccountMergeStateReceipt.contract"),
+      schemaVersion: _expectIntConst(_requiredKey(json, "schemaVersion", "AccountMergeStateReceipt"), 1, "AccountMergeStateReceipt.schemaVersion"),
+      receiptId: _asString(_requiredKey(json, "receiptId", "AccountMergeStateReceipt"), "AccountMergeStateReceipt.receiptId"),
+      intentId: _asString(_requiredKey(json, "intentId", "AccountMergeStateReceipt"), "AccountMergeStateReceipt.intentId"),
+      planId: _asString(_requiredKey(json, "planId", "AccountMergeStateReceipt"), "AccountMergeStateReceipt.planId"),
+      planDigest: _asString(_requiredKey(json, "planDigest", "AccountMergeStateReceipt"), "AccountMergeStateReceipt.planDigest"),
+      commitCommandId: _asString(_requiredKey(json, "commitCommandId", "AccountMergeStateReceipt"), "AccountMergeStateReceipt.commitCommandId"),
+      survivorPunkId: _asString(_requiredKey(json, "survivorPunkId", "AccountMergeStateReceipt"), "AccountMergeStateReceipt.survivorPunkId"),
+      absorbedPunkId: _asString(_requiredKey(json, "absorbedPunkId", "AccountMergeStateReceipt"), "AccountMergeStateReceipt.absorbedPunkId"),
+      accountRevisions: AccountMergeStateAccountRevisions.fromJson(_asMap(_requiredKey(json, "accountRevisions", "AccountMergeStateReceipt"), "AccountMergeStateReceipt.accountRevisions")),
+      committedAt: _asString(_requiredKey(json, "committedAt", "AccountMergeStateReceipt"), "AccountMergeStateReceipt.committedAt"),
+      receiptHash: _asString(_requiredKey(json, "receiptHash", "AccountMergeStateReceipt"), "AccountMergeStateReceipt.receiptHash"),
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "contract": contract,
+      "schemaVersion": schemaVersion,
+      "receiptId": receiptId,
+      "intentId": intentId,
+      "planId": planId,
+      "planDigest": planDigest,
+      "commitCommandId": commitCommandId,
+      "survivorPunkId": survivorPunkId,
+      "absorbedPunkId": absorbedPunkId,
+      "accountRevisions": accountRevisions.toJson(),
+      "committedAt": committedAt,
+      "receiptHash": receiptHash,
+    };
+    return json;
+  }
+}
+
+enum AccountMergeStateFailureCode {
+  planExpired("plan_expired"),
+  revisionConflict("revision_conflict"),
+  blockingConflict("blocking_conflict"),
+  authorityUnavailable("authority_unavailable"),
+  idempotencyConflict("idempotency_conflict"),
+  receiptConflict("receipt_conflict"),
+  applicationPending("application_pending"),
+  ;
+
+  const AccountMergeStateFailureCode(this.value);
+
+  final String value;
+
+  factory AccountMergeStateFailureCode.fromJson(Object? value, String path) {
+    for (final candidate in values) {
+      if (candidate.value == value) return candidate;
+    }
+    throw FormatException('$path must be a AccountMergeStateFailureCode value');
+  }
+
+  String toJson() => value;
+}
+
+class AccountMergeStateFailure {
+  final AccountMergeStateFailureCode code;
+  final String correlationId;
+  final String recordedAt;
+
+  const AccountMergeStateFailure({
+    required this.code,
+    required this.correlationId,
+    required this.recordedAt,
+  });
+
+  factory AccountMergeStateFailure.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"code", "correlationId", "recordedAt"}, "AccountMergeStateFailure");
+    return AccountMergeStateFailure(
+      code: AccountMergeStateFailureCode.fromJson(_requiredKey(json, "code", "AccountMergeStateFailure"), "AccountMergeStateFailure.code"),
+      correlationId: _asString(_requiredKey(json, "correlationId", "AccountMergeStateFailure"), "AccountMergeStateFailure.correlationId"),
+      recordedAt: _asString(_requiredKey(json, "recordedAt", "AccountMergeStateFailure"), "AccountMergeStateFailure.recordedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "code": code.toJson(),
+      "correlationId": correlationId,
+      "recordedAt": recordedAt,
+    };
+    return json;
+  }
+}
+
+class AccountMergeState {
+  final String contract;
+  final int schemaVersion;
+  final String intentId;
+  final String planId;
+  final String planDigest;
+  final AccountMergeStateStatus status;
+  final String survivorPunkId;
+  final String absorbedPunkId;
+  final int applicationCursor;
+  final int applicationTotal;
+  final AccountMergeStateReceipt? receipt;
+  final AccountMergeStateFailure? lastFailure;
+  final String? committedAt;
+  final String? completedAt;
+  final String updatedAt;
+
+  const AccountMergeState({
+    required this.contract,
+    required this.schemaVersion,
+    required this.intentId,
+    required this.planId,
+    required this.planDigest,
+    required this.status,
+    required this.survivorPunkId,
+    required this.absorbedPunkId,
+    required this.applicationCursor,
+    required this.applicationTotal,
+    required this.receipt,
+    required this.lastFailure,
+    required this.committedAt,
+    required this.completedAt,
+    required this.updatedAt,
+  });
+
+  factory AccountMergeState.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"contract", "schemaVersion", "intentId", "planId", "planDigest", "status", "survivorPunkId", "absorbedPunkId", "applicationCursor", "applicationTotal", "receipt", "lastFailure", "committedAt", "completedAt", "updatedAt"}, "AccountMergeState");
+    if (!((((_hasKey(json, "status") && (!_hasKey(json, "status") || (const <Object?>["planned", "preparing"].contains(_valueAt(json, "status"))))) ? ((!_hasKey(json, "receipt") || ((_valueAt(json, "receipt") == null))) && (!_hasKey(json, "committedAt") || ((_valueAt(json, "committedAt") == null))) && (!_hasKey(json, "completedAt") || ((_valueAt(json, "completedAt") == null)))) : (true))) && (((_hasKey(json, "status") && (!_hasKey(json, "status") || (const <Object?>["committed", "applying"].contains(_valueAt(json, "status"))))) ? ((!_hasKey(json, "receipt") || ((_valueAt(json, "receipt") is Map<String, Object?>) && _hasKey(_valueAt(json, "receipt"), "contract") && _hasKey(_valueAt(json, "receipt"), "schemaVersion") && _hasKey(_valueAt(json, "receipt"), "receiptId") && _hasKey(_valueAt(json, "receipt"), "intentId") && _hasKey(_valueAt(json, "receipt"), "planId") && _hasKey(_valueAt(json, "receipt"), "planDigest") && _hasKey(_valueAt(json, "receipt"), "commitCommandId") && _hasKey(_valueAt(json, "receipt"), "survivorPunkId") && _hasKey(_valueAt(json, "receipt"), "absorbedPunkId") && _hasKey(_valueAt(json, "receipt"), "accountRevisions") && _hasKey(_valueAt(json, "receipt"), "committedAt") && _hasKey(_valueAt(json, "receipt"), "receiptHash") && (!_hasKey(_valueAt(json, "receipt"), "contract") || (_valueAt(_valueAt(json, "receipt"), "contract") == "account-merge.receipt@1")) && (!_hasKey(_valueAt(json, "receipt"), "schemaVersion") || (_valueAt(_valueAt(json, "receipt"), "schemaVersion") == 1)) && (!_hasKey(_valueAt(json, "receipt"), "receiptId") || ((_valueAt(_valueAt(json, "receipt"), "receiptId") is String))) && (!_hasKey(_valueAt(json, "receipt"), "intentId") || ((_valueAt(_valueAt(json, "receipt"), "intentId") is String))) && (!_hasKey(_valueAt(json, "receipt"), "planId") || ((_valueAt(_valueAt(json, "receipt"), "planId") is String))) && (!_hasKey(_valueAt(json, "receipt"), "planDigest") || ((_valueAt(_valueAt(json, "receipt"), "planDigest") is String))) && (!_hasKey(_valueAt(json, "receipt"), "commitCommandId") || ((_valueAt(_valueAt(json, "receipt"), "commitCommandId") is String))) && (!_hasKey(_valueAt(json, "receipt"), "survivorPunkId") || ((_valueAt(_valueAt(json, "receipt"), "survivorPunkId") is String))) && (!_hasKey(_valueAt(json, "receipt"), "absorbedPunkId") || ((_valueAt(_valueAt(json, "receipt"), "absorbedPunkId") is String))) && (!_hasKey(_valueAt(json, "receipt"), "accountRevisions") || ((_valueAt(_valueAt(json, "receipt"), "accountRevisions") is Map<String, Object?>) && _hasKey(_valueAt(_valueAt(json, "receipt"), "accountRevisions"), "survivor") && _hasKey(_valueAt(_valueAt(json, "receipt"), "accountRevisions"), "absorbed") && (!_hasKey(_valueAt(_valueAt(json, "receipt"), "accountRevisions"), "survivor") || ((_valueAt(_valueAt(_valueAt(json, "receipt"), "accountRevisions"), "survivor") is int))) && (!_hasKey(_valueAt(_valueAt(json, "receipt"), "accountRevisions"), "absorbed") || ((_valueAt(_valueAt(_valueAt(json, "receipt"), "accountRevisions"), "absorbed") is int))))) && (!_hasKey(_valueAt(json, "receipt"), "committedAt") || ((_valueAt(_valueAt(json, "receipt"), "committedAt") is String))) && (!_hasKey(_valueAt(json, "receipt"), "receiptHash") || ((_valueAt(_valueAt(json, "receipt"), "receiptHash") is String))))) && (!_hasKey(json, "committedAt") || ((_valueAt(json, "committedAt") is String))) && (!_hasKey(json, "completedAt") || ((_valueAt(json, "completedAt") == null)))) : (true))) && (((_hasKey(json, "status") && (!_hasKey(json, "status") || (_valueAt(json, "status") == "completed"))) ? ((!_hasKey(json, "receipt") || ((_valueAt(json, "receipt") is Map<String, Object?>) && _hasKey(_valueAt(json, "receipt"), "contract") && _hasKey(_valueAt(json, "receipt"), "schemaVersion") && _hasKey(_valueAt(json, "receipt"), "receiptId") && _hasKey(_valueAt(json, "receipt"), "intentId") && _hasKey(_valueAt(json, "receipt"), "planId") && _hasKey(_valueAt(json, "receipt"), "planDigest") && _hasKey(_valueAt(json, "receipt"), "commitCommandId") && _hasKey(_valueAt(json, "receipt"), "survivorPunkId") && _hasKey(_valueAt(json, "receipt"), "absorbedPunkId") && _hasKey(_valueAt(json, "receipt"), "accountRevisions") && _hasKey(_valueAt(json, "receipt"), "committedAt") && _hasKey(_valueAt(json, "receipt"), "receiptHash") && (!_hasKey(_valueAt(json, "receipt"), "contract") || (_valueAt(_valueAt(json, "receipt"), "contract") == "account-merge.receipt@1")) && (!_hasKey(_valueAt(json, "receipt"), "schemaVersion") || (_valueAt(_valueAt(json, "receipt"), "schemaVersion") == 1)) && (!_hasKey(_valueAt(json, "receipt"), "receiptId") || ((_valueAt(_valueAt(json, "receipt"), "receiptId") is String))) && (!_hasKey(_valueAt(json, "receipt"), "intentId") || ((_valueAt(_valueAt(json, "receipt"), "intentId") is String))) && (!_hasKey(_valueAt(json, "receipt"), "planId") || ((_valueAt(_valueAt(json, "receipt"), "planId") is String))) && (!_hasKey(_valueAt(json, "receipt"), "planDigest") || ((_valueAt(_valueAt(json, "receipt"), "planDigest") is String))) && (!_hasKey(_valueAt(json, "receipt"), "commitCommandId") || ((_valueAt(_valueAt(json, "receipt"), "commitCommandId") is String))) && (!_hasKey(_valueAt(json, "receipt"), "survivorPunkId") || ((_valueAt(_valueAt(json, "receipt"), "survivorPunkId") is String))) && (!_hasKey(_valueAt(json, "receipt"), "absorbedPunkId") || ((_valueAt(_valueAt(json, "receipt"), "absorbedPunkId") is String))) && (!_hasKey(_valueAt(json, "receipt"), "accountRevisions") || ((_valueAt(_valueAt(json, "receipt"), "accountRevisions") is Map<String, Object?>) && _hasKey(_valueAt(_valueAt(json, "receipt"), "accountRevisions"), "survivor") && _hasKey(_valueAt(_valueAt(json, "receipt"), "accountRevisions"), "absorbed") && (!_hasKey(_valueAt(_valueAt(json, "receipt"), "accountRevisions"), "survivor") || ((_valueAt(_valueAt(_valueAt(json, "receipt"), "accountRevisions"), "survivor") is int))) && (!_hasKey(_valueAt(_valueAt(json, "receipt"), "accountRevisions"), "absorbed") || ((_valueAt(_valueAt(_valueAt(json, "receipt"), "accountRevisions"), "absorbed") is int))))) && (!_hasKey(_valueAt(json, "receipt"), "committedAt") || ((_valueAt(_valueAt(json, "receipt"), "committedAt") is String))) && (!_hasKey(_valueAt(json, "receipt"), "receiptHash") || ((_valueAt(_valueAt(json, "receipt"), "receiptHash") is String))))) && (!_hasKey(json, "committedAt") || ((_valueAt(json, "committedAt") is String))) && (!_hasKey(json, "completedAt") || ((_valueAt(json, "completedAt") is String)))) : (true))))) {
+      throw FormatException("AccountMergeState violates its structural alternatives");
+    }
+    return AccountMergeState(
+      contract: _expectStringConst(_requiredKey(json, "contract", "AccountMergeState"), "account-merge.state@1", "AccountMergeState.contract"),
+      schemaVersion: _expectIntConst(_requiredKey(json, "schemaVersion", "AccountMergeState"), 1, "AccountMergeState.schemaVersion"),
+      intentId: _asString(_requiredKey(json, "intentId", "AccountMergeState"), "AccountMergeState.intentId"),
+      planId: _asString(_requiredKey(json, "planId", "AccountMergeState"), "AccountMergeState.planId"),
+      planDigest: _asString(_requiredKey(json, "planDigest", "AccountMergeState"), "AccountMergeState.planDigest"),
+      status: AccountMergeStateStatus.fromJson(_requiredKey(json, "status", "AccountMergeState"), "AccountMergeState.status"),
+      survivorPunkId: _asString(_requiredKey(json, "survivorPunkId", "AccountMergeState"), "AccountMergeState.survivorPunkId"),
+      absorbedPunkId: _asString(_requiredKey(json, "absorbedPunkId", "AccountMergeState"), "AccountMergeState.absorbedPunkId"),
+      applicationCursor: _asInt(_requiredKey(json, "applicationCursor", "AccountMergeState"), "AccountMergeState.applicationCursor"),
+      applicationTotal: _asInt(_requiredKey(json, "applicationTotal", "AccountMergeState"), "AccountMergeState.applicationTotal"),
+      receipt: _requiredKey(json, "receipt", "AccountMergeState") == null ? null : AccountMergeStateReceipt.fromJson(_asMap(_requiredKey(json, "receipt", "AccountMergeState"), "AccountMergeState.receipt")),
+      lastFailure: _requiredKey(json, "lastFailure", "AccountMergeState") == null ? null : AccountMergeStateFailure.fromJson(_asMap(_requiredKey(json, "lastFailure", "AccountMergeState"), "AccountMergeState.lastFailure")),
+      committedAt: _requiredKey(json, "committedAt", "AccountMergeState") == null ? null : _asString(_requiredKey(json, "committedAt", "AccountMergeState"), "AccountMergeState.committedAt"),
+      completedAt: _requiredKey(json, "completedAt", "AccountMergeState") == null ? null : _asString(_requiredKey(json, "completedAt", "AccountMergeState"), "AccountMergeState.completedAt"),
+      updatedAt: _asString(_requiredKey(json, "updatedAt", "AccountMergeState"), "AccountMergeState.updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "contract": contract,
+      "schemaVersion": schemaVersion,
+      "intentId": intentId,
+      "planId": planId,
+      "planDigest": planDigest,
+      "status": status.toJson(),
+      "survivorPunkId": survivorPunkId,
+      "absorbedPunkId": absorbedPunkId,
+      "applicationCursor": applicationCursor,
+      "applicationTotal": applicationTotal,
+      "receipt": receipt == null ? null : receipt!.toJson(),
+      "lastFailure": lastFailure == null ? null : lastFailure!.toJson(),
+      "committedAt": committedAt == null ? null : committedAt!,
+      "completedAt": completedAt == null ? null : completedAt!,
+      "updatedAt": updatedAt,
+    };
+    return json;
+  }
+}
+
+class AccountMergeCommitResponseTrue extends AccountMergeCommitResponse {
+  final String contract;
+  final bool ok;
+  final AccountMergeState state;
+  final bool replayed;
+
+  const AccountMergeCommitResponseTrue({
+    required this.contract,
+    required this.ok,
+    required this.state,
+    required this.replayed,
+  }) : super();
+
+  factory AccountMergeCommitResponseTrue.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"contract", "ok", "state", "replayed"}, "AccountMergeCommitResponseTrue");
+    return AccountMergeCommitResponseTrue(
+      contract: _expectStringConst(_requiredKey(json, "contract", "AccountMergeCommitResponseTrue"), "account-merge.commit-response@1", "AccountMergeCommitResponseTrue.contract"),
+      ok: _expectBoolConst(_requiredKey(json, "ok", "AccountMergeCommitResponseTrue"), true, "AccountMergeCommitResponseTrue.ok"),
+      state: AccountMergeState.fromJson(_asMap(_requiredKey(json, "state", "AccountMergeCommitResponseTrue"), "AccountMergeCommitResponseTrue.state")),
+      replayed: _asBool(_requiredKey(json, "replayed", "AccountMergeCommitResponseTrue"), "AccountMergeCommitResponseTrue.replayed"),
+    );
+  }
+
+  @override
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "contract": contract,
+      "ok": ok,
+      "state": state.toJson(),
+      "replayed": replayed,
+    };
+    return json;
+  }
+}
+
+enum AccountMergeCommitResponseFalseCode {
+  invalidRequest("invalid_request"),
+  planUnavailable("plan_unavailable"),
+  planExpired("plan_expired"),
+  revisionConflict("revision_conflict"),
+  blockingConflict("blocking_conflict"),
+  authorityUnavailable("authority_unavailable"),
+  idempotencyConflict("idempotency_conflict"),
+  receiptConflict("receipt_conflict"),
+  ;
+
+  const AccountMergeCommitResponseFalseCode(this.value);
+
+  final String value;
+
+  factory AccountMergeCommitResponseFalseCode.fromJson(Object? value, String path) {
+    for (final candidate in values) {
+      if (candidate.value == value) return candidate;
+    }
+    throw FormatException('$path must be a AccountMergeCommitResponseFalseCode value');
+  }
+
+  String toJson() => value;
+}
+
+class AccountMergeCommitResponseFalse extends AccountMergeCommitResponse {
+  final String contract;
+  final bool ok;
+  final AccountMergeCommitResponseFalseCode code;
+  final String correlationId;
+
+  const AccountMergeCommitResponseFalse({
+    required this.contract,
+    required this.ok,
+    required this.code,
+    required this.correlationId,
+  }) : super();
+
+  factory AccountMergeCommitResponseFalse.fromJson(Map<String, Object?> json) {
+    _rejectUnknownKeys(json, const {"contract", "ok", "code", "correlationId"}, "AccountMergeCommitResponseFalse");
+    return AccountMergeCommitResponseFalse(
+      contract: _expectStringConst(_requiredKey(json, "contract", "AccountMergeCommitResponseFalse"), "account-merge.commit-response@1", "AccountMergeCommitResponseFalse.contract"),
+      ok: _expectBoolConst(_requiredKey(json, "ok", "AccountMergeCommitResponseFalse"), false, "AccountMergeCommitResponseFalse.ok"),
+      code: AccountMergeCommitResponseFalseCode.fromJson(_requiredKey(json, "code", "AccountMergeCommitResponseFalse"), "AccountMergeCommitResponseFalse.code"),
+      correlationId: _asString(_requiredKey(json, "correlationId", "AccountMergeCommitResponseFalse"), "AccountMergeCommitResponseFalse.correlationId"),
+    );
+  }
+
+  @override
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      "contract": contract,
+      "ok": ok,
+      "code": code.toJson(),
+      "correlationId": correlationId,
+    };
+    return json;
+  }
+}
+
+sealed class AccountMergeCommitResponse {
+  const AccountMergeCommitResponse();
+
+  factory AccountMergeCommitResponse.fromJson(Map<String, Object?> json) {
+    switch (json["ok"]) {
+      case true:
+        return AccountMergeCommitResponseTrue.fromJson(json);
+      case false:
+        return AccountMergeCommitResponseFalse.fromJson(json);
+      default:
+        throw FormatException('AccountMergeCommitResponse.ok has no matching variant');
     }
   }
 

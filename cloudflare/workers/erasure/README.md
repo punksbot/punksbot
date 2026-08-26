@@ -1,9 +1,10 @@
 # Punks erasure registry
 
 Private Cloudflare Worker that records the irreversible Message-erasure
-decision described by ADR 0049. It has no public route: `workers_dev` and
-preview URLs are disabled, and `fetch()` always returns `404`. Authorized Punks
-services will call it through a service binding.
+decision described by ADR 0049 and the terminal Account Merge decision from
+ADR 0061. It has no public route: `workers_dev` and preview URLs are disabled,
+and `fetch()` always returns `404`. Authorized Punks services call it through a
+service binding.
 
 ## RPC contract
 
@@ -29,6 +30,21 @@ workspaces/{workspaceId}/conversations/{conversationId}/messages/{messageId}/era
 
 The conditional R2 write uses `etagDoesNotMatch: "*"`. There is deliberately no
 delete or overwrite RPC.
+
+`recordAccountMergeReceipt(input)` conditionally creates one private canonical
+envelope containing the minimal `account-merge.receipt@1` plus the bounded
+Plan/authority-manifest recovery descriptor that was validated immediately
+before commit. `lookupAccountMergeReceipt({absorbedPunkId})` returns only the
+minimal receipt to Punk and Session authorities;
+`lookupAccountMergeRecovery({absorbedPunkId})` returns the descriptor only to
+the exact Account Merge service capability. The object lives at
+`account-merges/v1/absorbed/{punkId}/receipt.json`, binds the Plan, commit,
+survivor and both account revisions, and exposes no delete or overwrite RPC.
+It is written before authority application, so it remains the roll-forward
+fence if any Auth or Workspace Durable Object is restored with PITR. The
+descriptor carries authority coordinates required to resume; it contains no
+Session token, proof secret or reusable credential and never enters the public
+receipt or API response.
 
 ## Local verification
 

@@ -133,10 +133,12 @@ describe("role-separated private Auth RPC entrypoints", () => {
       Object.getOwnPropertyNames(AccountMergePlanningService.prototype).sort(),
     ).toEqual(
       [
+        "commitAccountMergePlan",
         "constructor",
         "fetch",
         "prepareAccountMergePlan",
         "readAccountMergePlan",
+        "readAccountMergeState",
         "recordAccountMergeFreshProof",
         "revokeAccountMergeFreshProof",
       ].sort(),

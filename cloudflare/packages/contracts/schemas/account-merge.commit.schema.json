@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/account-merge.commit@1",
+  "title": "CommitAccountMergeCommand",
+  "$comment": "Explicit irreversible confirmation bound to one immutable Plan. Credentials, proof material, session tokens and authority inventories are forbidden.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "commandId",
+    "intentId",
+    "planId",
+    "planDigest",
+    "survivorPunkId",
+    "absorbedPunkId",
+    "accountRevisions",
+    "confirmation"
+  ],
+  "properties": {
+    "contract": { "const": "account-merge.commit@1" },
+    "commandId": { "$ref": "#/$defs/uuid" },
+    "intentId": { "$ref": "#/$defs/uuid" },
+    "planId": { "$ref": "#/$defs/uuid" },
+    "planDigest": { "$ref": "#/$defs/hexDigest" },
+    "survivorPunkId": { "$ref": "#/$defs/uuid" },
+    "absorbedPunkId": { "$ref": "#/$defs/uuid" },
+    "accountRevisions": { "$ref": "#/$defs/accountRevisions" },
+    "confirmation": { "const": "merge_accounts_irreversibly" }
+  },
+  "$defs": {
+    "uuid": { "type": "string", "format": "uuid" },
+    "revision": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "hexDigest": {
+      "type": "string",
+      "minLength": 64,
+      "maxLength": 64,
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "accountRevisions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["survivor", "absorbed"],
+      "properties": {
+        "survivor": { "$ref": "#/$defs/revision" },
+        "absorbed": { "$ref": "#/$defs/revision" }
+      }
+    }
+  }
+}

@@ -124,6 +124,31 @@ export class DesktopReauthGrantDO extends DurableObject<AuthEnv> {
     };
   }
 
+  /** Cancels this exact unconsumed authorization during merge roll-forward. */
+  async cancelForAccountMerge(input: {
+    handoffId: string;
+    punkId: string;
+    kind: "reauth-authorization";
+    state: "deliverable";
+    expiresAt: string;
+  }): Promise<boolean> {
+    const current = await this.readForAccountMerge();
+    if (current === null) return true;
+    if (
+      input.handoffId !== this.ctx.id.name ||
+      current.punkId !== input.punkId ||
+      current.kind !== input.kind ||
+      current.state !== input.state ||
+      current.expiresAt !== input.expiresAt
+    ) {
+      return false;
+    }
+    const record = await this.read();
+    if (record === null) return true;
+    await this.remove(record);
+    return (await this.readForAccountMerge()) === null;
+  }
+
   override async alarm(): Promise<void> {
     const record = await this.read();
     if (record !== null) await this.remove(record);
