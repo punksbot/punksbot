@@ -1,8 +1,10 @@
 import {
+  notifyManager,
   useInfiniteQuery,
   useMutation,
   useQuery,
   useQueryClient,
+  type QueryClient,
 } from "@tanstack/react-query";
 import { useMemo, useRef, useState } from "react";
 
@@ -34,6 +36,29 @@ type WorkspaceRole = keyof typeof roleLabels;
 
 function governanceKey(workspaceId: string, generation: number) {
   return ["punks", "workspace-governance", workspaceId, generation] as const;
+}
+
+export function purgePrivateIdentitySidecars(
+  queryClient: QueryClient,
+  workspaceId: string,
+  generation: number,
+) {
+  const searchPrefix = ["punks", "punk-search", workspaceId, generation];
+  const authorsPrefix = ["punks", "authors", workspaceId, generation];
+  void queryClient.cancelQueries({ queryKey: searchPrefix });
+  void queryClient.cancelQueries({ queryKey: authorsPrefix });
+  const searchKeys = queryClient
+    .getQueriesData({ queryKey: searchPrefix })
+    .map(([key]) => key);
+  const authorKeys = queryClient
+    .getQueriesData({ queryKey: authorsPrefix })
+    .map(([key]) => key);
+  notifyManager.batch(() => {
+    for (const key of searchKeys) {
+      queryClient.setQueryData(key, { pages: [], pageParams: [] });
+    }
+    for (const key of authorKeys) queryClient.setQueryData(key, []);
+  });
 }
 
 function chunks<T>(items: T[], size: number): T[][] {
@@ -404,6 +429,11 @@ function WorkspaceGovernanceDialog() {
       manager.run(scope, () => scope.session.removeMember(input)),
     retry: false,
     onSuccess: async () => {
+      purgePrivateIdentitySidecars(
+        queryClient,
+        scope.lease.workspaceId,
+        scope.lease.generation,
+      );
       await queryClient.invalidateQueries({ queryKey: key });
     },
   });

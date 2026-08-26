@@ -219,7 +219,6 @@ describe("BotDO perpetual command receipt archive", () => {
         `archive-crash-${suffix}`,
       );
       const bot = env.BOTS.getByName(botId);
-      expect((await execute(botId, command)).ok).toBe(true);
 
       await runInDurableObject(bot, async (instance, state) => {
         const instanceEnv = Reflect.get(instance, "env") as ApiEnv;
@@ -238,6 +237,14 @@ describe("BotDO perpetual command receipt archive", () => {
           } as unknown as R2Bucket,
         );
         try {
+          expect(
+            (
+              await instance.execute({
+                command,
+                operatorAuthorized: true,
+              })
+            ).ok,
+          ).toBe(true);
           await instance.alarm();
           expect(
             state.storage.sql

@@ -164,6 +164,83 @@ async fn workspace_profile_sidecars_and_search_keep_bounded_contracts() {
 }
 
 #[tokio::test]
+async fn summary_batch_accepts_the_survivor_of_a_requested_merge_alias() {
+    const MERGED_ALIAS_ID: &str = "77777777-7777-4777-8777-777777777777";
+    let client = client_with(move |_method, path, _body, _idempotency_key| {
+        Box::pin(async move {
+            Ok(match path.as_str() {
+                "/api/v1/desktop/compatibility" => identity_compatibility(),
+                "/api/auth/v1/session" => session(),
+                path if path.starts_with("/api/v1/workspaces?") => workspaces(),
+                path if path.ends_with("/punks/summaries") => json!({
+                    "contract": "punk.summary-batch-response@1",
+                    "workspaceId": WORKSPACE_ID,
+                    "items": [{
+                        "punkId": PUNK_ID,
+                        "displayName": "Surviving Punk",
+                        "avatarUrl": null
+                    }]
+                }),
+                _ => return Err(ClientFailure::new(FailureKind::Problem, "unexpected")),
+            })
+        })
+    });
+    prepare_account(&client).await;
+    let workspace = client.open_workspace(WORKSPACE_ID).await.unwrap();
+
+    let page = workspace
+        .get_punk_summaries(&[MERGED_ALIAS_ID.to_owned()])
+        .await
+        .unwrap();
+
+    assert_eq!(page.items.len(), 1);
+    assert_eq!(page.items[0].punk_id, PUNK_ID);
+}
+
+#[tokio::test]
+async fn search_uses_the_same_contextual_unicode_lowercase_as_workers() {
+    let observed = Arc::new(StdMutex::new(Vec::new()));
+    let captured = Arc::clone(&observed);
+    let client = client_with(move |_method, path, body, _idempotency_key| {
+        captured.lock().unwrap().push((path.clone(), body.clone()));
+        Box::pin(async move {
+            Ok(match path.as_str() {
+                "/api/v1/desktop/compatibility" => identity_compatibility(),
+                "/api/auth/v1/session" => session(),
+                path if path.starts_with("/api/v1/workspaces?") => workspaces(),
+                path if path.ends_with("/punks/search") => json!({
+                    "contract": "punk.search-response@1",
+                    "workspaceId": WORKSPACE_ID,
+                    "items": [{
+                        "punkId": PUNK_ID,
+                        "displayName": "αος",
+                        "avatarUrl": null
+                    }],
+                    "nextCursor": null
+                }),
+                _ => return Err(ClientFailure::new(FailureKind::Problem, "unexpected")),
+            })
+        })
+    });
+    prepare_account(&client).await;
+    let workspace = client.open_workspace(WORKSPACE_ID).await.unwrap();
+
+    let page = workspace
+        .search_punks(PunkSearchInput::Prefix("ΑΟΣ".to_owned()), 10, None)
+        .await
+        .unwrap();
+
+    assert_eq!(page.items[0].display_name, "αος");
+    let calls = observed.lock().unwrap();
+    let body = calls
+        .iter()
+        .find(|(path, _)| path.ends_with("/punks/search"))
+        .and_then(|(_, body)| body.as_ref())
+        .unwrap();
+    assert_eq!(body["query"], json!({ "kind": "prefix", "value": "αος" }));
+}
+
+#[tokio::test]
 async fn malformed_search_metadata_fails_before_renderer_delivery() {
     let client = client_with(move |_method, path, _body, _idempotency_key| {
         Box::pin(async move {

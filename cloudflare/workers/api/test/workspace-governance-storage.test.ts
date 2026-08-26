@@ -50,6 +50,34 @@ function punkId(index: number): string {
 }
 
 describe("normalized Workspace governance storage", () => {
+  it("authorizes one Punk without materializing the Workspace roster", async () => {
+    const workspaceId = await createWorkspace();
+    const stub = env.WORKSPACES.getByName(workspaceId);
+
+    const authorization = await runInDurableObject(stub, (instance) => {
+      const original = Reflect.get(instance, "memberRows");
+      Reflect.set(instance, "memberRows", () => {
+        throw new Error("authorize must not materialize the full roster");
+      });
+      try {
+        return instance.authorize({
+          workspaceId,
+          punkId: ownerPunkId,
+          permission: "workspace.read",
+        });
+      } finally {
+        Reflect.set(instance, "memberRows", original);
+      }
+    });
+
+    expect(authorization).toEqual({
+      ok: true,
+      workspaceCursor: 1,
+      role: "owner",
+      visibility: "private",
+    });
+  });
+
   it("migrates one legacy full roster snapshot atomically on restart", async () => {
     const workspaceId = await createWorkspace();
     const stub = env.WORKSPACES.getByName(workspaceId);

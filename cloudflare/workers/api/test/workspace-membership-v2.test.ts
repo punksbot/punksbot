@@ -237,6 +237,15 @@ describe("WorkspaceDO membership projection v2", () => {
         createWorkspaceCommand("b2500000-0000-8000-8000-000000000002"),
       ),
     ).resolves.toMatchObject({ ok: true });
+    await runInDurableObject(stub, (instance, state) => {
+      const doEnv = Reflect.get(instance, "env") as {
+        JOURNAL_HOT_EVENTS: string;
+        JOURNAL_SEGMENT_EVENTS: string;
+      };
+      doEnv.JOURNAL_HOT_EVENTS = "1000";
+      doEnv.JOURNAL_SEGMENT_EVENTS = "250";
+      return state.storage.deleteAlarm();
+    });
     await expect(
       stub.execute({
         contract: "workspace.rename@1",
@@ -249,6 +258,13 @@ describe("WorkspaceDO membership projection v2", () => {
     const pending = await runInDurableObject(stub, async (instance, state) => {
       const flush = Reflect.get(instance, "flushOutbox") as () => Promise<void>;
       await flush.call(instance);
+      await state.storage.deleteAlarm();
+      const doEnv = Reflect.get(instance, "env") as {
+        JOURNAL_HOT_EVENTS: string;
+        JOURNAL_SEGMENT_EVENTS: string;
+      };
+      doEnv.JOURNAL_HOT_EVENTS = "1";
+      doEnv.JOURNAL_SEGMENT_EVENTS = "1";
       const prepare = Reflect.get(
         instance,
         "preparePendingArchive",

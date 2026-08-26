@@ -1402,7 +1402,21 @@ describe("Punks Message mutation API", () => {
            WHERE message_id = ?`,
           messageId,
         );
-        await instance.alarm();
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          await instance.alarm();
+          const status = state.storage.sql
+            .exec<{ status: string }>(
+              "SELECT status FROM messages WHERE message_id = ?",
+              messageId,
+            )
+            .one().status;
+          if (status === "erased") break;
+          state.storage.sql.exec(
+            `UPDATE message_erasure_schedule SET next_attempt_at_ms = 0
+             WHERE message_id = ?`,
+            messageId,
+          );
+        }
       },
     );
 

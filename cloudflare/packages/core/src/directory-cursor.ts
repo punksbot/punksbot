@@ -1,3 +1,5 @@
+import { decodeSignedCursor, encodeSignedCursor } from "./signed-cursor-codec";
+
 /** Directory and identity boundary to which a continuation is cryptographically bound. */
 export interface DirectoryCursorScope {
   kind: "workspaces" | "streams";
@@ -23,8 +25,6 @@ const cursorPrefix = "pdc1";
 const invalidCursorMessage = "Invalid directory cursor";
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
-const base64Alphabet =
-  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 function validScope(scope: DirectoryCursorScope): boolean {
   return (
@@ -34,52 +34,6 @@ function validScope(scope: DirectoryCursorScope): boolean {
       ? typeof scope.workspaceId === "string" &&
         uuidPattern.test(scope.workspaceId)
       : scope.workspaceId === undefined)
-  );
-}
-
-function base64UrlEncode(bytes: Uint8Array): string {
-  let output = "";
-  for (let index = 0; index < bytes.length; index += 3) {
-    const first = bytes[index] ?? 0;
-    const second = bytes[index + 1] ?? 0;
-    const third = bytes[index + 2] ?? 0;
-    const word = (first << 16) | (second << 8) | third;
-    output += base64Alphabet[(word >> 18) & 63];
-    output += base64Alphabet[(word >> 12) & 63];
-    output += index + 1 < bytes.length ? base64Alphabet[(word >> 6) & 63] : "=";
-    output += index + 2 < bytes.length ? base64Alphabet[word & 63] : "=";
-  }
-  return output.replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/u, "");
-}
-
-function base64UrlDecode(value: string): Uint8Array {
-  if (!/^[A-Za-z0-9_-]+$/u.test(value) || value.length % 4 === 1) {
-    throw new Error(invalidCursorMessage);
-  }
-  const base64 = value.replaceAll("-", "+").replaceAll("_", "/");
-  const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, "=");
-  const decoded = Uint8Array.from(atob(padded), (character) =>
-    character.charCodeAt(0),
-  );
-  if (base64UrlEncode(decoded) !== value) {
-    throw new Error(invalidCursorMessage);
-  }
-  return decoded;
-}
-
-async function hmacKey(
-  key: Uint8Array,
-  usages: readonly ("sign" | "verify")[],
-): Promise<CryptoKey> {
-  if (key.byteLength < 32) {
-    throw new Error("Directory cursor key must contain at least 32 bytes");
-  }
-  return crypto.subtle.importKey(
-    "raw",
-    Uint8Array.from(key).buffer,
-    { hash: "SHA-256", name: "HMAC" },
-    false,
-    usages,
   );
 }
 
@@ -105,7 +59,12 @@ function cursorPayload(value: unknown): CursorPayload | null {
   ) {
     return null;
   }
-  return candidate as unknown as CursorPayload;
+  if (candidate.k === "s") {
+    const workspaceId = candidate.w;
+    if (typeof workspaceId !== "string") return null;
+    return { v: 1, k: "s", p: candidate.p, a: candidate.a, w: workspaceId };
+  }
+  return { v: 1, k: "w", p: candidate.p, a: candidate.a };
 }
 
 /** Encodes a signed URL-safe continuation without exposing its position. */
@@ -127,16 +86,12 @@ export async function encodeDirectoryCursor(
     a: cursor.punkId,
     ...(cursor.workspaceId === undefined ? {} : { w: cursor.workspaceId }),
   };
-  const encodedPayload = base64UrlEncode(
-    new TextEncoder().encode(JSON.stringify(payload)),
+  return encodeSignedCursor(
+    cursorPrefix,
+    payload,
+    key,
+    "Directory cursor key must contain at least 32 bytes",
   );
-  const signed = `${cursorPrefix}.${encodedPayload}`;
-  const signature = await crypto.subtle.sign(
-    "HMAC",
-    await hmacKey(key, ["sign"]),
-    new TextEncoder().encode(signed),
-  );
-  return `${signed}.${base64UrlEncode(new Uint8Array(signature))}`;
 }
 
 /** Authenticates and decodes a continuation only for the exact expected scope. */
@@ -145,31 +100,17 @@ export async function decodeDirectoryCursor(
   expectedScope: DirectoryCursorScope,
   key: Uint8Array,
 ): Promise<DirectoryCursor> {
-  const segments = encoded.split(".");
-  const [prefix, encodedPayload, encodedSignature] = segments;
-  if (
-    segments.length !== 3 ||
-    prefix !== cursorPrefix ||
-    encodedPayload === undefined ||
-    encodedSignature === undefined ||
-    !validScope(expectedScope)
-  ) {
+  if (!validScope(expectedScope)) {
     throw new Error(invalidCursorMessage);
   }
   try {
-    const signed = `${prefix}.${encodedPayload}`;
-    const valid = await crypto.subtle.verify(
-      "HMAC",
-      await hmacKey(key, ["verify"]),
-      Uint8Array.from(base64UrlDecode(encodedSignature)).buffer,
-      new TextEncoder().encode(signed),
-    );
-    if (!valid) throw new Error(invalidCursorMessage);
     const payload = cursorPayload(
-      JSON.parse(
-        new TextDecoder("utf-8", { fatal: true }).decode(
-          base64UrlDecode(encodedPayload),
-        ),
+      await decodeSignedCursor(
+        encoded,
+        cursorPrefix,
+        key,
+        invalidCursorMessage,
+        "Directory cursor key must contain at least 32 bytes",
       ),
     );
     if (

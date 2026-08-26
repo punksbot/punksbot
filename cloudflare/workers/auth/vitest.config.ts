@@ -64,8 +64,8 @@ export default defineConfig({
   ],
   test: {
     include: ["test/**/*.test.ts"],
-    // This pool boots Auth plus two named service fixtures. Keep the same cold
-    // workerd allowance as the serial API pool so a full gate is deterministic.
+    // This serial pool boots Auth plus two named service fixtures. Allow cold
+    // workerd startup without weakening assertions or accepting a flaky run.
     testTimeout: 15_000,
   },
 });

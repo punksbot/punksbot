@@ -994,7 +994,7 @@ export class PresenceDO extends DurableObject<ApiEnv> {
     presence: PresenceView,
     exceptToken?: string,
   ): Promise<void> {
-    const revokedPunks = new Set<string>();
+    const revokedSockets = new Map<string, WebSocket>();
     const recipients = this.ctx.getWebSockets().flatMap((socket) => {
       const attachment = socketAttachment(socket.deserializeAttachment());
       return attachment === null ||
@@ -1028,7 +1028,7 @@ export class PresenceDO extends DurableObject<ApiEnv> {
         }
         if (authorization.status === "denied") {
           socket.close(1008, "authorization revoked");
-          revokedPunks.add(attachment.punkId);
+          revokedSockets.set(attachment.connectionId, socket);
           continue;
         }
         if (
@@ -1046,8 +1046,8 @@ export class PresenceDO extends DurableObject<ApiEnv> {
         this.send(socket, { schemaVersion: 1, type: "presence", presence });
       }
     }
-    for (const punkId of revokedPunks) {
-      await this.revokePunk(punkId);
+    for (const socket of revokedSockets.values()) {
+      await this.releaseSocket(socket);
     }
   }
 

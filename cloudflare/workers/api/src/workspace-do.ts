@@ -1601,33 +1601,43 @@ export class WorkspaceDO extends DurableObject<ApiEnv> {
     ) {
       return { ok: false, code: "invalid_request" };
     }
-    const state = this.effectiveState();
-    const committed = this.state();
+    const committed = this.stateMetadata();
     if (
-      state === null ||
       committed === null ||
-      state.status !== "active" ||
-      committed.id !== state.id
+      committed.status !== "active" ||
+      committed.id !== request.workspaceId
     ) {
       return { ok: false, code: "not_found" };
     }
-    const member = state.members.find(
-      (candidate) => candidate.punkId === request.punkId,
-    );
+    const pending = this.pending();
+    let visibility = committed.visibility;
+    let role = this.memberRow(request.punkId)?.role as
+      | WorkspaceRole
+      | undefined;
+    if (pending !== undefined && Number(pending.reduction_overlay) === 1) {
+      // A pending authority reduction must take effect before attestation, but
+      // this rare fail-closed recovery path may still reconstruct the overlay.
+      // The normal authorization path above remains O(1) in roster size.
+      const effective = this.effectiveState();
+      if (effective === null || effective.id !== committed.id) {
+        return { ok: false, code: "not_found" };
+      }
+      visibility = effective.visibility;
+      role = effective.members.find(
+        (candidate) => candidate.punkId === request.punkId,
+      )?.role as WorkspaceRole | undefined;
+    }
     if (
-      member === undefined ||
-      !roleHasPermission(
-        member.role as WorkspaceRole,
-        request.permission as WorkspacePermission,
-      )
+      role === undefined ||
+      !roleHasPermission(role, request.permission as WorkspacePermission)
     ) {
       return { ok: false, code: "forbidden" };
     }
     return {
       ok: true,
       workspaceCursor: committed.cursor,
-      role: member.role as WorkspaceRole,
-      visibility: state.visibility,
+      role,
+      visibility,
     };
   }
 

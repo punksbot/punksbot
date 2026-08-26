@@ -8,7 +8,7 @@
     "check:types": "wrangler types worker-bindings.d.ts --env-interface CloudflareBindings --include-runtime false --check",
     "lint": "biome check src test vitest.config.ts",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "vitest run --max-workers=1",
     "check": "pnpm check:types && pnpm lint && pnpm typecheck && pnpm test",
     "dev": "wrangler dev",
     "deploy:staging": "wrangler deploy --env staging"

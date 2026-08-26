@@ -204,13 +204,19 @@ test("documents that a flaky run cannot satisfy a tranche proof", async () => {
   }
 });
 
-test("isolates API workerd files while keeping their execution serial", async () => {
-  const apiPackage = JSON.parse(
-    await readFile(
-      join(repositoryRoot, "cloudflare/workers/api/package.json"),
-      "utf8",
-    ),
-  );
-
-  assert.equal(apiPackage.scripts.test, "vitest run --max-workers=1");
+test("isolates stateful workerd files while keeping their execution serial", async () => {
+  const packagePaths = [
+    "cloudflare/workers/api/package.json",
+    "cloudflare/workers/auth/package.json",
+  ];
+  for (const packagePath of packagePaths) {
+    const packageManifest = JSON.parse(
+      await readFile(join(repositoryRoot, packagePath), "utf8"),
+    );
+    assert.equal(
+      packageManifest.scripts.test,
+      "vitest run --max-workers=1",
+      packagePath,
+    );
+  }
 });

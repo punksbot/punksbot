@@ -151,11 +151,7 @@ fn validate_summary(
 }
 
 fn canonical_prefix(value: &str) -> Result<String, ClientFailure> {
-    let canonical = value
-        .trim()
-        .nfkc()
-        .flat_map(char::to_lowercase)
-        .collect::<String>();
+    let canonical = value.trim().nfkc().collect::<String>().to_lowercase();
     let significant = canonical
         .chars()
         .filter(|character| character.is_alphanumeric())
@@ -175,8 +171,8 @@ fn canonical_prefix(value: &str) -> Result<String, ClientFailure> {
 fn canonical_search_key(value: &str) -> Result<String, ClientFailure> {
     Ok(canonical_display_name(value)?
         .nfkc()
-        .flat_map(char::to_lowercase)
-        .collect())
+        .collect::<String>()
+        .to_lowercase())
 }
 
 fn validate_search_cursor(value: &str) -> Result<(), ClientFailure> {
@@ -308,7 +304,7 @@ impl WorkspaceSession {
             .await?;
         self.assert_current().await?;
         let page: PunkSummaryPage = decode("punk.summary-batch-response@1", response)?;
-        if page.workspace_id != self.lease.workspace_id || page.items.len() > 100 {
+        if page.workspace_id != self.lease.workspace_id || page.items.len() > punk_ids.len() {
             return Err(ClientFailure::contract("punk.summary-batch-response@1"));
         }
         let mut returned = HashSet::with_capacity(page.items.len());
@@ -318,9 +314,11 @@ impl WorkspaceSession {
                 &summary.display_name,
                 summary.avatar_url.as_deref(),
             )?;
-            if !requested.contains(summary.punk_id.as_str())
-                || !returned.insert(summary.punk_id.clone())
-            {
+            // A requested historical alias intentionally resolves to its
+            // surviving Punk. The public response does not expose the alias
+            // mapping, so cardinality and uniqueness are the enforceable
+            // bounds rather than literal equality with the request IDs.
+            if !returned.insert(summary.punk_id.clone()) {
                 return Err(ClientFailure::contract("punk.summary-batch-response@1"));
             }
         }

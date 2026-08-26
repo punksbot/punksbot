@@ -464,6 +464,98 @@ describe("ephemeral Presence", () => {
     }
   });
 
+  it("fences an old socket signal after a duplicated hold rebinds the connection", async () => {
+    const workspaceId = await createWorkspace();
+    const coordinates = {
+      deviceId: crypto.randomUUID(),
+      clientGeneration: 7,
+      holdId: crypto.randomUUID(),
+    };
+    const firstResponse = await holdPresence(
+      workspaceId,
+      "session-owner",
+      coordinates,
+    );
+    const firstSocket = firstResponse.webSocket;
+    expect(firstSocket).not.toBeNull();
+    if (firstSocket === null) return;
+    const firstFrames = frameQueue(firstSocket);
+    firstSocket.accept();
+    const first = await firstFrames.next();
+    if (first.type !== "accepted") return;
+
+    const ownerSessionId = "11111111-1111-8111-8111-111111111111";
+    const auth = env.AUTH_SERVICE as typeof env.AUTH_SERVICE & {
+      holdSessionResolution(
+        sessionId: string,
+        callNumber: number,
+      ): Promise<void>;
+      sessionResolutionHoldReached(sessionId: string): Promise<boolean>;
+      releaseSessionResolution(sessionId: string): Promise<void>;
+    };
+    await auth.holdSessionResolution(ownerSessionId, 1);
+    try {
+      firstSocket.send(
+        JSON.stringify({
+          contract: "presence.status.set@1",
+          leaseToken: first.leaseToken,
+          sequence: 9,
+          status: "stale socket",
+        }),
+      );
+      await expect
+        .poll(() => auth.sessionResolutionHoldReached(ownerSessionId))
+        .toBe(true);
+      await expect(
+        runInDurableObject(
+          env.PRESENCE.getByName(workspaceId),
+          (_instance, state) =>
+            state.storage.sql
+              .exec<{ status: string | null }>(
+                "SELECT status FROM presence_lease WHERE punk_id = ?",
+                ownerPunkId,
+              )
+              .one().status,
+        ),
+      ).resolves.toBeNull();
+
+      const replayResponse = await holdPresence(
+        workspaceId,
+        "session-owner",
+        coordinates,
+      );
+      const replaySocket = replayResponse.webSocket;
+      expect(replaySocket).not.toBeNull();
+      if (replaySocket === null) return;
+      const replayFrames = frameQueue(replaySocket);
+      replaySocket.accept();
+      await expect(replayFrames.next()).resolves.toMatchObject({
+        type: "accepted",
+        leaseToken: first.leaseToken,
+        leaseGeneration: first.leaseGeneration,
+      });
+
+      await auth.releaseSessionResolution(ownerSessionId);
+      await scheduler.wait(50);
+      await expect(
+        runInDurableObject(
+          env.PRESENCE.getByName(workspaceId),
+          (_instance, state) =>
+            state.storage.sql
+              .exec<{ last_client_sequence: number; status: string | null }>(
+                `SELECT last_client_sequence, status FROM presence_lease
+                 WHERE punk_id = ?`,
+                ownerPunkId,
+              )
+              .one(),
+        ),
+      ).resolves.toEqual({ last_client_sequence: 0, status: null });
+      replaySocket.close(1000, "test complete");
+    } finally {
+      await auth.releaseSessionResolution(ownerSessionId);
+    }
+  });
+
   it("accepts a Presence hold after upgrading the pre-connection-fence schema", async () => {
     const workspaceId = await createWorkspace();
     const presence = env.PRESENCE.getByName(workspaceId);
@@ -1344,6 +1436,83 @@ describe("ephemeral Presence", () => {
       await auth.releaseSessionResolution(revocableSessionId);
       await auth.setSessionRevoked(revocableSessionId, false);
       presenceSocket.close(1000, "test complete");
+    }
+  });
+
+  it("does not let a revoked stale audience socket purge its valid replacement", async () => {
+    const workspaceId = await createWorkspace();
+    await addOtherMember(workspaceId);
+
+    const ownerResponse = await holdPresence(workspaceId);
+    const ownerSocket = ownerResponse.webSocket;
+    expect(ownerSocket).not.toBeNull();
+    if (ownerSocket === null) return;
+    const ownerFrames = frameQueue(ownerSocket);
+    ownerSocket.accept();
+    const ownerAccepted = await ownerFrames.next();
+    if (ownerAccepted.type !== "accepted") return;
+
+    const staleResponse = await holdPresence(workspaceId, "session-revocable");
+    const staleSocket = staleResponse.webSocket;
+    expect(staleSocket).not.toBeNull();
+    if (staleSocket === null) return;
+    staleSocket.accept();
+    await ownerFrames.next();
+
+    const revocableSessionId = "33333333-3333-8333-8333-333333333333";
+    const auth = env.AUTH_SERVICE as typeof env.AUTH_SERVICE & {
+      holdSessionResolution(
+        sessionId: string,
+        callNumber: number,
+      ): Promise<void>;
+      sessionResolutionHoldReached(sessionId: string): Promise<boolean>;
+      releaseSessionResolution(sessionId: string): Promise<void>;
+      setSessionRevoked(sessionId: string, revoked: boolean): Promise<void>;
+    };
+    await auth.holdSessionResolution(revocableSessionId, 1);
+    await auth.setSessionRevoked(revocableSessionId, true);
+    try {
+      ownerSocket.send(
+        JSON.stringify({
+          contract: "presence.status.set@1",
+          leaseToken: ownerAccepted.leaseToken,
+          sequence: 1,
+          status: "Revalidate stale audience",
+        }),
+      );
+      await expect
+        .poll(() => auth.sessionResolutionHoldReached(revocableSessionId))
+        .toBe(true);
+
+      const replacementResponse = await holdPresence(
+        workspaceId,
+        "session-other",
+      );
+      const replacementSocket = replacementResponse.webSocket;
+      expect(replacementSocket).not.toBeNull();
+      if (replacementSocket === null) return;
+      replacementSocket.accept();
+
+      await auth.releaseSessionResolution(revocableSessionId);
+      await scheduler.wait(50);
+      await expect(
+        runInDurableObject(
+          env.PRESENCE.getByName(workspaceId),
+          (_instance, state) =>
+            state.storage.sql
+              .exec<{ session_id: string }>(
+                "SELECT session_id FROM presence_lease WHERE punk_id = ?",
+                otherPunkId,
+              )
+              .one().session_id,
+        ),
+      ).resolves.toBe("22222222-2222-8222-8222-222222222222");
+      replacementSocket.close(1000, "test complete");
+    } finally {
+      await auth.releaseSessionResolution(revocableSessionId);
+      await auth.setSessionRevoked(revocableSessionId, false);
+      ownerSocket.close(1000, "test complete");
+      staleSocket.close(1000, "test complete");
     }
   });
 
