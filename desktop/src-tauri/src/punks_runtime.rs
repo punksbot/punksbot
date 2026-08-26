@@ -126,8 +126,6 @@ pub fn run() -> Result<(), String> {
             punks_client::punks_check_compatibility,
             punks_client::punks_validate_navigation,
             punks_client::punks_list_workspaces,
-            punks_client::punks_get_punk_profile,
-            punks_client::punks_update_punk_profile,
             punks_client::punks_resolve_workspace,
             punks_client::punks_open_workspace,
             punks_client::punks_close_workspace,
@@ -136,38 +134,35 @@ pub fn run() -> Result<(), String> {
             punks_client::punks_get_timeline,
             punks_client::punks_get_thread,
             punks_client::punks_resolve_authors,
-            punks_client::punks_get_punk_summaries,
-            punks_client::punks_search_punks,
-            punks_client::punks_conversation_search::punks_search_messages,
             punks_client::punks_follow_conversation,
             punks_client::punks_follow_next,
             punks_client::punks_confirm_follow_batch,
             punks_client::punks_close_follow,
-            punks_client::punks_hold_presence,
-            punks_client::punks_presence_next,
-            punks_client::punks_set_presence_status,
-            punks_client::punks_signal_presence_typing,
-            punks_client::punks_close_presence,
             punks_client::punks_post_message,
-            punks_client::punks_message_lifecycle::punks_edit_message,
-            punks_client::punks_message_lifecycle::punks_retract_message,
-            punks_client::punks_message_lifecycle::punks_restore_message,
-            punks_client::punks_identity_governance::punks_create_workspace_invitation,
-            punks_client::punks_identity_governance::punks_get_workspace_invitation,
-            punks_client::punks_identity_governance::punks_claim_workspace_invitation,
-            punks_client::punks_identity_governance::punks_revoke_workspace_invitation,
-            punks_client::punks_identity_governance::punks_get_workspace_governance,
-            punks_client::punks_identity_governance::punks_set_workspace_member_role,
-            punks_client::punks_identity_governance::punks_remove_workspace_member,
-            punks_client::punks_identity_governance::punks_leave_workspace,
-            punks_client::punks_identity_governance::punks_transfer_workspace_ownership,
             punks_client::punks_add_reaction,
             punks_client::punks_remove_reaction,
         ])
         .build(tauri::generate_context!())
         .map_err(|error| format!("error while building Punks desktop: {error}"))?;
 
-    app.run(|_, _| {});
+    app.run(|app_handle, event| {
+        let should_resume_presence = matches!(
+            event,
+            tauri::RunEvent::Resumed
+                | tauri::RunEvent::WindowEvent {
+                    event: tauri::WindowEvent::Focused(true),
+                    ..
+                }
+        );
+        if should_resume_presence {
+            let handle = app_handle.clone();
+            tauri::async_runtime::spawn(async move {
+                if let Some(client) = handle.try_state::<punks_client::PunksDesktopClient>() {
+                    client.resume_presences().await;
+                }
+            });
+        }
+    });
     Ok(())
 }
 

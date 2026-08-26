@@ -27,6 +27,7 @@ export function checkPunksCapabilities() {
     "--experimental-strip-types",
     "--test",
     "src/shared/capabilities/availability.test.mjs",
+    "src/shared/capabilities/punksNativeCommandBoundary.test.mjs",
   ]);
   runPnpm(["exec", "tsc", "--project", "tsconfig.punks.json"]);
   runPnpm(["exec", "vite", "build"]);

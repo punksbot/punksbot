@@ -332,9 +332,13 @@ describe("WorkspaceDO sealed journal recovery", () => {
           )
           .one();
         const workspace = JSON.parse(row.state_json) as {
-          members: Array<{ punkId: string; role: string }>;
+          memberCount: number;
         };
-        workspace.members.push({ punkId: otherPunkId, role: "moderator" });
+        workspace.memberCount += 1;
+        state.storage.sql.exec(
+          "INSERT INTO workspace_members (punk_id, role) VALUES (?, 'moderator')",
+          otherPunkId,
+        );
         state.storage.sql.exec(
           "UPDATE workspace_state SET state_json = ? WHERE singleton = 1",
           JSON.stringify(workspace),
@@ -441,15 +445,9 @@ describe("WorkspaceDO sealed journal recovery", () => {
       env.WORKSPACES.getByName(reductionWorkspaceId),
       (_instance, state) => {
         const forged = JSON.parse(validPending.nextStateJson) as {
-          members: Array<{ punkId: string; role: string }>;
+          ownerPunkId: string;
         };
-        const target = forged.members.find(
-          (member) => member.punkId === otherPunkId,
-        );
-        if (target === undefined) {
-          throw new Error("Expected reduction target in overlay");
-        }
-        target.role = "owner";
+        forged.ownerPunkId = otherPunkId;
         state.storage.sql.exec(
           "UPDATE pending_command SET next_state_json = ? WHERE singleton = 1",
           JSON.stringify(forged),

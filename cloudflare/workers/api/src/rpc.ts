@@ -32,6 +32,7 @@ import type {
   UpdateConversationCommand,
   UpdateBotCommand,
   Workspace,
+  WorkspaceMetadataV2,
   ExecuteBotActionCommand,
   DeliverBotActionCommand,
   DeliverBotActionResult,
@@ -45,6 +46,7 @@ import type {
   RevokeWorkspaceInvitationResponse,
   WorkspaceInvitationView,
   WorkspaceGovernanceView,
+  WorkspaceMemberDeltaV2,
   TransferWorkspaceOwnershipCommand,
 } from "@punks/contracts";
 import type { WorkspacePermission, WorkspaceRole } from "@punks/core";
@@ -389,12 +391,24 @@ export type BotSlugResolution =
   | { status: "redirect"; botId: string; slug: string };
 
 export interface CommittedWorkspaceCommand {
-  state: Workspace;
+  schemaVersion?: 2;
+  state: Workspace | WorkspaceMetadataV2;
+  memberDeltas?: WorkspaceMemberDeltaV2[];
   event: SignedNostrEvent;
 }
 
+export type CommittedWorkspaceCommandV2 = CommittedWorkspaceCommand & {
+  schemaVersion: 2;
+  state: WorkspaceMetadataV2;
+  memberDeltas: WorkspaceMemberDeltaV2[];
+};
+
 export type WorkspaceExecuteResult =
-  | { ok: true; value: CommittedWorkspaceCommand; replayed: boolean }
+  | {
+      ok: true;
+      value: CommittedWorkspaceCommand;
+      replayed: boolean;
+    }
   | {
       ok: false;
       code:

@@ -119,7 +119,6 @@ async function search(input: unknown): Promise<SearchSuccess> {
   const record = input as Record<string, unknown>;
   const result = await exports.default.searchMessages({
     threadRootMessageId: null,
-    expectedCursor: 0,
     ...record,
   });
   expect(result.ok).toBe(true);
@@ -236,6 +235,31 @@ describe("private Message candidate search RPC", () => {
     expect(lagging).toMatchObject({ ok: true, indexState: "lagging" });
   });
 
+  it("fails closed when the scoped checkpoint is ahead of the authoritative cursor", async () => {
+    const workspaceId = workspaceByShard[2];
+    const aheadConversationId = "00000000-0000-8000-8000-000000000303";
+    await seedMessage(databases[2], {
+      workspaceId,
+      conversationId: aheadConversationId,
+      messageId: messageId(2, 5_100),
+      tokens: [tokenD],
+      createdCursor: 8,
+      lastCursor: 9,
+    });
+
+    await expect(
+      exports.default.searchMessages({
+        workspaceId,
+        conversationId: aheadConversationId,
+        threadRootMessageId: null,
+        expectedCursor: 8,
+        algorithm: "hmac-sha256-conversation-v2",
+        tokens: [tokenD],
+        limit: 10,
+      }),
+    ).resolves.toEqual({ ok: false, code: "storage_unavailable" });
+  });
+
   it("requires an explicit Conversation scope", async () => {
     await expect(
       exports.default.searchMessages({
@@ -262,6 +286,7 @@ describe("private Message candidate search RPC", () => {
     const result = await search({
       workspaceId: workspaceByShard[0],
       conversationId,
+      expectedCursor: 50,
       algorithm: "hmac-sha256-conversation-v2",
       tokens: [base64UrlToken, tokenA],
       limit: 10,
@@ -276,6 +301,7 @@ describe("private Message candidate search RPC", () => {
       const result = await search({
         workspaceId,
         conversationId,
+        expectedCursor: [50, 2, 211, 34][shard],
         algorithm: "hmac-sha256-conversation-v2",
         tokens: [tokenA, tokenB],
         limit: 100,
@@ -293,6 +319,7 @@ describe("private Message candidate search RPC", () => {
     const result = await search({
       workspaceId: workspaceByShard[2],
       conversationId,
+      expectedCursor: 211,
       algorithm: "hmac-sha256-conversation-v2",
       tokens: [tokenA, tokenB],
       limit: 100,
@@ -321,6 +348,7 @@ describe("private Message candidate search RPC", () => {
       const result = await search({
         workspaceId,
         conversationId,
+        expectedCursor: 34,
         algorithm: "hmac-sha256-conversation-v2",
         tokens: [tokenC],
         limit: 2,
@@ -343,6 +371,7 @@ describe("private Message candidate search RPC", () => {
     const first = await search({
       workspaceId,
       conversationId,
+      expectedCursor: 34,
       algorithm: "hmac-sha256-conversation-v2",
       tokens: [tokenC],
       limit: 2,
@@ -363,6 +392,7 @@ describe("private Message candidate search RPC", () => {
     const interfering = await search({
       workspaceId: interferingWorkspaceId,
       conversationId,
+      expectedCursor: 1_063,
       algorithm: "hmac-sha256-conversation-v2",
       tokens: [tokenC],
       limit: 1,
@@ -372,6 +402,7 @@ describe("private Message candidate search RPC", () => {
     const second = await search({
       workspaceId,
       conversationId,
+      expectedCursor: 34,
       algorithm: "hmac-sha256-conversation-v2",
       tokens: [tokenC],
       limit: 2,
@@ -401,6 +432,7 @@ describe("private Message candidate search RPC", () => {
     const input = {
       workspaceId,
       conversationId,
+      expectedCursor: 34,
       algorithm: "hmac-sha256-conversation-v2" as const,
       tokens: [tokenD],
       limit: 2,

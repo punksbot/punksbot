@@ -243,8 +243,14 @@ the private Search Worker only after current authorization and sends it opaque
 tokens rather than the Punk, query, cookie or public cursor. D1 FTS5 never
 stores plaintext or precomputed snippets and remains only a candidate source.
 The Search Worker compares the scope's projected `last_cursor` with the
-authoritative Message cursor supplied by `ConversationDO`; lag and D1
+authoritative Message cursor supplied by `ConversationDO`; only exact equality
+is current. A lower checkpoint is lagging, while a checkpoint ahead of the
+authority is treated as unavailable storage and fails closed. Lag and D1
 unavailability return a closed partial state and never select another source.
+Every partial response preserves the caller's exact public cursor (including
+`null`) instead of re-encoding, advancing or dropping it. Exhausting the
+bounded stale-candidate scan on a current index remains a complete page with a
+safe continuation; it is not reported as index lag.
 `ConversationDO`
 decrypts each current version through `MessageContentDO`, rechecks lexical
 matching and authorization, and synchronously stabilizes active `MessageView`

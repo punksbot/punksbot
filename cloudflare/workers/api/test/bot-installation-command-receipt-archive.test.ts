@@ -26,6 +26,7 @@ import type { BotInstallationExecuteResult } from "../src/rpc";
 
 const operatorPunkId = "00000000-0000-8000-8000-000000000001";
 const runtimeRelease = await botRuntimeReleaseReference();
+const testRunNonce = crypto.randomUUID().slice(0, 8);
 
 function replaceBinding(
   target: object,
@@ -51,7 +52,8 @@ async function setupInstallation(seed: string): Promise<{
   installationId: string;
   command: InstallBotCommand;
 }> {
-  const botCommandId = await deriveOpaqueUuid("test.receipt.bot", seed);
+  const isolatedSeed = `${seed}:${testRunNonce}`;
+  const botCommandId = await deriveOpaqueUuid("test.receipt.bot", isolatedSeed);
   const botId = await deriveOpaqueUuid("punks.bot.v1", botCommandId);
   const publish: PublishBotCommand = {
     contract: "bot.publish@1",
@@ -75,7 +77,7 @@ async function setupInstallation(seed: string): Promise<{
 
   const workspaceCommandId = await deriveOpaqueUuid(
     "test.receipt.workspace",
-    seed,
+    isolatedSeed,
   );
   const workspaceId = await deriveOpaqueUuid(
     "punks.workspace.v1",
@@ -100,7 +102,7 @@ async function setupInstallation(seed: string): Promise<{
     installationId,
     command: {
       contract: "bot-installation.install@1",
-      commandId: await deriveOpaqueUuid("test.receipt.install", seed),
+      commandId: await deriveOpaqueUuid("test.receipt.install", isolatedSeed),
       workspaceId,
       botId,
       actor: { kind: "punk", punkId: operatorPunkId },
@@ -305,56 +307,35 @@ describe("BotInstallationDO perpetual management command receipts", () => {
     });
   });
 
-  it("retains hot authority across pre/post-put crashes until exact recovery", async () => {
-    for (const crashAfterPut of [false, true]) {
-      const seed = crashAfterPut ? "crash-post" : "crash-pre";
-      const { installationId, command } = await setupInstallation(seed);
-      const installation = env.BOT_INSTALLATIONS.getByName(installationId);
-      expect((await execute(installationId, command)).ok).toBe(true);
+  it.each([
+    { crashAfterPut: false, seed: "crash-pre" },
+    { crashAfterPut: true, seed: "crash-post" },
+  ])("retains hot authority across a $seed crash until exact recovery", async ({
+    crashAfterPut,
+    seed,
+  }) => {
+    const { installationId, command } = await setupInstallation(seed);
+    const installation = env.BOT_INSTALLATIONS.getByName(installationId);
 
-      await runInDurableObject(installation, async (instance, state) => {
-        const instanceEnv = Reflect.get(instance, "env") as ApiEnv;
-        const realBucket = instanceEnv.JOURNAL_ARCHIVE_BUCKET;
-        const restoreBucket = replaceBinding(
-          instanceEnv,
-          "JOURNAL_ARCHIVE_BUCKET",
-          {
-            get: realBucket.get.bind(realBucket),
-            put: async (...args: Parameters<R2Bucket["put"]>) => {
-              if (crashAfterPut) {
-                await realBucket.put(...args);
-              }
-              throw new Error("simulated archive crash");
-            },
-          } as unknown as R2Bucket,
-        );
-        try {
-          await instance.alarm();
-          expect(
-            state.storage.sql
-              .exec<{ count: number }>(
-                "SELECT COUNT(*) AS count FROM command_results WHERE command_id = ?",
-                command.commandId,
-              )
-              .one().count,
-          ).toBe(1);
-          expect(
-            state.storage.sql
-              .exec<{ attempts: number }>(
-                "SELECT attempts FROM command_receipt_archive_outbox WHERE command_id = ?",
-                command.commandId,
-              )
-              .one().attempts,
-          ).toBe(1);
-        } finally {
-          restoreBucket();
-        }
-        state.storage.sql.exec(
-          "UPDATE command_receipt_archive_outbox SET next_attempt_at = 0",
-        );
-      });
-      await runInDurableObject(installation, (instance) => instance.alarm());
-      await runInDurableObject(installation, (_instance, state) => {
+    await runInDurableObject(installation, async (instance, state) => {
+      const instanceEnv = Reflect.get(instance, "env") as ApiEnv;
+      const realBucket = instanceEnv.JOURNAL_ARCHIVE_BUCKET;
+      const restoreBucket = replaceBinding(
+        instanceEnv,
+        "JOURNAL_ARCHIVE_BUCKET",
+        {
+          get: realBucket.get.bind(realBucket),
+          put: async (...args: Parameters<R2Bucket["put"]>) => {
+            if (crashAfterPut) {
+              await realBucket.put(...args);
+            }
+            throw new Error("simulated archive crash");
+          },
+        } as unknown as R2Bucket,
+      );
+      try {
+        expect((await instance.execute(command)).ok).toBe(true);
+        await instance.alarm();
         expect(
           state.storage.sql
             .exec<{ count: number }>(
@@ -362,9 +343,33 @@ describe("BotInstallationDO perpetual management command receipts", () => {
               command.commandId,
             )
             .one().count,
-        ).toBe(0);
-      });
-    }
+        ).toBe(1);
+        expect(
+          state.storage.sql
+            .exec<{ attempts: number }>(
+              "SELECT attempts FROM command_receipt_archive_outbox WHERE command_id = ?",
+              command.commandId,
+            )
+            .one().attempts,
+        ).toBe(1);
+      } finally {
+        restoreBucket();
+      }
+      state.storage.sql.exec(
+        "UPDATE command_receipt_archive_outbox SET next_attempt_at = 0",
+      );
+    });
+    await runInDurableObject(installation, (instance) => instance.alarm());
+    await runInDurableObject(installation, (_instance, state) => {
+      expect(
+        state.storage.sql
+          .exec<{ count: number }>(
+            "SELECT COUNT(*) AS count FROM command_results WHERE command_id = ?",
+            command.commandId,
+          )
+          .one().count,
+      ).toBe(0);
+    });
   });
 
   it("lets the verified cold commit dominate a PITR-restored pending decision", async () => {

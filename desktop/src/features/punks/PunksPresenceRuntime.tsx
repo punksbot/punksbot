@@ -22,10 +22,6 @@ import {
 } from "./punksPresenceState";
 import { usePunksWorkspace } from "./PunksRuntime";
 
-function waitForReconnect(delayMs: number): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, delayMs));
-}
-
 /** Owns one native Presence resource for the mounted Workspace generation. */
 export default function PunksPresenceRuntime({
   children,
@@ -43,29 +39,10 @@ export default function PunksPresenceRuntime({
   >(() => new Map());
   const presenceRef = useRef<PunksPresence | null>(null);
   const presencesRef = useRef(presences);
-  const [foregroundGeneration, setForegroundGeneration] = useState(0);
 
   useEffect(() => {
-    const reconnectOnForeground = () => {
-      if (document.visibilityState === "visible" && status === "degraded") {
-        setForegroundGeneration((generation) => generation + 1);
-      }
-    };
-    window.addEventListener("focus", reconnectOnForeground);
-    document.addEventListener("visibilitychange", reconnectOnForeground);
-    return () => {
-      window.removeEventListener("focus", reconnectOnForeground);
-      document.removeEventListener("visibilitychange", reconnectOnForeground);
-    };
-  }, [status]);
-
-  useEffect(() => {
-    // A foreground event intentionally restarts this generation-bound effect
-    // so a degraded physical connection retries immediately.
-    void foregroundGeneration;
     let active = true;
     let opened: PunksPresence | null = null;
-    let reconnectDelay = 500;
 
     const clearSignals = () => {
       const emptyPresences = new Map<string, PresenceView>();
@@ -75,52 +52,46 @@ export default function PunksPresenceRuntime({
     };
 
     const run = async () => {
-      while (active && manager.isCurrent(scope)) {
-        setRealtimeStatus("connecting");
-        try {
-          opened = await manager.runResource(
-            scope,
-            () => scope.session.holdPresence(),
-            (presence) => presence.close(),
-          );
-          presenceRef.current = opened;
-          reconnectDelay = 500;
-          while (active && manager.isCurrent(scope)) {
-            const delivery = await opened.nextDelivery();
-            if (!active || !manager.isCurrent(scope)) break;
-            if (delivery.kind === "realtime_degraded") {
-              clearSignals();
-              setRealtimeStatus("degraded");
-              continue;
-            }
-            const reduction = applyPresenceDelivery(
-              presencesRef.current,
-              delivery,
-              scope.lease.generation,
-            );
-            if (reduction.kind === "violation") {
-              clearSignals();
-              setRealtimeStatus("degraded");
-              break;
-            }
-            if (reduction.kind === "applied") {
-              presencesRef.current = reduction.state;
-              setPresences(reduction.state);
-            }
-            if (delivery.kind === "accepted") setRealtimeStatus("live");
-          }
-        } catch {
+      setRealtimeStatus("connecting");
+      try {
+        opened = await manager.runResource(
+          scope,
+          () => scope.session.holdPresence(),
+          (presence) => presence.close(),
+        );
+        presenceRef.current = opened;
+        while (active && manager.isCurrent(scope)) {
+          const delivery = await opened.nextDelivery();
           if (!active || !manager.isCurrent(scope)) break;
+          if (delivery.kind === "realtime_degraded") {
+            clearSignals();
+            setRealtimeStatus("degraded");
+            continue;
+          }
+          const reduction = applyPresenceDelivery(
+            presencesRef.current,
+            delivery,
+            scope.lease.generation,
+          );
+          if (reduction.kind === "violation") {
+            clearSignals();
+            setRealtimeStatus("degraded");
+            break;
+          }
+          if (reduction.kind === "applied") {
+            presencesRef.current = reduction.state;
+            setPresences(reduction.state);
+          }
+          if (delivery.kind === "accepted") setRealtimeStatus("live");
+        }
+      } catch {
+        if (active && manager.isCurrent(scope)) {
           clearSignals();
           setRealtimeStatus("degraded");
-        } finally {
-          presenceRef.current = null;
-          if (opened !== null) await opened.close().catch(() => undefined);
-          opened = null;
         }
-        if (!active || !manager.isCurrent(scope)) break;
-        await waitForReconnect(reconnectDelay);
-        reconnectDelay = Math.min(reconnectDelay * 2, 10_000);
+      } finally {
+        presenceRef.current = null;
+        if (opened !== null) await opened.close().catch(() => undefined);
       }
     };
 
@@ -130,7 +101,7 @@ export default function PunksPresenceRuntime({
       presenceRef.current = null;
       if (opened !== null) void opened.close().catch(() => undefined);
     };
-  }, [foregroundGeneration, manager, scope]);
+  }, [manager, scope]);
 
   useEffect(() => {
     presencesRef.current = presences;

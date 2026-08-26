@@ -8,6 +8,7 @@ import type {
 } from "@punks/contracts";
 import { validateContract } from "@punks/contracts";
 import {
+  evictDurableObject,
   env,
   runDurableObjectAlarm,
   runInDurableObject,
@@ -216,14 +217,25 @@ function followFrameQueue(socket: WebSocket) {
   };
 }
 
+function nextClose(socket: WebSocket): Promise<CloseEvent> {
+  return new Promise((resolve) =>
+    socket.addEventListener("close", resolve, { once: true }),
+  );
+}
+
 async function holdPresence(
   workspaceId: string,
   session = "session-owner",
+  coordinates: {
+    deviceId?: string;
+    clientGeneration?: number;
+    holdId?: string;
+  } = {},
 ): Promise<Response> {
   const query = new URLSearchParams({
-    deviceId: crypto.randomUUID(),
-    clientGeneration: "1",
-    holdId: crypto.randomUUID(),
+    deviceId: coordinates.deviceId ?? crypto.randomUUID(),
+    clientGeneration: String(coordinates.clientGeneration ?? 1),
+    holdId: coordinates.holdId ?? crypto.randomUUID(),
   });
   return SELF.fetch(
     `https://punks.bot/api/v1/workspaces/${workspaceId}/presence/hold?${query}`,
@@ -382,6 +394,217 @@ describe("ephemeral Presence", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("reuses one lease generation for a duplicated hold intention", async () => {
+    const workspaceId = await createWorkspace();
+    const coordinates = {
+      deviceId: crypto.randomUUID(),
+      clientGeneration: 7,
+      holdId: crypto.randomUUID(),
+    };
+    const firstResponse = await holdPresence(
+      workspaceId,
+      "session-owner",
+      coordinates,
+    );
+    const firstSocket = firstResponse.webSocket;
+    expect(firstSocket).not.toBeNull();
+    if (firstSocket === null) return;
+    const firstFrames = frameQueue(firstSocket);
+    firstSocket.accept();
+    const first = await firstFrames.next();
+    expect(first.type).toBe("accepted");
+    if (first.type !== "accepted") return;
+    firstSocket.send(
+      JSON.stringify({
+        contract: "presence.hold@1",
+        type: "heartbeat",
+        leaseToken: first.leaseToken,
+        sequence: 4,
+      }),
+    );
+    await expect(firstFrames.next()).resolves.toMatchObject({
+      type: "presence",
+      presence: { sequence: 2 },
+    });
+
+    const replayResponse = await holdPresence(
+      workspaceId,
+      "session-owner",
+      coordinates,
+    );
+    const replaySocket = replayResponse.webSocket;
+    expect(replaySocket).not.toBeNull();
+    if (replaySocket === null) return;
+    const replayFrames = frameQueue(replaySocket);
+    replaySocket.accept();
+    const replay = await replayFrames.next();
+    expect(replay).toMatchObject({
+      type: "accepted",
+      clientGeneration: 7,
+    });
+    if (first.type === "accepted" && replay.type === "accepted") {
+      expect(replay.leaseToken).toBe(first.leaseToken);
+      expect(replay.leaseGeneration).toBe(first.leaseGeneration);
+      replaySocket.send(
+        JSON.stringify({
+          contract: "presence.hold@1",
+          type: "heartbeat",
+          leaseToken: replay.leaseToken,
+          sequence: 1,
+        }),
+      );
+      await expect(replayFrames.next()).resolves.toMatchObject({
+        type: "presence",
+        presence: { sequence: 3 },
+      });
+    }
+  });
+
+  it("accepts a Presence hold after upgrading the pre-connection-fence schema", async () => {
+    const workspaceId = await createWorkspace();
+    const presence = env.PRESENCE.getByName(workspaceId);
+    await runInDurableObject(presence, (_instance, state) => {
+      state.storage.sql.exec(`
+        DROP TABLE presence_lease;
+        CREATE TABLE presence_lease (
+          punk_id TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL,
+          device_id TEXT NOT NULL,
+          client_generation INTEGER NOT NULL,
+          hold_id TEXT NOT NULL,
+          lease_token TEXT NOT NULL UNIQUE,
+          lease_generation INTEGER NOT NULL,
+          status TEXT,
+          last_client_sequence INTEGER NOT NULL,
+          patch_sequence INTEGER NOT NULL,
+          away_at INTEGER NOT NULL,
+          expires_at INTEGER NOT NULL,
+          away_emitted INTEGER NOT NULL CHECK (away_emitted IN (0, 1)),
+          status_window_started_at INTEGER NOT NULL,
+          status_updates_in_window INTEGER NOT NULL,
+          typing_window_started_at INTEGER NOT NULL,
+          typing_signals_in_window INTEGER NOT NULL
+        );
+        CREATE INDEX presence_lease_expiry ON presence_lease(expires_at);
+        CREATE INDEX presence_lease_away
+          ON presence_lease(away_at, away_emitted);
+      `);
+    });
+    await evictDurableObject(presence);
+
+    const response = await holdPresence(workspaceId);
+    expect(response.status).toBe(101);
+    const socket = response.webSocket;
+    expect(socket).not.toBeNull();
+    socket?.accept();
+    socket?.close(1000, "test complete");
+  });
+
+  it("keeps the previous lease usable when a replacement snapshot exceeds capacity", async () => {
+    const workspaceId = await createWorkspace();
+    const coordinates = {
+      deviceId: crypto.randomUUID(),
+      clientGeneration: 7,
+      holdId: crypto.randomUUID(),
+    };
+    const firstResponse = await holdPresence(
+      workspaceId,
+      "session-owner",
+      coordinates,
+    );
+    const firstSocket = firstResponse.webSocket;
+    expect(firstSocket).not.toBeNull();
+    if (firstSocket === null) return;
+    const firstFrames = frameQueue(firstSocket);
+    firstSocket.accept();
+    const first = await firstFrames.next();
+    if (first.type !== "accepted") {
+      throw new Error("presence hold was not accepted");
+    }
+
+    await runInDurableObject(
+      env.PRESENCE.getByName(workspaceId),
+      (_instance, state) => {
+        const now = Date.now();
+        state.storage.sql.exec(
+          `WITH RECURSIVE sequence(value) AS (
+             SELECT 1
+             UNION ALL
+             SELECT value + 1 FROM sequence WHERE value < 10000
+           )
+           INSERT INTO presence_lease (
+             punk_id, session_id, device_id, client_generation, hold_id,
+             lease_token, connection_id, lease_generation, status,
+             last_client_sequence, patch_sequence, away_at, expires_at,
+             away_emitted, status_window_started_at, status_updates_in_window,
+             typing_window_started_at, typing_signals_in_window
+           )
+           SELECT
+             printf('overflow-%05d', value),
+             'overflow-session',
+             'overflow-device',
+             1,
+             printf('overflow-hold-%05d', value),
+             printf('overflow-token-%05d', value),
+             printf('overflow-connection-%05d', value),
+             value + 1,
+             NULL,
+             0,
+             1,
+             ?,
+             ?,
+             0,
+             ?,
+             0,
+             ?,
+             0
+           FROM sequence`,
+          now + 30_000,
+          now + 60_000,
+          now,
+          now,
+        );
+      },
+    );
+
+    const rejected = await holdPresence(workspaceId, "session-owner", {
+      deviceId: crypto.randomUUID(),
+      clientGeneration: 8,
+      holdId: crypto.randomUUID(),
+    });
+    expect(rejected.status).toBe(503);
+
+    await runInDurableObject(
+      env.PRESENCE.getByName(workspaceId),
+      (_instance, state) => {
+        state.storage.sql.exec(
+          "DELETE FROM presence_lease WHERE punk_id LIKE 'overflow-%'",
+        );
+      },
+    );
+    firstSocket.send(
+      JSON.stringify({
+        contract: "presence.hold@1",
+        type: "heartbeat",
+        leaseToken: first.leaseToken,
+        sequence: 1,
+      }),
+    );
+    const renewed = await Promise.race([
+      firstFrames.next(),
+      scheduler.wait(200).then(() => null),
+    ]);
+    expect(renewed).toMatchObject({
+      type: "presence",
+      presence: {
+        punkId: ownerPunkId,
+        state: "online",
+        leaseGeneration: first.leaseGeneration,
+        sequence: 2,
+      },
+    });
   });
 
   it("bounds status updates and silently omits excess signals", async () => {
@@ -549,6 +772,81 @@ describe("ephemeral Presence", () => {
     }
   });
 
+  it("withdraws typing immediately when another lease supersedes its owner", async () => {
+    const workspaceId = await createWorkspace();
+    await addOtherMember(workspaceId);
+    const conversation = await createConversation(workspaceId);
+
+    const followResponse = await followConversation(
+      workspaceId,
+      conversation.id,
+      "session-other",
+      conversation.cursor,
+    );
+    const followSocket = followResponse.webSocket;
+    expect(followSocket).not.toBeNull();
+    if (followSocket === null) return;
+    const followFrames = followFrameQueue(followSocket);
+    followSocket.accept();
+    await expect(followFrames.next()).resolves.toMatchObject({
+      type: "accepted",
+    });
+    await expect(followFrames.next()).resolves.toMatchObject({ type: "ready" });
+
+    const firstResponse = await holdPresence(workspaceId);
+    const firstSocket = firstResponse.webSocket;
+    expect(firstSocket).not.toBeNull();
+    if (firstSocket === null) return;
+    const firstFrames = frameQueue(firstSocket);
+    firstSocket.accept();
+    const accepted = await firstFrames.next();
+    if (accepted.type !== "accepted") return;
+
+    firstSocket.send(
+      JSON.stringify({
+        contract: "presence.typing.signal@1",
+        leaseToken: accepted.leaseToken,
+        sequence: 1,
+        workspaceId,
+        conversationId: conversation.id,
+        active: true,
+      }),
+    );
+    await expect(followFrames.next()).resolves.toMatchObject({
+      type: "typing",
+      patch: {
+        punkId: ownerPunkId,
+        active: true,
+        leaseGeneration: accepted.leaseGeneration,
+        sequence: 1,
+      },
+    });
+
+    const replacementResponse = await holdPresence(workspaceId);
+    expect(replacementResponse.status).toBe(101);
+    await expect(followFrames.next()).resolves.toMatchObject({
+      type: "typing",
+      patch: {
+        punkId: ownerPunkId,
+        active: false,
+        leaseGeneration: accepted.leaseGeneration,
+        sequence: 2,
+        expiresAt: null,
+      },
+    });
+    await expect(
+      runInDurableObject(
+        env.PRESENCE.getByName(workspaceId),
+        (_instance, state) =>
+          state.storage.sql
+            .exec<{ count: number }>(
+              "SELECT COUNT(*) AS count FROM presence_typing",
+            )
+            .one().count,
+      ),
+    ).resolves.toBe(0);
+  });
+
   it("revokes a removed participant before another Presence emission", async () => {
     const workspaceId = await createWorkspace();
     await addOtherMember(workspaceId);
@@ -583,6 +881,95 @@ describe("ephemeral Presence", () => {
         expiresAt: null,
       },
     });
+  });
+
+  it("reauthorizes a follower after awaiting the current typing snapshot", async () => {
+    const workspaceId = await createWorkspace();
+    await addOtherMember(workspaceId);
+    const conversation = await createConversation(workspaceId);
+
+    const presenceResponse = await holdPresence(workspaceId);
+    const presenceSocket = presenceResponse.webSocket;
+    expect(presenceSocket).not.toBeNull();
+    if (presenceSocket === null) return;
+    const presenceFrames = frameQueue(presenceSocket);
+    presenceSocket.accept();
+    const accepted = await presenceFrames.next();
+    if (accepted.type !== "accepted") return;
+    presenceSocket.send(
+      JSON.stringify({
+        contract: "presence.typing.signal@1",
+        leaseToken: accepted.leaseToken,
+        sequence: 1,
+        workspaceId,
+        conversationId: conversation.id,
+        active: true,
+      }),
+    );
+    await expect
+      .poll(() =>
+        runInDurableObject(
+          env.PRESENCE.getByName(workspaceId),
+          (_instance, state) =>
+            state.storage.sql
+              .exec<{ count: number }>(
+                "SELECT COUNT(*) AS count FROM presence_typing",
+              )
+              .one().count,
+        ),
+      )
+      .toBe(1);
+
+    const revocableSessionId = "33333333-3333-8333-8333-333333333333";
+    const auth = env.AUTH_SERVICE as typeof env.AUTH_SERVICE & {
+      holdSessionResolution(
+        sessionId: string,
+        callNumber: number,
+      ): Promise<void>;
+      sessionResolutionHoldReached(sessionId: string): Promise<boolean>;
+      releaseSessionResolution(sessionId: string): Promise<void>;
+      setSessionRevoked(sessionId: string, revoked: boolean): Promise<void>;
+    };
+    await auth.holdSessionResolution(revocableSessionId, 2);
+    try {
+      const followResponsePromise = followConversation(
+        workspaceId,
+        conversation.id,
+        "session-revocable",
+        conversation.cursor,
+      );
+      await expect
+        .poll(() => auth.sessionResolutionHoldReached(revocableSessionId))
+        .toBe(true);
+      await auth.setSessionRevoked(revocableSessionId, true);
+      await auth.releaseSessionResolution(revocableSessionId);
+
+      const followResponse = await followResponsePromise;
+      expect(followResponse.status).toBe(101);
+      const followSocket = followResponse.webSocket;
+      expect(followSocket).not.toBeNull();
+      if (followSocket === null) return;
+      const followFrames = followFrameQueue(followSocket);
+      const closed = nextClose(followSocket);
+      followSocket.accept();
+      await expect(followFrames.next()).resolves.toMatchObject({
+        type: "accepted",
+      });
+      const terminal = await Promise.race([
+        followFrames
+          .next()
+          .then((frame) => ({ kind: "frame" as const, frame })),
+        closed.then((event) => ({ kind: "close" as const, event })),
+      ]);
+      expect(terminal).toMatchObject({
+        kind: "close",
+        event: { code: 1008 },
+      });
+    } finally {
+      await auth.releaseSessionResolution(revocableSessionId);
+      await auth.setSessionRevoked(revocableSessionId, false);
+      presenceSocket.close(1000, "test complete");
+    }
   });
 
   it("does not expose the Workspace presence roster to a guest", async () => {

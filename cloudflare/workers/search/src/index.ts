@@ -106,6 +106,9 @@ export default class MessageCandidateSearch extends WorkerEntrypoint<CloudflareB
       ) {
         return { ok: false, code: "storage_unavailable" };
       }
+      if (Number(checkpoint.projected_cursor) > request.expectedCursor) {
+        return { ok: false, code: "storage_unavailable" };
+      }
       const result = await prepareSearch(database, request).all<CandidateRow>();
       if (
         result.success !== true ||

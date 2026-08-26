@@ -1,0 +1,24 @@
+{
+  "algorithm": "hmac-sha256-conversation-v2",
+  "normalization": "unicode-nfkc-lowercase-letters-numbers-v1",
+  "cases": [
+    {
+      "name": "greek-contextual-final-sigma",
+      "query": "ΟΣ",
+      "document": { "content": "ος", "topic": null },
+      "matches": true
+    },
+    {
+      "name": "nfkc-fullwidth-latin",
+      "query": "ＰＵＮＫＳ",
+      "document": { "content": "punks", "topic": null },
+      "matches": true
+    },
+    {
+      "name": "distinct-current-term",
+      "query": "incident",
+      "document": { "content": "déploiement", "topic": null },
+      "matches": false
+    }
+  ]
+}

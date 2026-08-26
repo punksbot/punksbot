@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
+import normalizationCorpus from "../../contracts/conformance/message-search-normalization.json";
+
 import {
   deriveMessageSearchDocument,
   deriveMessageSearchQuery,
@@ -193,6 +195,15 @@ describe("opaque Message lexical search tokens", () => {
       ),
     ).toBe(false);
     expect(messageSearchPlaintextMatchesQuery(current, "!!!")).toBe(false);
+  });
+
+  it("replays the shared cross-implementation normalization corpus", () => {
+    for (const testCase of normalizationCorpus.cases) {
+      expect(
+        messageSearchPlaintextMatchesQuery(testCase.document, testCase.query),
+        testCase.name,
+      ).toBe(testCase.matches);
+    }
   });
 
   it("refuses to derive unscoped tokens", async () => {

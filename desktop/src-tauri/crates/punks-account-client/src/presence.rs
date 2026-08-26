@@ -39,6 +39,7 @@ pub struct PresenceTypingPatch {
     pub expires_at: Option<String>,
 }
 
+/// Closed reason why ephemeral Presence cannot currently be delivered.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PresenceDegradedReason {
@@ -132,6 +133,7 @@ impl std::fmt::Debug for PresenceState {
 }
 
 impl PresenceState {
+    /// Creates an empty volatile reducer state for one mounted Workspace generation.
     pub fn new(workspace_id: &str, client_generation: u64) -> Self {
         Self {
             workspace_id: workspace_id.to_owned(),
@@ -152,12 +154,14 @@ impl PresenceState {
     }
 }
 
+/// Observable outcome produced while reducing one Presence server frame.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PresenceEffect {
     None,
     Delivery(PresenceDelivery),
 }
 
+/// Next volatile Presence state paired with its optional renderer delivery.
 #[derive(Debug, Clone)]
 pub struct PresenceReduction {
     pub state: PresenceState,

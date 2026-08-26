@@ -558,7 +558,15 @@ export class ConversationDO extends DurableObject<ApiEnv> {
         await this.env.PRESENCE.getByName(workspaceId).currentTyping(
           conversationId,
         );
-      if (Array.isArray(typing) && typing.length <= 100) {
+      const finalAuthorization = await this.authorizeFollower(attachment);
+      if (finalAuthorization.status === "archived") {
+        this.sendConversationUnavailable(
+          server,
+          finalAuthorization.state.cursor,
+        );
+      } else if (finalAuthorization.status === "denied") {
+        server.close(1008, "authorization revoked");
+      } else if (Array.isArray(typing) && typing.length <= 100) {
         for (const patch of typing) {
           if (
             validateContract("punks://contracts/presence.typing.patch@1", patch)
@@ -4248,29 +4256,26 @@ export class ConversationDO extends DurableObject<ApiEnv> {
     }
     if (!exhausted && scannedCandidates >= candidateBudget) {
       hasMore = true;
-      partialReason ??= "index_lagging";
     }
 
     let nextCursor: string | null = null;
-    if (hasMore) {
+    if (partialReason !== null) {
+      nextCursor = query.cursor;
+    } else if (hasMore) {
       if (lastConsumedPosition === null) {
-        if (partialReason !== "index_unavailable") {
-          return { ok: false, code: "search_unavailable" };
-        }
-        nextCursor = query.cursor;
-      } else {
-        try {
-          nextCursor = await encodeMessageSearchCursor(
-            {
-              version: 1,
-              ...cursorScope,
-              position: lastConsumedPosition,
-            },
-            cursorKey,
-          );
-        } catch {
-          return { ok: false, code: "search_unavailable" };
-        }
+        return { ok: false, code: "search_unavailable" };
+      }
+      try {
+        nextCursor = await encodeMessageSearchCursor(
+          {
+            version: 1,
+            ...cursorScope,
+            position: lastConsumedPosition,
+          },
+          cursorKey,
+        );
+      } catch {
+        return { ok: false, code: "search_unavailable" };
       }
     }
 

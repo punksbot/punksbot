@@ -1,5 +1,6 @@
 use std::sync::{Arc, Mutex as StdMutex};
 
+use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::{MessageSearchCompleteness, MessageSearchPartialReason};
@@ -12,6 +13,28 @@ use super::{
 const CONVERSATION_ID: &str = "33333333-3333-4333-8333-333333333333";
 const THREAD_ROOT_ID: &str = "44444444-4444-4444-8444-444444444444";
 const MESSAGE_ID: &str = "66666666-6666-4666-8666-666666666666";
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SearchNormalizationCorpus {
+    cases: Vec<SearchNormalizationCase>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SearchNormalizationCase {
+    name: String,
+    query: String,
+    document: SearchNormalizationDocument,
+    matches: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SearchNormalizationDocument {
+    content: String,
+    topic: Option<String>,
+}
 
 fn search_compatibility() -> Value {
     let mut value = compatibility();
@@ -230,4 +253,59 @@ async fn search_rejects_a_current_view_that_does_not_match_the_query() {
         .unwrap_err();
 
     assert_eq!(failure.kind, FailureKind::ContractViolation);
+}
+
+#[tokio::test]
+async fn search_replays_the_shared_cross_implementation_normalization_corpus() {
+    let corpus: SearchNormalizationCorpus = serde_json::from_str(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../../../cloudflare/packages/contracts/conformance/message-search-normalization.json"
+    )))
+    .unwrap();
+
+    for test_case in corpus.cases {
+        let content = test_case.document.content.clone();
+        let topic = test_case.document.topic.clone();
+        let client = client_with(move |_method, path, _body, _idempotency_key| {
+            let content = content.clone();
+            let topic = topic.clone();
+            Box::pin(async move {
+                Ok(match path.as_str() {
+                    "/api/v1/desktop/compatibility" => search_compatibility(),
+                    "/api/auth/v1/session" => session(),
+                    path if path.starts_with("/api/v1/workspaces?") => workspaces(),
+                    path if path.ends_with("/messages/search") => {
+                        let mut response = search_response("complete", None);
+                        response["items"][0]["content"] = json!(content);
+                        response["items"][0]["topic"] = json!(topic);
+                        response
+                    }
+                    _ => return Err(ClientFailure::new(FailureKind::Problem, "unexpected")),
+                })
+            })
+        });
+        prepare_account(&client).await;
+        let workspace = client.open_workspace(WORKSPACE_ID).await.unwrap();
+
+        let result = workspace
+            .search_messages(
+                CONVERSATION_ID,
+                Some(THREAD_ROOT_ID),
+                &test_case.query,
+                25,
+                None,
+            )
+            .await;
+
+        if test_case.matches {
+            assert!(result.is_ok(), "{} should match", test_case.name);
+        } else {
+            assert_eq!(
+                result.unwrap_err().kind,
+                FailureKind::ContractViolation,
+                "{} should not match",
+                test_case.name
+            );
+        }
+    }
 }

@@ -15,7 +15,7 @@ import {
   socketAttachment,
   toPresenceView,
   workspaceAuthorization,
-  type CurrentTypingPatch,
+  type CurrentTypingRpcPatch,
   type LeaseRow,
   type PresenceSocketAttachment,
   type TypingRow,
@@ -32,6 +32,8 @@ const TYPING_TTL_MS = 5_000;
 const TYPING_WINDOW_MS = 5_000;
 const MAX_TYPING_SIGNALS_PER_WINDOW = 8;
 const AUDIENCE_AUTHORIZATION_BATCH = 32;
+
+class PresenceCapacityExceeded extends Error {}
 
 /**
  * One current, self-expiring Presence coordination atom per Workspace.
@@ -60,6 +62,7 @@ export class PresenceDO extends DurableObject<ApiEnv> {
           client_generation INTEGER NOT NULL,
           hold_id TEXT NOT NULL,
           lease_token TEXT NOT NULL UNIQUE,
+          connection_id TEXT NOT NULL,
           lease_generation INTEGER NOT NULL,
           status TEXT,
           last_client_sequence INTEGER NOT NULL,
@@ -88,6 +91,22 @@ export class PresenceDO extends DurableObject<ApiEnv> {
         CREATE INDEX IF NOT EXISTS presence_typing_expiry
           ON presence_typing(expires_at);
       `);
+      const leaseColumns = this.ctx.storage.sql
+        .exec<{ name: string }>("PRAGMA table_info(presence_lease)")
+        .toArray();
+      if (!leaseColumns.some(({ name }) => name === "connection_id")) {
+        this.ctx.storage.transactionSync(() => {
+          this.ctx.storage.sql.exec(
+            `ALTER TABLE presence_lease ADD COLUMN connection_id TEXT
+             NOT NULL DEFAULT ''`,
+          );
+          // A pre-fence socket cannot prove that it owns the upgraded row.
+          // Presence is lossy by contract, so fail closed and let clients
+          // establish fresh Baux instead of exposing a stale live signal.
+          this.ctx.storage.sql.exec("DELETE FROM presence_typing");
+          this.ctx.storage.sql.exec("DELETE FROM presence_lease");
+        });
+      }
       this.ctx.storage.sql.exec(
         `INSERT OR IGNORE INTO presence_meta
            (singleton, workspace_id, next_generation)
@@ -160,75 +179,115 @@ export class PresenceDO extends DurableObject<ApiEnv> {
     }
 
     const now = Date.now();
-    const generation = this.ctx.storage.sql
-      .exec<{ generation: number }>(
-        `UPDATE presence_meta SET next_generation = next_generation + 1
-         WHERE singleton = 1 RETURNING next_generation AS generation`,
-      )
-      .one().generation;
-    const token = createLeaseToken();
-    const row: LeaseRow = {
-      punk_id: punkId,
-      session_id: sessionId,
-      device_id: deviceId,
-      client_generation: clientGeneration,
-      hold_id: holdId,
-      lease_token: token,
-      lease_generation: generation,
-      status: null,
-      last_client_sequence: 0,
-      patch_sequence: 1,
-      away_at: now + AWAY_AFTER_MS,
-      expires_at: now + EXPIRES_AFTER_MS,
-      away_emitted: 0,
-      status_window_started_at: now,
-      status_updates_in_window: 0,
-      typing_window_started_at: now,
-      typing_signals_in_window: 0,
-    };
     const previous = this.leaseForPunk(punkId);
-    this.ctx.storage.sql.exec(
-      `INSERT OR REPLACE INTO presence_lease (
-         punk_id, session_id, device_id, client_generation, hold_id,
-         lease_token, lease_generation, status, patch_sequence, away_at,
-         last_client_sequence, expires_at, away_emitted,
-         status_window_started_at, status_updates_in_window,
-         typing_window_started_at, typing_signals_in_window
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      row.punk_id,
-      row.session_id,
-      row.device_id,
-      row.client_generation,
-      row.hold_id,
-      row.lease_token,
-      row.lease_generation,
-      row.status,
-      row.patch_sequence,
-      row.away_at,
-      row.last_client_sequence,
-      row.expires_at,
-      row.away_emitted,
-      row.status_window_started_at,
-      row.status_updates_in_window,
-      row.typing_window_started_at,
-      row.typing_signals_in_window,
-    );
-
-    const visiblePresences = this.visiblePresences(
-      authorization.role,
-      punkId,
-      now,
-    );
-    if (visiblePresences === null) {
-      this.ctx.storage.sql.exec(
-        "DELETE FROM presence_lease WHERE punk_id = ? AND lease_token = ?",
-        row.punk_id,
-        row.lease_token,
-      );
+    const replayed =
+      previous !== null &&
+      previous.session_id === sessionId &&
+      previous.device_id === deviceId &&
+      previous.client_generation === clientGeneration &&
+      previous.hold_id === holdId &&
+      previous.expires_at > now;
+    let prepared: { row: LeaseRow; visiblePresences: PresenceView[] };
+    try {
+      prepared = this.ctx.storage.transactionSync(() => {
+        const row: LeaseRow =
+          replayed && previous !== null
+            ? {
+                ...previous,
+                connection_id: crypto.randomUUID(),
+                last_client_sequence: 0,
+              }
+            : {
+                punk_id: punkId,
+                session_id: sessionId,
+                device_id: deviceId,
+                client_generation: clientGeneration,
+                hold_id: holdId,
+                lease_token: createLeaseToken(),
+                connection_id: crypto.randomUUID(),
+                lease_generation: this.ctx.storage.sql
+                  .exec<{ generation: number }>(
+                    `UPDATE presence_meta
+                     SET next_generation = next_generation + 1
+                     WHERE singleton = 1
+                     RETURNING next_generation AS generation`,
+                  )
+                  .one().generation,
+                status: null,
+                last_client_sequence: 0,
+                patch_sequence: 1,
+                away_at: now + AWAY_AFTER_MS,
+                expires_at: now + EXPIRES_AFTER_MS,
+                away_emitted: 0,
+                status_window_started_at: now,
+                status_updates_in_window: 0,
+                typing_window_started_at: now,
+                typing_signals_in_window: 0,
+              };
+        if (replayed) {
+          this.ctx.storage.sql.exec(
+            `UPDATE presence_lease
+             SET connection_id = ?, last_client_sequence = 0
+             WHERE punk_id = ? AND lease_token = ?`,
+            row.connection_id,
+            row.punk_id,
+            row.lease_token,
+          );
+        } else {
+          this.ctx.storage.sql.exec(
+            `INSERT OR REPLACE INTO presence_lease (
+               punk_id, session_id, device_id, client_generation, hold_id,
+               lease_token, connection_id, lease_generation, status,
+               patch_sequence, away_at, last_client_sequence, expires_at,
+               away_emitted, status_window_started_at,
+               status_updates_in_window, typing_window_started_at,
+               typing_signals_in_window
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            row.punk_id,
+            row.session_id,
+            row.device_id,
+            row.client_generation,
+            row.hold_id,
+            row.lease_token,
+            row.connection_id,
+            row.lease_generation,
+            row.status,
+            row.patch_sequence,
+            row.away_at,
+            row.last_client_sequence,
+            row.expires_at,
+            row.away_emitted,
+            row.status_window_started_at,
+            row.status_updates_in_window,
+            row.typing_window_started_at,
+            row.typing_signals_in_window,
+          );
+        }
+        const visiblePresences = this.visiblePresences(
+          authorization.role,
+          punkId,
+          now,
+        );
+        if (visiblePresences === null) {
+          throw new PresenceCapacityExceeded();
+        }
+        return { row, visiblePresences };
+      });
+    } catch (error) {
+      if (!(error instanceof PresenceCapacityExceeded)) throw error;
       await this.scheduleNextAlarm();
       return new Response("Realtime capacity unavailable", { status: 503 });
     }
+    const { row, visiblePresences } = prepared;
 
+    if (replayed) {
+      this.closeLeaseSockets(row.lease_token, "presence reconnected");
+    }
+    if (previous !== null && !replayed) {
+      // Device/generation replacement is an authority boundary: a typing
+      // signal owned by the superseded lease must not survive until its TTL.
+      await this.clearTypingForLease(previous);
+    }
     const pair = new WebSocketPair();
     const client = pair[0];
     const server = pair[1];
@@ -238,10 +297,11 @@ export class PresenceDO extends DurableObject<ApiEnv> {
       punkId,
       sessionId,
       role: authorization.role,
-      leaseToken: token,
-      leaseGeneration: generation,
+      leaseToken: row.lease_token,
+      leaseGeneration: row.lease_generation,
       deviceId,
       clientGeneration,
+      connectionId: row.connection_id,
     };
     this.ctx.acceptWebSocket(server, [
       `punk:${punkId}`,
@@ -251,22 +311,24 @@ export class PresenceDO extends DurableObject<ApiEnv> {
     this.send(server, {
       schemaVersion: 1,
       type: "accepted",
-      leaseToken: token,
-      leaseGeneration: generation,
+      leaseToken: row.lease_token,
+      leaseGeneration: row.lease_generation,
       clientGeneration,
       heartbeatIntervalMs: HEARTBEAT_INTERVAL_MS,
       awayAfterMs: AWAY_AFTER_MS,
       expiresAfterMs: EXPIRES_AFTER_MS,
       presences: visiblePresences,
     });
-    if (previous !== null) {
+    if (previous !== null && !replayed) {
       await this.broadcast(
         toPresenceView(previous, now, "offline", previous.patch_sequence + 1),
         previous.lease_token,
       );
       this.closeLeaseSockets(previous.lease_token, "presence superseded");
     }
-    await this.broadcast(toPresenceView(row, now), token);
+    if (!replayed) {
+      await this.broadcast(toPresenceView(row, now), row.lease_token);
+    }
     await this.scheduleNextAlarm();
     return new Response(null, {
       status: 101,
@@ -395,7 +457,8 @@ export class PresenceDO extends DurableObject<ApiEnv> {
     if (
       current === null ||
       current.lease_token !== attachment.leaseToken ||
-      current.lease_generation !== attachment.leaseGeneration
+      current.lease_generation !== attachment.leaseGeneration ||
+      current.connection_id !== attachment.connectionId
     ) {
       socket.close(1008, "stale presence lease");
       return;
@@ -529,7 +592,9 @@ export class PresenceDO extends DurableObject<ApiEnv> {
   }
 
   /** Current active typing is consumed only by an already-authorized ConversationDO. */
-  async currentTyping(conversationId: string): Promise<CurrentTypingPatch[]> {
+  async currentTyping(
+    conversationId: string,
+  ): Promise<CurrentTypingRpcPatch[]> {
     const now = Date.now();
     const rows = this.ctx.storage.sql
       .exec<TypingRow>(
@@ -757,6 +822,7 @@ export class PresenceDO extends DurableObject<ApiEnv> {
     ) {
       throw new Error("Presence frame violated its public contract");
     }
+    if (socket.readyState !== WebSocket.OPEN) return;
     socket.send(JSON.stringify(frame));
   }
 
@@ -767,7 +833,9 @@ export class PresenceDO extends DurableObject<ApiEnv> {
     const revokedPunks = new Set<string>();
     const recipients = this.ctx.getWebSockets().flatMap((socket) => {
       const attachment = socketAttachment(socket.deserializeAttachment());
-      return attachment === null || attachment.leaseToken === exceptToken
+      return attachment === null ||
+        attachment.leaseToken === exceptToken ||
+        socket.readyState !== WebSocket.OPEN
         ? []
         : [{ socket, attachment }];
     });
@@ -835,7 +903,13 @@ export class PresenceDO extends DurableObject<ApiEnv> {
     const attachment = socketAttachment(socket.deserializeAttachment());
     if (attachment === null) return;
     const row = this.leaseForPunk(attachment.punkId);
-    if (row === null || row.lease_token !== attachment.leaseToken) return;
+    if (
+      row === null ||
+      row.lease_token !== attachment.leaseToken ||
+      row.connection_id !== attachment.connectionId
+    ) {
+      return;
+    }
     await this.clearTypingForLease(row);
     this.ctx.storage.sql.exec(
       "DELETE FROM presence_lease WHERE punk_id = ? AND lease_token = ?",

@@ -14,6 +14,8 @@ import { validateContract } from "@punks/contracts";
 import { SELF, env, runInDurableObject } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 
+import normalizationCorpus from "../../../packages/contracts/conformance/message-search-normalization.json";
+
 import type { ApiEnv } from "../src/env";
 import type { ConversationDO } from "../src/conversation-do";
 import { route } from "../src/router";
@@ -504,6 +506,41 @@ describe("Conversation Message search API", () => {
     );
   });
 
+  it("replays the shared normalization corpus through workerd", async () => {
+    const createdWorkspaceId = await createWorkspace();
+    const createdConversationId = await createConversation(createdWorkspaceId);
+
+    for (const testCase of normalizationCorpus.cases) {
+      const message = await post(
+        createdWorkspaceId,
+        createdConversationId,
+        crypto.randomUUID(),
+        testCase.document.content,
+        testCase.document.topic,
+      );
+      await programCandidates([
+        {
+          workspaceId: createdWorkspaceId,
+          conversationId: createdConversationId,
+          messageId: message.id,
+          createdCursor: message.createdCursor,
+          lastCursor: message.cursor,
+        },
+      ]);
+
+      const response = await search(createdWorkspaceId, createdConversationId, {
+        query: testCase.query,
+      });
+      const text = await response.text();
+      expect(response.status, `${testCase.name}: ${text}`).toBe(200);
+      const body = JSON.parse(text) as MessageSearchResponse;
+      expect(
+        body.items.map(({ id }) => id),
+        testCase.name,
+      ).toEqual(testCase.matches ? [message.id] : []);
+    }
+  });
+
   it("confines one search to its requested Fil", async () => {
     const createdWorkspaceId = await createWorkspace();
     const createdConversationId = await createConversation(createdWorkspaceId);
@@ -682,6 +719,65 @@ describe("Conversation Message search API", () => {
     expect(partial.partialReason).toBe("index_unavailable");
     expect(partial.items).toEqual([]);
     expect(partial.nextCursor).toMatch(/^msc1\./u);
+  });
+
+  it("preserves the exact public continuation while the index is lagging", async () => {
+    const createdWorkspaceId = await createWorkspace();
+    const createdConversationId = await createConversation(createdWorkspaceId);
+    const older = await post(
+      createdWorkspaceId,
+      createdConversationId,
+      crypto.randomUUID(),
+      "needle older",
+    );
+    const newer = await post(
+      createdWorkspaceId,
+      createdConversationId,
+      crypto.randomUUID(),
+      "needle newer",
+    );
+    await programCandidates(
+      [older, newer].map((message) => ({
+        workspaceId: createdWorkspaceId,
+        conversationId: createdConversationId,
+        messageId: message.id,
+        createdCursor: message.createdCursor,
+        lastCursor: message.cursor,
+      })),
+    );
+    const firstResponse = await search(
+      createdWorkspaceId,
+      createdConversationId,
+      { limit: 1 },
+    );
+    const first = (await firstResponse.json()) as MessageSearchResponse;
+    expect(first.items.map(({ id }) => id)).toEqual([newer.id]);
+    expect(first.nextCursor).toMatch(/^msc1\./u);
+
+    await setRawSearchResult({
+      ok: true,
+      indexState: "lagging",
+      candidates: [
+        {
+          messageId: older.id,
+          conversationId: createdConversationId,
+          createdCursor: older.createdCursor,
+          lastCursor: older.cursor,
+        },
+      ],
+      nextCursor: [older.createdCursor, createdConversationId, older.id],
+    });
+    const partialResponse = await search(
+      createdWorkspaceId,
+      createdConversationId,
+      { limit: 1, cursor: first.nextCursor },
+    );
+    const partial = (await partialResponse.json()) as MessageSearchResponse;
+
+    expect(partial.completeness).toBe("partial");
+    expect(partial.partialReason).toBe("index_lagging");
+    expect(partial.items.map(({ id }) => id)).toEqual([older.id]);
+    expect(partial.nextCursor).toBe(first.nextCursor);
   });
 
   it("refuses zero or thirty-three lexical terms before Search RPC", async () => {
@@ -1041,7 +1137,7 @@ describe("Conversation Message search API", () => {
     expect(body.nextCursor).toBeNull();
   });
 
-  it("returns an empty page continuation after the bounded stale-candidate budget", async () => {
+  it("keeps a current index complete across the bounded stale-candidate budget", async () => {
     const createdWorkspaceId = await createWorkspace();
     const createdConversationId = await createConversation(createdWorkspaceId);
     const messages: MessageView[] = [];
@@ -1078,8 +1174,8 @@ describe("Conversation Message search API", () => {
     expect(firstResponse.status).toBe(200);
     const first = (await firstResponse.json()) as MessageSearchResponse;
     expect(first.items).toEqual([]);
-    expect(first.completeness).toBe("partial");
-    expect(first.partialReason).toBe("index_lagging");
+    expect(first.completeness).toBe("complete");
+    expect(first.partialReason).toBeNull();
     expect(first.nextCursor).toMatch(/^msc1\./);
 
     const secondResponse = await search(
@@ -1090,6 +1186,8 @@ describe("Conversation Message search API", () => {
     expect(secondResponse.status).toBe(200);
     const second = (await secondResponse.json()) as MessageSearchResponse;
     expect(second.items).toEqual([]);
+    expect(second.completeness).toBe("complete");
+    expect(second.partialReason).toBeNull();
     expect(second.nextCursor).toBeNull();
   });
 

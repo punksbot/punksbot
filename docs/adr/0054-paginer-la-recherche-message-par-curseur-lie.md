@@ -55,8 +55,15 @@ autoritaire et la correspondance courante empêchent toute restitution périmée
 Le Search Worker compare le plus grand `last_cursor` projeté au plus grand
 curseur Message autoritaire du périmètre demandé. Un retard produit
 `completeness: partial` avec `partialReason: index_lagging`; une indisponibilité
-de D1 produit `index_unavailable`. Aucun de ces états ne déclenche un fallback.
-Une page complète porte `partialReason: null`.
+de D1 produit `index_unavailable`. Seule l'égalité exacte établit un index
+courant : un checkpoint supérieur au curseur autoritaire est une incohérence
+de stockage et échoue fermé comme `index_unavailable`, jamais comme un index
+courant. Aucun de ces états ne déclenche un fallback. Une réponse partielle
+restitue exactement le curseur public fourni par l'appelant, y compris `null` ;
+elle ne le réencode, ne l'avance et ne le perd jamais. À l'inverse, atteindre
+le budget borné de candidats périmés sur un index courant produit une page
+`complete` avec une continuation sûre, pas un faux retard d'index. Une page
+complète porte `partialReason: null`.
 
 Chaque page contient au plus cent `MessageView` actives de la Conversation et,
 le cas échéant, du Fil demandé, reste sous 1 048 576 octets UTF-8 et n’expose ni

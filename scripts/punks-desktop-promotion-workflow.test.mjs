@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 import YAML from "yaml";
@@ -7,6 +7,10 @@ import YAML from "yaml";
 const workflow = YAML.parse(
   readFileSync(".github/workflows/punks-desktop-candidate.yml", "utf8"),
 );
+const installedExerciseProducer =
+  "scripts/candidate/exercise-installed-social-loop.mjs";
+const promotionEvidenceProducer =
+  "scripts/candidate/complete-promotion-evidence.mjs";
 
 function step(job, id) {
   const selected = workflow.jobs?.[job]?.steps?.find(
@@ -27,6 +31,12 @@ test("a full candidate proves the installed social loop before collecting a leg"
     "installed testing must run on every full-candidate platform leg",
   );
   assert.match(exercise.run, /scripts\/candidate\/installed-app\.mjs/);
+  assert.match(exercise.run, new RegExp(installedExerciseProducer));
+  assert.equal(
+    existsSync(installedExerciseProducer),
+    true,
+    "the installed exercise producer must be executable repository code",
+  );
   assert.match(exercise.run, /--installed-artifact/);
   assert.match(exercise.run, /--staging-deployment-proof/);
   assert.match(exercise.run, /--proof-output/);
@@ -46,8 +56,15 @@ test("a full candidate proves the installed social loop before collecting a leg"
 
 test("the aggregate validates, publishes and only then activates the exact draft", () => {
   const aggregate = workflow.jobs.aggregate;
+  const complete = step("aggregate", "complete_promotion_evidence");
   const assemble = step("aggregate", "assemble_promotion_dossier");
   const validate = step("aggregate", "validate_promotion_dossier");
+  assert.match(complete.run, new RegExp(promotionEvidenceProducer));
+  assert.equal(
+    existsSync(promotionEvidenceProducer),
+    true,
+    "the promotion evidence producer must be executable repository code",
+  );
   assert.match(assemble.run, /scripts\/candidate\/promotion-dossier\.mjs/);
   assert.match(validate.run, /pnpm promotion:valider/);
   assert.ok(
@@ -57,8 +74,27 @@ test("the aggregate validates, publishes and only then activates the exact draft
 
   const publish = workflow.jobs.publish_promotion;
   assert.ok(publish, "publish_promotion job is required");
-  assert.equal(publish.needs, "aggregate");
+  assert.equal(
+    publish.needs,
+    "attest_candidate",
+    "immutable publication must wait for the final attested candidate",
+  );
   assert.equal(publish.environment, "punks-staging-promotion");
+  const download = step("publish_promotion", "download_final_candidate");
+  assert.equal(
+    download.uses,
+    "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
+  );
+  assert.equal(
+    download.with?.name,
+    "punks-desktop-candidate-${{ inputs.source_sha }}",
+  );
+  assert.equal(download.with?.path, "candidate");
+  assert.equal(
+    download.run,
+    undefined,
+    "the completed dependency must be downloaded directly without polling",
+  );
   const publishStep = step("publish_promotion", "publish_immutable_proofs");
   const activate = step("publish_promotion", "activate_verified_draft");
   assert.match(publishStep.run, /scripts\/promotion-publish\.mjs/);

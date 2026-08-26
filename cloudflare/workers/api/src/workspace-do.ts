@@ -20,6 +20,7 @@ import type {
   UnsignedNostrEvent,
   Workspace,
   WorkspaceEventContentV2,
+  WorkspaceMetadataV2,
   WorkspaceGovernanceView,
   WorkspaceInvitationView,
   WorkspaceProjectionMessage,
@@ -63,6 +64,7 @@ import type { ApiEnv } from "./env";
 import { verifyAttestationResponse } from "./attestation-verification";
 import type {
   CommittedWorkspaceCommand,
+  CommittedWorkspaceCommandV2,
   WorkspaceCommand,
   WorkspaceExecuteResult,
   WorkspaceGovernancePageQuery,
@@ -79,6 +81,7 @@ import type {
 } from "./rpc";
 
 type StateRow = Record<"state_json", string>;
+type WorkspaceMemberRow = Record<"punk_id" | "role", string>;
 type ResultRow = Record<"payload_hash" | "response_json", string>;
 type PendingRow = Record<
   | "command_id"
@@ -152,14 +155,15 @@ type PendingArchiveRow = Record<
 const JOURNAL_ARCHIVE_MAX_BODY_BYTES = 4_500_000;
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const WORKSPACE_SLUG = /^[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])$/u;
 // Cloudflare Queues measures decimal kilobytes and includes internal metadata
 // in its 128,000-byte limit. Keep an explicit margin for that envelope.
 const PROJECTION_QUEUE_MAX_PAYLOAD_BYTES = 126_000;
 const MAXIMUM_NORMAL_COMMAND_RESULT_ROWS = 256;
 const MAXIMUM_NORMAL_COMMAND_RESULT_BYTES = 4_194_304;
-const MAXIMUM_COMMAND_RESULT_ROWS = 4_096;
-const MAXIMUM_COMMAND_RESULT_BYTES = 1_073_741_824;
-const MAXIMUM_COMMAND_RESULT_ROW_BYTES = 262_144;
+const MAXIMUM_COMMAND_RESULT_ROWS = 65_536;
+const MAXIMUM_COMMAND_RESULT_BYTES = 2_147_483_648;
+const MAXIMUM_COMMAND_RESULT_ROW_BYTES = 32_768;
 const MAXIMUM_NORMAL_PROJECTION_STORAGE_ROWS = 1_024;
 const MAXIMUM_NORMAL_PROJECTION_STORAGE_BYTES = 8_388_608;
 const MAXIMUM_REDUCTION_PROJECTION_ROWS = 2;
@@ -178,6 +182,93 @@ const WORKSPACE_ROLE_REDUCTION_LIABILITY = {
   member: 2,
   guest: 1,
 } satisfies Readonly<Record<WorkspaceRole, number>>;
+
+function workspaceMetadata(workspace: Workspace): WorkspaceMetadataV2 {
+  const { members, ...metadata } = workspace;
+  return { ...metadata, memberCount: members.length };
+}
+
+function parseWorkspaceMetadata(value: unknown): WorkspaceMetadataV2 | null {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value) ||
+    Object.keys(value).sort().join(",") !==
+      "createdAt,cursor,id,memberCount,name,ownerPunkId,revision,slug,status,updatedAt,visibility"
+  ) {
+    return null;
+  }
+  const metadata = value as Record<string, unknown>;
+  if (
+    typeof metadata.id !== "string" ||
+    !UUID.test(metadata.id) ||
+    typeof metadata.slug !== "string" ||
+    !WORKSPACE_SLUG.test(metadata.slug) ||
+    typeof metadata.name !== "string" ||
+    metadata.name.length < 1 ||
+    metadata.name.length > 80 ||
+    (metadata.visibility !== "private" &&
+      metadata.visibility !== "punks" &&
+      metadata.visibility !== "public") ||
+    (metadata.status !== "active" &&
+      metadata.status !== "deleting" &&
+      metadata.status !== "deleted") ||
+    typeof metadata.ownerPunkId !== "string" ||
+    !UUID.test(metadata.ownerPunkId) ||
+    typeof metadata.memberCount !== "number" ||
+    !Number.isSafeInteger(metadata.memberCount) ||
+    metadata.memberCount < 1 ||
+    typeof metadata.revision !== "number" ||
+    !Number.isSafeInteger(metadata.revision) ||
+    metadata.revision < 1 ||
+    typeof metadata.cursor !== "number" ||
+    !Number.isSafeInteger(metadata.cursor) ||
+    metadata.cursor < 1 ||
+    typeof metadata.createdAt !== "string" ||
+    !Number.isFinite(Date.parse(metadata.createdAt)) ||
+    typeof metadata.updatedAt !== "string" ||
+    !Number.isFinite(Date.parse(metadata.updatedAt))
+  ) {
+    return null;
+  }
+  return {
+    id: metadata.id,
+    slug: metadata.slug,
+    name: metadata.name,
+    visibility: metadata.visibility,
+    status: metadata.status,
+    ownerPunkId: metadata.ownerPunkId,
+    memberCount: metadata.memberCount,
+    revision: metadata.revision,
+    cursor: metadata.cursor,
+    createdAt: metadata.createdAt,
+    updatedAt: metadata.updatedAt,
+  };
+}
+
+function usesBoundedWorkspaceReceipt(command: WorkspaceCommand): boolean {
+  return command.contract !== "workspace.create@1";
+}
+
+function committedWorkspaceResponse(
+  command: WorkspaceCommand,
+  state: Workspace,
+  event: SignedNostrEvent,
+  projections: readonly WorkspaceProjectionMessageV2[],
+): CommittedWorkspaceCommand | CommittedWorkspaceCommandV2 {
+  if (usesBoundedWorkspaceReceipt(command)) {
+    return {
+      schemaVersion: 2,
+      state: workspaceMetadata(state),
+      memberDeltas: projections.flatMap((projection) => [
+        ...projection.memberDeltas,
+      ]),
+      event,
+    };
+  }
+  const legacy: CommittedWorkspaceCommand = { state, event };
+  return legacy;
+}
 
 interface AccountMergeWorkspaceMembershipChange {
   readonly operationId: string;
@@ -324,7 +415,9 @@ export class WorkspaceDO extends DurableObject<ApiEnv> {
       }
       return {
         ok: true,
-        value: JSON.parse(completed.response_json) as CommittedWorkspaceCommand,
+        value: JSON.parse(completed.response_json) as
+          | CommittedWorkspaceCommand
+          | CommittedWorkspaceCommandV2,
         replayed: true,
       };
     }
@@ -416,13 +509,22 @@ export class WorkspaceDO extends DurableObject<ApiEnv> {
         decision,
         placeholderEvent,
       );
-      const candidateResponseJson = JSON.stringify({
-        state: decision.nextState,
-        event: placeholderEvent,
-      } satisfies CommittedWorkspaceCommand);
       if (!validWorkspaceProjectionChunks(candidateProjections)) {
         return { ok: false, code: "internal" };
       }
+      const candidateResponseJson = JSON.stringify(
+        committedWorkspaceResponse(
+          command,
+          decision.nextState,
+          placeholderEvent,
+          candidateProjections,
+        ),
+      );
+      const nextStateJson = JSON.stringify(
+        usesBoundedWorkspaceReceipt(command)
+          ? workspaceMetadata(decision.nextState)
+          : decision.nextState,
+      );
       const chunksJson = canonicalJson(candidateProjections);
       const projectionWrite = workspaceProjectionWriteCost({
         event: placeholderEvent,
@@ -432,7 +534,7 @@ export class WorkspaceDO extends DurableObject<ApiEnv> {
           payloadHash,
           commandJson,
           unsignedJson: JSON.stringify(decision.event),
-          nextStateJson: JSON.stringify(decision.nextState),
+          nextStateJson,
           chunksJson,
         },
       });
@@ -495,7 +597,7 @@ export class WorkspaceDO extends DurableObject<ApiEnv> {
         payloadHash,
         commandJson,
         JSON.stringify(decision.event),
-        JSON.stringify(decision.nextState),
+        nextStateJson,
         chunksJson,
         authorityReduction ? 1 : 0,
         authorization?.sessionId ?? null,
@@ -832,7 +934,7 @@ export class WorkspaceDO extends DurableObject<ApiEnv> {
     if (row === undefined) {
       return { ok: false, code: "invite_invalid" };
     }
-    const state = this.state();
+    const state = this.stateMetadata();
     if (state === null || state.status !== "active") {
       return { ok: false, code: "not_found" };
     }
@@ -1034,7 +1136,7 @@ export class WorkspaceDO extends DurableObject<ApiEnv> {
     ) {
       return { ok: false, code: "invalid_request" };
     }
-    const state = this.state();
+    const state = this.stateMetadata();
     if (
       state === null ||
       state.status !== "active" ||
@@ -1042,9 +1144,7 @@ export class WorkspaceDO extends DurableObject<ApiEnv> {
     ) {
       return { ok: false, code: "not_found" };
     }
-    const member = state.members.find(
-      (candidate) => candidate.punkId === query.punkId,
-    );
+    const member = this.memberRow(query.punkId);
     if (
       member === undefined ||
       !roleHasPermission(member.role as WorkspaceRole, "members.manage")
@@ -1057,19 +1157,30 @@ export class WorkspaceDO extends DurableObject<ApiEnv> {
     ) {
       return { ok: false, code: "cursor_stale" };
     }
-    const ordered = [...state.members].sort((left, right) =>
-      left.punkId.localeCompare(right.punkId),
-    );
-    let start = 0;
-    if (query.afterPunkId !== undefined) {
-      const position = ordered.findIndex(
-        (candidate) => candidate.punkId === query.afterPunkId,
-      );
-      if (position < 0) return { ok: false, code: "invalid_request" };
-      start = position + 1;
+    if (
+      query.afterPunkId !== undefined &&
+      this.memberRow(query.afterPunkId) === undefined
+    ) {
+      return { ok: false, code: "invalid_request" };
     }
-    const candidates = ordered.slice(start, start + query.limit + 1);
-    const members = candidates.slice(0, query.limit) as Workspace["members"];
+    const candidates = (
+      query.afterPunkId === undefined
+        ? this.ctx.storage.sql.exec<WorkspaceMemberRow>(
+            `SELECT punk_id, role FROM workspace_members
+             ORDER BY punk_id LIMIT ?`,
+            query.limit + 1,
+          )
+        : this.ctx.storage.sql.exec<WorkspaceMemberRow>(
+            `SELECT punk_id, role FROM workspace_members
+             WHERE punk_id > ? ORDER BY punk_id LIMIT ?`,
+            query.afterPunkId,
+            query.limit + 1,
+          )
+    ).toArray();
+    const members = candidates.slice(0, query.limit).map((row) => ({
+      punkId: row.punk_id,
+      role: row.role as WorkspaceRole,
+    })) as Workspace["members"];
     const workspace: WorkspaceGovernanceView = {
       contract: "workspace.governance-view@1",
       id: state.id,
@@ -1078,7 +1189,7 @@ export class WorkspaceDO extends DurableObject<ApiEnv> {
       visibility: state.visibility,
       status: "active",
       ownerPunkId: state.ownerPunkId,
-      memberCount: state.members.length,
+      memberCount: state.memberCount,
       revision: state.revision,
       cursor: state.cursor,
       createdAt: state.createdAt,
@@ -1174,6 +1285,11 @@ export class WorkspaceDO extends DurableObject<ApiEnv> {
       CREATE TABLE IF NOT EXISTS workspace_state (
         singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
         state_json TEXT NOT NULL
+      ) STRICT;
+
+      CREATE TABLE IF NOT EXISTS workspace_members (
+        punk_id TEXT PRIMARY KEY NOT NULL,
+        role TEXT NOT NULL CHECK (role IN ('owner', 'moderator', 'member', 'guest'))
       ) STRICT;
 
       CREATE TABLE IF NOT EXISTS command_results (
@@ -1423,21 +1539,156 @@ export class WorkspaceDO extends DurableObject<ApiEnv> {
            AND incomplete.delivered_at IS NULL
        )`,
     );
+    this.normalizeLegacyWorkspaceState();
   }
 
-  private state(): Workspace | null {
+  private normalizeLegacyWorkspaceState(): void {
     const row = this.ctx.storage.sql
       .exec<StateRow>(
         "SELECT state_json FROM workspace_state WHERE singleton = 1",
       )
       .toArray()[0];
-    if (row === undefined) {
+    if (row === undefined) return;
+    const parsed = parseJson(row.state_json);
+    if (!validateContract("punks://contracts/workspace@1", parsed).valid) {
+      return;
+    }
+    const legacy = parsed as Workspace;
+    this.ctx.storage.transactionSync(() => {
+      this.ctx.storage.sql.exec("DELETE FROM workspace_members");
+      for (const member of legacy.members) {
+        this.ctx.storage.sql.exec(
+          "INSERT INTO workspace_members (punk_id, role) VALUES (?, ?)",
+          member.punkId,
+          member.role,
+        );
+      }
+      this.ctx.storage.sql.exec(
+        "UPDATE workspace_state SET state_json = ? WHERE singleton = 1",
+        canonicalJson(workspaceMetadata(legacy)),
+      );
+    });
+  }
+
+  private stateMetadata(): WorkspaceMetadataV2 | null {
+    const row = this.ctx.storage.sql
+      .exec<StateRow>(
+        "SELECT state_json FROM workspace_state WHERE singleton = 1",
+      )
+      .toArray()[0];
+    if (row === undefined) return null;
+    return parseWorkspaceMetadata(parseJson(row.state_json));
+  }
+
+  private memberRows(): WorkspaceMemberRow[] {
+    return this.ctx.storage.sql
+      .exec<WorkspaceMemberRow>(
+        "SELECT punk_id, role FROM workspace_members ORDER BY punk_id",
+      )
+      .toArray();
+  }
+
+  private state(): Workspace | null {
+    const metadata = this.stateMetadata();
+    if (metadata === null) return null;
+    const members = this.memberRows().map((row) => ({
+      punkId: row.punk_id,
+      role: row.role as WorkspaceRole,
+    })) as Workspace["members"];
+    if (
+      members.length !== metadata.memberCount ||
+      !members.some(
+        (member) =>
+          member.punkId === metadata.ownerPunkId && member.role === "owner",
+      )
+    ) {
       return null;
     }
-    const parsed = parseJson(row.state_json);
-    return validateContract("punks://contracts/workspace@1", parsed).valid
-      ? (parsed as Workspace)
+    const { memberCount: _, ...state } = metadata;
+    const workspace: Workspace = { ...state, members };
+    return validateContract("punks://contracts/workspace@1", workspace).valid
+      ? workspace
       : null;
+  }
+
+  private memberRow(punkId: string): WorkspaceMemberRow | undefined {
+    return this.ctx.storage.sql
+      .exec<WorkspaceMemberRow>(
+        "SELECT punk_id, role FROM workspace_members WHERE punk_id = ?",
+        punkId,
+      )
+      .toArray()[0];
+  }
+
+  private persistNormalizedWorkspace(
+    nextState: Workspace,
+    chunks: readonly WorkspaceProjectionMessageV2[],
+  ): boolean {
+    if (chunks.length === 0) {
+      // Compatibility path for a pending command written before V2 deltas.
+      if (
+        !nextState.members.some(
+          (member) =>
+            member.punkId === nextState.ownerPunkId && member.role === "owner",
+        )
+      ) {
+        return false;
+      }
+      this.ctx.storage.sql.exec("DELETE FROM workspace_members");
+      for (const member of nextState.members) {
+        this.ctx.storage.sql.exec(
+          "INSERT INTO workspace_members (punk_id, role) VALUES (?, ?)",
+          member.punkId,
+          member.role,
+        );
+      }
+    } else {
+      let memberCount = this.stateMetadata()?.memberCount ?? 0;
+      const deltas = chunks.flatMap((chunk) => chunk.memberDeltas);
+      const finalRoles = new Map<string, WorkspaceRole | null>();
+      const seen = new Set<string>();
+      for (const delta of deltas) {
+        if (!seen.add(delta.punkId)) return false;
+        const existing = this.memberRow(delta.punkId);
+        if (delta.present) {
+          if (existing === undefined) memberCount += 1;
+          finalRoles.set(delta.punkId, delta.role as WorkspaceRole);
+        } else {
+          if (existing === undefined) return false;
+          memberCount -= 1;
+          finalRoles.set(delta.punkId, null);
+        }
+      }
+      const ownerRole = finalRoles.has(nextState.ownerPunkId)
+        ? finalRoles.get(nextState.ownerPunkId)
+        : (this.memberRow(nextState.ownerPunkId)?.role as
+            | WorkspaceRole
+            | undefined);
+      if (memberCount !== nextState.members.length || ownerRole !== "owner") {
+        return false;
+      }
+      for (const delta of deltas) {
+        if (delta.present) {
+          this.ctx.storage.sql.exec(
+            `INSERT INTO workspace_members (punk_id, role) VALUES (?, ?)
+             ON CONFLICT(punk_id) DO UPDATE SET role = excluded.role`,
+            delta.punkId,
+            delta.role,
+          );
+        } else {
+          this.ctx.storage.sql.exec(
+            "DELETE FROM workspace_members WHERE punk_id = ?",
+            delta.punkId,
+          );
+        }
+      }
+    }
+    this.ctx.storage.sql.exec(
+      `INSERT INTO workspace_state (singleton, state_json) VALUES (1, ?)
+       ON CONFLICT(singleton) DO UPDATE SET state_json = excluded.state_json`,
+      canonicalJson(workspaceMetadata(nextState)),
+    );
+    return true;
   }
 
   private effectiveState(): Workspace | null {
@@ -1448,13 +1699,22 @@ export class WorkspaceDO extends DurableObject<ApiEnv> {
     const committed = this.state();
     const command = parseWorkspaceCommand(String(pending.command_json));
     const overlay = parseJson(String(pending.next_state_json));
+    const fullOverlay = validateContract(
+      "punks://contracts/workspace@1",
+      overlay,
+    ).valid
+      ? (overlay as Workspace)
+      : null;
+    const overlayMetadata = parseWorkspaceMetadata(overlay);
+    const coordinates =
+      fullOverlay === null ? overlayMetadata : workspaceMetadata(fullOverlay);
     const unsigned = parseJson(String(pending.unsigned_json));
     const chunks = parseWorkspaceProjectionChunks(String(pending.chunks_json));
     if (
       committed === null ||
       command === null ||
       !isWorkspaceAuthorityReduction(committed, command) ||
-      !validateContract("punks://contracts/workspace@1", overlay).valid ||
+      coordinates === null ||
       !validateContract("punks://contracts/nostr.unsigned-event@1", unsigned)
         .valid
     ) {
@@ -1464,13 +1724,18 @@ export class WorkspaceDO extends DurableObject<ApiEnv> {
     try {
       expected = decideWorkspaceReduction(committed, command, {
         workspaceId: committed.id,
-        cursor: (overlay as Workspace).cursor,
-        now: new Date((overlay as Workspace).updatedAt),
+        cursor: coordinates.cursor,
+        now: new Date(coordinates.updatedAt),
       });
     } catch {
       return null;
     }
-    if (canonicalJson(expected.nextState) !== canonicalJson(overlay)) {
+    const overlayMatches =
+      fullOverlay === null
+        ? canonicalJson(workspaceMetadata(expected.nextState)) ===
+          canonicalJson(overlayMetadata)
+        : canonicalJson(expected.nextState) === canonicalJson(fullOverlay);
+    if (!overlayMatches) {
       return null;
     }
     const validPendingEvent =
@@ -1479,12 +1744,12 @@ export class WorkspaceDO extends DurableObject<ApiEnv> {
         : validPendingWorkspaceReductionV2(
             committed,
             command,
-            overlay as Workspace,
+            expected.nextState,
             unsigned as UnsignedNostrEvent,
             chunks,
             expected.event,
           );
-    return validPendingEvent ? (overlay as Workspace) : null;
+    return validPendingEvent ? expected.nextState : null;
   }
 
   private result(commandId: string): ResultRow | undefined {
@@ -1761,17 +2026,17 @@ export class WorkspaceDO extends DurableObject<ApiEnv> {
     flushInBackground = true,
   ): Promise<WorkspaceExecuteResult> {
     const pendingInvitation = parsePendingInvitation(pending.invitation_json);
-    if (
-      !(await validPendingWorkspaceCommand(
-        pending,
-        this.state(),
-        this.ctx.id.name ?? "",
-        pendingInvitation,
-      ))
-    ) {
+    const replayedPending = await replayPendingWorkspaceCommand(
+      pending,
+      this.state(),
+      this.ctx.id.name ?? "",
+      pendingInvitation,
+    );
+    if (replayedPending === null) {
       this.markPendingFailure();
       return { ok: false, code: "internal" };
     }
+    const { command, nextState, chunks: pendingChunks } = replayedPending;
     let signedEvent: SignedNostrEvent;
     try {
       signedEvent = await this.attest(
@@ -1784,10 +2049,6 @@ export class WorkspaceDO extends DurableObject<ApiEnv> {
 
     const commandId = String(pending.command_id);
     const payloadHash = String(pending.payload_hash);
-    const nextState = JSON.parse(String(pending.next_state_json)) as Workspace;
-    const pendingChunks = parseWorkspaceProjectionChunks(
-      String(pending.chunks_json),
-    );
     const projections:
       | readonly WorkspaceProjectionMessageV2[]
       | readonly WorkspaceProjectionMessage[] =
@@ -1820,9 +2081,6 @@ export class WorkspaceDO extends DurableObject<ApiEnv> {
       this.markPendingFailure();
       return { ok: false, code: "internal" };
     }
-    const command = JSON.parse(
-      String(pending.command_json),
-    ) as WorkspaceCommand;
     const authorization = parsePendingAuthorization(pending);
     if (
       authorization === undefined ||
@@ -1944,10 +2202,14 @@ export class WorkspaceDO extends DurableObject<ApiEnv> {
         };
       }
     }
-    const response: CommittedWorkspaceCommand = {
-      state: nextState,
-      event: signedEvent,
-    };
+    const response = committedWorkspaceResponse(
+      command,
+      nextState,
+      signedEvent,
+      pendingChunks.length > 0
+        ? (projections as readonly WorkspaceProjectionMessageV2[])
+        : [],
+    );
     const responseJson = JSON.stringify(response);
     const resultBytes = workspaceResultByteLength({
       commandId,
@@ -1959,16 +2221,19 @@ export class WorkspaceDO extends DurableObject<ApiEnv> {
       event: signedEvent,
       projections,
     });
-    let finalized: CommittedWorkspaceCommand | undefined;
+    let finalized:
+      | CommittedWorkspaceCommand
+      | CommittedWorkspaceCommandV2
+      | undefined;
 
     this.ctx.storage.transactionSync(() => {
       const currentPending = this.pending();
       if (currentPending === undefined) {
         const existing = this.result(commandId);
         if (existing !== undefined && existing.payload_hash === payloadHash) {
-          finalized = JSON.parse(
-            existing.response_json,
-          ) as CommittedWorkspaceCommand;
+          finalized = JSON.parse(existing.response_json) as
+            | CommittedWorkspaceCommand
+            | CommittedWorkspaceCommandV2;
         }
         return;
       }
@@ -2054,6 +2319,11 @@ export class WorkspaceDO extends DurableObject<ApiEnv> {
         ) {
           return;
         }
+      }
+      if (!this.persistNormalizedWorkspace(nextState, pendingChunks)) {
+        return;
+      }
+      if (pendingInvitation !== null) {
         this.ctx.storage.sql.exec(
           `UPDATE workspace_invitations
            SET uses = uses + 1, version = version + 1
@@ -2066,11 +2336,6 @@ export class WorkspaceDO extends DurableObject<ApiEnv> {
           pendingInvitation.version,
         );
       }
-      this.ctx.storage.sql.exec(
-        `INSERT INTO workspace_state (singleton, state_json) VALUES (1, ?)
-         ON CONFLICT(singleton) DO UPDATE SET state_json = excluded.state_json`,
-        JSON.stringify(nextState),
-      );
       this.ctx.storage.sql.exec(
         `INSERT INTO journal
           (cursor, event_id, event_kind, event_json, chunks_json, committed_at)
@@ -3241,57 +3506,75 @@ function parseWorkspaceCommand(value: string): WorkspaceCommand | null {
     : null;
 }
 
-async function validPendingWorkspaceCommand(
+interface ReplayedPendingWorkspaceCommand {
+  command: WorkspaceCommand;
+  nextState: Workspace;
+  chunks: WorkspaceProjectionMessageV2[];
+}
+
+async function replayPendingWorkspaceCommand(
   pending: PendingRow,
   current: Workspace | null,
   durableObjectName: string,
   invitation: PendingInvitationClaim | null,
-): Promise<boolean> {
+): Promise<ReplayedPendingWorkspaceCommand | null> {
   const command = parseWorkspaceCommand(String(pending.command_json));
-  const nextState = parseJson(String(pending.next_state_json));
+  const storedNextState = parseJson(String(pending.next_state_json));
   const unsigned = parseJson(String(pending.unsigned_json));
+  const fullStoredState = validateContract(
+    "punks://contracts/workspace@1",
+    storedNextState,
+  ).valid
+    ? (storedNextState as Workspace)
+    : null;
+  const storedMetadata = parseWorkspaceMetadata(storedNextState);
+  const coordinates =
+    fullStoredState === null
+      ? storedMetadata
+      : workspaceMetadata(fullStoredState);
   if (
     command === null ||
     command.commandId !== pending.command_id ||
     (await sha256Hex(canonicalJson(command))) !== pending.payload_hash ||
-    !validateContract("punks://contracts/workspace@1", nextState).valid ||
+    coordinates === null ||
     !validateContract("punks://contracts/nostr.unsigned-event@1", unsigned)
       .valid
   ) {
-    return false;
+    return null;
   }
-  const workspace = nextState as Workspace;
   const context = {
     workspaceId:
       command.contract === "workspace.create@1"
         ? durableObjectName
         : command.workspaceId,
-    cursor: workspace.cursor,
-    now: new Date(workspace.updatedAt),
+    cursor: coordinates.cursor,
+    now: new Date(coordinates.updatedAt),
   };
   if (
     context.workspaceId.length === 0 ||
     !Number.isFinite(context.now.getTime())
   ) {
-    return false;
+    return null;
   }
   try {
     const chunksJson = String(pending.chunks_json);
     const chunks = parseWorkspaceProjectionChunks(chunksJson);
     if (canonicalJson(chunks) !== chunksJson) {
-      return false;
+      return null;
     }
     if (chunks.length === 0) {
+      if (fullStoredState === null) return null;
       const legacy = decideWorkspaceCommand(
         current,
         command,
         context,
         invitation,
       );
-      return (
-        canonicalJson(legacy.nextState) === canonicalJson(workspace) &&
+      return canonicalJson(legacy.nextState) ===
+        canonicalJson(fullStoredState) &&
         canonicalJson(legacy.event) === canonicalJson(unsigned)
-      );
+        ? { command, nextState: legacy.nextState, chunks }
+        : null;
     }
     const decision = await decideWorkspaceCommandV2(
       current,
@@ -3303,14 +3586,19 @@ async function validPendingWorkspaceCommand(
       decision,
       placeholderSignedEvent(decision.event),
     );
-    return (
-      canonicalJson(decision.nextState) === canonicalJson(workspace) &&
+    const storedStateMatches =
+      fullStoredState === null
+        ? canonicalJson(workspaceMetadata(decision.nextState)) ===
+          canonicalJson(storedMetadata)
+        : canonicalJson(decision.nextState) === canonicalJson(fullStoredState);
+    return storedStateMatches &&
       canonicalJson(decision.event) === canonicalJson(unsigned) &&
       canonicalJson(expectedChunks) === canonicalJson(chunks) &&
       validWorkspaceProjectionChunks(chunks)
-    );
+      ? { command, nextState: decision.nextState, chunks }
+      : null;
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -3462,7 +3750,7 @@ function invitationStatus(
 
 function workspaceInvitationView(
   row: InvitationRow,
-  workspace: Workspace,
+  workspace: Pick<Workspace, "id" | "slug" | "name" | "revision">,
   now: Date,
 ): WorkspaceInvitationView {
   return {
@@ -3563,7 +3851,10 @@ function claimLiabilityDelta(pending: PendingInvitationClaim | null): number {
 }
 
 function workspaceInvitationClaimResponse(
-  workspace: Workspace,
+  workspace: Pick<
+    Workspace,
+    "id" | "slug" | "name" | "visibility" | "revision"
+  >,
   role: WorkspaceRole,
   result: ClaimWorkspaceInvitationResponse["result"],
   replayed: boolean,
@@ -3599,6 +3890,34 @@ function claimResponseFromStored(
       ...(parsed as ClaimWorkspaceInvitationResponse),
       replayed,
     };
+  }
+  if (
+    typeof parsed === "object" &&
+    parsed !== null &&
+    Reflect.get(parsed, "schemaVersion") === 2
+  ) {
+    const metadata = parseWorkspaceMetadata(Reflect.get(parsed, "state"));
+    const deltas = Reflect.get(parsed, "memberDeltas");
+    const membership = Array.isArray(deltas)
+      ? deltas.find(
+          (delta) =>
+            typeof delta === "object" &&
+            delta !== null &&
+            Reflect.get(delta, "punkId") === punkId &&
+            Reflect.get(delta, "present") === true &&
+            ["owner", "moderator", "member", "guest"].includes(
+              String(Reflect.get(delta, "role")),
+            ),
+        )
+      : undefined;
+    if (metadata !== null && membership !== undefined) {
+      return workspaceInvitationClaimResponse(
+        metadata,
+        Reflect.get(membership, "role") as WorkspaceRole,
+        "joined",
+        replayed,
+      );
+    }
   }
   if (
     typeof parsed !== "object" ||

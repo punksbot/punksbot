@@ -64,10 +64,7 @@ fn validate_search_cursor(value: &str) -> Result<(), ClientFailure> {
 }
 
 fn lexical_terms(value: &str, maximum: usize) -> Vec<String> {
-    let normalized = value
-        .nfkc()
-        .flat_map(char::to_lowercase)
-        .collect::<String>();
+    let normalized = value.nfkc().collect::<String>().to_lowercase();
     let mut terms = Vec::new();
     let mut seen = HashSet::new();
     for term in normalized.split(|character: char| !character.is_alphanumeric()) {

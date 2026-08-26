@@ -3755,6 +3755,8 @@ async function mutateMember(
     }
   }
   const state = result.value.state;
+  const memberCount =
+    "members" in state ? state.members.length : state.memberCount;
   const workspace: WorkspaceGovernanceView = {
     contract: "workspace.governance-view@1",
     id: state.id,
@@ -3763,7 +3765,7 @@ async function mutateMember(
     visibility: state.visibility,
     status: "active",
     ownerPunkId: state.ownerPunkId,
-    memberCount: state.members.length,
+    memberCount,
     revision: state.revision,
     cursor: state.cursor,
     createdAt: state.createdAt,

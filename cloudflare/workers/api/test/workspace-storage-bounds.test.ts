@@ -4,7 +4,6 @@ import type {
   RenameWorkspaceCommand,
   SetWorkspaceMemberRoleCommand,
   SignedNostrEvent,
-  Workspace,
 } from "@punks/contracts";
 import { env, evictDurableObject, runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
@@ -474,13 +473,14 @@ describe("WorkspaceDO storage bounds", () => {
           "SELECT state_json FROM workspace_state WHERE singleton = 1",
         )
         .one();
-      const workspace = JSON.parse(row.state_json) as Workspace;
-      workspace.members.push(
-        ...Array.from({ length: 1_200 }, (_, index) => ({
-          punkId: `member-${String(index).padStart(4, "0")}-${"x".repeat(96)}`,
-          role: "member" as const,
-        })),
-      );
+      const workspace = JSON.parse(row.state_json) as { memberCount: number };
+      for (let index = 0; index < 1_200; index += 1) {
+        state.storage.sql.exec(
+          "INSERT INTO workspace_members (punk_id, role) VALUES (?, 'member')",
+          `member-${String(index).padStart(4, "0")}-${"x".repeat(96)}`,
+        );
+      }
+      workspace.memberCount += 1_200;
       state.storage.sql.exec(
         "UPDATE workspace_state SET state_json = ? WHERE singleton = 1",
         JSON.stringify(workspace),
@@ -958,7 +958,7 @@ describe("WorkspaceDO storage bounds", () => {
         `WITH RECURSIVE sequence(value) AS (
            SELECT 2
            UNION ALL
-           SELECT value + 1 FROM sequence WHERE value < 4094
+           SELECT value + 1 FROM sequence WHERE value < 65534
          )
          INSERT INTO command_results
            (command_id, payload_hash, command_json, response_json, committed_at)
@@ -1007,7 +1007,7 @@ describe("WorkspaceDO storage bounds", () => {
       ok: true,
       state: { cursor: 3, members: [{ punkId: ownerPunkId, role: "owner" }] },
     });
-    expect(observed).toMatchObject({ pending: 0, commandResults: 4_096 });
+    expect(observed).toMatchObject({ pending: 0, commandResults: 65_536 });
   });
 
   it("rechecks result capacity after attestation without leaving a normal pending command", async () => {

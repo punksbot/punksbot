@@ -1,7 +1,12 @@
-import type { PresenceView } from "@punks/contracts";
+import type { PresenceTypingPatch, PresenceView } from "@punks/contracts";
 
 export type LeaseRow = Record<
-  "punk_id" | "session_id" | "device_id" | "hold_id" | "lease_token",
+  | "punk_id"
+  | "session_id"
+  | "device_id"
+  | "hold_id"
+  | "lease_token"
+  | "connection_id",
   string
 > &
   Record<"status", string | null> &
@@ -36,17 +41,20 @@ export interface PresenceSocketAttachment {
   leaseGeneration: number;
   deviceId: string;
   clientGeneration: number;
+  connectionId: string;
 }
 
-export interface CurrentTypingPatch {
-  workspaceId: string;
-  conversationId: string;
-  punkId: string;
-  active: boolean;
-  leaseGeneration: number;
-  sequence: number;
-  expiresAt: string | null;
-}
+/** Closed RPC projection derived from the generated public typing contract. */
+export type CurrentTypingRpcPatch = Pick<
+  PresenceTypingPatch,
+  | "workspaceId"
+  | "conversationId"
+  | "punkId"
+  | "active"
+  | "leaseGeneration"
+  | "sequence"
+  | "expiresAt"
+>;
 
 export function socketAttachment(
   value: unknown,
@@ -66,7 +74,8 @@ export function socketAttachment(
     typeof attachment.leaseToken !== "string" ||
     !Number.isSafeInteger(attachment.leaseGeneration) ||
     typeof attachment.deviceId !== "string" ||
-    !Number.isSafeInteger(attachment.clientGeneration)
+    !Number.isSafeInteger(attachment.clientGeneration) ||
+    typeof attachment.connectionId !== "string"
   ) {
     return null;
   }
