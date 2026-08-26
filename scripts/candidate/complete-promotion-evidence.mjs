@@ -21,6 +21,21 @@ import {
   resolve,
 } from "node:path";
 import { fileURLToPath } from "node:url";
+import YAML from "yaml";
+
+import { validateStagingDeploymentProof } from "../../cloudflare/scripts/staging-deployment-proof.mjs";
+import { validateSigstoreBundleContent } from "../github-attestation-lib.mjs";
+import {
+  validatePromotionProfilesContent,
+  validateStagingMaterialContent,
+} from "../promotion-materials-lib.mjs";
+import { VERIFICATIONS_ARTEFACT } from "../promotion-installed-transcript-lib.mjs";
+import {
+  MATRICE_ACCESSIBILITE,
+  PREUVES_RECUPERATION,
+  TYPES_FAUTE,
+} from "../promotion-resilience-lib.mjs";
+import { PLATEFORMES } from "../release-graph-lib.mjs";
 
 const FRAGMENTS = Object.freeze([
   "platform-index.json",
@@ -108,6 +123,14 @@ function parseJson(file, label) {
   }
 }
 
+function parseYaml(file, label) {
+  try {
+    return YAML.parse(file.content.toString("utf8"));
+  } catch {
+    fail(`${label} is not YAML`);
+  }
+}
+
 function canonicalRelativePath(path) {
   return (
     typeof path === "string" &&
@@ -134,7 +157,7 @@ function exactKeys(value, keys, label) {
 
 function validateReference(
   reference,
-  { evidenceRoot, sourceSha, stagingDeploymentId, ids },
+  { evidenceRoot, sourceSha, stagingDeploymentId, ids, proofs },
 ) {
   exactKeys(reference, ["id", "chemin", "sha256", "sujet"], "proof reference");
   exactKeys(reference.sujet, ["chemin", "sha256"], "proof subject reference");
@@ -199,12 +222,13 @@ function validateReference(
     );
   }
   ids.add(reference.id);
+  proofs.set(reference.id, { proof, reference, subjectFile });
   return reference;
 }
 
 function readFragment(
   path,
-  { evidenceRoot, sourceSha, stagingDeploymentId, ids },
+  { evidenceRoot, sourceSha, stagingDeploymentId, ids, proofs },
 ) {
   const label = `evidence fragment ${path.split("/").at(-1)}`;
   const file = stableFile(path, label, evidenceRoot);
@@ -223,8 +247,122 @@ function readFragment(
       sourceSha,
       stagingDeploymentId,
       ids,
+      proofs,
     }),
   );
+}
+
+function requiredEvidenceIds(profile, releaseGraph, goldens) {
+  const required = new Set([
+    "candidat",
+    "profil/promotion",
+    "registres",
+    "staging/materiau",
+    "staging/deploiement",
+    "production/bundle",
+    "production/manifeste",
+    "recuperation/captures",
+    "retrait/diff",
+    "retrait/verdicts",
+    "scan/sources",
+    "scan/dependances",
+    "scan/artefact",
+    "scan/reseau",
+  ]);
+  for (const gate of releaseGraph["preuves-obligatoires"]) {
+    required.add(`gate/${gate}`);
+  }
+  for (const platform of PLATEFORMES) {
+    required.add(`transcript/${platform}`);
+    required.add(`staging/reobservation/${platform}`);
+    required.add(`artefact/${platform}/bundle`);
+    required.add(`artefact/${platform}/signature`);
+    for (const verification of VERIFICATIONS_ARTEFACT) {
+      required.add(`artefact/${platform}/verification/${verification}`);
+    }
+    for (const story of profile.stories) {
+      required.add(`parcours/${platform}/${story}`);
+    }
+    for (const criterion of MATRICE_ACCESSIBILITE) {
+      required.add(`accessibilite/${platform}/${criterion}`);
+    }
+    required.add(`accessibilite/${platform}/resultat`);
+  }
+  for (const type of TYPES_FAUTE) {
+    for (const { id: authority } of profile.authorities) {
+      required.add(`faute/${type}/${authority}`);
+      for (const recovery of PREUVES_RECUPERATION) {
+        required.add(`recuperation/${recovery}/${type}/${authority}`);
+      }
+    }
+  }
+  for (const line of goldens["retraits-par-tranche"].lignes) {
+    if (line.tranche === "tranche:1") required.add(`golden/${line.test}`);
+  }
+  return required;
+}
+
+function requireExactEvidenceSet(ids, required) {
+  const actual = [...ids].sort();
+  const expected = [...required].sort();
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+    const missing = expected.filter((id) => !ids.has(id));
+    const extra = actual.filter((id) => !required.has(id));
+    fail(
+      `required evidence set is incomplete or widened (missing: ${missing.join(", ") || "none"}; extra: ${extra.join(", ") || "none"})`,
+    );
+  }
+}
+
+function requireSubject(proofs, id, file) {
+  const entry = proofs.get(id);
+  if (entry?.subjectFile.sha256 !== file.sha256) {
+    fail(`proof ${id} is not bound to its exact versioned material`);
+  }
+  return entry.proof;
+}
+
+function requireMaterialBindings(
+  proofs,
+  {
+    aggregateFile,
+    promotionProfileFile,
+    stagingMaterialFile,
+    stagingDeploymentFile,
+    releaseGraphFile,
+    withdrawalInventoryFile,
+    goldensFile,
+    provenanceFile,
+  },
+) {
+  requireSubject(proofs, "candidat", aggregateFile);
+  requireSubject(proofs, "profil/promotion", promotionProfileFile);
+  requireSubject(proofs, "staging/materiau", stagingMaterialFile);
+  requireSubject(proofs, "staging/deploiement", stagingDeploymentFile);
+  requireSubject(proofs, "production/bundle", provenanceFile);
+  requireSubject(proofs, "production/manifeste", aggregateFile);
+
+  const registries = proofs.get("registres")?.proof.data.materials;
+  exactKeys(
+    registries,
+    ["releaseGraphSha256", "withdrawalInventorySha256", "goldensSha256"],
+    "registry material bindings",
+  );
+  if (
+    registries.releaseGraphSha256 !== releaseGraphFile.sha256 ||
+    registries.withdrawalInventorySha256 !== withdrawalInventoryFile.sha256 ||
+    registries.goldensSha256 !== goldensFile.sha256
+  ) {
+    fail("registry proof is not bound to the exact migration materials");
+  }
+  if (
+    proofs.get("retrait/diff")?.proof.data.withdrawalInventorySha256 !==
+      withdrawalInventoryFile.sha256 ||
+    proofs.get("retrait/verdicts")?.proof.data.goldensSha256 !==
+      goldensFile.sha256
+  ) {
+    fail("withdrawal proofs are not bound to their exact versioned materials");
+  }
 }
 
 /**
@@ -278,26 +416,108 @@ export function completePromotionEvidence({
     fail("candidate aggregate identity is divergent");
   }
 
-  for (const [path, label] of [
-    [promotionProfile, "promotion profile material"],
-    [stagingMaterial, "staging material"],
-    [releaseGraph, "release graph material"],
-    [withdrawalInventory, "withdrawal inventory material"],
-    [goldens, "goldens material"],
-    [provenanceBundle, "pre-dossier provenance bundle"],
-  ]) {
-    stableFile(path, label);
+  const promotionProfileFile = stableFile(
+    promotionProfile,
+    "promotion profile material",
+  );
+  const stagingMaterialFile = stableFile(stagingMaterial, "staging material");
+  const releaseGraphFile = stableFile(releaseGraph, "release graph material");
+  const withdrawalInventoryFile = stableFile(
+    withdrawalInventory,
+    "withdrawal inventory material",
+  );
+  const goldensFile = stableFile(goldens, "goldens material");
+  const provenanceFile = stableFile(
+    provenanceBundle,
+    "pre-dossier provenance bundle",
+  );
+  const stagingDeploymentFile = stableFile(
+    join(evidenceRoot, "staging-deployment-proof.json"),
+    "staging deployment proof",
+    evidenceRoot,
+  );
+  let profile;
+  let stagingCoordinates;
+  try {
+    profile = validatePromotionProfilesContent(promotionProfileFile.content, {
+      tranche: 1,
+    });
+    stagingCoordinates = validateStagingMaterialContent(
+      stagingMaterialFile.content,
+    );
+    validateSigstoreBundleContent(provenanceFile.content);
+  } catch (error) {
+    fail(
+      `versioned promotion material is invalid: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  const releaseGraphValue = parseYaml(
+    releaseGraphFile,
+    "release graph material",
+  );
+  const withdrawalValue = parseYaml(
+    withdrawalInventoryFile,
+    "withdrawal inventory material",
+  );
+  const goldensValue = parseYaml(goldensFile, "goldens material");
+  if (
+    releaseGraphValue?.version !== 1 ||
+    !Array.isArray(releaseGraphValue["preuves-obligatoires"]) ||
+    releaseGraphValue["preuves-obligatoires"].length === 0 ||
+    releaseGraphValue["preuves-obligatoires"].some(
+      (gate) => typeof gate !== "string" || gate.length === 0,
+    ) ||
+    withdrawalValue?.version !== 1 ||
+    !Array.isArray(withdrawalValue.actifs) ||
+    goldensValue?.version !== 1 ||
+    !Array.isArray(goldensValue?.["retraits-par-tranche"]?.lignes)
+  ) {
+    fail("migration materials do not expose the closed tranche 1 structure");
+  }
+  let stagingDeployment;
+  try {
+    stagingDeployment = validateStagingDeploymentProof(
+      parseJson(stagingDeploymentFile, "staging deployment proof"),
+      {
+        accountId: stagingCoordinates.accountId,
+        environment: "staging",
+        sourceSha,
+      },
+    );
+  } catch (error) {
+    fail(
+      `staging deployment proof is invalid: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  if (stagingDeployment.deploymentId !== stagingDeploymentId) {
+    fail("staging deployment proof differs from the candidate aggregate");
   }
 
   const ids = new Set();
+  const proofs = new Map();
   const references = FRAGMENTS.flatMap((name) =>
     readFragment(join(evidenceRoot, name), {
       evidenceRoot,
       sourceSha,
       stagingDeploymentId,
       ids,
+      proofs,
     }),
   ).sort((left, right) => left.id.localeCompare(right.id));
+  requireExactEvidenceSet(
+    ids,
+    requiredEvidenceIds(profile, releaseGraphValue, goldensValue),
+  );
+  requireMaterialBindings(proofs, {
+    aggregateFile,
+    promotionProfileFile,
+    stagingMaterialFile,
+    stagingDeploymentFile,
+    releaseGraphFile,
+    withdrawalInventoryFile,
+    goldensFile,
+    provenanceFile,
+  });
   const index = {
     schema: "punks.promotion-evidence-index.v1",
     preuves: references,

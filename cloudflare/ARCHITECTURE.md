@@ -578,8 +578,13 @@ perform remote inference. Focused suites exercise each authority, service,
 Queue, Workflow, model and action seam; no single-pool multi-Worker end-to-end
 test is claimed.
 
-Only `.github/workflows/punks-cloudflare.yml` is active. The complete imported
-Buzz workflow sources are retained under `.github/legacy-workflows` where
-GitHub cannot register them. `cloudflare:check-boundary` fails CI if an active
-workflow or any package script in the Punks Cloudflare workspace reintroduces a
-legacy runtime dependency.
+Exactly two Punks workflows are active:
+`.github/workflows/punks-cloudflare.yml` runs the managed Workers gate, while
+`.github/workflows/punks-desktop-candidate.yml` builds the signed desktop
+candidate, reobserves the exact managed staging deployment and remains
+fail-closed until every promotion-evidence fragment exists. Neither workflow
+starts a legacy runtime. The complete imported Buzz workflow sources are
+retained under `.github/legacy-workflows` where GitHub cannot register them.
+`cloudflare:check-boundary` fails CI if either active workflow or any package
+script in the Punks Cloudflare workspace reintroduces a legacy runtime
+dependency.

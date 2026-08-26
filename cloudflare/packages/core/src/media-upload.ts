@@ -2,11 +2,16 @@ import type { CreateMediaUploadGrantCommand } from "@punks/contracts";
 
 import { canonicalJson, deriveOpaqueUuid, sha256Hex } from "./json";
 
+/** Canonical byte size of every non-terminal multipart upload part. */
 export const MEDIA_UPLOAD_PART_SIZE = 8 * 1_024 * 1_024;
+/** Maximum byte length accepted by the first media-upload tranche. */
 export const MEDIA_UPLOAD_MAX_BYTES = 256 * 1_024 * 1_024;
+/** Lifetime of one short media-upload grant. */
 export const MEDIA_UPLOAD_GRANT_TTL_MS = 15 * 60 * 1_000;
+/** Exclusive-operation lease used while mutating one upload intent. */
 export const MEDIA_UPLOAD_OPERATION_LEASE_MS = 30 * 1_000;
 
+/** Immutable, source-bound coordinates prepared for one upload intention. */
 export interface PreparedMediaUploadIntent {
   uploadId: string;
   mediaId: string;
@@ -27,6 +32,7 @@ export interface PreparedMediaUploadIntent {
   candidateKey: string;
 }
 
+/** Derives the immutable upload/media identities and bounded multipart plan. */
 export async function prepareMediaUploadIntent(
   command: CreateMediaUploadGrantCommand,
   nowMs: number,
@@ -65,6 +71,7 @@ export async function prepareMediaUploadIntent(
   };
 }
 
+/** Returns the exact expected bytes for a valid part, or null when out of range. */
 export function expectedMediaUploadPartSize(
   byteLength: number,
   partNumber: number,
@@ -82,6 +89,7 @@ export function expectedMediaUploadPartSize(
     : MEDIA_UPLOAD_PART_SIZE;
 }
 
+/** Canonicalizes the complete claim set authenticated by a short upload grant. */
 export function mediaUploadGrantClaims(
   intent: Pick<
     PreparedMediaUploadIntent,

@@ -1,9 +1,11 @@
+/** Request scope cryptographically bound into a governance roster cursor. */
 export interface WorkspaceGovernanceCursorScope {
   workspaceId: string;
   requesterPunkId: string;
   limit: number;
 }
 
+/** Decoded governance continuation tied to one authority revision and Punk. */
 export interface WorkspaceGovernanceCursor
   extends WorkspaceGovernanceCursorScope {
   version: 1;

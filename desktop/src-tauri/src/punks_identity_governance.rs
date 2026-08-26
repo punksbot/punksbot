@@ -10,6 +10,7 @@ use std::sync::Arc;
 use crate::punks_client::PunksDesktopClient;
 use crate::punks_session_store::{KeyringSessionPersistence, PendingAuthPurpose};
 
+/// Renderer input for one bounded Workspace invitation intent.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateInvitationInput {
@@ -19,6 +20,7 @@ pub struct CreateInvitationInput {
     max_uses: Option<u16>,
 }
 
+/// Creates one Workspace invitation through the generation-bound native client.
 #[tauri::command]
 pub async fn punks_create_workspace_invitation(
     client: tauri::State<'_, PunksDesktopClient>,
@@ -38,6 +40,7 @@ pub async fn punks_create_workspace_invitation(
         .await
 }
 
+/// Resolves one invitation code without exposing the Account Session cookie.
 #[tauri::command]
 pub async fn punks_get_workspace_invitation(
     client: tauri::State<'_, PunksDesktopClient>,
@@ -47,6 +50,7 @@ pub async fn punks_get_workspace_invitation(
     client.account()?.get_workspace_invitation(&code).await
 }
 
+/// Renderer input for an explicit invitation claim at one Workspace revision.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ClaimInvitationInput {
@@ -54,6 +58,7 @@ pub struct ClaimInvitationInput {
     expected_revision: u64,
 }
 
+/// Claims one Workspace invitation through the Account authority.
 #[tauri::command]
 pub async fn punks_claim_workspace_invitation(
     client: tauri::State<'_, PunksDesktopClient>,
@@ -66,6 +71,7 @@ pub async fn punks_claim_workspace_invitation(
         .await
 }
 
+/// Renderer input for revoking one invitation at an expected revision.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RevokeInvitationInput {
@@ -73,6 +79,7 @@ pub struct RevokeInvitationInput {
     expected_revision: u64,
 }
 
+/// Revokes one Workspace invitation through the mounted Workspace Session.
 #[tauri::command]
 pub async fn punks_revoke_workspace_invitation(
     client: tauri::State<'_, PunksDesktopClient>,
@@ -87,6 +94,7 @@ pub async fn punks_revoke_workspace_invitation(
         .await
 }
 
+/// Reads one bounded governance roster page for the mounted Workspace.
 #[tauri::command]
 pub async fn punks_get_workspace_governance(
     client: tauri::State<'_, PunksDesktopClient>,
@@ -101,6 +109,7 @@ pub async fn punks_get_workspace_governance(
         .await
 }
 
+/// Renderer input for one bounded governance roster page.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GovernancePageInput {
@@ -108,6 +117,7 @@ pub struct GovernancePageInput {
     cursor: Option<String>,
 }
 
+/// Renderer input for changing one member's integrated Workspace role.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SetMemberRoleInput {
@@ -116,6 +126,7 @@ pub struct SetMemberRoleInput {
     expected_revision: u64,
 }
 
+/// Changes one member role through the generation-bound Workspace authority.
 #[tauri::command]
 pub async fn punks_set_workspace_member_role(
     client: tauri::State<'_, PunksDesktopClient>,
@@ -130,6 +141,7 @@ pub async fn punks_set_workspace_member_role(
         .await
 }
 
+/// Renderer input for removing one member at an expected Workspace revision.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RemoveMemberInput {
@@ -137,6 +149,7 @@ pub struct RemoveMemberInput {
     expected_revision: u64,
 }
 
+/// Removes one Workspace member through the mounted authority.
 #[tauri::command]
 pub async fn punks_remove_workspace_member(
     client: tauri::State<'_, PunksDesktopClient>,
@@ -151,6 +164,7 @@ pub async fn punks_remove_workspace_member(
         .await
 }
 
+/// Leaves the mounted Workspace and immediately invalidates its native context.
 #[tauri::command]
 pub async fn punks_leave_workspace(
     client: tauri::State<'_, PunksDesktopClient>,
@@ -162,6 +176,7 @@ pub async fn punks_leave_workspace(
     Ok(result)
 }
 
+/// Renderer input for a strongly reauthorized ownership transfer.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TransferWorkspaceOwnershipInput {
@@ -169,6 +184,7 @@ pub struct TransferWorkspaceOwnershipInput {
     expected_revision: u64,
 }
 
+/// Transfers Workspace ownership using one freshly consumed reauthorization.
 #[tauri::command]
 pub async fn punks_transfer_workspace_ownership(
     client: tauri::State<'_, PunksDesktopClient>,
