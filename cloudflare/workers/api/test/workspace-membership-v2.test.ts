@@ -514,7 +514,10 @@ describe("WorkspaceDO membership projection v2", () => {
         return {
           first,
           second,
-          query: instance.query({ contract: "workspace.get@1", workspaceId }),
+          query: await instance.query({
+            contract: "workspace.get@1",
+            workspaceId,
+          }),
           pending: state.storage.sql
             .exec<{ count: number }>(
               "SELECT COUNT(*) AS count FROM pending_command",

@@ -25,6 +25,7 @@ const FIXTURE = {
   workspaceSlug: "promotion-fixture",
   conversationId: "44444444-4444-4444-8444-444444444444",
   seedMessageIds: ["55555555-5555-4555-8555-555555555555"],
+  replyMessageId: "77777777-7777-4777-8777-777777777777",
 };
 const TARGETS = promotionAuthorityTargets(FIXTURE, AUTHORITIES);
 

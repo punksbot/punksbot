@@ -1470,7 +1470,10 @@ export class WorkspaceDO extends PromotionFaultableDurableObject<ApiEnv> {
     return invitationClaimExecutionResult(execution, command.actor.punkId);
   }
 
-  query(input: unknown): WorkspaceQueryResult {
+  async query(input: unknown): Promise<WorkspaceQueryResult> {
+    if (!(await this.promotionAuthorityIsAvailable())) {
+      return { ok: false, code: "not_found" };
+    }
     if (!validateContract("punks://contracts/workspace.get@1", input).valid) {
       return { ok: false, code: "invalid_contract" };
     }

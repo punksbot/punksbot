@@ -84,7 +84,17 @@ describe("ErasureRegistry RPC", () => {
       stagingDeploymentId: `sha256:${"92".repeat(32)}`,
       type: "coupure" as const,
       authority: "erasure-registry",
-      target: { kind: "service" as const, id: "erasure-registry" },
+      target: {
+        kind: "service" as const,
+        id: "erasure-registry",
+        probe: {
+          punkId: "00000000-0000-8000-8000-000000000001",
+          workspaceId: "00000000-0000-8000-8000-000000000059",
+          workspaceSlug: "promotion-fixture",
+          conversationId: "00000000-0000-8000-8000-000000000060",
+          messageId: "00000000-0000-8000-8000-000000000058",
+        },
+      },
     };
     const fault = env.PROMOTION_AUTHORITY_FAULTS.getByName("erasure-registry");
     await expect(fault.injectPromotionFault(identity)).resolves.toMatchObject({

@@ -516,7 +516,7 @@ export async function createSeleniumBrowser(input) {
     async exerciseFollowScenarios() {
       return followScenariosFromIpc(input.outputs.ipc);
     },
-    async exerciseFaultMatrix() {
+    async exerciseFaultMatrix(messageId) {
       const context = input.faultContext;
       if (
         context === null ||
@@ -527,6 +527,10 @@ export async function createSeleniumBrowser(input) {
       ) {
         fail("installed fault context is unavailable");
       }
+      const exactMessageId = boundedText(
+        messageId,
+        "installed fault Message ID",
+      );
       return exerciseIndependentFaultMatrix(
         {
           platform: input.platform,
@@ -534,7 +538,10 @@ export async function createSeleniumBrowser(input) {
           stagingDeploymentId: input.stagingDeploymentId,
           artifactSha256: input.artifactSha256,
           authorities: input.authorities,
-          targets: promotionAuthorityTargets(input.fixture, input.authorities),
+          targets: promotionAuthorityTargets(
+            { ...input.fixture, replyMessageId: exactMessageId },
+            input.authorities,
+          ),
           output: context.output,
         },
         {
@@ -550,13 +557,15 @@ export async function createSeleniumBrowser(input) {
                   `fault ${identity.type}/${identity.authority} remained usable`,
                 );
               }
-              const expected =
-                identity.type === "revocation"
-                  ? "session_expired"
-                  : identity.type === "coupure"
-                    ? "transport"
-                    : "problem";
-              if (result.error?.kind !== expected) {
+              const closedFailureKinds = new Set([
+                "problem",
+                "transport",
+                "contract_violation",
+                "stale_workspace",
+                "session_expired",
+                "ambiguous",
+              ]);
+              if (!closedFailureKinds.has(result.error?.kind)) {
                 fail(
                   `fault ${identity.type}/${identity.authority} returned ${String(result.error?.kind)}`,
                 );
@@ -575,7 +584,7 @@ export async function createSeleniumBrowser(input) {
               }
               return {
                 observedAt: new Date().toISOString(),
-                operation: `installed-native/promotion.fault-observe@1/${identity.authority}`,
+                operation: `installed-native/business-operation/${identity.authority}`,
                 failureKind: result.error.kind,
                 observations: [
                   `${identity.type}/${identity.authority} target=${boundary.target.id} state=${boundary.stateFingerprint} failed closed through the installed native Session; ` +
@@ -586,8 +595,15 @@ export async function createSeleniumBrowser(input) {
             async observeRecovery(identity) {
               const result = await observeNative(identity);
               const terminal = identity.proof === PREUVES_RECUPERATION.at(-1);
+              const sessionRevoked =
+                terminal &&
+                identity.authority === "auth-session" &&
+                identity.type === "perte-autorite";
               if (
-                (terminal && result?.ok !== true) ||
+                (terminal && !sessionRevoked && result?.ok !== true) ||
+                (sessionRevoked &&
+                  (result?.ok !== false ||
+                    result.error?.kind !== "session_expired")) ||
                 (!terminal && result?.ok !== false)
               ) {
                 fail(
@@ -609,9 +625,11 @@ export async function createSeleniumBrowser(input) {
               return {
                 observedAt: new Date().toISOString(),
                 observations: [
-                  terminal
-                    ? `${identity.proof} reopened ${identity.type}/${identity.authority} target=${boundary.target.id} state=${boundary.stateFingerprint} through the installed native Session; worker=${boundary.worker}; binding=${boundary.binding}; class=${boundary.className}`
-                    : `${identity.proof} kept ${identity.type}/${identity.authority} target=${boundary.target.id} state=${boundary.stateFingerprint} closed until terminal recovery; worker=${boundary.worker}; binding=${boundary.binding}; class=${boundary.className}`,
+                  sessionRevoked
+                    ? `${identity.proof} kept the original Session revoked for ${identity.type}/${identity.authority} target=${boundary.target.id}; a fresh provider ceremony is required; worker=${boundary.worker}; binding=${boundary.binding}; class=${boundary.className}`
+                    : terminal
+                      ? `${identity.proof} reopened ${identity.type}/${identity.authority} target=${boundary.target.id} state=${boundary.stateFingerprint} through the installed native Session; worker=${boundary.worker}; binding=${boundary.binding}; class=${boundary.className}`
+                      : `${identity.proof} kept ${identity.type}/${identity.authority} target=${boundary.target.id} state=${boundary.stateFingerprint} closed until terminal recovery; worker=${boundary.worker}; binding=${boundary.binding}; class=${boundary.className}`,
                 ],
               };
             },
@@ -808,7 +826,7 @@ export async function exerciseBrowserInstalledCandidate(input, { browser }) {
   if (!Array.isArray(trace) || trace.length < 7) {
     fail("installed FOLLOW trace is incomplete");
   }
-  await browser.exerciseFaultMatrix();
+  await browser.exerciseFaultMatrix(replyMessageId);
 
   return {
     installed: {

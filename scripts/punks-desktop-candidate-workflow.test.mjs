@@ -70,6 +70,7 @@ const allowedSecretSteps = {
   PUNKS_CLOUDFLARE_API_TOKEN: [
     "verify_staging/observe_staging",
     "build/seal_installed_candidate",
+    "publish_promotion/observe_github_cadence",
   ],
   PUNKS_PROMOTION_SESSION: ["build/exercise_installed_candidate"],
   PUNKS_OPERATOR_PROVISIONING_TOKEN: [
@@ -78,31 +79,34 @@ const allowedSecretSteps = {
     "build/exercise_installed_candidate",
   ],
   PUNKS_LIVE_AUTH_MATRIX: ["verify_staging/prove_live_staging_auth"],
-  PUNKS_OPERATIONAL_BUDGET_OBSERVATION: [
-    "publish_promotion/observe_github_cadence",
-  ],
   PUNKS_R2_PRIMARY_API_TOKEN: [
     "publish_promotion/publish_immutable_proofs",
+    "publish_promotion/observe_github_cadence",
     "publish_promotion/materialize_operational_head",
   ],
   PUNKS_R2_PRIMARY_ACCESS_KEY_ID: [
     "publish_promotion/publish_immutable_proofs",
+    "publish_promotion/observe_github_cadence",
     "publish_promotion/materialize_operational_head",
   ],
   PUNKS_R2_PRIMARY_SECRET_ACCESS_KEY: [
     "publish_promotion/publish_immutable_proofs",
+    "publish_promotion/observe_github_cadence",
     "publish_promotion/materialize_operational_head",
   ],
   PUNKS_R2_RECOVERY_API_TOKEN: [
     "publish_promotion/publish_immutable_proofs",
+    "publish_promotion/observe_github_cadence",
     "publish_promotion/materialize_operational_head",
   ],
   PUNKS_R2_RECOVERY_ACCESS_KEY_ID: [
     "publish_promotion/publish_immutable_proofs",
+    "publish_promotion/observe_github_cadence",
     "publish_promotion/materialize_operational_head",
   ],
   PUNKS_R2_RECOVERY_SECRET_ACCESS_KEY: [
     "publish_promotion/publish_immutable_proofs",
+    "publish_promotion/observe_github_cadence",
     "publish_promotion/materialize_operational_head",
   ],
   PUNKS_RELEASE_APPROVERS_JSON: [

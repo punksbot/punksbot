@@ -10,28 +10,9 @@ async fn installed_fault_observer_uses_the_native_session_and_closed_identity() 
             Ok(match path.as_str() {
                 "/api/v1/desktop/compatibility" => compatibility(),
                 "/api/auth/v1/session" => session(),
-                "/api/v1/promotion/faults/observe" => {
-                    assert_eq!(
-                        body,
-                        Some(json!({
-                            "contract": "promotion.fault-observe@1",
-                            "executionId": execution_id,
-                            "candidateSha": "ab".repeat(20),
-                            "stagingDeploymentId": format!("sha256:{}", "cd".repeat(32)),
-                            "type": "coupure",
-                            "authority": "api-conversation",
-                            "target": {
-                                "kind": "aggregate",
-                                "id": "11111111-1111-4111-8111-111111111111",
-                            },
-                        }))
-                    );
-                    json!({
-                        "contract": "promotion.fault-observe@1",
-                        "executionId": execution_id,
-                        "authority": "api-conversation",
-                        "status": "recovered",
-                    })
+                "/api/v1/workspaces/33333333-3333-4333-8333-333333333333/conversations/44444444-4444-4444-8444-444444444444/messages?limit=1&direction=older" => {
+                    assert_eq!(body, None);
+                    json!({ "observed": execution_id })
                 }
                 _ => return Err(ClientFailure::new(FailureKind::Problem, "unexpected")),
             })
@@ -50,11 +31,19 @@ async fn installed_fault_observer_uses_the_native_session_and_closed_identity() 
             target: crate::PromotionFaultTarget {
                 kind: "aggregate".to_string(),
                 id: "11111111-1111-4111-8111-111111111111".to_string(),
+                probe: crate::PromotionBusinessProbe {
+                    punk_id: "22222222-2222-4222-8222-222222222222".to_string(),
+                    workspace_id: "33333333-3333-4333-8333-333333333333".to_string(),
+                    workspace_slug: "promotion-fixture".to_string(),
+                    conversation_id: "44444444-4444-4444-8444-444444444444".to_string(),
+                    message_id: "55555555-5555-4555-8555-555555555555".to_string(),
+                },
             },
         })
         .await
         .unwrap();
     assert_eq!(result.status, "recovered");
+    assert_eq!(result.contract, "promotion.business-operation@1");
     assert_eq!(result.execution_id, execution_id);
 }
 

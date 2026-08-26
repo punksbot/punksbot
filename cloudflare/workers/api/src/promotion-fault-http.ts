@@ -331,11 +331,20 @@ export async function routePromotionFault(
         input.executionId,
       ).recover(input);
       const authorityState = await recoverPromotionAuthorityFault(env, input);
+      const controllerState =
+        input.proof === "recu-resistant-pitr"
+          ? await env.PROMOTION_FAULTS.getByName(input.executionId).probe()
+          : null;
       if (
         !sameAuthorityState(input, authorityState) ||
         authorityState.proof !== input.proof ||
         authorityState.sequence !== receipt.sequence ||
-        authorityState.phase !== receipt.phase
+        authorityState.phase !== receipt.phase ||
+        (input.proof === "recu-resistant-pitr" &&
+          (controllerState?.status !== "recovered" ||
+            controllerState.executionId !== input.executionId ||
+            controllerState.candidateSha !== input.candidateSha ||
+            controllerState.stagingDeploymentId !== input.stagingDeploymentId))
       ) {
         throw new Error("promotion authority rejected the recovery proof");
       }

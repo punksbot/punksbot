@@ -90,6 +90,15 @@ export class PromotionAuthorityFaultService extends WorkerEntrypoint<Attestation
       input.target.id,
     ).observePromotionFault(input.executionId);
   }
+
+  async finalizePromotionAuthorityAfterPitr(
+    input: PromotionAuthorityFaultRecovery,
+    expectedStateFingerprint: string,
+  ): Promise<PromotionAuthorityFaultState> {
+    return this.env.PROMOTION_AUTHORITY_FAULTS.getByName(
+      input.target.id,
+    ).finalizePromotionAuthorityAfterPitr(input, expectedStateFingerprint);
+  }
 }
 
 const jsonHeaders = {

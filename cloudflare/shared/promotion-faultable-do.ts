@@ -26,7 +26,17 @@ export interface PromotionAuthorityFaultIdentity {
   target: {
     kind: "aggregate" | "service";
     id: string;
+    probe: PromotionBusinessProbe;
   };
+}
+
+/** Closed fixture coordinates required to exercise a normal business path. */
+export interface PromotionBusinessProbe {
+  punkId: string;
+  workspaceId: string;
+  workspaceSlug: string;
+  conversationId: string;
+  messageId: string;
 }
 
 /** One ordered recovery operation applied to the faulted authority itself. */
@@ -49,6 +59,7 @@ interface StoredPromotionAuthorityFault {
   identity: PromotionAuthorityFaultIdentity;
   current: PromotionAuthorityFaultState;
   recoveries: PromotionAuthorityFaultState[];
+  injectionBookmark: string;
 }
 
 const STORAGE_KEY = "__punks_promotion_authority_fault_v1";
@@ -70,7 +81,8 @@ function sameIdentity(
     left.type === right.type &&
     left.authority === right.authority &&
     left.target.kind === right.target.kind &&
-    left.target.id === right.target.id
+    left.target.id === right.target.id &&
+    JSON.stringify(left.target.probe) === JSON.stringify(right.target.probe)
   );
 }
 
@@ -86,7 +98,36 @@ function validIdentity(
     value.target !== null &&
     typeof value.target === "object" &&
     ["aggregate", "service"].includes(value.target.kind) &&
-    /^[A-Za-z0-9][A-Za-z0-9.:-]{0,299}$/u.test(value.target.id)
+    /^[A-Za-z0-9][A-Za-z0-9.:-]{0,299}$/u.test(value.target.id) &&
+    value.target.probe !== null &&
+    typeof value.target.probe === "object" &&
+    !Array.isArray(value.target.probe) &&
+    JSON.stringify(Object.keys(value.target.probe).sort()) ===
+      JSON.stringify(
+        [
+          "conversationId",
+          "messageId",
+          "punkId",
+          "workspaceId",
+          "workspaceSlug",
+        ].sort(),
+      ) &&
+    [
+      value.target.probe.punkId,
+      value.target.probe.workspaceId,
+      value.target.probe.conversationId,
+      value.target.probe.messageId,
+    ].every(
+      (coordinate) =>
+        typeof coordinate === "string" &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(
+          coordinate,
+        ),
+    ) &&
+    typeof value.target.probe.workspaceSlug === "string" &&
+    /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])$/u.test(
+      value.target.probe.workspaceSlug,
+    )
   );
 }
 
@@ -112,6 +153,28 @@ function state(
  * instance, rather than in the independent receipt controller.
  */
 export class PromotionFaultableDurableObject<Env> extends DurableObject<Env> {
+  private isStaging(): boolean {
+    return (this.env as { ENVIRONMENT?: string }).ENVIRONMENT === "staging";
+  }
+
+  private async currentRecoveryBookmark(): Promise<string> {
+    try {
+      return await this.ctx.storage.getCurrentBookmark();
+    } catch (error) {
+      if (this.isStaging()) throw error;
+      return `workerd:${await this.promotionRecoveryFingerprint()}`;
+    }
+  }
+
+  /** Real roll-forward hook; aggregate classes can extend repair before sync. */
+  protected async repairPromotionAuthority(): Promise<void> {
+    await this.ctx.storage.sync();
+  }
+
+  /** SessionDO overrides this to revoke instead of restoring authentication. */
+  protected async invalidatePromotionSessionForRecovery(): Promise<void> {
+    throw new Error("promotion Session recovery hook is unavailable");
+  }
   /**
    * Shared business-path fence. Normal authority operations call this before
    * reading or mutating state; promotion controller RPCs are not a substitute.
@@ -183,10 +246,13 @@ export class PromotionFaultableDurableObject<Env> extends DurableObject<Env> {
       throw new Error("promotion authority state fingerprint is invalid");
     }
     const current = state(input, "injected", null, 1, stateFingerprint);
+    await this.ctx.storage.sync();
+    const injectionBookmark = await this.currentRecoveryBookmark();
     await this.ctx.storage.put<StoredPromotionAuthorityFault>(STORAGE_KEY, {
       identity: input,
       current,
       recoveries: [],
+      injectionBookmark,
     });
     return current;
   }
@@ -220,6 +286,34 @@ export class PromotionFaultableDurableObject<Env> extends DurableObject<Env> {
     if (expected !== input.proof || existing.current.phase === "recovered") {
       throw new Error("promotion authority recovery proof is out of order");
     }
+    if (input.proof === "roll-forward") {
+      await this.repairPromotionAuthority();
+    }
+    let recoveryFingerprint = existing.current.stateFingerprint;
+    if (
+      input.proof === "session-non-restauree" &&
+      input.authority === "auth-session" &&
+      input.type === "perte-autorite"
+    ) {
+      await this.invalidatePromotionSessionForRecovery();
+      recoveryFingerprint = await this.promotionRecoveryFingerprint();
+      if (recoveryFingerprint === existing.current.stateFingerprint) {
+        throw new Error(
+          "promotion Session recovery did not revoke the Session",
+        );
+      }
+    }
+    await this.ctx.storage.sync();
+    const currentBookmark = await this.currentRecoveryBookmark();
+    if (
+      typeof existing.injectionBookmark !== "string" ||
+      existing.injectionBookmark.length === 0 ||
+      typeof currentBookmark !== "string" ||
+      currentBookmark.length === 0 ||
+      (await this.promotionRecoveryFingerprint()) !== recoveryFingerprint
+    ) {
+      throw new Error("promotion authority RPO-zero verification failed");
+    }
     const phase =
       existing.recoveries.length + 1 === PROMOTION_RECOVERY_PROOFS.length
         ? "recovered"
@@ -229,12 +323,83 @@ export class PromotionFaultableDurableObject<Env> extends DurableObject<Env> {
       phase,
       input.proof,
       existing.recoveries.length + 2,
-      existing.current.stateFingerprint,
+      recoveryFingerprint,
     );
     await this.ctx.storage.put<StoredPromotionAuthorityFault>(STORAGE_KEY, {
       ...existing,
       current,
       recoveries: [...existing.recoveries, current],
+    });
+    if (
+      phase === "recovered" &&
+      input.authority !== "auth-session" &&
+      this.isStaging()
+    ) {
+      await this.ctx.storage.onNextSessionRestoreBookmark(
+        existing.injectionBookmark,
+      );
+      this.ctx.abort("promotion PITR pre-injection-bookmark restore");
+    }
+    return current;
+  }
+
+  /**
+   * Reapplies only the terminal fence Receipt after the actor has restored its
+   * pre-injection bookmark. Business state must hash exactly as it did before
+   * the fault; the independent controller is checked by the caller before the
+   * public authority is reopened.
+   */
+  async finalizePromotionAuthorityAfterPitr(
+    input: PromotionAuthorityFaultRecovery,
+    expectedStateFingerprint: string,
+  ): Promise<PromotionAuthorityFaultState> {
+    if (
+      !this.isStaging() ||
+      !validIdentity(input) ||
+      input.proof !== "recu-resistant-pitr" ||
+      input.authority === "auth-session" ||
+      !/^[0-9a-f]{64}$/u.test(expectedStateFingerprint)
+    ) {
+      throw new Error("invalid promotion authority PITR finalization");
+    }
+    const existing =
+      await this.ctx.storage.get<StoredPromotionAuthorityFault>(STORAGE_KEY);
+    if (existing !== undefined) {
+      if (
+        existing.current.phase === "recovered" &&
+        sameIdentity(existing.identity, input) &&
+        existing.current.stateFingerprint === expectedStateFingerprint
+      ) {
+        return existing.current;
+      }
+      throw new Error("promotion authority PITR resurrected a fault fence");
+    }
+    const restoredFingerprint = await this.promotionRecoveryFingerprint();
+    if (restoredFingerprint !== expectedStateFingerprint) {
+      throw new Error("promotion authority PITR changed committed state");
+    }
+    const recoveries = PROMOTION_RECOVERY_PROOFS.map((proof, index) =>
+      state(
+        input,
+        index + 1 === PROMOTION_RECOVERY_PROOFS.length
+          ? "recovered"
+          : "recovering",
+        proof,
+        index + 2,
+        restoredFingerprint,
+      ),
+    );
+    const current = recoveries.at(-1);
+    if (current === undefined) {
+      throw new Error("promotion authority PITR receipt chain is empty");
+    }
+    await this.ctx.storage.sync();
+    const injectionBookmark = await this.ctx.storage.getCurrentBookmark();
+    await this.ctx.storage.put<StoredPromotionAuthorityFault>(STORAGE_KEY, {
+      identity: input,
+      current,
+      recoveries,
+      injectionBookmark,
     });
     return current;
   }

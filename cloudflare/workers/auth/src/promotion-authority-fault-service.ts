@@ -21,12 +21,16 @@ interface PromotionAuthorityStub {
   observePromotionFault(
     executionId: string,
   ): Promise<PromotionAuthorityFaultState>;
+  finalizePromotionAuthorityAfterPitr(
+    input: PromotionAuthorityFaultRecovery,
+    expectedStateFingerprint: string,
+  ): Promise<PromotionAuthorityFaultState>;
 }
 
 interface PromotionBusinessAuthorityStub extends PromotionAuthorityStub {
-  query?(): Promise<unknown>;
-  status?(): Promise<unknown>;
-  get?(): Promise<unknown>;
+  query?(): Promise<{ ok: boolean }>;
+  status?(): Promise<{ exists: boolean }>;
+  get?(): Promise<unknown | null>;
 }
 
 function authorityStub(
@@ -90,6 +94,17 @@ export class PromotionAuthorityFaultService extends WorkerEntrypoint<AuthEnv> {
     ).observePromotionFault(input.executionId);
   }
 
+  async finalizePromotionAuthorityAfterPitr(
+    input: PromotionAuthorityFaultRecovery,
+    expectedStateFingerprint: string,
+  ): Promise<PromotionAuthorityFaultState> {
+    return authorityStub(
+      this.env,
+      input.authority,
+      input.target.id,
+    ).finalizePromotionAuthorityAfterPitr(input, expectedStateFingerprint);
+  }
+
   /** Executes one ordinary Auth authority read, then returns its fault state. */
   async observePromotionBusinessOperation(
     input: PromotionAuthorityFaultIdentity,
@@ -100,11 +115,19 @@ export class PromotionAuthorityFaultService extends WorkerEntrypoint<AuthEnv> {
       input.target.id,
     ) as PromotionBusinessAuthorityStub;
     if (input.authority === "auth-punk") {
-      await stub.query?.();
+      if ((await stub.query?.())?.ok !== true) {
+        throw new Error("promotion Auth Punk business read is unavailable");
+      }
     } else if (input.authority === "auth-session-revocation") {
-      await stub.status?.();
+      if ((await stub.status?.())?.exists !== true) {
+        throw new Error(
+          "promotion Auth Session revocation business read is unavailable",
+        );
+      }
     } else if (input.authority === "auth-session") {
-      await stub.get?.();
+      if ((await stub.get?.()) == null) {
+        throw new Error("promotion Auth Session business read is unavailable");
+      }
     } else {
       throw new Error(`unknown Auth promotion authority ${input.authority}`);
     }

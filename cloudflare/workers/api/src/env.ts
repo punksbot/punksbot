@@ -174,6 +174,10 @@ interface PromotionAuthorityFaultBinding extends Fetcher {
   observePromotionFault(
     input: PromotionAuthorityFaultIdentity,
   ): Promise<PromotionAuthorityFaultState>;
+  finalizePromotionAuthorityAfterPitr(
+    input: PromotionAuthorityFaultRecovery,
+    expectedStateFingerprint: string,
+  ): Promise<PromotionAuthorityFaultState>;
   observePromotionBusinessOperation(
     input: PromotionAuthorityFaultIdentity,
   ): Promise<PromotionAuthorityFaultState>;

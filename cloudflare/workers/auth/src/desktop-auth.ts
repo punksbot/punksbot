@@ -371,7 +371,6 @@ export async function launchDesktopBrowser(
       createdAt: launched.flow.createdAt,
       expiresAt: launched.flow.expiresAt,
       desktop: { flowId },
-      returnedStateHash: await hash(launched.state),
     };
     const transactionId = await aggregateName("transaction", launched.state);
     if (

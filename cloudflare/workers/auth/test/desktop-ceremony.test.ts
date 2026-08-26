@@ -148,7 +148,7 @@ describe("DesktopAuthFlow protocol (issue #54)", () => {
     ).toBe(201);
   });
 
-  it("reprend le callback desktop lié au state quand le cookie SameSite manque", async () => {
+  it("refuse le callback desktop quand le cookie de liaison manque sans consommer la transaction", async () => {
     const subject = `desktop-state-${crypto.randomUUID()}`;
     await provisionIdentity(subject);
     const { started } = await startDesktop();
@@ -162,7 +162,17 @@ describe("DesktopAuthFlow protocol (issue #54)", () => {
       authEnv,
       providerFixture(subject),
     );
-    expect(withoutBinding.status).toBe(303);
+    expect(withoutBinding.status).toBe(400);
+    const callbackUrl = `${origin}/api/auth/v1/oauth/google/callback?state=${launched.state}&code=x`;
+    expect(
+      (
+        await route(
+          new Request(callbackUrl, { headers: { cookie: launched.cookie } }),
+          authEnv,
+          providerFixture(subject),
+        )
+      ).status,
+    ).toBe(303);
     const delivered = await claim(started);
     expect(delivered.status).toBe(200);
     const delivery = (await delivered.json()) as { deliveryId: string };
@@ -193,7 +203,6 @@ describe("DesktopAuthFlow protocol (issue #54)", () => {
       hasProviderPkce: true,
     });
     expect(await proofStub.promotionProof()).toBeNull();
-    const callbackUrl = `${origin}/api/auth/v1/oauth/google/callback?state=${launched.state}&code=x`;
     expect(
       (
         await route(

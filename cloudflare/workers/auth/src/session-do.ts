@@ -30,15 +30,23 @@ type AccountMergeClaimRow = Record<"intent_id" | "account_role", string>;
 
 export class SessionDO extends PromotionFaultableDurableObject<AuthEnv> {
   protected override async promotionRecoveryFingerprint(): Promise<string> {
-    let current: SessionRecord | null;
-    try {
-      current = this.readForAccountMerge();
-    } catch {
-      current = null;
-    }
-    if (current === null)
+    const current = this.row();
+    if (current === undefined)
       throw new Error("promotion Session target is missing");
     return sha256Hex(canonicalJson(current));
+  }
+
+  protected override async invalidatePromotionSessionForRecovery(): Promise<void> {
+    const current = this.row();
+    if (current === undefined) {
+      throw new Error("promotion Session target is missing");
+    }
+    if (current.status !== "revoked" && !(await this.revoke())) {
+      throw new Error("promotion Session could not be revoked for recovery");
+    }
+    if (this.row()?.status !== "revoked") {
+      throw new Error("promotion Session remained active after recovery");
+    }
   }
 
   constructor(ctx: DurableObjectState, env: AuthEnv) {

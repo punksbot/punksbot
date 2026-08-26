@@ -75,7 +75,8 @@ pub use promotion_conformance::{
     PromotionFollowScenario,
 };
 pub use promotion_fault::{
-    PromotionFaultObservation, PromotionFaultObservationInput, PromotionFaultTarget,
+    PromotionBusinessProbe, PromotionFaultObservation, PromotionFaultObservationInput,
+    PromotionFaultTarget,
 };
 pub use semantic_trace::{
     normalize_semantic_trace, run_semantic_scenario, SemanticEvent, SemanticObservation,

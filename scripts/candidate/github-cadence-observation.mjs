@@ -8,6 +8,7 @@ import {
   validateOperationalTopology,
 } from "../release-graph-lib.mjs";
 import { operationalEvidenceDigests } from "./operational-release-evidence.mjs";
+import { validateOperationalBudgetEvidence } from "./operational-budget-evidence.mjs";
 import { buildOperationalTopology } from "./operational-topology.mjs";
 
 const SHA1_RE = /^[0-9a-f]{40}$/u;
@@ -199,7 +200,7 @@ function actionStep(input, jobs, binding) {
   };
 }
 
-function validateBudgetObservation(value, expected) {
+function validateBudgetObservation(value, expected, budgetExportRoot) {
   if (
     !exactKeys(value, [
       "schema",
@@ -251,6 +252,17 @@ function validateBudgetObservation(value, expected) {
   ) {
     fail("all 36 canonical operational budgets must be observed green");
   }
+  try {
+    validateOperationalBudgetEvidence({
+      observation: value,
+      root: budgetExportRoot,
+      candidateRoot: expected.candidateRoot,
+      sourceSha: expected.sourceSha,
+      stagingDeploymentId: expected.stagingDeploymentId,
+    });
+  } catch (error) {
+    fail(error instanceof Error ? error.message : String(error));
+  }
   return value;
 }
 
@@ -260,7 +272,13 @@ function validateBudgetObservation(value, expected) {
  */
 export function validateGithubCadenceObservation(
   observation,
-  { sourceSha, stagingDeploymentId, proofDigests },
+  {
+    sourceSha,
+    stagingDeploymentId,
+    proofDigests,
+    budgetExportRoot,
+    candidateRoot,
+  },
 ) {
   if (
     !exactKeys(observation, [
@@ -315,11 +333,16 @@ export function validateGithubCadenceObservation(
     fail("exact GitHub cadence observation is required");
   }
   const observedAt = instant(observation.observedAt, "observation timestamp");
-  validateBudgetObservation(observation.budgets, {
-    sourceSha,
-    stagingDeploymentId,
-    connectionMethods: observation.topology["moyens-connexion"],
-  });
+  validateBudgetObservation(
+    observation.budgets,
+    {
+      sourceSha,
+      stagingDeploymentId,
+      connectionMethods: observation.topology["moyens-connexion"],
+      candidateRoot,
+    },
+    budgetExportRoot,
+  );
   if (Date.parse(observation.budgets.observedAt) > observedAt.milliseconds) {
     fail("budget observation is newer than the GitHub cadence observation");
   }
@@ -520,13 +543,21 @@ export async function observeGithubCadence(input, { github, now }) {
     input.dossier,
     input.publicationResult,
   );
-  const topology = buildOperationalTopology({ dossier: input.dossier });
-  const topologySha256 = canonicalSha256(topology);
-  const budgets = validateBudgetObservation(input.budgetObservation, {
-    sourceSha: input.sourceSha,
-    stagingDeploymentId: input.stagingDeploymentId,
-    connectionMethods: topology["moyens-connexion"],
+  const topology = buildOperationalTopology({
+    dossier: input.dossier,
+    topologyObservation: input.topologyObservation,
   });
+  const topologySha256 = canonicalSha256(topology);
+  const budgets = validateBudgetObservation(
+    input.budgetObservation,
+    {
+      sourceSha: input.sourceSha,
+      stagingDeploymentId: input.stagingDeploymentId,
+      connectionMethods: topology["moyens-connexion"],
+      candidateRoot: input.candidateRoot,
+    },
+    input.budgetExportRoot,
+  );
   const budgetsSha256 = canonicalSha256(budgets);
   const samples = sampleCounts(input.dossier, input.publicationResult);
   const steps = {};
@@ -586,6 +617,8 @@ export async function observeGithubCadence(input, { github, now }) {
     sourceSha: input.sourceSha,
     stagingDeploymentId: input.stagingDeploymentId,
     proofDigests: evidence,
+    budgetExportRoot: input.budgetExportRoot,
+    candidateRoot: input.candidateRoot,
   });
 }
 
@@ -594,6 +627,9 @@ function parseArguments(argv) {
     "--dossier",
     "--publication-result",
     "--budget-observation",
+    "--budget-exports",
+    "--candidate-root",
+    "--topology-observation",
     "--repository",
     "--run-id",
     "--run-attempt",
@@ -667,6 +703,12 @@ export async function run(
       budgetObservation: jsonFile(
         required("--budget-observation"),
         "operational budget observation",
+      ),
+      budgetExportRoot: resolve(required("--budget-exports")),
+      candidateRoot: resolve(required("--candidate-root")),
+      topologyObservation: jsonFile(
+        required("--topology-observation"),
+        "remote operational topology observation",
       ),
     },
     { github, now },

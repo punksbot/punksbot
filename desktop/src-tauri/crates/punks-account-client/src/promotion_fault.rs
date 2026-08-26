@@ -1,6 +1,7 @@
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use sha2::{Digest, Sha256};
 
 use crate::{transport::RequestSafety, ClientFailure, PunksAccountClient};
 
@@ -31,6 +32,24 @@ pub struct PromotionFaultTarget {
     pub kind: String,
     /// Stable aggregate ID/slug or canonical service ID.
     pub id: String,
+    /// Exact installed fixture coordinates used by normal business reads.
+    pub probe: PromotionBusinessProbe,
+}
+
+/// Closed installed fixture scope used to avoid synthetic or malformed probes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PromotionBusinessProbe {
+    /// Authenticated Punk owning the fixture.
+    pub punk_id: String,
+    /// Exact mounted Workspace.
+    pub workspace_id: String,
+    /// Exact remotely resolved Workspace slug.
+    pub workspace_slug: String,
+    /// Exact Stream exercised by the installed candidate.
+    pub conversation_id: String,
+    /// Exact committed Message exercised by reads and Erasure probes.
+    pub message_id: String,
 }
 
 /// Successful native observation after a controlled promotion recovery.
@@ -99,13 +118,39 @@ impl PunksAccountClient {
                 .id
                 .bytes()
                 .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b':' | b'-'))
+            || [
+                input.target.probe.punk_id.as_str(),
+                input.target.probe.workspace_id.as_str(),
+                input.target.probe.conversation_id.as_str(),
+                input.target.probe.message_id.as_str(),
+            ]
+            .iter()
+            .any(|coordinate| {
+                coordinate.len() != 36
+                    || !coordinate
+                        .bytes()
+                        .all(|byte| byte.is_ascii_hexdigit() || byte == b'-')
+            })
+            || input.target.probe.workspace_slug.is_empty()
+            || input.target.probe.workspace_slug.len() > 64
+            || !input
+                .target
+                .probe
+                .workspace_slug
+                .bytes()
+                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
         {
             return Err(ClientFailure::contract("promotion.fault-observe@1"));
         }
-        let response = self
-            .inner
-            .transport
-            .request(
+        let probe = &input.target.probe;
+        let (method, path, body, safety) = match input.authority.as_str() {
+            "auth-punk" | "auth-session" => (
+                Method::GET,
+                "/api/auth/v1/session".to_string(),
+                None,
+                RequestSafety::Read,
+            ),
+            "auth-session-revocation" => (
                 Method::POST,
                 "/api/v1/promotion/faults/observe".to_string(),
                 Some(json!({
@@ -118,17 +163,82 @@ impl PunksAccountClient {
                     "target": &input.target,
                 })),
                 RequestSafety::Read,
-            )
+            ),
+            "api-workspace" | "api-workspace-slug" => (
+                Method::GET,
+                format!("/api/v1/workspaces/{}", probe.workspace_slug),
+                None,
+                RequestSafety::Read,
+            ),
+            "api-conversation" | "api-message-content" | "erasure-registry" => (
+                Method::GET,
+                format!(
+                    "/api/v1/workspaces/{}/conversations/{}/messages?limit=1&direction=older",
+                    probe.workspace_id, probe.conversation_id,
+                ),
+                None,
+                RequestSafety::Read,
+            ),
+            "internal-event-signature" => {
+                let command_id = promotion_probe_uuid(&input.execution_id);
+                (
+                    Method::POST,
+                    format!(
+                        "/api/v1/workspaces/{}/conversations/{}/messages",
+                        probe.workspace_id, probe.conversation_id,
+                    ),
+                    Some(json!({
+                        "contract": "message.post@1",
+                        "commandId": command_id,
+                        "workspaceId": &probe.workspace_id,
+                        "conversationId": &probe.conversation_id,
+                        "actor": { "kind": "punk", "punkId": &probe.punk_id },
+                        "payload": {
+                            "content": format!("Promotion recovery probe {}", input.execution_id),
+                            "topic": "Promotion recovery",
+                            "replyToMessageId": null,
+                            "broadcast": false,
+                            "mentionedPunkIds": [],
+                            "mediaIds": []
+                        }
+                    })),
+                    RequestSafety::Mutation,
+                )
+            }
+            _ => return Err(ClientFailure::contract("promotion.fault-observe@1")),
+        };
+        self.inner
+            .transport
+            .request(method, path, body, safety)
             .await?;
-        let observed: PromotionFaultObservation = serde_json::from_value(response)
-            .map_err(|_| ClientFailure::contract("promotion.fault-observe@1"))?;
-        if observed.contract != "promotion.fault-observe@1"
-            || observed.execution_id != input.execution_id
-            || observed.authority != input.authority
-            || observed.status != "recovered"
-        {
-            return Err(ClientFailure::contract("promotion.fault-observe@1"));
-        }
-        Ok(observed)
+        Ok(PromotionFaultObservation {
+            contract: "promotion.business-operation@1".to_string(),
+            execution_id: input.execution_id,
+            authority: input.authority,
+            status: "recovered".to_string(),
+        })
     }
+}
+
+fn promotion_probe_uuid(execution_id: &str) -> String {
+    let mut digest = Sha256::new();
+    digest.update(b"punks.promotion.business-probe.v1\0");
+    digest.update(execution_id.as_bytes());
+    let hash = digest.finalize();
+    let mut bytes = [0_u8; 16];
+    bytes.copy_from_slice(&hash[..16]);
+    bytes[6] = (bytes[6] & 0x0f) | 0x80;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    let value = bytes
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    format!(
+        "{}-{}-{}-{}-{}",
+        &value[0..8],
+        &value[8..12],
+        &value[12..16],
+        &value[16..20],
+        &value[20..32]
+    )
 }

@@ -54,6 +54,51 @@ async function createActiveSession(
 }
 
 describe("PunkSessionService session-id reauthentication", () => {
+  it("revokes rather than restores a Session after authority-loss recovery", async () => {
+    const recoverySessionId = "a0000000-0000-8000-8000-000000000090";
+    const recoveryPunkId = "b0000000-0000-8000-8000-000000000091";
+    await provisionActivePunk(recoveryPunkId);
+    await createActiveSession(recoverySessionId, recoveryPunkId);
+    const session = authEnv.SESSIONS.getByName(recoverySessionId);
+    const identity = {
+      executionId: "919191919191:linux-x64:perte-autorite:auth-session",
+      candidateSha: "91".repeat(20),
+      stagingDeploymentId: `sha256:${"92".repeat(32)}`,
+      type: "perte-autorite" as const,
+      authority: "auth-session",
+      target: {
+        kind: "aggregate" as const,
+        id: recoverySessionId,
+        probe: {
+          punkId: recoveryPunkId,
+          workspaceId: "00000000-0000-8000-8000-000000000059",
+          workspaceSlug: "promotion-fixture",
+          conversationId: "00000000-0000-8000-8000-000000000060",
+          messageId: "00000000-0000-8000-8000-000000000058",
+        },
+      },
+    };
+    await expect(session.injectPromotionFault(identity)).resolves.toMatchObject(
+      {
+        phase: "injected",
+      },
+    );
+    for (const proof of [
+      "roll-forward",
+      "rpo-logique-nul",
+      "session-non-restauree",
+      "recu-resistant-pitr",
+    ] as const) {
+      await expect(
+        session.recoverPromotionFault({ ...identity, proof }),
+      ).resolves.toMatchObject({ proof });
+    }
+    await expect(session.get()).resolves.toBeNull();
+    await expect(
+      workerExports.PunkSessionService.resolveSessionId(recoverySessionId),
+    ).resolves.toBeNull();
+  });
+
   it("returns the canonical active Punk session without a cookie", async () => {
     await provisionActivePunk(punkId);
     const record = await createActiveSession(sessionId, punkId);

@@ -77,30 +77,50 @@ function sha256(content) {
 
 /** Resolves each promoted authority to the aggregate used by the installed story. */
 export function promotionAuthorityTargets(fixture, authorities) {
+  const probe = {
+    punkId: fixture?.punkId,
+    workspaceId: fixture?.workspaceId,
+    workspaceSlug: fixture?.workspaceSlug,
+    conversationId: fixture?.conversationId,
+    messageId: fixture?.replyMessageId,
+  };
   const targets = {
-    "auth-punk": { kind: "aggregate", id: fixture?.punkId },
+    "auth-punk": { kind: "aggregate", id: fixture?.punkId, probe },
     "auth-session-revocation": {
       kind: "aggregate",
       id: fixture?.sessionRevocationId,
+      probe,
     },
-    "auth-session": { kind: "aggregate", id: fixture?.sessionId },
-    "api-workspace": { kind: "aggregate", id: fixture?.workspaceId },
+    "auth-session": { kind: "aggregate", id: fixture?.sessionId, probe },
+    "api-workspace": {
+      kind: "aggregate",
+      id: fixture?.workspaceId,
+      probe,
+    },
     "api-workspace-slug": {
       kind: "aggregate",
       id: fixture?.workspaceSlug,
+      probe,
     },
     "api-conversation": {
       kind: "aggregate",
       id: fixture?.conversationId,
+      probe,
     },
     "api-message-content": {
       kind: "aggregate",
-      id: fixture?.seedMessageIds?.[0],
+      id: fixture?.replyMessageId,
+      probe,
     },
-    "erasure-registry": { kind: "service", id: "erasure-registry" },
+    "erasure-registry": {
+      kind: "service",
+      id: "erasure-registry",
+      probe,
+    },
     "internal-event-signature": {
       kind: "service",
       id: "internal-event-signature",
+      probe,
     },
   };
   if (
@@ -110,7 +130,13 @@ export function promotionAuthorityTargets(fixture, authorities) {
       return (
         target === undefined ||
         !["aggregate", "service"].includes(target.kind) ||
-        !TARGET_RE.test(target.id ?? "")
+        !TARGET_RE.test(target.id ?? "") ||
+        target.probe === null ||
+        typeof target.probe !== "object" ||
+        Object.values(target.probe).some(
+          (coordinate) =>
+            typeof coordinate !== "string" || !TARGET_RE.test(coordinate),
+        )
       );
     })
   ) {
@@ -299,9 +325,26 @@ export async function exerciseIndependentFaultMatrix(
         typeof target !== "object" ||
         Array.isArray(target) ||
         JSON.stringify(Object.keys(target).sort()) !==
-          JSON.stringify(["id", "kind"]) ||
+          JSON.stringify(["id", "kind", "probe"]) ||
         !["aggregate", "service"].includes(target.kind) ||
-        !TARGET_RE.test(target.id ?? "")
+        !TARGET_RE.test(target.id ?? "") ||
+        target.probe === null ||
+        typeof target.probe !== "object" ||
+        Array.isArray(target.probe) ||
+        JSON.stringify(Object.keys(target.probe).sort()) !==
+          JSON.stringify(
+            [
+              "conversationId",
+              "messageId",
+              "punkId",
+              "workspaceId",
+              "workspaceSlug",
+            ].sort(),
+          ) ||
+        Object.values(target.probe).some(
+          (coordinate) =>
+            typeof coordinate !== "string" || !TARGET_RE.test(coordinate),
+        )
       );
     })
   ) {

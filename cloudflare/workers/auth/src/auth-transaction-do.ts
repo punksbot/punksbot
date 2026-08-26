@@ -1,6 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
 
-import { hash } from "./crypto";
 import type { AuthEnv } from "./env";
 import type { AuthTransaction } from "./rpc";
 
@@ -96,46 +95,18 @@ export class AuthTransactionDO extends DurableObject<AuthEnv> {
     return this.consume(transaction);
   }
 
-  /**
-   * Consumes only a desktop transaction when an embedded user agent drops the
-   * SameSite cookie, after proving possession of the exact returned OAuth
-   * state. Provider code, server PKCE and the later native verifier remain
-   * independent one-use bindings; web transactions can never use this path.
-   */
-  async beginDesktopWithReturnedState(
-    returnedState: string,
-  ): Promise<BeginTransactionResult> {
-    const row = this.row();
-    if (row === undefined) {
-      return { ok: false, code: "missing" };
-    }
-    if (row.status !== "open") {
-      return { ok: false, code: "consumed" };
-    }
-    const transaction = JSON.parse(row.transaction_json) as AuthTransaction;
-    if (Date.parse(transaction.expiresAt) <= Date.now()) {
-      this.ctx.storage.sql.exec(
-        "DELETE FROM auth_transaction WHERE singleton = 1",
-      );
-      return { ok: false, code: "expired" };
-    }
-    if (
-      transaction.desktop === undefined ||
-      transaction.returnedStateHash === undefined ||
-      transaction.returnedStateHash !== (await hash(returnedState))
-    ) {
-      return { ok: false, code: "binding_mismatch" };
-    }
-    return this.consume(transaction);
-  }
-
   private async consume(
     transaction: AuthTransaction,
   ): Promise<BeginTransactionResult> {
-    this.ctx.storage.sql.exec(
-      "UPDATE auth_transaction SET status = 'consumed', updated_at = ? WHERE singleton = 1",
+    const consumed = this.ctx.storage.sql.exec(
+      `UPDATE auth_transaction
+       SET status = 'consumed', updated_at = ?
+       WHERE singleton = 1 AND status = 'open'`,
       new Date().toISOString(),
     );
+    if (consumed.rowsWritten !== 1) {
+      return { ok: false, code: "consumed" };
+    }
     if (transaction.currentPunkId !== null) {
       let prepared = false;
       try {

@@ -233,6 +233,8 @@ export async function buildOperationalReleaseHead({
   dossier,
   publicationResult,
   cadenceObservation,
+  budgetExportRoot,
+  candidateRoot,
   approbation,
 }) {
   const sourceSha = dossier?.candidat?.sha;
@@ -250,6 +252,8 @@ export async function buildOperationalReleaseHead({
       sourceSha,
       stagingDeploymentId,
       proofDigests: evidence,
+      budgetExportRoot,
+      candidateRoot,
     });
   } catch (error) {
     fail(error instanceof Error ? error.message : String(error));
@@ -505,6 +509,8 @@ function parseArgs(argv) {
     "--dossier",
     "--publication-result",
     "--cadence-observation",
+    "--budget-exports",
+    "--candidate-root",
     "--depot",
     "--tag",
     "--r2-primaire",
@@ -614,6 +620,8 @@ export async function run(argv = process.argv.slice(2)) {
     dossier,
     publicationResult,
     cadenceObservation,
+    budgetExportRoot: resolve(required("--budget-exports")),
+    candidateRoot: resolve(required("--candidate-root")),
     approbation: frontieres.approbation,
   });
   await publishOperationalReleaseHead({

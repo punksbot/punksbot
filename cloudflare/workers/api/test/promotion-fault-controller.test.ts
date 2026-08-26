@@ -6,9 +6,29 @@ const CANDIDATE_SHA = "91".repeat(20);
 const DEPLOYMENT_ID = `sha256:${"92".repeat(32)}`;
 const AUTHORIZATION = `Bearer ${env.OPERATOR_PROVISIONING_TOKEN}`;
 const ownerPunkId = "00000000-0000-8000-8000-000000000001";
+const defaultMessageId = "00000000-0000-8000-8000-000000000058";
+
+function businessProbe(
+  input: {
+    workspaceId?: string;
+    workspaceSlug?: string;
+    conversationId?: string;
+    messageId?: string;
+  } = {},
+) {
+  return {
+    punkId: ownerPunkId,
+    workspaceId: input.workspaceId ?? "00000000-0000-8000-8000-000000000059",
+    workspaceSlug: input.workspaceSlug ?? "promotion-fixture",
+    conversationId:
+      input.conversationId ?? "00000000-0000-8000-8000-000000000060",
+    messageId: input.messageId ?? defaultMessageId,
+  };
+}
 
 async function prepareTargets() {
   const workspaceCommandId = crypto.randomUUID();
+  const workspaceSlug = `fault-${workspaceCommandId.slice(0, 8)}`;
   const workspace = await SELF.fetch(
     "https://staging.punks.bot/api/internal/v1/workspaces",
     {
@@ -23,7 +43,7 @@ async function prepareTargets() {
         commandId: workspaceCommandId,
         actor: { kind: "punk", punkId: ownerPunkId },
         payload: {
-          slug: `fault-${workspaceCommandId.slice(0, 8)}`,
+          slug: workspaceSlug,
           name: "Promotion fault target",
           visibility: "private",
         },
@@ -61,7 +81,7 @@ async function prepareTargets() {
   const conversationId = (
     (await conversation.json()) as { conversation: { id: string } }
   ).conversation.id;
-  return { workspaceId, conversationId };
+  return { workspaceId, workspaceSlug, conversationId };
 }
 
 async function command(
@@ -91,6 +111,7 @@ describe("promotion fault controller", () => {
       target: {
         kind: "aggregate",
         id: target.conversationId,
+        probe: businessProbe(target),
       },
     };
     expect(
@@ -158,6 +179,7 @@ describe("promotion fault controller", () => {
       target: {
         kind: "aggregate",
         id: target.conversationId,
+        probe: businessProbe(target),
       },
     };
     const injected = await command("/api/internal/v1/promotion/faults/inject", {
@@ -272,6 +294,7 @@ describe("promotion fault controller", () => {
       target: {
         kind: "aggregate",
         id: "33333333-3333-4333-8333-333333333333",
+        probe: businessProbe(),
       },
     };
     const injected = await command("/api/internal/v1/promotion/faults/inject", {
@@ -318,7 +341,11 @@ describe("promotion fault controller", () => {
         stagingDeploymentId: DEPLOYMENT_ID,
         type,
         authority: service.authority,
-        target: { kind: "service", id: service.authority },
+        target: {
+          kind: "service",
+          id: service.authority,
+          probe: businessProbe(),
+        },
       };
       const injected = await command(
         "/api/internal/v1/promotion/faults/inject",
@@ -345,7 +372,11 @@ describe("promotion fault controller", () => {
       stagingDeploymentId: DEPLOYMENT_ID,
       type: "coupure",
       authority: "unknown-authority",
-      target: { kind: "service", id: "unknown-authority" },
+      target: {
+        kind: "service",
+        id: "unknown-authority",
+        probe: businessProbe(),
+      },
     });
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toMatchObject({
@@ -364,6 +395,7 @@ describe("promotion fault controller", () => {
       target: {
         kind: "aggregate",
         id: target.workspaceId,
+        probe: businessProbe(target),
       },
     };
     expect(

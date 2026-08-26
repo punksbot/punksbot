@@ -28,6 +28,15 @@ const SHA1_RE = /^[0-9a-f]{40}$/u;
 const DEPLOYMENT_RE = /^sha256:[0-9a-f]{64}$/u;
 const EXECUTION_RE = /^[a-z0-9][a-z0-9.:-]{0,299}$/u;
 const RETENTION_MS = 15 * 60 * 1000;
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+const PROBE_KEYS = [
+  "conversationId",
+  "messageId",
+  "punkId",
+  "workspaceId",
+  "workspaceSlug",
+] as const;
 
 export type PromotionFaultType = (typeof PROMOTION_FAULT_TYPES)[number];
 export type PromotionRecoveryProof = (typeof PROMOTION_RECOVERY_PROOFS)[number];
@@ -56,6 +65,37 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
+export interface PromotionBusinessProbe {
+  punkId: string;
+  workspaceId: string;
+  workspaceSlug: string;
+  conversationId: string;
+  messageId: string;
+}
+
+function parseBusinessProbe(value: unknown): PromotionBusinessProbe | null {
+  if (
+    !isRecord(value) ||
+    JSON.stringify(Object.keys(value).sort()) !==
+      JSON.stringify([...PROBE_KEYS].sort()) ||
+    !UUID_RE.test(String(value.punkId ?? "")) ||
+    !UUID_RE.test(String(value.workspaceId ?? "")) ||
+    !UUID_RE.test(String(value.conversationId ?? "")) ||
+    !UUID_RE.test(String(value.messageId ?? "")) ||
+    typeof value.workspaceSlug !== "string" ||
+    !/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])$/u.test(value.workspaceSlug)
+  ) {
+    return null;
+  }
+  return {
+    punkId: value.punkId as string,
+    workspaceId: value.workspaceId as string,
+    workspaceSlug: value.workspaceSlug,
+    conversationId: value.conversationId as string,
+    messageId: value.messageId as string,
+  };
+}
+
 export function parsePromotionFaultIdentity(
   value: unknown,
 ): PromotionFaultIdentity | null {
@@ -73,10 +113,11 @@ export function parsePromotionFaultIdentity(
     !isPromotionFaultAuthority(value.authority) ||
     !isRecord(value.target) ||
     JSON.stringify(Object.keys(value.target).sort()) !==
-      JSON.stringify(["id", "kind"]) ||
+      JSON.stringify(["id", "kind", "probe"]) ||
     !["aggregate", "service"].includes(String(value.target.kind)) ||
     typeof value.target.id !== "string" ||
-    !/^[A-Za-z0-9][A-Za-z0-9.:-]{0,299}$/u.test(value.target.id)
+    !/^[A-Za-z0-9][A-Za-z0-9.:-]{0,299}$/u.test(value.target.id) ||
+    parseBusinessProbe(value.target.probe) === null
   ) {
     return null;
   }
@@ -89,6 +130,7 @@ export function parsePromotionFaultIdentity(
     target: {
       kind: value.target.kind as "aggregate" | "service",
       id: value.target.id,
+      probe: parseBusinessProbe(value.target.probe) as PromotionBusinessProbe,
     },
   };
 }
@@ -99,7 +141,11 @@ export interface PromotionFaultIdentity {
   stagingDeploymentId: string;
   type: PromotionFaultType;
   authority: string;
-  target: { kind: "aggregate" | "service"; id: string };
+  target: {
+    kind: "aggregate" | "service";
+    id: string;
+    probe: PromotionBusinessProbe;
+  };
 }
 
 export interface PromotionFaultRecoverInput extends PromotionFaultIdentity {
@@ -123,6 +169,7 @@ interface FaultRow extends Record<string, SqlStorageValue> {
   authority: string;
   target_kind: "aggregate" | "service";
   target_id: string;
+  target_probe_json: string;
   phase: "injected" | "recovering" | "recovered";
   injected_at: string;
   updated_at: string;
@@ -148,7 +195,8 @@ function sameIdentity(row: FaultRow, input: PromotionFaultIdentity): boolean {
     row.fault_type === input.type &&
     row.authority === input.authority &&
     row.target_kind === input.target.kind &&
-    row.target_id === input.target.id
+    row.target_id === input.target.id &&
+    row.target_probe_json === JSON.stringify(input.target.probe)
   );
 }
 
@@ -165,6 +213,7 @@ export class PromotionFaultDO extends DurableObject<ApiEnv> {
           authority TEXT NOT NULL,
           target_kind TEXT NOT NULL,
           target_id TEXT NOT NULL,
+          target_probe_json TEXT NOT NULL,
           phase TEXT NOT NULL,
           injected_at TEXT NOT NULL,
           updated_at TEXT NOT NULL
@@ -175,6 +224,15 @@ export class PromotionFaultDO extends DurableObject<ApiEnv> {
           observed_at TEXT NOT NULL
         );
       `);
+      const columns = this.ctx.storage.sql
+        .exec<{ name: string }>("PRAGMA table_info(promotion_fault)")
+        .toArray()
+        .map(({ name }) => name);
+      if (!columns.includes("target_probe_json")) {
+        this.ctx.storage.sql.exec(
+          "ALTER TABLE promotion_fault ADD COLUMN target_probe_json TEXT NOT NULL DEFAULT '{}'",
+        );
+      }
     });
   }
 
@@ -200,7 +258,11 @@ export class PromotionFaultDO extends DurableObject<ApiEnv> {
       stagingDeploymentId: row.staging_deployment_id,
       type: row.fault_type,
       authority: row.authority,
-      target: { kind: row.target_kind, id: row.target_id },
+      target: {
+        kind: row.target_kind,
+        id: row.target_id,
+        probe: JSON.parse(row.target_probe_json) as PromotionBusinessProbe,
+      },
       phase: row.phase,
       proof,
       sequence,
@@ -225,8 +287,9 @@ export class PromotionFaultDO extends DurableObject<ApiEnv> {
     this.ctx.storage.sql.exec(
       `INSERT INTO promotion_fault (
         execution_id, candidate_sha, staging_deployment_id, fault_type,
-        authority, target_kind, target_id, phase, injected_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'injected', ?, ?)`,
+        authority, target_kind, target_id, target_probe_json, phase,
+        injected_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'injected', ?, ?)`,
       input.executionId,
       input.candidateSha,
       input.stagingDeploymentId,
@@ -234,6 +297,7 @@ export class PromotionFaultDO extends DurableObject<ApiEnv> {
       input.authority,
       input.target.kind,
       input.target.id,
+      JSON.stringify(input.target.probe),
       observedAt,
       observedAt,
     );
@@ -313,7 +377,11 @@ export class PromotionFaultDO extends DurableObject<ApiEnv> {
       stagingDeploymentId: row.staging_deployment_id,
       type: row.fault_type,
       authority: row.authority,
-      target: { kind: row.target_kind, id: row.target_id },
+      target: {
+        kind: row.target_kind,
+        id: row.target_id,
+        probe: JSON.parse(row.target_probe_json) as PromotionBusinessProbe,
+      },
     };
   }
 

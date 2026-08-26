@@ -281,6 +281,15 @@ export class PromotionAuthorityFaultService extends WorkerEntrypoint<ErasureProm
       input.target.id,
     ).observePromotionFault(input.executionId);
   }
+
+  async finalizePromotionAuthorityAfterPitr(
+    input: PromotionAuthorityFaultRecovery,
+    expectedStateFingerprint: string,
+  ): Promise<PromotionAuthorityFaultState> {
+    return this.env.PROMOTION_AUTHORITY_FAULTS.getByName(
+      input.target.id,
+    ).finalizePromotionAuthorityAfterPitr(input, expectedStateFingerprint);
+  }
 }
 
 /** Private, append-only registry of Message erasure tombstones. */

@@ -213,7 +213,7 @@
   "workflows": {
     "botWake": {
       "name": "punks-bot-wake-staging",
-      "status": "configured-not-deployed"
+      "status": "deployed-remote-observation-required"
     }
   },
   "remoteAiInference": {

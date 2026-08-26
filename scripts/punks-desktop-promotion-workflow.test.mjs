@@ -225,16 +225,38 @@ test("the aggregate validates, publishes and only then activates the exact draft
   );
   assert.match(cadence.run, /--run-id "\$GITHUB_RUN_ID"/);
   assert.match(cadence.run, /--run-attempt "\$GITHUB_RUN_ATTEMPT"/);
+  assert.match(cadence.run, /--budget-observation "\$budget_file"/);
   assert.match(
     cadence.run,
-    /--budget-observation "\$RUNNER_TEMP\/punks-operational-budget-observation\.json"/,
+    /budget_file="candidate\/operational-budget-observation\.json"/,
   );
-  assert.match(cadence.run, /unset PUNKS_OPERATIONAL_BUDGET_OBSERVATION/);
+  assert.match(
+    cadence.run,
+    /budget_exports="candidate\/operational-budget-exports"/,
+  );
+  assert.match(cadence.run, /--budget-exports "\$budget_exports"/);
+  assert.match(cadence.run, /--candidate-root candidate/);
+  assert.match(
+    cadence.run,
+    /scripts\/candidate\/operational-budget-fetch\.mjs/,
+  );
+  assert.match(
+    cadence.run,
+    /--manifest-sha256 "\$PUNKS_OPERATIONAL_BUDGET_MANIFEST_SHA256"/,
+  );
+  assert.match(
+    cadence.run,
+    /scripts\/candidate\/operational-topology-observation\.mjs/,
+  );
+  assert.match(
+    cadence.run,
+    /--topology-observation candidate\/operational-topology-observation\.json/,
+  );
   assert.match(cadence.run, /github-cadence-observation\.json/);
   assert.equal(cadence.env?.GITHUB_TOKEN, "${{ github.token }}");
-  assert.equal(
-    cadence.env?.PUNKS_OPERATIONAL_BUDGET_OBSERVATION,
-    "${{ secrets.PUNKS_OPERATIONAL_BUDGET_OBSERVATION }}",
+  assert.doesNotMatch(
+    JSON.stringify(cadence),
+    /PUNKS_OPERATIONAL_BUDGET_OBSERVATION/,
   );
   assert.match(
     operationalHead.run,
@@ -244,6 +266,11 @@ test("the aggregate validates, publishes and only then activates the exact draft
     operationalHead.run,
     /--cadence-observation candidate\/github-cadence-observation\.json/,
   );
+  assert.match(
+    operationalHead.run,
+    /--budget-exports candidate\/operational-budget-exports/,
+  );
+  assert.match(operationalHead.run, /--candidate-root candidate/);
   assert.match(operationalHead.run, /operational-release-head\.json/);
   assert.match(operationalHead.run, /validateOperationalReleaseHead/);
   assert.match(activate.run, /\["expansion", "active"\]/);

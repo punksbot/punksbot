@@ -18,8 +18,6 @@ export interface AuthTransaction {
   expiresAt: string;
   /** Présent uniquement pour la Cérémonie de connexion desktop (issue #54). */
   desktop?: DesktopTransactionTarget;
-  /** Commitment of the OAuth state returned by the system browser. */
-  returnedStateHash?: string;
 }
 
 export type ClaimResolution =

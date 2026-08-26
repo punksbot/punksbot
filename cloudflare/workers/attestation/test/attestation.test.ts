@@ -30,6 +30,13 @@ describe("private attestation Worker", () => {
       target: {
         kind: "service" as const,
         id: "internal-event-signature",
+        probe: {
+          punkId: "00000000-0000-8000-8000-000000000001",
+          workspaceId: "58975ca8-3b75-42c7-a13a-51c9d7306200",
+          workspaceSlug: "promotion-fixture",
+          conversationId: "00000000-0000-8000-8000-000000000060",
+          messageId: "537dc710-324c-4d4a-b8dc-a1fd8c177537",
+        },
       },
     };
     const fault = env.PROMOTION_AUTHORITY_FAULTS.getByName(

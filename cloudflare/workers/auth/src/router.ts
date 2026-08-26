@@ -394,12 +394,16 @@ async function oauthCallback(
     return problem(400, "invalid_input", "OAuth callback is invalid");
   }
   const browserBinding = parseCookies(request).get(oauthCookieName(state));
+  if (browserBinding === undefined) {
+    return problem(
+      400,
+      "invalid_input",
+      "OAuth transaction is invalid or consumed",
+    );
+  }
   const transactionId = await aggregateName("transaction", state);
   const transaction = env.AUTH_TRANSACTIONS.getByName(transactionId);
-  const begun =
-    browserBinding === undefined
-      ? await transaction.beginDesktopWithReturnedState(state)
-      : await transaction.begin(await hash(browserBinding));
+  const begun = await transaction.begin(await hash(browserBinding));
   if (!begun.ok || begun.transaction.provider !== provider) {
     return problem(
       400,

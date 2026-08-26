@@ -268,8 +268,8 @@ test("drives every social-loop story through one installed browser session", asy
         ]),
       );
     },
-    async exerciseFaultMatrix() {
-      calls.push(["fault-matrix"]);
+    async exerciseFaultMatrix(messageId) {
+      calls.push(["fault-matrix", messageId]);
       return { scenarios: [] };
     },
     async followTrace() {
@@ -376,6 +376,12 @@ test("drives every social-loop story through one installed browser session", asy
   );
   assert.equal(calls[0][0], "screen-reader-start");
   assert.ok(calls.some(([kind]) => kind === "authentication-ceremonies"));
-  assert.ok(calls.some(([kind]) => kind === "fault-matrix"));
+  assert.ok(
+    calls.some(
+      ([kind, messageId]) =>
+        kind === "fault-matrix" &&
+        messageId === "66666666-6666-4666-8666-666666666666",
+    ),
+  );
   assert.equal(calls.at(-1)[0], "screen-reader-stop");
 });

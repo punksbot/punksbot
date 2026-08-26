@@ -253,7 +253,7 @@ describe("WorkspaceDO storage bounds", () => {
           .one().count,
       ).toBe(0);
       expect(
-        instance.query({ contract: "workspace.get@1", workspaceId }),
+        await instance.query({ contract: "workspace.get@1", workspaceId }),
       ).toMatchObject({ ok: true, state: { cursor: 1 } });
       await state.storage.deleteAlarm();
     });
@@ -794,7 +794,10 @@ describe("WorkspaceDO storage bounds", () => {
       }
       return {
         results,
-        query: instance.query({ contract: "workspace.get@1", workspaceId }),
+        query: await instance.query({
+          contract: "workspace.get@1",
+          workspaceId,
+        }),
         pending: state.storage.sql
           .exec<{ count: number }>(
             "SELECT COUNT(*) AS count FROM pending_command",
@@ -897,7 +900,10 @@ describe("WorkspaceDO storage bounds", () => {
         add,
         promote,
         rename,
-        query: instance.query({ contract: "workspace.get@1", workspaceId }),
+        query: await instance.query({
+          contract: "workspace.get@1",
+          workspaceId,
+        }),
         pending: state.storage.sql
           .exec<{ count: number }>(
             "SELECT COUNT(*) AS count FROM pending_command",
@@ -987,7 +993,10 @@ describe("WorkspaceDO storage bounds", () => {
       return {
         remove,
         rename,
-        query: instance.query({ contract: "workspace.get@1", workspaceId }),
+        query: await instance.query({
+          contract: "workspace.get@1",
+          workspaceId,
+        }),
         pending: state.storage.sql
           .exec<{ count: number }>(
             "SELECT COUNT(*) AS count FROM pending_command",
@@ -1092,7 +1101,10 @@ describe("WorkspaceDO storage bounds", () => {
       }
       return {
         result,
-        query: instance.query({ contract: "workspace.get@1", workspaceId }),
+        query: await instance.query({
+          contract: "workspace.get@1",
+          workspaceId,
+        }),
         pending: state.storage.sql
           .exec<{ count: number }>(
             "SELECT COUNT(*) AS count FROM pending_command",

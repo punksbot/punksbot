@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
-import { generateKeyPairSync, sign } from "node:crypto";
-import test from "node:test";
+import { createHash, generateKeyPairSync, sign } from "node:crypto";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test, { after } from "node:test";
 
 import { canonicalJson, canonicalSha256 } from "../migration-manifest-lib.mjs";
 import {
@@ -18,6 +21,18 @@ import {
 
 const sourceSha = "ab".repeat(20);
 const stagingDeploymentId = `sha256:${"cd".repeat(32)}`;
+const budgetExportRoot = mkdtempSync(
+  join(tmpdir(), "punks-operational-head-budgets-"),
+);
+const candidateRoot = mkdtempSync(
+  join(tmpdir(), "punks-operational-head-candidate-"),
+);
+const candidateEvidence = join(candidateRoot, "operational-budget-sources");
+mkdirSync(candidateEvidence);
+after(() => {
+  rmSync(budgetExportRoot, { recursive: true, force: true });
+  rmSync(candidateRoot, { recursive: true, force: true });
+});
 const keys = ["ops:one", "ops:two"].map((id) => {
   const pair = generateKeyPairSync("ed25519");
   return {
@@ -110,32 +125,86 @@ function topology() {
 function budgetObservation() {
   const sampleCount = 1_000_000;
   const connectionMethods = ["google", "github", "passkey"];
-  const statistic = (budget, suffix) => ({
-    mesure: 0,
-    "borne-superieure-unilaterale-95":
+  const statistic = (budget, dimension) => {
+    const samples =
       budget.unite === "pourcentage"
-        ? borneWilsonUnilaterale95(0, sampleCount)
-        : 0,
-    echantillons: sampleCount,
-    numerateur: budget.unite === "millisecondes" ? null : 0,
-    denominateur: budget.unite === "pourcentage" ? sampleCount : null,
-    methode:
-      budget.unite === "pourcentage"
-        ? "wilson-unilaterale-95"
+        ? { failures: 0, total: sampleCount }
         : budget.unite === "occurrences"
-          ? "tolerance-zero"
-          : "quantile-export-verifie",
-    "baseline-n-1": {
-      disponible: false,
-      "mesure-n-1": null,
-      "export-n-1-sha256": null,
-      "regression-pourcentage": null,
-      "justification-acceptee": false,
-      "justification-sha256": null,
-    },
-    resultat: "vert",
-    "export-sha256": canonicalSha256({ budget: budget.nom, suffix }),
-  });
+          ? { occurrences: 0, total: sampleCount }
+          : { histogram: [{ value: 0, count: sampleCount }] };
+    const source = {
+      schema: "punks.operational-metric-source.v1",
+      sourceSha,
+      stagingDeploymentId,
+      metric: budget.nom,
+      dimension,
+      unit: budget.unite,
+      observer: "github-attested-installed-candidate",
+      querySha256: canonicalSha256({ metric: budget.nom, dimension, query: 1 }),
+      attestationSha256: canonicalSha256({
+        metric: budget.nom,
+        dimension,
+        attestation: 1,
+      }),
+      observedAt: "2026-08-26T20:19:57.000Z",
+      samples,
+    };
+    const sourceContent = Buffer.from(`${JSON.stringify(source)}\n`);
+    const candidateEvidenceSha256 = createHash("sha256")
+      .update(sourceContent)
+      .digest("hex");
+    writeFileSync(
+      join(candidateEvidence, `${candidateEvidenceSha256}.json`),
+      sourceContent,
+    );
+    const raw = {
+      schema: "punks.operational-metric-export.v1",
+      sourceSha,
+      stagingDeploymentId,
+      metric: budget.nom,
+      dimension,
+      unit: budget.unite,
+      observedAt: "2026-08-26T20:19:58.000Z",
+      provenance: [
+        {
+          path: `operational-budget-sources/${candidateEvidenceSha256}.json`,
+          sha256: candidateEvidenceSha256,
+        },
+      ],
+      samples,
+    };
+    const exportSha256 = canonicalSha256(raw);
+    writeFileSync(
+      join(budgetExportRoot, `${exportSha256}.json`),
+      `${JSON.stringify(raw)}\n`,
+    );
+    return {
+      mesure: 0,
+      "borne-superieure-unilaterale-95":
+        budget.unite === "pourcentage"
+          ? borneWilsonUnilaterale95(0, sampleCount)
+          : 0,
+      echantillons: sampleCount,
+      numerateur: budget.unite === "millisecondes" ? null : 0,
+      denominateur: budget.unite === "pourcentage" ? sampleCount : null,
+      methode:
+        budget.unite === "pourcentage"
+          ? "wilson-unilaterale-95"
+          : budget.unite === "occurrences"
+            ? "tolerance-zero"
+            : "quantile-export-verifie",
+      "baseline-n-1": {
+        disponible: false,
+        "mesure-n-1": null,
+        "export-n-1-sha256": null,
+        "regression-pourcentage": null,
+        "justification-acceptee": false,
+        "justification-sha256": null,
+      },
+      resultat: "vert",
+      "export-sha256": exportSha256,
+    };
+  };
   const verdicts = BUDGETS_PRODUCTION.map((budget) => {
     const dimensions =
       budget.nom === "connexion-desktop-echecs-par-moyen"
@@ -147,13 +216,18 @@ function budgetObservation() {
       nom: budget.nom,
       unite: budget.unite,
       "budget-max": budget.maximum,
-      ...statistic(budget, "aggregate"),
+      ...statistic(budget, null),
       dimensions: dimensions.map((dimension) => ({
         dimension,
         ...statistic(budget, dimension),
       })),
     };
   });
+  const outbox = statistic(
+    { nom: "outboxes-en-attente", unite: "occurrences" },
+    null,
+  );
+  const dlq = verdicts.find(({ nom }) => nom === "queues-dlq");
   const content = {
     schema: "punks.operational-budget-observation.v1",
     sourceSha,
@@ -163,10 +237,10 @@ function budgetObservation() {
     bookmarks: [
       { autorite: "cloudflare-staging", valeur: stagingDeploymentId },
     ],
-    dlq: { messages: 0, "export-sha256": canonicalSha256({ dlq: 0 }) },
+    dlq: { messages: 0, "export-sha256": dlq["export-sha256"] },
     outboxes: {
       "en-attente": 0,
-      "export-sha256": canonicalSha256({ outboxes: 0 }),
+      "export-sha256": outbox["export-sha256"],
     },
     incidents: [],
     observedAt: "2026-08-26T20:19:59.000Z",
@@ -240,6 +314,8 @@ test("materializes signed expansion and active executions before Latest", async 
     dossier: input,
     publicationResult,
     cadenceObservation: cadenceObservation(input, publicationResult),
+    budgetExportRoot,
+    candidateRoot,
     approbation,
   });
   assert.deepEqual(
@@ -279,6 +355,8 @@ test("refuses activation when one ordered operational step is absent", async () 
     dossier: input,
     publicationResult,
     cadenceObservation: cadenceObservation(input, publicationResult),
+    budgetExportRoot,
+    candidateRoot,
     approbation,
   });
   head.transitions[1].steps.pop();
@@ -305,6 +383,8 @@ test("refuses a cadence observation altered after the exact Actions read", async
       dossier: input,
       publicationResult,
       cadenceObservation,
+      budgetExportRoot,
+      candidateRoot,
       approbation,
     });
 
@@ -335,6 +415,8 @@ test("publishes the operational head create-only to the draft and both Punks buc
     dossier: input,
     publicationResult,
     cadenceObservation: cadenceObservation(input, publicationResult),
+    budgetExportRoot,
+    candidateRoot,
     approbation,
   });
   const writes = [];

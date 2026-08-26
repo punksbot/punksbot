@@ -249,10 +249,13 @@ export class PromotionAuthProofService extends WorkerEntrypoint<AuthEnv> {
         createdAt: new Date(now).toISOString(),
         expiresAt: new Date(now + 10 * 60_000).toISOString(),
         desktop: { flowId: negativeFlowId },
-        returnedStateHash: await hash(validState),
       }));
     const wrongReturnedState =
-      await transaction.beginDesktopWithReturnedState(wrongState);
+      launched?.ok === true
+        ? await this.env.AUTH_TRANSACTIONS.getByName(
+            await aggregateName("transaction", wrongState),
+          ).begin(await hash(launched.browserBinding))
+        : { ok: false as const, code: "missing" as const };
     const passkeyFlowId = await deriveOpaqueUuid(
       "punks.promotion.auth-negative-passkey-flow.v1",
       `${sourceSha}:${stagingDeploymentId}:${crypto.randomUUID()}`,
@@ -296,7 +299,7 @@ export class PromotionAuthProofService extends WorkerEntrypoint<AuthEnv> {
       wrongVerifier.code !== "binding_mismatch" ||
       wrongBrowser !== null ||
       wrongReturnedState.ok ||
-      wrongReturnedState.code !== "binding_mismatch" ||
+      wrongReturnedState.code !== "missing" ||
       !passkeyChallengeBound ||
       wrongPasskeyChallenge
     ) {

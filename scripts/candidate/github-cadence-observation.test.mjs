@@ -1,5 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -18,6 +25,7 @@ import {
   createGithubActionsBoundary,
   observeGithubCadence,
   run,
+  validateGithubCadenceObservation,
 } from "./github-cadence-observation.mjs";
 
 const sourceSha = "ab".repeat(20);
@@ -129,35 +137,129 @@ function githubObservation() {
   };
 }
 
-function budgetObservation() {
+function prepareCandidateRoot(candidateRoot) {
+  const sources = join(candidateRoot, "operational-budget-sources");
+  mkdirSync(sources, { recursive: true });
+  return sources;
+}
+
+function topologyObservation(dossier) {
+  const content = {
+    schema: "punks.operational-topology-observation.v1",
+    accountId: "3a391620584c792dbbd8cfa148d7634a",
+    sourceSha,
+    stagingDeploymentId,
+    workers: dossier.liaison.staging.workers,
+    workflows: [
+      {
+        name: "punks-bot-wake-staging",
+        id: "workflow-staging-id",
+        scriptName: "punks-bot-runtime-staging",
+        className: "BotWakeWorkflow",
+        versionId: "workflow-version-id",
+        createdOn: "2026-08-26T19:00:00.000Z",
+        modifiedOn: "2026-08-26T19:01:00.000Z",
+        versionCreatedOn: "2026-08-26T19:01:00.000Z",
+      },
+    ],
+    securityGenerations: {
+      compatibility: 1,
+      operatorProvisioning: 1,
+      promotionSession: 1,
+      releaseApprovers: 1,
+      r2Primary: 1,
+      r2Recovery: 1,
+      attestationPrimary: 1,
+      attestationSecondary: 1,
+      sessionRecovery: 5,
+    },
+    observedAt: "2026-08-26T19:02:00.000Z",
+  };
+  return { ...content, sha256: canonicalSha256(content) };
+}
+
+function budgetObservation(exportRoot, candidateRoot) {
   const sampleCount = 1_000_000;
   const connectionMethods = ["google", "github", "passkey"];
-  const statistic = (budget, suffix) => ({
-    mesure: 0,
-    "borne-superieure-unilaterale-95":
+  const sources = prepareCandidateRoot(candidateRoot);
+  mkdirSync(exportRoot);
+  const statistic = (budget, dimension) => {
+    const samples =
       budget.unite === "pourcentage"
-        ? borneWilsonUnilaterale95(0, sampleCount)
-        : 0,
-    echantillons: sampleCount,
-    numerateur: budget.unite === "millisecondes" ? null : 0,
-    denominateur: budget.unite === "pourcentage" ? sampleCount : null,
-    methode:
-      budget.unite === "pourcentage"
-        ? "wilson-unilaterale-95"
+        ? { failures: 0, total: sampleCount }
         : budget.unite === "occurrences"
-          ? "tolerance-zero"
-          : "quantile-export-verifie",
-    "baseline-n-1": {
-      disponible: false,
-      "mesure-n-1": null,
-      "export-n-1-sha256": null,
-      "regression-pourcentage": null,
-      "justification-acceptee": false,
-      "justification-sha256": null,
-    },
-    resultat: "vert",
-    "export-sha256": canonicalSha256({ budget: budget.nom, suffix }),
-  });
+          ? { occurrences: 0, total: sampleCount }
+          : { histogram: [{ value: 0, count: sampleCount }] };
+    const source = {
+      schema: "punks.operational-metric-source.v1",
+      sourceSha,
+      stagingDeploymentId,
+      metric: budget.nom,
+      dimension,
+      unit: budget.unite,
+      observer: "cloudflare-analytics",
+      querySha256: canonicalSha256({ metric: budget.nom, dimension, query: 1 }),
+      attestationSha256: canonicalSha256({
+        metric: budget.nom,
+        dimension,
+        attestation: 1,
+      }),
+      observedAt: "2026-08-26T20:19:57.000Z",
+      samples,
+    };
+    const sourceContent = Buffer.from(`${JSON.stringify(source)}\n`);
+    const provenanceSha256 = createHash("sha256")
+      .update(sourceContent)
+      .digest("hex");
+    writeFileSync(join(sources, `${provenanceSha256}.json`), sourceContent);
+    const raw = {
+      schema: "punks.operational-metric-export.v1",
+      sourceSha,
+      stagingDeploymentId,
+      metric: budget.nom,
+      dimension,
+      unit: budget.unite,
+      observedAt: "2026-08-26T20:19:58.000Z",
+      provenance: [
+        {
+          path: `operational-budget-sources/${provenanceSha256}.json`,
+          sha256: provenanceSha256,
+        },
+      ],
+      samples,
+    };
+    const exportSha256 = canonicalSha256(raw);
+    writeFileSync(
+      join(exportRoot, `${exportSha256}.json`),
+      `${JSON.stringify(raw)}\n`,
+    );
+    return {
+      mesure: 0,
+      "borne-superieure-unilaterale-95":
+        budget.unite === "pourcentage"
+          ? borneWilsonUnilaterale95(0, sampleCount)
+          : 0,
+      echantillons: sampleCount,
+      numerateur: budget.unite === "millisecondes" ? null : 0,
+      denominateur: budget.unite === "pourcentage" ? sampleCount : null,
+      methode:
+        budget.unite === "pourcentage"
+          ? "wilson-unilaterale-95"
+          : budget.unite === "occurrences"
+            ? "tolerance-zero"
+            : "quantile-export-verifie",
+      "baseline-n-1": {
+        disponible: false,
+        "mesure-n-1": null,
+        "export-n-1-sha256": null,
+        "regression-pourcentage": null,
+        "justification-acceptee": false,
+        "justification-sha256": null,
+      },
+      resultat: "vert",
+      "export-sha256": exportSha256,
+    };
+  };
   const verdicts = BUDGETS_PRODUCTION.map((budget) => {
     const dimensions =
       budget.nom === "connexion-desktop-echecs-par-moyen"
@@ -169,13 +271,18 @@ function budgetObservation() {
       nom: budget.nom,
       unite: budget.unite,
       "budget-max": budget.maximum,
-      ...statistic(budget, "aggregate"),
+      ...statistic(budget, null),
       dimensions: dimensions.map((dimension) => ({
         dimension,
         ...statistic(budget, dimension),
       })),
     };
   });
+  const outbox = statistic(
+    { nom: "outboxes-en-attente", unite: "occurrences" },
+    null,
+  );
+  const dlq = verdicts.find(({ nom }) => nom === "queues-dlq");
   const content = {
     schema: "punks.operational-budget-observation.v1",
     sourceSha,
@@ -185,10 +292,10 @@ function budgetObservation() {
     bookmarks: [
       { autorite: "cloudflare-staging", valeur: stagingDeploymentId },
     ],
-    dlq: { messages: 0, "export-sha256": canonicalSha256({ dlq: 0 }) },
+    dlq: { messages: 0, "export-sha256": dlq["export-sha256"] },
     outboxes: {
       "en-attente": 0,
-      "export-sha256": canonicalSha256({ outboxes: 0 }),
+      "export-sha256": outbox["export-sha256"],
     },
     incidents: [],
     observedAt: "2026-08-26T20:19:59.000Z",
@@ -196,7 +303,11 @@ function budgetObservation() {
   return { ...content, sha256: canonicalSha256(content) };
 }
 
-test("observes ten successful cadence steps from the exact current Actions run", async () => {
+test("observes ten successful cadence steps from the exact current Actions run", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "punks-budget-exports-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const budgetExportRoot = join(root, "exports");
+  const candidateRoot = join(root, "candidate");
   const dossier = dossierValide({
     candidat: { sha: sourceSha, tranche: 1 },
     liaison: {
@@ -207,6 +318,7 @@ test("observes ten successful cadence steps from the exact current Actions run",
       },
     },
   });
+  dossier.liaison.staging.deploiement = stagingDeploymentId;
   const remote = githubObservation();
   const calls = [];
   const observation = await observeGithubCadence(
@@ -218,7 +330,10 @@ test("observes ten successful cadence steps from the exact current Actions run",
       stagingDeploymentId,
       dossier,
       publicationResult,
-      budgetObservation: budgetObservation(),
+      budgetObservation: budgetObservation(budgetExportRoot, candidateRoot),
+      budgetExportRoot,
+      candidateRoot,
+      topologyObservation: topologyObservation(dossier),
     },
     {
       github: {
@@ -257,6 +372,22 @@ test("observes ten successful cadence steps from the exact current Actions run",
     "github",
     "passkey",
   ]);
+  assert.deepEqual(
+    observation.topology.workflows.map(({ nom }) => nom),
+    ["punks-bot-wake-staging"],
+  );
+  assert.ok(
+    observation.topology["versions-etat-durable-objects"].some(
+      ({ version }) => version > 1,
+    ),
+    "Durable Object state versions must come from the deployed migration chain",
+  );
+  assert.equal(
+    observation.topology["generations-securite"][
+      "generation-recuperation-sessions"
+    ],
+    5,
+  );
   assert.equal(observation.budgets.verdicts.length, 36);
   assert.deepEqual(
     validateOperationalBudgetVerdicts(observation.budgets.verdicts, {
@@ -300,6 +431,22 @@ test("observes ten successful cadence steps from the exact current Actions run",
     ]);
     assert.ok(actual.sampleCount > 0);
   }
+  const firstExport = observation.budgets.verdicts[0]["export-sha256"];
+  writeFileSync(
+    join(budgetExportRoot, `${firstExport}.json`),
+    '{"tampered":true}\n',
+  );
+  assert.throws(
+    () =>
+      validateGithubCadenceObservation(observation, {
+        sourceSha,
+        stagingDeploymentId,
+        proofDigests: evidence,
+        budgetExportRoot,
+        candidateRoot,
+      }),
+    /raw export digest diverges|unexpected shape/i,
+  );
 });
 
 test("reads one exact run attempt and all of its jobs through the versioned GitHub API", async () => {
@@ -361,11 +508,19 @@ test("the CLI writes one create-only observation from the current run boundary",
       },
     },
   });
+  dossier.liaison.staging.deploiement = stagingDeploymentId;
   writeFileSync(dossierPath, JSON.stringify(dossier));
   writeFileSync(publicationPath, JSON.stringify(publicationResult));
   const budgetPath = join(root, "budgets.json");
-  writeFileSync(budgetPath, JSON.stringify(budgetObservation()));
+  const budgetExportRoot = join(root, "budget-exports");
+  const candidateRoot = join(root, "candidate");
+  writeFileSync(
+    budgetPath,
+    JSON.stringify(budgetObservation(budgetExportRoot, candidateRoot)),
+  );
   const remote = githubObservation();
+  const topologyPath = join(root, "topology.json");
+  writeFileSync(topologyPath, JSON.stringify(topologyObservation(dossier)));
   const observation = await run(
     [
       "--dossier",
@@ -374,6 +529,12 @@ test("the CLI writes one create-only observation from the current run boundary",
       publicationPath,
       "--budget-observation",
       budgetPath,
+      "--budget-exports",
+      budgetExportRoot,
+      "--candidate-root",
+      candidateRoot,
+      "--topology-observation",
+      topologyPath,
       "--repository",
       repository,
       "--run-id",
@@ -409,6 +570,12 @@ test("the CLI writes one create-only observation from the current run boundary",
         publicationPath,
         "--budget-observation",
         budgetPath,
+        "--budget-exports",
+        budgetExportRoot,
+        "--candidate-root",
+        candidateRoot,
+        "--topology-observation",
+        topologyPath,
         "--repository",
         repository,
         "--run-id",
