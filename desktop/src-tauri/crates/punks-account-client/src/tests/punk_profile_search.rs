@@ -8,6 +8,15 @@ use super::{
     ORIGIN, PUNK_ID, WORKSPACE_ID,
 };
 
+fn identity_compatibility() -> Value {
+    let mut value = compatibility();
+    value["capabilities"]
+        .as_array_mut()
+        .unwrap()
+        .push(Value::String("identity-governance".to_owned()));
+    value
+}
+
 fn profile(display_name: &str, revision: u64) -> Value {
     json!({
         "id": PUNK_ID,
@@ -47,7 +56,7 @@ async fn account_profile_read_and_mutation_use_closed_native_operations() {
         ));
         Box::pin(async move {
             Ok(match (method.as_str(), path.as_str()) {
-                ("POST", "/api/v1/desktop/compatibility") => compatibility(),
+                ("POST", "/api/v1/desktop/compatibility") => identity_compatibility(),
                 ("GET", "/api/auth/v1/session") => session(),
                 ("GET", "/api/v1/punk") => profile("Mabza", 1),
                 ("PATCH", "/api/v1/punk") => profile("Mélanie", 2),
@@ -96,7 +105,7 @@ async fn workspace_profile_sidecars_and_search_keep_bounded_contracts() {
         let cursor = cursor.clone();
         Box::pin(async move {
             Ok(match path.as_str() {
-                "/api/v1/desktop/compatibility" => compatibility(),
+                "/api/v1/desktop/compatibility" => identity_compatibility(),
                 "/api/auth/v1/session" => session(),
                 path if path.starts_with("/api/v1/workspaces?") => workspaces(),
                 path if path.ends_with("/punks/summaries") => json!({
@@ -129,8 +138,8 @@ async fn workspace_profile_sidecars_and_search_keep_bounded_contracts() {
         .get_punk_summaries(&[PUNK_ID.to_owned()])
         .await
         .unwrap();
-    assert_eq!(summaries.len(), 1);
-    assert_eq!(summaries[0].display_name, "Mabza");
+    assert_eq!(summaries.items.len(), 1);
+    assert_eq!(summaries.items[0].display_name, "Mabza");
 
     let page = workspace
         .search_punks(PunkSearchInput::Prefix("mab".to_owned()), 10, None)
@@ -159,7 +168,7 @@ async fn malformed_search_metadata_fails_before_renderer_delivery() {
     let client = client_with(move |_method, path, _body, _idempotency_key| {
         Box::pin(async move {
             Ok(match path.as_str() {
-                "/api/v1/desktop/compatibility" => compatibility(),
+                "/api/v1/desktop/compatibility" => identity_compatibility(),
                 "/api/auth/v1/session" => session(),
                 path if path.starts_with("/api/v1/workspaces?") => workspaces(),
                 path if path.ends_with("/punks/search") => json!({
@@ -182,4 +191,23 @@ async fn malformed_search_metadata_fails_before_renderer_delivery() {
         .unwrap_err();
     assert_eq!(failure.kind, FailureKind::ContractViolation);
     assert_eq!(ORIGIN, "https://staging.punks.bot");
+}
+
+#[tokio::test]
+async fn prepared_identity_operations_fail_closed_without_atomic_t4_capability() {
+    let client = client_with(move |_method, path, _body, _idempotency_key| {
+        Box::pin(async move {
+            Ok(match path.as_str() {
+                "/api/v1/desktop/compatibility" => compatibility(),
+                "/api/auth/v1/session" => session(),
+                _ => return Err(ClientFailure::new(FailureKind::Problem, "unexpected")),
+            })
+        })
+    });
+    client.check_compatibility().await.unwrap();
+    client.get_session().await.unwrap();
+
+    let failure = client.get_punk_profile().await.unwrap_err();
+    assert_eq!(failure.kind, FailureKind::ContractViolation);
+    assert!(failure.message.contains("identity-governance"));
 }

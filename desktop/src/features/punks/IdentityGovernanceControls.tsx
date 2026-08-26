@@ -1,12 +1,18 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import { useMemo, useRef, useState } from "react";
 
 import type {
   CreateWorkspaceInvitationResponse,
   PunkPublicSummary,
-  Workspace,
+  WorkspaceGovernanceResponse,
   WorkspaceInvitationView,
 } from "@punks/contracts";
+import type { AuthenticationMethod } from "@/shared/api/punksClient";
 import {
   Dialog,
   DialogContent,
@@ -81,9 +87,10 @@ function MemberRow({
   revision,
   onRemove,
   onRole,
+  onTransfer,
 }: {
   canManage: boolean;
-  member: Workspace["members"][number];
+  member: WorkspaceGovernanceResponse["members"][number];
   name: string;
   ownerPunkId: string;
   pending: boolean;
@@ -94,6 +101,7 @@ function MemberRow({
     role: Exclude<WorkspaceRole, "owner">,
     expectedRevision: number,
   ): void;
+  onTransfer(targetPunkId: string, name: string): void;
 }) {
   const primaryOwner = member.punkId === ownerPunkId;
   return (
@@ -142,9 +150,107 @@ function MemberRow({
           >
             Remove
           </button>
+          <button
+            className="rounded-md border border-border px-2 py-1.5 text-sm hover:bg-accent disabled:opacity-50"
+            disabled={pending}
+            onClick={() => onTransfer(member.punkId, name)}
+            type="button"
+          >
+            Transfer ownership
+          </button>
         </>
       ) : null}
     </li>
+  );
+}
+
+function TransferOwnershipDialog({
+  candidate,
+  method,
+  onClose,
+  onConfirm,
+  onMethod,
+  onReauthenticate,
+  pending,
+  reauthenticated,
+}: {
+  candidate: { punkId: string; name: string } | null;
+  method: AuthenticationMethod;
+  onClose(): void;
+  onConfirm(): void;
+  onMethod(method: AuthenticationMethod): void;
+  onReauthenticate(): void;
+  pending: boolean;
+  reauthenticated: boolean;
+}) {
+  const [confirmation, setConfirmation] = useState("");
+  const confirmed = candidate !== null && confirmation === candidate.name;
+  return (
+    <Dialog
+      onOpenChange={(open) => {
+        if (!open) {
+          setConfirmation("");
+          onClose();
+        }
+      }}
+      open={candidate !== null}
+    >
+      <DialogContent className="max-w-md border border-border p-5">
+        <DialogTitle>Transfer Workspace ownership</DialogTitle>
+        <DialogDescription className="mt-1">
+          This atomically makes {candidate?.name ?? "the selected Punk"} the
+          primary Owner and changes your role to Member.
+        </DialogDescription>
+        <label className="mt-4 grid gap-1 text-sm">
+          Reauthentication method
+          <select
+            className="rounded-md border border-border bg-background px-2 py-2"
+            disabled={pending}
+            onChange={(event) =>
+              onMethod(event.target.value as AuthenticationMethod)
+            }
+            value={method}
+          >
+            <option value="passkey">Passkey</option>
+            <option value="google">Google</option>
+            <option value="github">GitHub</option>
+          </select>
+        </label>
+        <label className="mt-4 grid gap-1 text-sm">
+          Type {candidate?.name ?? "the Punk name"} to confirm
+          <input
+            autoComplete="off"
+            className="rounded-md border border-border bg-background px-3 py-2"
+            disabled={pending}
+            onChange={(event) => setConfirmation(event.target.value)}
+            value={confirmation}
+          />
+        </label>
+        <div className="mt-5 flex flex-wrap gap-2">
+          <button
+            className="rounded-md border border-border px-3 py-2 text-sm hover:bg-accent disabled:opacity-50"
+            disabled={!confirmed || pending || reauthenticated}
+            onClick={onReauthenticate}
+            type="button"
+          >
+            {reauthenticated ? "Reauthenticated" : "Reauthenticate"}
+          </button>
+          <button
+            className="rounded-md bg-destructive px-3 py-2 text-sm text-destructive-foreground disabled:opacity-50"
+            disabled={!confirmed || !reauthenticated || pending}
+            onClick={onConfirm}
+            type="button"
+          >
+            Transfer ownership
+          </button>
+        </div>
+        <p className="mt-3 text-xs text-muted-foreground" role="status">
+          {reauthenticated
+            ? "Fresh authorization confirmed. Review the target, then transfer."
+            : "A fresh browser or passkey reauthentication is required."}
+        </p>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -199,31 +305,42 @@ function WorkspaceGovernanceDialog() {
   const [inviteRole, setInviteRole] = useState<"member" | "guest">("member");
   const [issued, setIssued] =
     useState<CreateWorkspaceInvitationResponse | null>(null);
+  const [transferCandidate, setTransferCandidate] = useState<{
+    punkId: string;
+    name: string;
+  } | null>(null);
+  const [reauthenticationMethod, setReauthenticationMethod] =
+    useState<AuthenticationMethod>("passkey");
+  const [transferReauthenticated, setTransferReauthenticated] = useState(false);
+  const reauthenticationGeneration = useRef(0);
+  const [lifecycleNotice, setLifecycleNotice] = useState<string | null>(null);
   const key = governanceKey(scope.lease.workspaceId, scope.lease.generation);
-  const governanceQuery = useQuery({
+  const governanceQuery = useInfiniteQuery({
     queryKey: key,
-    queryFn: () => manager.run(scope, () => scope.session.getGovernance()),
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam }) =>
+      manager.run(scope, () =>
+        scope.session.getGovernancePage({ limit: 100, cursor: pageParam }),
+      ),
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
     refetchOnWindowFocus: true,
   });
-  const governance = governanceQuery.data;
+  const governance = governanceQuery.data?.pages[0]?.workspace;
+  const members =
+    governanceQuery.data?.pages.flatMap((page) => page.members) ?? [];
   const summariesQuery = useQuery({
-    queryKey: [
-      ...key,
-      "summaries",
-      ...(governance?.members.map((member) => member.punkId) ?? []),
-    ],
+    queryKey: [...key, "summaries", ...members.map((member) => member.punkId)],
     enabled: governance !== undefined,
     queryFn: async () => {
-      if (governance === undefined) return [];
       const pages = await Promise.all(
         chunks(
-          governance.members.map((member) => member.punkId),
+          members.map((member) => member.punkId),
           100,
         ).map((punkIds) =>
           manager.run(scope, () => scope.session.getPunkSummaries(punkIds)),
         ),
       );
-      return pages.flat();
+      return pages.flatMap((page) => page.items);
     },
   });
   const summaries = useMemo(
@@ -233,14 +350,7 @@ function WorkspaceGovernanceDialog() {
       ),
     [summariesQuery.data],
   );
-  const currentRole = governance?.members.find(
-    (member) => member.punkId === scope.lease.punkId,
-  )?.role;
-  const canManage = currentRole === "owner";
-
-  const updateGovernance = (workspace: Workspace) => {
-    queryClient.setQueryData(key, workspace);
-  };
+  const canManage = governance?.ownerPunkId === scope.lease.punkId;
   const createMutation = useMutation({
     mutationFn: () => {
       if (governance === undefined)
@@ -285,24 +395,91 @@ function WorkspaceGovernanceDialog() {
       expectedRevision: number;
     }) => manager.run(scope, () => scope.session.setMemberRole(input)),
     retry: false,
-    onSuccess: (response) => updateGovernance(response.workspace),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: key });
+    },
   });
   const removeMutation = useMutation({
     mutationFn: (input: { targetPunkId: string; expectedRevision: number }) =>
       manager.run(scope, () => scope.session.removeMember(input)),
     retry: false,
-    onSuccess: (response) => updateGovernance(response.workspace),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: key });
+    },
+  });
+  const reauthenticationMutation = useMutation({
+    mutationFn: async () => {
+      const attempt = reauthenticationGeneration.current + 1;
+      reauthenticationGeneration.current = attempt;
+      setTransferReauthenticated(false);
+      await account.client.startReauthentication(
+        reauthenticationMethod,
+        "transfer_workspace_ownership",
+      );
+      for (let poll = 0; poll < 800; poll += 1) {
+        await new Promise<void>((resolve) => {
+          window.setTimeout(resolve, 750);
+        });
+        if (reauthenticationGeneration.current !== attempt) {
+          throw new Error("Ownership reauthentication was cancelled");
+        }
+        const state = await account.client.getAccountSessionState();
+        const phase = state.authentication.phase;
+        if (phase === "confirmed") return;
+        if (phase === "cancelled" || phase === "expired") {
+          throw new Error("Ownership reauthentication was not completed");
+        }
+        if (phase === "failed") {
+          throw new Error("Ownership reauthentication failed");
+        }
+      }
+      throw new Error("Ownership reauthentication timed out");
+    },
+    retry: false,
+    onSuccess: () => {
+      setTransferReauthenticated(true);
+      setLifecycleNotice(
+        "Fresh reauthentication confirmed. Review and confirm the transfer.",
+      );
+    },
+  });
+  const transferMutation = useMutation({
+    mutationFn: () => {
+      if (governance === undefined || transferCandidate === null) {
+        throw new Error("Ownership transfer is unavailable");
+      }
+      return manager.run(scope, () =>
+        scope.session.transferOwnership({
+          targetPunkId: transferCandidate.punkId,
+          expectedRevision: governance.revision,
+        }),
+      );
+    },
+    retry: false,
+    onSuccess: async () => {
+      reauthenticationGeneration.current += 1;
+      setTransferCandidate(null);
+      setTransferReauthenticated(false);
+      setLifecycleNotice("Workspace ownership transferred.");
+      queryClient.removeQueries({ queryKey: key });
+      await account.refresh();
+    },
+    onError: () => setTransferReauthenticated(false),
   });
   const pending =
     createMutation.isPending ||
     revokeMutation.isPending ||
     roleMutation.isPending ||
-    removeMutation.isPending;
+    removeMutation.isPending ||
+    reauthenticationMutation.isPending ||
+    transferMutation.isPending;
   const error =
     createMutation.error ??
     revokeMutation.error ??
     roleMutation.error ??
-    removeMutation.error;
+    removeMutation.error ??
+    reauthenticationMutation.error ??
+    transferMutation.error;
 
   return (
     <DialogContent className="max-h-[90dvh] overflow-y-auto border border-border p-5">
@@ -362,7 +539,7 @@ function WorkspaceGovernanceDialog() {
           ) : null}
 
           <ul className="mt-5 space-y-2">
-            {governance.members.map((member) => (
+            {members.map((member) => (
               <MemberRow
                 canManage={canManage}
                 key={member.punkId}
@@ -378,14 +555,56 @@ function WorkspaceGovernanceDialog() {
                     expectedRevision,
                   })
                 }
+                onTransfer={(punkId, name) => {
+                  setLifecycleNotice(null);
+                  setTransferReauthenticated(false);
+                  setTransferCandidate({ punkId, name });
+                }}
                 ownerPunkId={governance.ownerPunkId}
                 pending={pending}
                 revision={governance.revision}
               />
             ))}
           </ul>
+          {governanceQuery.hasNextPage ? (
+            <button
+              className="mt-3 rounded-md border border-border px-3 py-2 text-sm hover:bg-accent disabled:opacity-50"
+              disabled={governanceQuery.isFetchingNextPage}
+              onClick={() => void governanceQuery.fetchNextPage()}
+              type="button"
+            >
+              {governanceQuery.isFetchingNextPage
+                ? "Loading members…"
+                : `Load more members (${members.length}/${governance.memberCount})`}
+            </button>
+          ) : null}
         </>
       )}
+      <TransferOwnershipDialog
+        candidate={transferCandidate}
+        method={reauthenticationMethod}
+        onClose={() => {
+          reauthenticationGeneration.current += 1;
+          setTransferCandidate(null);
+          setTransferReauthenticated(false);
+          if (reauthenticationMutation.isPending) {
+            void account.client.cancelAuthentication().catch(() => undefined);
+          }
+        }}
+        onConfirm={() => transferMutation.mutate()}
+        onMethod={(method) => {
+          setReauthenticationMethod(method);
+          setTransferReauthenticated(false);
+        }}
+        onReauthenticate={() => reauthenticationMutation.mutate()}
+        pending={pending}
+        reauthenticated={transferReauthenticated}
+      />
+      {lifecycleNotice !== null ? (
+        <p className="mt-4 text-sm text-muted-foreground" role="status">
+          {lifecycleNotice}
+        </p>
+      ) : null}
       {error !== null ? (
         <p className="mt-4 text-sm text-destructive" role="alert">
           {mutationMessage(error)}
@@ -412,37 +631,123 @@ export function WorkspaceGovernanceLauncher() {
   );
 }
 
+function WorkspaceDepartureLauncher() {
+  const account = usePunksAccount();
+  const { manager, scope, workspace } = usePunksWorkspace();
+  const [confirmation, setConfirmation] = useState("");
+  const isPrimaryOwner = workspace.role === "owner";
+  const departure = useMutation({
+    mutationFn: () => manager.run(scope, () => scope.session.leaveWorkspace()),
+    retry: false,
+    onSuccess: async () => {
+      account.localStore?.clearLastWorkspaceId();
+      account.localStore?.clearRouteCoordinates();
+      await account.navigate({ kind: "home" }, true);
+      await account.refresh();
+    },
+  });
+  return (
+    <Dialog
+      onOpenChange={(open) => {
+        if (!open) setConfirmation("");
+      }}
+    >
+      <DialogTrigger asChild>
+        <button
+          className="w-full rounded-md border border-destructive/40 px-3 py-2 text-left text-sm text-destructive hover:bg-destructive/10"
+          data-testid="punks-open-workspace-departure"
+          type="button"
+        >
+          Leave Workspace
+        </button>
+      </DialogTrigger>
+      <DialogContent className="max-w-md border border-border p-5">
+        <DialogTitle>Leave {workspace.name}</DialogTitle>
+        <DialogDescription className="mt-1">
+          {isPrimaryOwner
+            ? "Transfer ownership before leaving this Workspace."
+            : "Access, live updates and cached Workspace data are removed immediately."}
+        </DialogDescription>
+        {!isPrimaryOwner ? (
+          <label className="mt-4 grid gap-1 text-sm">
+            Type {workspace.name} to confirm
+            <input
+              autoComplete="off"
+              className="rounded-md border border-border bg-background px-3 py-2"
+              disabled={departure.isPending}
+              onChange={(event) => setConfirmation(event.target.value)}
+              value={confirmation}
+            />
+          </label>
+        ) : null}
+        <button
+          className="mt-5 rounded-md bg-destructive px-3 py-2 text-sm text-destructive-foreground disabled:opacity-50"
+          data-testid="punks-confirm-workspace-departure"
+          disabled={
+            isPrimaryOwner ||
+            confirmation !== workspace.name ||
+            departure.isPending
+          }
+          onClick={() => departure.mutate()}
+          type="button"
+        >
+          {departure.isPending ? "Leaving…" : "Leave Workspace"}
+        </button>
+        {departure.error !== null ? (
+          <p className="mt-3 text-sm text-destructive" role="alert">
+            {mutationMessage(departure.error)}
+          </p>
+        ) : null}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export function WorkspaceAccessLaunchers() {
+  const { workspace } = usePunksWorkspace();
+  return (
+    <>
+      {workspace.role === "owner" ? <WorkspaceGovernanceLauncher /> : null}
+      <WorkspaceDepartureLauncher />
+    </>
+  );
+}
+
 export function InvitationClaimGate() {
   const account = usePunksAccount();
   const [input, setInput] = useState("");
   const [preview, setPreview] = useState<WorkspaceInvitationView | null>(null);
+  const [pending, setPending] = useState<"preview" | "claim" | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const origin = account.compatibility?.origin ?? window.location.origin;
   const code = parseWorkspaceInvitationInput(input, origin);
-  const previewMutation = useMutation({
-    mutationFn: () => {
-      if (code === null)
-        throw new Error("Enter a valid invitation code or link");
-      return account.client.getWorkspaceInvitation(code);
-    },
-    retry: false,
-    onSuccess: setPreview,
-  });
-  const claimMutation = useMutation({
-    mutationFn: () => {
-      if (code === null || preview === null) {
-        throw new Error("Review the invitation before accepting it");
-      }
-      return account.client.claimWorkspaceInvitation({
+  const review = async () => {
+    if (code === null) return;
+    setPending("preview");
+    setError(null);
+    try {
+      setPreview(await account.client.getWorkspaceInvitation(code));
+    } catch (failure) {
+      setError(failure);
+    } finally {
+      setPending(null);
+    }
+  };
+  const claim = async () => {
+    if (code === null || preview === null) return;
+    setPending("claim");
+    setError(null);
+    try {
+      await account.client.claimWorkspaceInvitation({
         code,
         expectedRevision: preview.workspaceRevision,
       });
-    },
-    retry: false,
-    onSuccess: async () => {
       await account.refresh();
-    },
-  });
-  const error = previewMutation.error ?? claimMutation.error;
+    } catch (failure) {
+      setError(failure);
+      setPending(null);
+    }
+  };
 
   return (
     <section className="w-full max-w-md space-y-4 rounded-xl border border-border bg-background p-5">
@@ -460,14 +765,15 @@ export function InvitationClaimGate() {
           onChange={(event) => {
             setInput(event.target.value);
             setPreview(null);
+            setError(null);
           }}
           value={input}
         />
       </label>
       <button
         className="rounded-md border border-border px-3 py-2 text-sm hover:bg-accent disabled:opacity-50"
-        disabled={previewMutation.isPending || code === null}
-        onClick={() => previewMutation.mutate()}
+        disabled={pending !== null || code === null}
+        onClick={() => void review()}
         type="button"
       >
         Review invitation
@@ -480,8 +786,8 @@ export function InvitationClaimGate() {
           </p>
           <button
             className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-50"
-            disabled={claimMutation.isPending || preview.status !== "issued"}
-            onClick={() => claimMutation.mutate()}
+            disabled={pending !== null || preview.status !== "issued"}
+            onClick={() => void claim()}
             type="button"
           >
             Accept invitation

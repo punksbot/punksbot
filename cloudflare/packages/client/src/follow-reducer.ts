@@ -4,6 +4,7 @@ import type {
 } from "@punks/contracts";
 
 type ChangesFrame = Extract<ConversationFollowServerFrame, { type: "changes" }>;
+type TypingFrame = Extract<ConversationFollowServerFrame, { type: "typing" }>;
 
 export type FollowPhase =
   | "awaiting_acceptance"
@@ -26,6 +27,7 @@ export type FollowState = {
 export type FollowEffect =
   | { kind: "none" }
   | { kind: "apply_batch"; frame: ChangesFrame }
+  | { kind: "typing"; patch: TypingFrame["patch"] }
   | { kind: "became_live" }
   | {
       kind: "resync";
@@ -157,6 +159,9 @@ export function reduceFollowFrame(
       state: { ...state, phase: "live" },
       effect: { kind: "became_live" },
     };
+  }
+  if (frame.type === "typing") {
+    return { state, effect: { kind: "typing", patch: frame.patch } };
   }
 
   if (state.phase !== "catching_up" && state.phase !== "live") {

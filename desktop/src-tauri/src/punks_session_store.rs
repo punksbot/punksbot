@@ -336,14 +336,14 @@ impl KeyringSessionPersistence {
 
     pub(crate) fn take_reauthorization(
         &self,
-        target: punks_account_client::ceremony::AuthenticationMethod,
+        target: PendingAuthPurpose,
     ) -> Result<Option<PendingReauthorization>, String> {
         self.take_reauthorization_at(target, SystemTime::now())
     }
 
     fn take_reauthorization_at(
         &self,
-        target: punks_account_client::ceremony::AuthenticationMethod,
+        target: PendingAuthPurpose,
         now: SystemTime,
     ) -> Result<Option<PendingReauthorization>, String> {
         let now = encode_time(now)?;
@@ -355,7 +355,20 @@ impl KeyringSessionPersistence {
                 state.pending_reauthorization = None;
                 return Ok(None);
             }
-            if current.target_method != target {
+            let current_purpose = current
+                .target_purpose
+                .unwrap_or(match current.target_method {
+                    punks_account_client::ceremony::AuthenticationMethod::Google => {
+                        PendingAuthPurpose::LinkGoogle
+                    }
+                    punks_account_client::ceremony::AuthenticationMethod::Github => {
+                        PendingAuthPurpose::LinkGithub
+                    }
+                    punks_account_client::ceremony::AuthenticationMethod::Passkey => {
+                        PendingAuthPurpose::RegisterPasskey
+                    }
+                });
+            if current_purpose != target {
                 return Ok(None);
             }
             Ok(state.pending_reauthorization.take())

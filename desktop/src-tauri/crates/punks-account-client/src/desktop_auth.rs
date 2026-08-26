@@ -472,6 +472,9 @@ impl DesktopAuthClient {
                         contracts::DesktopAuthClaimExchangeAuthorizationTargetMethod::RegisterPasskey => {
                             "register_passkey"
                         }
+                        contracts::DesktopAuthClaimExchangeAuthorizationTargetMethod::TransferWorkspaceOwnership => {
+                            "transfer_workspace_ownership"
+                        }
                     }
                     .to_string(),
                     handoff_id: response.authorization.handoff_id,
@@ -556,13 +559,17 @@ impl DesktopAuthClient {
             .await
             .map_err(|_| contract_failure("auth.session@1"))?
             .session;
-        claim_metadata(&contracts::DesktopAuthClaimExchangeSession {
+        validate_uuid(&session.session_id, "auth.session@1")?;
+        validate_uuid(&session.punk_id, "auth.session@1")?;
+        let _ = parse_iso8601(&session.authenticated_at)?;
+        if let Some(recent) = session.recent_reauth_until.as_deref() {
+            let _ = parse_iso8601(recent)?;
+        }
+        Ok(SessionMetadata {
             session_id: session.session_id,
             punk_id: session.punk_id,
-            authenticated_at: session.authenticated_at,
-            expires_at: session.expires_at,
-            recent_reauth_until: session.recent_reauth_until,
-            punk: session.punk,
+            expires_at: parse_iso8601(&session.expires_at)?,
+            last_renewed_at: None,
         })
     }
 
@@ -670,6 +677,9 @@ fn start_purpose(value: &str) -> Result<contracts::DesktopAuthStartRequestPurpos
         "link_google" => Ok(contracts::DesktopAuthStartRequestPurpose::LinkGoogle),
         "link_github" => Ok(contracts::DesktopAuthStartRequestPurpose::LinkGithub),
         "register_passkey" => Ok(contracts::DesktopAuthStartRequestPurpose::RegisterPasskey),
+        "transfer_workspace_ownership" => {
+            Ok(contracts::DesktopAuthStartRequestPurpose::TransferWorkspaceOwnership)
+        }
         _ => Err(contract_failure("desktop-auth.start@1")),
     }
 }

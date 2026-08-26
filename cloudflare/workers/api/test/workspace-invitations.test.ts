@@ -7,9 +7,11 @@ import type {
   RevokeWorkspaceInvitationCommand,
   RevokeWorkspaceInvitationResponse,
   SetWorkspaceMemberRoleCommand,
+  WorkspaceGovernanceResponse,
   WorkspaceInvitationView,
 } from "@punks/contracts";
 import { validateContract } from "@punks/contracts";
+import { encodeWorkspaceGovernanceCursor } from "@punks/core";
 import { env, SELF } from "cloudflare:test";
 import { describe, expect, it, vi } from "vitest";
 
@@ -280,26 +282,54 @@ describe("Punks Workspace invitations", () => {
   it("rechecks Session revocation immediately before a role commit", async () => {
     const slug = `fence-${crypto.randomUUID()}`;
     const workspaceId = await createWorkspace(slug);
-    const addOwner: SetWorkspaceMemberRoleCommand = {
+    const admitMember: SetWorkspaceMemberRoleCommand = {
       contract: "workspace.member-set-role@1",
       commandId: crypto.randomUUID(),
       workspaceId,
       actor: { kind: "punk", punkId: ownerPunkId },
-      payload: { targetPunkId: invitedPunkId, role: "owner" },
+      payload: {
+        targetPunkId: invitedPunkId,
+        role: "member",
+        expectedRevision: 1,
+      },
     };
-    const addResponse = await SELF.fetch(
+    const admitResponse = await SELF.fetch(
       `https://punks.bot/api/v1/workspaces/${workspaceId}/members/${invitedPunkId}`,
       {
         method: "PUT",
         headers: {
           "content-type": "application/json",
           cookie: "__Host-punks_session=session-owner",
-          "idempotency-key": addOwner.commandId,
+          "idempotency-key": admitMember.commandId,
         },
-        body: JSON.stringify(addOwner),
+        body: JSON.stringify(admitMember),
       },
     );
-    expect(addResponse.status, await addResponse.clone().text()).toBe(200);
+    expect(admitResponse.status, await admitResponse.clone().text()).toBe(200);
+    const promoteOwner: SetWorkspaceMemberRoleCommand = {
+      ...admitMember,
+      commandId: crypto.randomUUID(),
+      payload: {
+        targetPunkId: invitedPunkId,
+        role: "owner",
+        expectedRevision: 2,
+      },
+    };
+    const promoteResponse = await SELF.fetch(
+      `https://punks.bot/api/v1/workspaces/${workspaceId}/members/${invitedPunkId}`,
+      {
+        method: "PUT",
+        headers: {
+          "content-type": "application/json",
+          cookie: "__Host-punks_session=session-owner",
+          "idempotency-key": promoteOwner.commandId,
+        },
+        body: JSON.stringify(promoteOwner),
+      },
+    );
+    expect(promoteResponse.status, await promoteResponse.clone().text()).toBe(
+      200,
+    );
 
     const auth = env.AUTH_SERVICE as typeof env.AUTH_SERVICE & {
       setSessionRevoked(sessionId: string, revoked: boolean): Promise<void>;
@@ -315,7 +345,7 @@ describe("Punks Workspace invitations", () => {
         payload: {
           targetPunkId: invitedPunkId,
           role: "moderator",
-          expectedRevision: 2,
+          expectedRevision: 3,
         },
       } as unknown as SetWorkspaceMemberRoleCommand;
       const denied = await SELF.fetch(
@@ -339,7 +369,7 @@ describe("Punks Workspace invitations", () => {
       expect(read.status, await read.clone().text()).toBe(200);
       await expect(read.json()).resolves.toMatchObject({
         workspace: {
-          revision: 2,
+          revision: 3,
           members: expect.arrayContaining([
             { punkId: invitedPunkId, role: "owner" },
           ]),
@@ -414,14 +444,14 @@ describe("Punks Workspace invitations", () => {
 
   it("applies role loss immediately while preserving issuer revocation", async () => {
     const workspaceId = await createWorkspace(`roles-${crypto.randomUUID()}`);
-    const addOwner: SetWorkspaceMemberRoleCommand = {
+    const admitMember: SetWorkspaceMemberRoleCommand = {
       contract: "workspace.member-set-role@1",
       commandId: crypto.randomUUID(),
       workspaceId,
       actor: { kind: "punk", punkId: ownerPunkId },
       payload: {
         targetPunkId: invitedPunkId,
-        role: "owner",
+        role: "member",
         expectedRevision: 1,
       },
     };
@@ -431,24 +461,44 @@ describe("Punks Workspace invitations", () => {
       headers: {
         "content-type": "application/json",
         cookie: "__Host-punks_session=session-owner",
-        "idempotency-key": addOwner.commandId,
+        "idempotency-key": admitMember.commandId,
       },
-      body: JSON.stringify(addOwner),
+      body: JSON.stringify(admitMember),
     });
     expect(added.status, await added.clone().text()).toBe(200);
 
+    const promoteOwner: SetWorkspaceMemberRoleCommand = {
+      ...admitMember,
+      commandId: crypto.randomUUID(),
+      payload: {
+        targetPunkId: invitedPunkId,
+        role: "owner",
+        expectedRevision: 2,
+      },
+    };
+    const promoted = await SELF.fetch(memberUrl, {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json",
+        cookie: "__Host-punks_session=session-owner",
+        "idempotency-key": promoteOwner.commandId,
+      },
+      body: JSON.stringify(promoteOwner),
+    });
+    expect(promoted.status, await promoted.clone().text()).toBe(200);
+
     const issued = await createInvitation(
       workspaceId,
-      { expectedRevision: 2 },
+      { expectedRevision: 3 },
       { punkId: invitedPunkId, session: "session-other" },
     );
     const demote: SetWorkspaceMemberRoleCommand = {
-      ...addOwner,
+      ...promoteOwner,
       commandId: crypto.randomUUID(),
       payload: {
         targetPunkId: invitedPunkId,
         role: "moderator",
-        expectedRevision: 2,
+        expectedRevision: 3,
       },
     };
     const demoted = await SELF.fetch(memberUrl, {
@@ -467,7 +517,7 @@ describe("Punks Workspace invitations", () => {
       commandId: crypto.randomUUID(),
       workspaceId,
       actor: { kind: "punk", punkId: invitedPunkId },
-      payload: { role: "guest", expectedRevision: 3 },
+      payload: { role: "guest", expectedRevision: 4 },
     };
     const forbidden = await SELF.fetch(
       `https://punks.bot/api/v1/workspaces/${workspaceId}/invitations`,
@@ -490,7 +540,7 @@ describe("Punks Workspace invitations", () => {
       actor: { kind: "punk", punkId: invitedPunkId },
       payload: {
         invitationId: issued.invitation.invitationId,
-        expectedRevision: 3,
+        expectedRevision: 4,
       },
     };
     const revoked = await SELF.fetch(
@@ -534,21 +584,64 @@ describe("Punks Workspace invitations", () => {
     });
   });
 
-  it("reads the authoritative roster only for a current Workspace member", async () => {
+  it("rejects membership mutations through the unprivileged Durable Object RPC", async () => {
+    const workspaceId = await createWorkspace(`direct-${crypto.randomUUID()}`);
+    const command: SetWorkspaceMemberRoleCommand = {
+      contract: "workspace.member-set-role@1",
+      commandId: crypto.randomUUID(),
+      workspaceId,
+      actor: { kind: "punk", punkId: ownerPunkId },
+      payload: {
+        targetPunkId: invitedPunkId,
+        role: "member",
+        expectedRevision: 1,
+      },
+    };
+
+    await expect(
+      env.WORKSPACES.getByName(workspaceId).execute(command),
+    ).resolves.toEqual({ ok: false, code: "invalid_contract" });
+    await expect(
+      env.WORKSPACES.getByName(workspaceId).query({
+        contract: "workspace.get@1",
+        workspaceId,
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      state: { revision: 1, members: [{ punkId: ownerPunkId, role: "owner" }] },
+    });
+  });
+
+  it("reads the authoritative roster only for a current member manager", async () => {
     const workspaceId = await createWorkspace(`roster-${crypto.randomUUID()}`);
     const ownerRead = await SELF.fetch(
       `https://punks.bot/api/v1/workspaces/${workspaceId}/governance`,
       { headers: { cookie: "__Host-punks_session=session-owner" } },
     );
     expect(ownerRead.status, await ownerRead.clone().text()).toBe(200);
-    const workspace = await ownerRead.json();
+    const workspace = (await ownerRead.json()) as WorkspaceGovernanceResponse;
     expect(
-      validateContract("punks://contracts/workspace@1", workspace),
+      validateContract(
+        "punks://contracts/workspace.governance-response@1",
+        workspace,
+      ),
     ).toEqual({ valid: true });
     expect(workspace).toMatchObject({
-      id: workspaceId,
+      contract: "workspace.governance-response@1",
+      workspace: { id: workspaceId, memberCount: 1 },
       members: [{ punkId: ownerPunkId, role: "owner" }],
+      nextCursor: null,
     });
+
+    const invitation = await createInvitation(workspaceId);
+    const claim = await claimInvitation(workspaceId, invitation.code);
+    expect(claim.status, await claim.clone().text()).toBe(200);
+    const member = await SELF.fetch(
+      `https://punks.bot/api/v1/workspaces/${workspaceId}/governance`,
+      { headers: { cookie: "__Host-punks_session=session-other" } },
+    );
+    expect(member.status, await member.clone().text()).toBe(403);
+    await expect(member.json()).resolves.toMatchObject({ code: "forbidden" });
 
     const outsider = await SELF.fetch(
       `https://punks.bot/api/v1/workspaces/${workspaceId}/governance`,
@@ -556,6 +649,109 @@ describe("Punks Workspace invitations", () => {
     );
     expect(outsider.status, await outsider.clone().text()).toBe(403);
     await expect(outsider.json()).resolves.toMatchObject({ code: "forbidden" });
+  });
+
+  it("serves a stable authority-bound roster in pages of at most one hundred", async () => {
+    const workspaceId = await createWorkspace(`pages-${crypto.randomUUID()}`);
+    const authority = env.WORKSPACES.getByName(workspaceId);
+    let revision = 1;
+    for (let index = 2; index <= 102; index += 1) {
+      const targetPunkId = `00000000-0000-8000-8000-${String(index).padStart(12, "0")}`;
+      const command: SetWorkspaceMemberRoleCommand = {
+        contract: "workspace.member-set-role@1",
+        commandId: crypto.randomUUID(),
+        workspaceId,
+        actor: { kind: "punk", punkId: ownerPunkId },
+        payload: { targetPunkId, role: "member", expectedRevision: revision },
+      };
+      const result = await authority.executeAuthorized(command, {
+        sessionId: "11111111-1111-8111-8111-111111111111",
+        punkId: ownerPunkId,
+      });
+      expect(result.ok, `member ${index}`).toBe(true);
+      revision += 1;
+    }
+    const directPage = await authority.queryGovernancePage({
+      workspaceId,
+      punkId: ownerPunkId,
+      limit: 100,
+    });
+    expect(directPage.ok).toBe(true);
+    if (!directPage.ok || directPage.nextPositionPunkId === null) {
+      throw new TypeError("Roster page did not expose its bounded position");
+    }
+    await expect(
+      encodeWorkspaceGovernanceCursor(
+        {
+          version: 1,
+          workspaceId,
+          requesterPunkId: ownerPunkId,
+          limit: 100,
+          authorityCursor: directPage.authorityCursor,
+          positionPunkId: directPage.nextPositionPunkId,
+        },
+        new TextEncoder().encode(env.DIRECTORY_CURSOR_KEY),
+      ),
+    ).resolves.toEqual(expect.any(String));
+
+    const first = await SELF.fetch(
+      `https://punks.bot/api/v1/workspaces/${workspaceId}/governance?limit=100`,
+      { headers: { cookie: "__Host-punks_session=session-owner" } },
+    );
+    expect(first.status, await first.clone().text()).toBe(200);
+    const firstPage = (await first.json()) as WorkspaceGovernanceResponse;
+    expect(firstPage.members).toHaveLength(100);
+    expect(firstPage.workspace).toMatchObject({
+      memberCount: 102,
+      revision,
+      cursor: revision,
+    });
+    expect(firstPage.nextCursor).toEqual(expect.any(String));
+
+    const second = await SELF.fetch(
+      `https://punks.bot/api/v1/workspaces/${workspaceId}/governance?limit=100&cursor=${encodeURIComponent(firstPage.nextCursor ?? "")}`,
+      { headers: { cookie: "__Host-punks_session=session-owner" } },
+    );
+    expect(second.status, await second.clone().text()).toBe(200);
+    const secondPage = (await second.json()) as WorkspaceGovernanceResponse;
+    expect(secondPage.members).toHaveLength(2);
+    expect(secondPage.nextCursor).toBeNull();
+    expect(
+      new Set(
+        [...firstPage.members, ...secondPage.members].map(
+          ({ punkId }) => punkId,
+        ),
+      ).size,
+    ).toBe(102);
+
+    const nextPunkId = "00000000-0000-8000-8000-000000000103";
+    const mutation: SetWorkspaceMemberRoleCommand = {
+      contract: "workspace.member-set-role@1",
+      commandId: crypto.randomUUID(),
+      workspaceId,
+      actor: { kind: "punk", punkId: ownerPunkId },
+      payload: {
+        targetPunkId: nextPunkId,
+        role: "member",
+        expectedRevision: revision,
+      },
+    };
+    expect(
+      (
+        await authority.executeAuthorized(mutation, {
+          sessionId: "11111111-1111-8111-8111-111111111111",
+          punkId: ownerPunkId,
+        })
+      ).ok,
+    ).toBe(true);
+    const stale = await SELF.fetch(
+      `https://punks.bot/api/v1/workspaces/${workspaceId}/governance?limit=100&cursor=${encodeURIComponent(firstPage.nextCursor ?? "")}`,
+      { headers: { cookie: "__Host-punks_session=session-owner" } },
+    );
+    expect(stale.status, await stale.clone().text()).toBe(409);
+    await expect(stale.json()).resolves.toMatchObject({
+      code: "revision_conflict",
+    });
   });
 
   it("admits at most one Punk when two claims race on one revision", async () => {
@@ -581,7 +777,7 @@ describe("Punks Workspace invitations", () => {
       { headers: { cookie: "__Host-punks_session=session-owner" } },
     );
     expect(governance.status, await governance.clone().text()).toBe(200);
-    const state = (await governance.json()) as { members: unknown[] };
+    const state = (await governance.json()) as WorkspaceGovernanceResponse;
     expect(state.members).toHaveLength(2);
   });
 });

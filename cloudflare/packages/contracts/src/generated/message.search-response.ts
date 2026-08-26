@@ -1,5 +1,23 @@
 /* Generated from the canonical Punks JSON Schema. Do not edit. */
 
+export type MessageSearchResponse = ({
+[k: string]: unknown | undefined
+} & {
+workspaceId: string
+conversationId: string
+threadRootMessageId: (string | null)
+order: "createdCursor-descending"
+completeness: ("complete" | "partial")
+partialReason: (("index_lagging" | "index_unavailable") | null)
+/**
+ * @maxItems 100
+ */
+items: (MessageView & {
+status: "active"
+[k: string]: unknown | undefined
+})[]
+nextCursor: (string | null)
+})
 export type MessageView = ({
 [k: string]: unknown | undefined
 } & {
@@ -45,17 +63,3 @@ createdAt: string
 updatedAt: string
 editedAt: (string | null)
 })
-
-export interface MessageSearchResponse {
-workspaceId: string
-conversationId: string
-order: "createdCursor-descending"
-/**
- * @maxItems 100
- */
-items: (MessageView & {
-status: "active"
-[k: string]: unknown | undefined
-})[]
-nextCursor: (string | null)
-}

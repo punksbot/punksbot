@@ -1,18 +1,16 @@
-import {
-  confirmFollowBatch,
-  createFollowState,
-  reduceFollowFrame,
-  type FollowState,
-} from "@punks/client/follow-reducer";
 import type {
-  ConversationFollowServerFrame,
   MessageReactionMutationResponse,
   MessageView,
   Punk,
   PunkPublicSummary,
+  PunkSearchResponse,
+  PunkSummaryBatchResponse,
 } from "@punks/contracts";
 import { TauriPunksAccountClient } from "./punksTauriClient";
 import { createFakeGovernanceAuthority } from "./punksFakeGovernance";
+import { createFakeFollow } from "./punksFakeFollow";
+import { createFakeMessageSearch } from "./punksFakeMessageSearch";
+import { createFakePresence } from "./punksFakePresence";
 import type {
   AccountSessionStateView,
   CeremonyPhaseView,
@@ -59,6 +57,7 @@ export function createFakePunksAccountClient(
   let compatible = false;
   let generation = 0;
   let activeLease: WorkspaceLease | null = null;
+  let pendingReauthorizationPurpose: string | null = null;
   let profile: Punk = structuredClone(
     seed.profile ?? {
       id: seed.session.punkId,
@@ -134,6 +133,20 @@ export function createFakePunksAccountClient(
     seed,
     assertCapability,
     assertCurrent,
+    () => {
+      if (pendingReauthorizationPurpose !== "transfer_workspace_ownership") {
+        throw new PunksDesktopFailure(
+          "problem",
+          "A fresh ownership-transfer reauthorization is required",
+        );
+      }
+      pendingReauthorizationPurpose = null;
+    },
+    (lease) => {
+      assertCurrent(lease);
+      activeLease = null;
+      generation += 1;
+    },
   );
 
   const account: PunksAccountClient = {
@@ -144,16 +157,30 @@ export function createFakePunksAccountClient(
     },
     async getAccountSessionState() {
       assertCompatible();
+      if (
+        pendingReauthorizationPurpose !== null &&
+        accountSessionState.authentication.phase === "started" &&
+        accountSessionState.authentication.intent === "reauthenticate"
+      ) {
+        ceremonyPhase = {
+          phase: "confirmed",
+          sessionId: seed.session.sessionId,
+        };
+        accountSessionState = {
+          ...accountSessionState,
+          authentication: ceremonyPhase,
+        };
+      }
       return structuredClone(accountSessionState);
     },
     async getPunkProfile() {
       assertCompatible();
-      assertCapability("punk-profile");
+      assertCapability("identity-governance");
       return structuredClone(profile);
     },
     async updatePunkProfile(input) {
       assertCompatible();
-      assertCapability("punk-profile");
+      assertCapability("identity-governance");
       if (input.expectedRevision !== profile.revision) {
         throw new PunksDesktopFailure(
           "problem",
@@ -233,8 +260,9 @@ export function createFakePunksAccountClient(
       };
       return structuredClone(ceremonyPhase);
     },
-    async startReauthentication(method, _purpose) {
+    async startReauthentication(method, purpose) {
       assertCompatible();
+      pendingReauthorizationPurpose = purpose;
       ceremonyPhase = {
         phase: "started",
         intent: "reauthenticate",
@@ -291,6 +319,7 @@ export function createFakePunksAccountClient(
     },
     async cancelAuthentication() {
       assertCompatible();
+      pendingReauthorizationPurpose = null;
       ceremonyPhase = { phase: "cancelled" };
       accountSessionState = {
         ...accountSessionState,
@@ -305,6 +334,7 @@ export function createFakePunksAccountClient(
     },
     async signOut() {
       assertCompatible();
+      pendingReauthorizationPurpose = null;
       ceremonyPhase = { phase: "idle" };
       accountSessionState = {
         state: "signed_out",
@@ -364,6 +394,14 @@ export function createFakePunksAccountClient(
         historyCursors.set(cursor, { scope, offset });
         return cursor;
       };
+      const searchMessages = createFakeMessageSearch({
+        seed,
+        streams,
+        lease,
+        workspaceId,
+        assertCapability,
+        assertCurrent,
+      });
       return {
         lease,
         ...governance.workspace(lease),
@@ -455,6 +493,7 @@ export function createFakePunksAccountClient(
             nextCursor: start > 0 ? historyCursor(scope, start) : null,
           };
         },
+        searchMessages,
         async resolveAuthors(authors) {
           assertCurrent(lease);
           return authors.flatMap((author) =>
@@ -471,15 +510,19 @@ export function createFakePunksAccountClient(
           );
         },
         async getPunkSummaries(punkIds) {
-          assertCapability("bounded-punk-summaries");
+          assertCapability("identity-governance");
           assertCurrent(lease);
           const requested = new Set(punkIds);
-          return structuredClone(
-            punkSummaries.filter((summary) => requested.has(summary.punkId)),
-          );
+          return {
+            contract: "punk.summary-batch-response@1" as const,
+            workspaceId,
+            items: structuredClone(
+              punkSummaries.filter((summary) => requested.has(summary.punkId)),
+            ) as PunkSummaryBatchResponse["items"],
+          };
         },
         async searchPunks(input) {
-          assertCapability("private-punk-search");
+          assertCapability("identity-governance");
           assertCurrent(lease);
           const query = input.query;
           const matches =
@@ -500,139 +543,31 @@ export function createFakePunksAccountClient(
                 );
           assertCurrent(lease);
           return {
-            items: structuredClone(matches.slice(0, input.limit)),
+            contract: "punk.search-response@1" as const,
+            workspaceId,
+            items: structuredClone(
+              matches.slice(0, input.limit),
+            ) as PunkSearchResponse["items"],
             nextCursor: null,
           };
         },
         async followConversation(conversationId, afterCursor) {
-          assertCurrent(lease);
-          const stream = streams.find((item) => item.id === conversationId);
-          if (stream === undefined) {
-            throw new PunksDesktopFailure(
-              "problem",
-              "Stream is not accessible",
-            );
-          }
-          const configuredFrames = seed.followFrames?.[conversationId];
-          const highWaterCursor = Math.max(
+          return createFakeFollow({
+            conversationId,
             afterCursor,
-            stream.cursor,
-            seed.messages[conversationId]?.at(-1)?.cursor ?? 0,
-          );
-          const pendingMessages = (seed.messages[conversationId] ?? [])
-            .filter(
-              (message) =>
-                message.cursor > afterCursor &&
-                message.cursor <= highWaterCursor,
-            )
-            .sort((left, right) => left.cursor - right.cursor);
-          const defaultChanges: ConversationFollowServerFrame[] = [];
-          let changesFrom = afterCursor;
-          for (let index = 0; index < pendingMessages.length; index += 100) {
-            const messages = pendingMessages.slice(index, index + 100);
-            const throughCursor = messages.at(-1)?.cursor ?? changesFrom;
-            if (throughCursor <= changesFrom) continue;
-            defaultChanges.push({
-              schemaVersion: 1,
-              type: "changes",
-              fromExclusiveCursor: changesFrom,
-              throughCursor,
-              messages,
-              threadPatches: [],
-              reactionPatches: [],
-              reactionCollectionPatches: [],
-            });
-            changesFrom = throughCursor;
-          }
-          if (changesFrom < highWaterCursor) {
-            defaultChanges.push({
-              schemaVersion: 1,
-              type: "changes",
-              fromExclusiveCursor: changesFrom,
-              throughCursor: highWaterCursor,
-              messages: [],
-              threadPatches: [],
-              reactionPatches: [],
-              reactionCollectionPatches: [],
-            });
-          }
-          const frames = structuredClone(
-            configuredFrames ?? [
-              {
-                schemaVersion: 1 as const,
-                type: "accepted" as const,
-                resumeAfterCursor: afterCursor,
-                targetHighWaterCursor: highWaterCursor,
-              },
-              ...defaultChanges,
-              {
-                schemaVersion: 1 as const,
-                type: "ready" as const,
-                highWaterCursor,
-              },
-            ],
-          );
-          let state: FollowState = createFollowState(afterCursor);
-          let closed = false;
-          return {
-            async nextDelivery() {
-              assertCurrent(lease);
-              if (closed) {
-                throw new PunksDesktopFailure(
-                  "cancelled",
-                  "Punks FOLLOW operation is closed",
-                );
-              }
-              while (frames.length > 0) {
-                const frame = frames.shift();
-                if (frame === undefined) break;
-                const reduction = reduceFollowFrame(state, frame);
-                state = reduction.state;
-                assertCurrent(lease);
-                if (reduction.effect.kind === "none") continue;
-                if (reduction.effect.kind === "apply_batch") {
-                  return {
-                    kind: "apply_batch" as const,
-                    frame: reduction.effect.frame,
-                  };
-                }
-                if (reduction.effect.kind === "became_live") {
-                  return { kind: "became_live" as const };
-                }
-                if (reduction.effect.kind === "resync") {
-                  return {
-                    kind: "resync" as const,
-                    reason: reduction.effect.reason,
-                    afterCursor: reduction.effect.afterCursor,
-                    highWaterCursor: reduction.effect.highWaterCursor,
-                  };
-                }
-                return {
-                  kind: "terminal" as const,
-                  reason: reduction.effect.reason,
-                  cursor: reduction.effect.cursor,
-                };
-              }
-              throw new PunksDesktopFailure(
-                "transport",
-                "Punks FOLLOW fixture has no more frames",
-              );
-            },
-            async confirmBatch(throughCursor) {
-              assertCurrent(lease);
-              const confirmation = confirmFollowBatch(state, throughCursor);
-              state = confirmation.state;
-              if (confirmation.ack === null) {
-                throw new PunksDesktopFailure(
-                  "contract_violation",
-                  "Punks FOLLOW confirmation is invalid",
-                );
-              }
-            },
-            async close() {
-              closed = true;
-            },
-          };
+            streams,
+            messages: seed.messages[conversationId] ?? [],
+            configuredFrames: seed.followFrames?.[conversationId],
+            assertCurrent: () => assertCurrent(lease),
+          });
+        },
+        async holdPresence() {
+          return createFakePresence({
+            lease,
+            punkId: seed.session.punkId,
+            assertCapability: () => assertCapability("presence"),
+            assertCurrent: () => assertCurrent(lease),
+          });
         },
         async postMessage({ conversationId, content, topic, replyTarget }) {
           assertCapability("message-post");

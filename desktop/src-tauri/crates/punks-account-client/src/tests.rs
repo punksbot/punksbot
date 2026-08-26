@@ -17,6 +17,8 @@ use super::{
 };
 
 mod message_mutations;
+mod message_search;
+mod presence;
 mod punk_profile_search;
 mod social_reads;
 mod workspace_context;

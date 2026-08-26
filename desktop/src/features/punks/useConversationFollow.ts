@@ -17,6 +17,7 @@ import {
 } from "./conversationCacheCoordinator";
 import { failureStatus, pumpFollow } from "./PunksConversationHelpers";
 import type { FollowStatus } from "./PunksConversationTypes";
+import { usePunksRealtimeSignals } from "./PunksRealtimeSignals";
 import { usePunksWorkspace } from "./PunksRuntime";
 import { applyConversationBatch, type ConversationCache } from "./socialLoop";
 
@@ -40,6 +41,7 @@ export function useConversationFollow({
 }): FollowStatus {
   const { scope, manager } = usePunksWorkspace();
   const queryClient = useQueryClient();
+  const { applyTypingPatch } = usePunksRealtimeSignals();
   const [status, setStatus] = useState<FollowStatus>("loading");
   const scopeKey = `${scope.lease.workspaceId}:${scope.lease.generation}:${conversationId}`;
   const cursorRef = useRef<{ scopeKey: string; cursor: number | null }>({
@@ -208,6 +210,10 @@ export function useConversationFollow({
                 cursorRef.current.cursor = delivery.frame.throughCursor;
                 return true;
               }
+              if (delivery.kind === "typing") {
+                applyTypingPatch(delivery.patch);
+                return true;
+              }
               if (delivery.kind === "became_live") {
                 setStatus("live");
                 return true;
@@ -254,6 +260,7 @@ export function useConversationFollow({
     };
   }, [
     conversationId,
+    applyTypingPatch,
     historyReady,
     manager,
     queryClient,

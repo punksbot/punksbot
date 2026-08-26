@@ -216,6 +216,7 @@ class RustEmitter {
   constructor() {
     this.declarations = [];
     this.checkers = new Map();
+    this.checkerNames = new Set();
     this.names = new Set();
     this.contractNames = new Map();
     this.defTypeMemo = new Map();
@@ -224,9 +225,10 @@ class RustEmitter {
   checkerForConst(value) {
     const key = JSON.stringify(value);
     if (!this.checkers.has(key)) {
-      const fn = `expect_const_${sanitizeIdentifier(
+      const base = `expect_const_${sanitizeIdentifier(
         snake(typeof value === "number" ? `u${value}` : value),
       )}`;
+      const fn = uniqueName(base, this.checkerNames, key);
       this.checkers.set(key, fn);
     }
     return this.checkers.get(key);
@@ -319,7 +321,7 @@ class RustEmitter {
     if (types.includes("null")) {
       const inner = { ...property, type: types.filter((t) => t !== "null") };
       if (inner.type.length === 0) {
-        return { kind: "simple", rust: "serde_json::Value" };
+        return { kind: "simple", rust: "()" };
       }
       const innerType = this.fieldSchemaType(inner, contextTitle);
       if (innerType.kind === "simple" || innerType.kind === "named") {
@@ -339,6 +341,8 @@ class RustEmitter {
         return { kind: "simple", rust: "f64" };
       case "boolean":
         return { kind: "simple", rust: "bool" };
+      case "null":
+        return { kind: "simple", rust: "()" };
       case "array":
         return {
           kind: "array",
@@ -353,14 +357,55 @@ class RustEmitter {
             title: contextTitle,
           };
         }
+        if (
+          property.properties !== undefined ||
+          property.additionalProperties === false ||
+          property.maxProperties === 0
+        ) {
+          return {
+            kind: "object",
+            schema: property,
+            title: contextTitle,
+          };
+        }
         return { kind: "simple", rust: "serde_json::Value" };
       }
       default:
-        throw new Error(`type JSON Schema non supporté : ${types[0]}`);
+        throw new Error(
+          `type JSON Schema non supporté pour ${contextTitle} : ${types[0]}`,
+        );
     }
   }
 
   rustTypeOf(property, contextTitle, _definitions, rootSchema) {
+    if (
+      Array.isArray(property.allOf) &&
+      property.$ref === undefined &&
+      property.type === undefined &&
+      property.properties === undefined &&
+      property.oneOf === undefined &&
+      property.anyOf === undefined &&
+      property.enum === undefined
+    ) {
+      const structural = property.allOf.find(
+        (candidate) =>
+          candidate.$ref !== undefined ||
+          candidate.type !== undefined ||
+          candidate.properties !== undefined ||
+          candidate.oneOf !== undefined ||
+          candidate.anyOf !== undefined ||
+          candidate.enum !== undefined,
+      );
+      if (structural === undefined) {
+        throw new Error(`allOf non projetable pour ${contextTitle}`);
+      }
+      return this.rustTypeOf(
+        structural,
+        contextTitle,
+        _definitions,
+        rootSchema,
+      );
+    }
     if (property.$ref !== undefined) {
       if (property.$ref.startsWith("#/$defs/")) {
         const defName = property.$ref.slice("#/$defs/".length);
@@ -444,6 +489,21 @@ class RustEmitter {
         const innerType =
           typeof inner === "string" ? inner : inner.constChecker;
         return `std::collections::BTreeMap<String, ${innerType}>`;
+      }
+      case "object": {
+        const structName = uniqueName(
+          pascal(shape.title),
+          this.names,
+          contextTitle,
+        );
+        this.declarations.push(
+          this.structSource(
+            structName,
+            shape.schema,
+            rootSchema ?? shape.schema,
+          ),
+        );
+        return structName;
       }
       case "union": {
         return this.resolveUnion(shape.variants, contextTitle, rootSchema);
@@ -551,7 +611,19 @@ class RustEmitter {
         null,
         rootSchema,
       );
-      const innerType = typeof inner === "string" ? inner : inner.constChecker;
+      const innerType =
+        typeof inner === "string"
+          ? inner
+          : typeof inner.constValue === "string"
+            ? "String"
+            : typeof inner.constValue === "number"
+              ? "u64"
+              : typeof inner.constValue === "boolean"
+                ? "bool"
+                : inner.constChecker;
+      if (innerType === undefined) {
+        throw new Error(`variante simple non projetable pour ${contextTitle}`);
+      }
       return wrap(innerType);
     }
 
@@ -722,6 +794,13 @@ class RustEmitter {
       fields.push(`    pub ${rustName}: ${rustType},`);
     }
     if (fields.length === 0) {
+      if (schema.additionalProperties === false || schema.maxProperties === 0) {
+        return [
+          `#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]`,
+          `#[serde(deny_unknown_fields, rename_all = "camelCase")]`,
+          `pub struct ${name} {}`,
+        ].join("\n");
+      }
       fields.push("    #[serde(flatten)]");
       fields.push("    pub extra: serde_json::Value,");
       return [

@@ -5,7 +5,10 @@ import type {
   DesktopCompatibilityResponse,
   RevokeWorkspaceInvitationResponse,
   Workspace,
+  WorkspaceGovernanceResponse,
+  WorkspaceGovernanceView,
   WorkspaceInvitationView,
+  WorkspaceMembershipLifecycleResponse,
   WorkspaceMembershipMutationResponse,
   WorkspaceSummary,
 } from "@punks/contracts";
@@ -19,6 +22,7 @@ import type {
   RevokeWorkspaceInvitationInput,
   SetWorkspaceMemberRoleInput,
   WorkspaceLease,
+  WorkspaceGovernancePageInput,
 } from "./punksClientTypes";
 import { PunksDesktopFailure } from "./punksFailure";
 
@@ -43,11 +47,13 @@ type GovernanceAuthority = {
     lease: WorkspaceLease,
   ): Pick<
     PunksWorkspaceSession,
-    | "getGovernance"
+    | "getGovernancePage"
     | "createInvitation"
     | "revokeInvitation"
     | "setMemberRole"
     | "removeMember"
+    | "leaveWorkspace"
+    | "transferOwnership"
   >;
 };
 
@@ -105,6 +111,8 @@ export function createFakeGovernanceAuthority(
   seed: GovernanceSeed,
   assertCapability: (capability: string) => void,
   assertCurrent: (lease: WorkspaceLease) => void,
+  consumeOwnershipReauthorization: () => void,
+  invalidateWorkspace: (lease: WorkspaceLease) => void,
 ): GovernanceAuthority {
   const workspaces = initialGovernance(seed);
   const invitations = new Map(
@@ -116,6 +124,31 @@ export function createFakeGovernanceAuthority(
       },
     ]),
   );
+  const governanceCursors = new Map<
+    string,
+    {
+      workspaceId: string;
+      punkId: string;
+      revision: number;
+      offset: number;
+      limit: number;
+    }
+  >();
+
+  const governanceView = (workspace: Workspace): WorkspaceGovernanceView => ({
+    contract: "workspace.governance-view@1",
+    id: workspace.id,
+    slug: workspace.slug,
+    name: workspace.name,
+    visibility: workspace.visibility,
+    status: "active",
+    ownerPunkId: workspace.ownerPunkId,
+    memberCount: workspace.members.length,
+    revision: workspace.revision,
+    cursor: workspace.cursor,
+    createdAt: workspace.createdAt,
+    updatedAt: workspace.updatedAt,
+  });
 
   const currentWorkspace = (lease: WorkspaceLease): Workspace => {
     assertCapability("identity-governance");
@@ -230,8 +263,58 @@ export function createFakeGovernanceAuthority(
   return {
     account,
     workspace: (lease) => ({
-      async getGovernance() {
-        return structuredClone(currentWorkspace(lease));
+      async getGovernancePage(input: WorkspaceGovernancePageInput) {
+        const workspace = currentWorkspace(lease);
+        requireOwner(workspace, lease.punkId);
+        if (
+          !Number.isInteger(input.limit) ||
+          input.limit < 1 ||
+          input.limit > 100
+        ) {
+          return problem("invalid_input", "Workspace roster limit is invalid");
+        }
+        let offset = 0;
+        if (input.cursor !== null) {
+          const continuation = governanceCursors.get(input.cursor);
+          if (
+            continuation === undefined ||
+            continuation.workspaceId !== workspace.id ||
+            continuation.punkId !== lease.punkId ||
+            continuation.limit !== input.limit
+          ) {
+            return problem(
+              "invalid_input",
+              "Workspace roster cursor is invalid",
+            );
+          }
+          if (continuation.revision !== workspace.revision) {
+            return problem("revision_conflict", "Workspace roster changed");
+          }
+          offset = continuation.offset;
+        }
+        const ordered = [...workspace.members].sort((left, right) =>
+          left.punkId.localeCompare(right.punkId),
+        );
+        const members = ordered.slice(offset, offset + input.limit);
+        const nextOffset = offset + members.length;
+        let nextCursor: string | null = null;
+        if (nextOffset < ordered.length) {
+          nextCursor = `pmc1.${crypto.randomUUID().replaceAll("-", "")}.${"A".repeat(43)}`;
+          governanceCursors.set(nextCursor, {
+            workspaceId: workspace.id,
+            punkId: lease.punkId,
+            revision: workspace.revision,
+            offset: nextOffset,
+            limit: input.limit,
+          });
+        }
+        const response: WorkspaceGovernanceResponse = {
+          contract: "workspace.governance-response@1",
+          workspace: governanceView(workspace),
+          members: structuredClone(members),
+          nextCursor,
+        };
+        return response;
       },
       async createInvitation(input: CreateWorkspaceInvitationInput) {
         const workspace = currentWorkspace(lease);
@@ -329,7 +412,10 @@ export function createFakeGovernanceAuthority(
         updateSummary(workspace, seed.session.punkId);
         const response: WorkspaceMembershipMutationResponse = {
           contract: "workspace.membership-mutation-response@1",
-          workspace: structuredClone(workspace),
+          workspace: governanceView(workspace),
+          memberDeltas: [
+            { punkId: input.targetPunkId, present: true, role: input.role },
+          ],
           replayed: false,
         };
         return response;
@@ -359,9 +445,77 @@ export function createFakeGovernanceAuthority(
         updateSummary(workspace, seed.session.punkId);
         const response: WorkspaceMembershipMutationResponse = {
           contract: "workspace.membership-mutation-response@1",
-          workspace: structuredClone(workspace),
+          workspace: governanceView(workspace),
+          memberDeltas: [
+            { punkId: input.targetPunkId, present: false, role: null },
+          ],
           replayed: false,
         };
+        return response;
+      },
+      async transferOwnership(input) {
+        const workspace = currentWorkspace(lease);
+        requireOwner(workspace, lease.punkId);
+        if (workspace.revision !== input.expectedRevision) {
+          return problem("revision_conflict", "Workspace revision changed");
+        }
+        const target = workspace.members.find(
+          (member) => member.punkId === input.targetPunkId,
+        );
+        if (target === undefined || target.punkId === workspace.ownerPunkId) {
+          return problem(
+            "invalid_transition",
+            "Ownership transfer requires another current member",
+          );
+        }
+        consumeOwnershipReauthorization();
+        const previousOwner = workspace.members.find(
+          (member) => member.punkId === workspace.ownerPunkId,
+        );
+        if (previousOwner?.role !== "owner") {
+          return problem("internal", "Primary Owner is inconsistent");
+        }
+        previousOwner.role = "member";
+        target.role = "owner";
+        workspace.ownerPunkId = target.punkId;
+        workspace.revision += 1;
+        workspace.cursor += 1;
+        workspace.updatedAt = new Date().toISOString();
+        updateSummary(workspace, lease.punkId);
+        const response: WorkspaceMembershipLifecycleResponse = {
+          contract: "workspace.membership-lifecycle-response@1",
+          workspaceId: workspace.id,
+          revision: workspace.revision,
+          outcome: "ownership_transferred",
+          role: "member",
+          replayed: false,
+        };
+        return response;
+      },
+      async leaveWorkspace() {
+        const workspace = currentWorkspace(lease);
+        if (workspace.ownerPunkId === lease.punkId) {
+          return problem(
+            "invalid_transition",
+            "Primary Owner must transfer ownership before leaving",
+          );
+        }
+        workspace.members = workspace.members.filter(
+          (member) => member.punkId !== lease.punkId,
+        ) as Workspace["members"];
+        workspace.revision += 1;
+        workspace.cursor += 1;
+        workspace.updatedAt = new Date().toISOString();
+        updateSummary(workspace, lease.punkId);
+        const response: WorkspaceMembershipLifecycleResponse = {
+          contract: "workspace.membership-lifecycle-response@1",
+          workspaceId: workspace.id,
+          revision: workspace.revision,
+          outcome: "left",
+          role: null,
+          replayed: false,
+        };
+        invalidateWorkspace(lease);
         return response;
       },
     }),

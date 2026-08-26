@@ -5,7 +5,8 @@ import type { AuthEnv } from "./env";
 export type DesktopReauthTarget =
   | "link_google"
   | "link_github"
-  | "register_passkey";
+  | "register_passkey"
+  | "transfer_workspace_ownership";
 
 interface DesktopReauthGrantRecord {
   authorizationId: string;

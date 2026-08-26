@@ -4,12 +4,18 @@ import type {
   ConversationSummary,
   ConversationView,
   DesktopCompatibilityResponse,
+  DesktopPresenceDelivery,
+  GetWorkspaceGovernanceQuery,
   MessageHistoryResponse,
   MessageReactionMutationResponse,
+  MessageSearchResponse,
   MessageView,
   Punk,
   PunkPublicSummary,
   PunkSearchQuery,
+  PunkSearchResponse,
+  PunkSummaryBatchResponse,
+  PresenceTypingPatch,
   ResolveAuthorsQuery,
   ResolveAuthorsResponse,
   WorkspaceSummary,
@@ -21,7 +27,9 @@ import type {
   SetWorkspaceMemberRoleCommand,
   Workspace,
   WorkspaceInvitationView,
+  WorkspaceMembershipLifecycleResponse,
   WorkspaceMembershipMutationResponse,
+  WorkspaceGovernanceResponse,
 } from "@punks/contracts";
 
 import type {
@@ -87,6 +95,14 @@ export type ReactionInput = {
   reaction: string;
 };
 
+export type MessageSearchInput = {
+  conversationId: string;
+  threadRootMessageId: string | null;
+  query: string;
+  cursor: string | null;
+  limit: number;
+};
+
 export type UpdatePunkProfileInput = {
   expectedRevision: number;
   displayName: string;
@@ -94,10 +110,7 @@ export type UpdatePunkProfileInput = {
 };
 
 export type PunkSearchInput = PunkSearchQuery["query"];
-export type PunkSearchPage = {
-  items: PunkPublicSummary[];
-  nextCursor: string | null;
-};
+export type PunkSearchPage = PunkSearchResponse;
 
 export type CreateWorkspaceInvitationInput =
   CreateWorkspaceInvitationCommand["payload"];
@@ -113,6 +126,14 @@ export type RemoveWorkspaceMemberInput = {
   targetPunkId: string;
   expectedRevision: number;
 };
+export type TransferWorkspaceOwnershipInput = {
+  targetPunkId: string;
+  expectedRevision: number;
+};
+export type WorkspaceGovernancePageInput = Pick<
+  GetWorkspaceGovernanceQuery,
+  "limit" | "cursor"
+>;
 
 export type PunksNavigationTarget = {
   kind: "home" | "workspace" | "conversation" | "message";
@@ -123,6 +144,7 @@ type ChangesFrame = Extract<ConversationFollowServerFrame, { type: "changes" }>;
 
 export type PunksFollowDelivery =
   | { kind: "apply_batch"; frame: ChangesFrame }
+  | { kind: "typing"; patch: PresenceTypingPatch }
   | { kind: "became_live" }
   | {
       kind: "resync";
@@ -143,6 +165,15 @@ export interface PunksFollow {
   close(): Promise<void>;
 }
 
+export type PunksPresenceDelivery = DesktopPresenceDelivery;
+
+export interface PunksPresence {
+  nextDelivery(): Promise<PunksPresenceDelivery>;
+  setStatus(status: string | null): Promise<void>;
+  signalTyping(conversationId: string, active: boolean): Promise<void>;
+  close(): Promise<void>;
+}
+
 export interface PunksWorkspaceSession {
   readonly lease: WorkspaceLease;
   close(): Promise<void>;
@@ -150,16 +181,19 @@ export interface PunksWorkspaceSession {
   getStream(conversationId: string): Promise<ConversationView>;
   getTimeline(input: MessagePageInput): Promise<MessageHistoryResponse>;
   getThread(input: ThreadPageInput): Promise<MessageHistoryResponse>;
+  searchMessages(input: MessageSearchInput): Promise<MessageSearchResponse>;
   resolveAuthors(
     authors: ResolveAuthorsQuery["authors"],
   ): Promise<ResolveAuthorsResponse["authors"]>;
-  getPunkSummaries(punkIds: string[]): Promise<PunkPublicSummary[]>;
+  getPunkSummaries(punkIds: string[]): Promise<PunkSummaryBatchResponse>;
   searchPunks(input: {
     query: PunkSearchInput;
     limit: number;
     cursor: string | null;
   }): Promise<PunkSearchPage>;
-  getGovernance(): Promise<Workspace>;
+  getGovernancePage(
+    input: WorkspaceGovernancePageInput,
+  ): Promise<WorkspaceGovernanceResponse>;
   createInvitation(
     input: CreateWorkspaceInvitationInput,
   ): Promise<CreateWorkspaceInvitationResponse>;
@@ -172,10 +206,15 @@ export interface PunksWorkspaceSession {
   removeMember(
     input: RemoveWorkspaceMemberInput,
   ): Promise<WorkspaceMembershipMutationResponse>;
+  leaveWorkspace(): Promise<WorkspaceMembershipLifecycleResponse>;
+  transferOwnership(
+    input: TransferWorkspaceOwnershipInput,
+  ): Promise<WorkspaceMembershipLifecycleResponse>;
   followConversation(
     conversationId: string,
     afterCursor: number,
   ): Promise<PunksFollow>;
+  holdPresence(): Promise<PunksPresence>;
   postMessage(input: PostTextInput): Promise<MessageView>;
   editMessage(input: EditMessageInput): Promise<MessageView>;
   retractMessage(input: RetractMessageInput): Promise<MessageView>;
@@ -234,4 +273,11 @@ export type FakePunksClientSeed = {
     issuerPunkId?: string;
   }>;
   followFrames?: Record<string, ConversationFollowServerFrame[]>;
+  messageSearchState?: Record<
+    string,
+    {
+      completeness: "complete" | "partial";
+      partialReason: "index_lagging" | "index_unavailable" | null;
+    }
+  >;
 };

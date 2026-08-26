@@ -96,6 +96,21 @@
         }
       }
     },
+    "memberUpsertedTransition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "targetPunkId", "previousRole", "role"],
+      "properties": {
+        "type": { "const": "member-upserted" },
+        "targetPunkId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "previousRole": { "$ref": "#/$defs/nullableWorkspaceRole" },
+        "role": { "$ref": "#/$defs/workspaceRole" }
+      }
+    },
     "transition": {
       "oneOf": [
         {
@@ -117,21 +132,7 @@
             }
           }
         },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["type", "targetPunkId", "previousRole", "role"],
-          "properties": {
-            "type": { "const": "member-upserted" },
-            "targetPunkId": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 128
-            },
-            "previousRole": { "$ref": "#/$defs/nullableWorkspaceRole" },
-            "role": { "$ref": "#/$defs/workspaceRole" }
-          }
-        },
+        { "$ref": "#/$defs/memberUpsertedTransition" },
         {
           "type": "object",
           "additionalProperties": false,
@@ -144,6 +145,20 @@
               "maxLength": 128
             },
             "previousRole": { "$ref": "#/$defs/workspaceRole" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "memberTransitions"],
+          "properties": {
+            "type": { "const": "ownership-transferred" },
+            "memberTransitions": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": { "$ref": "#/$defs/memberUpsertedTransition" }
+            }
           }
         }
       ]

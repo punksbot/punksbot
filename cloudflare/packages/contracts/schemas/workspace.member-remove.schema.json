@@ -21,7 +21,7 @@
     "payload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["targetPunkId"],
+      "required": ["targetPunkId", "expectedRevision"],
       "properties": {
         "targetPunkId": { "type": "string", "format": "uuid" },
         "expectedRevision": { "type": "integer", "minimum": 1 }

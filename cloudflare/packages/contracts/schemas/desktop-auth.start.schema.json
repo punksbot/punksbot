@@ -37,7 +37,12 @@
           "pattern": "^[A-Za-z0-9_-]{43}$"
         },
         "purpose": {
-          "enum": ["link_google", "link_github", "register_passkey"]
+          "enum": [
+            "link_google",
+            "link_github",
+            "register_passkey",
+            "transfer_workspace_ownership"
+          ]
         },
         "authorizationId": { "type": "string", "format": "uuid" }
       }

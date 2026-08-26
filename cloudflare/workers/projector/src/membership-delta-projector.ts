@@ -113,16 +113,38 @@ function exactTag(
   );
 }
 
-function expectedWorkspaceContract(kind: number): string | null {
-  return kind === 50000
-    ? "workspace.create@1"
-    : kind === 50001
-      ? "workspace.rename@1"
-      : kind === 50003
-        ? "workspace.member-set-role@1"
-        : kind === 50004
-          ? "workspace.member-remove@1"
-          : null;
+function workspaceContractMatches(
+  message: WorkspaceProjectionMessageV2,
+  content: WorkspaceEventContentV2,
+): boolean {
+  const contract = singleTag(message.event, "contract");
+  if (contract?.length !== 2) return false;
+  if (message.event.kind === 50000) {
+    return contract[1] === "workspace.create@1";
+  }
+  if (message.event.kind === 50001) {
+    return contract[1] === "workspace.rename@1";
+  }
+  if (message.event.kind === 50003) {
+    return (
+      contract[1] ===
+      (content.transition.type === "ownership-transferred"
+        ? "workspace.transfer-ownership@1"
+        : "workspace.member-set-role@1")
+    );
+  }
+  if (message.event.kind !== 50004) return false;
+  if (contract[1] === "workspace.member-remove@1") return true;
+  const target = singleTag(message.event, "target");
+  const actor = singleTag(message.event, "actor");
+  return (
+    contract[1] === "workspace.leave@1" &&
+    target?.length === 3 &&
+    actor?.length === 3 &&
+    target[1] === "punk" &&
+    actor[1] === "punk" &&
+    target[2] === actor[2]
+  );
 }
 
 function expectedConversationContract(kind: number): string | null {
@@ -219,6 +241,40 @@ function workspaceTransitionMatches(
       message.memberDeltas.length === 0 &&
       content.membershipCommitment.deltaCount === 0 &&
       content.membershipCommitment.chunkCount === 1
+    );
+  }
+  if (transition.type === "ownership-transferred") {
+    const previousOwner = singleTag(message.event, "previous_owner");
+    const target = singleTag(message.event, "target");
+    const previousOwnerTransition = transition.memberTransitions[0];
+    const targetTransition = transition.memberTransitions[1];
+    const previousOwnerDelta = message.memberDeltas[0];
+    const targetDelta = message.memberDeltas[1];
+    return (
+      message.event.kind === 50003 &&
+      previousOwner?.length === 3 &&
+      previousOwner[1] === "punk" &&
+      target?.length === 3 &&
+      target[1] === "punk" &&
+      previousOwner[2] !== target[2] &&
+      message.memberDeltas.length === 2 &&
+      content.membershipCommitment.deltaCount === 2 &&
+      content.membershipCommitment.chunkCount === 1 &&
+      previousOwnerTransition.type === "member-upserted" &&
+      previousOwnerTransition.targetPunkId === previousOwner[2] &&
+      previousOwnerTransition.previousRole === "owner" &&
+      previousOwnerTransition.role === "member" &&
+      previousOwnerDelta?.punkId === previousOwnerTransition.targetPunkId &&
+      previousOwnerDelta.present &&
+      previousOwnerDelta.role === previousOwnerTransition.role &&
+      targetTransition.type === "member-upserted" &&
+      targetTransition.targetPunkId === target[2] &&
+      targetTransition.previousRole !== null &&
+      targetTransition.role === "owner" &&
+      targetDelta?.punkId === targetTransition.targetPunkId &&
+      targetDelta.present &&
+      targetDelta.role === targetTransition.role &&
+      content.workspace.ownerPunkId === targetTransition.targetPunkId
     );
   }
   const target = singleTag(message.event, "target");
@@ -325,10 +381,8 @@ function conversationTransitionMatches(
 export async function validateWorkspaceMembershipProjection(
   message: WorkspaceProjectionMessageV2,
 ): Promise<ValidatedWorkspaceMembershipProjection | null> {
-  const expectedContract = expectedWorkspaceContract(message.event.kind);
   const parsed = parseCanonicalEventContent(message.event);
   if (
-    expectedContract === null ||
     parsed === null ||
     !validateContract("punks://contracts/workspace.event@2", parsed).valid
   ) {
@@ -341,7 +395,7 @@ export async function validateWorkspaceMembershipProjection(
     content.workspace.cursor !== message.cursor ||
     !exactTag(message.event, "workspace", [message.workspaceId]) ||
     !exactTag(message.event, "cursor", [String(message.cursor)]) ||
-    !exactTag(message.event, "contract", [expectedContract]) ||
+    !workspaceContractMatches(message, content) ||
     !exactTag(message.event, "delta", [
       "sha256",
       commitment.deltaDigest,

@@ -8,7 +8,9 @@ const tokenPattern = /^h2_[A-Za-z0-9_-]{43}$/;
 const requestKeys = [
   "algorithm",
   "conversationId",
+  "expectedCursor",
   "limit",
+  "threadRootMessageId",
   "tokens",
   "workspaceId",
 ] as const;
@@ -16,7 +18,9 @@ const requestWithCursorKeys = [
   "algorithm",
   "conversationId",
   "cursor",
+  "expectedCursor",
   "limit",
+  "threadRootMessageId",
   "tokens",
   "workspaceId",
 ] as const;
@@ -31,6 +35,8 @@ export type MessageCandidateCursor = readonly [
 export interface SearchMessageCandidatesInput {
   workspaceId: string;
   conversationId: string;
+  threadRootMessageId: string | null;
+  expectedCursor: number;
   algorithm: "hmac-sha256-conversation-v2";
   tokens: string[];
   limit: number;
@@ -47,6 +53,7 @@ export interface MessageSearchCandidate {
 export type SearchMessageCandidatesResult =
   | {
       ok: true;
+      indexState: "current" | "lagging";
       candidates: MessageSearchCandidate[];
       nextCursor: MessageCandidateCursor | null;
     }
@@ -57,6 +64,10 @@ interface CandidateRow {
   conversation_id: unknown;
   created_cursor: unknown;
   last_cursor: unknown;
+}
+
+interface ProjectionCheckpointRow {
+  projected_cursor: unknown;
 }
 
 /** Dedicated private probe for the version executing this Search Worker. */
@@ -84,6 +95,17 @@ export default class MessageCandidateSearch extends WorkerEntrypoint<CloudflareB
 
     try {
       const database = projectionDatabase(this.env, request.workspaceId);
+      const checkpoint = await projectionCheckpoint(
+        database,
+        request,
+      ).first<ProjectionCheckpointRow>();
+      if (
+        checkpoint === null ||
+        !Number.isSafeInteger(checkpoint.projected_cursor) ||
+        Number(checkpoint.projected_cursor) < 0
+      ) {
+        return { ok: false, code: "storage_unavailable" };
+      }
       const result = await prepareSearch(database, request).all<CandidateRow>();
       if (
         result.success !== true ||
@@ -104,6 +126,10 @@ export default class MessageCandidateSearch extends WorkerEntrypoint<CloudflareB
       const last = bounded.at(-1);
       return {
         ok: true,
+        indexState:
+          Number(checkpoint.projected_cursor) < request.expectedCursor
+            ? "lagging"
+            : "current",
         candidates: bounded,
         nextCursor:
           result.results.length > request.limit && last !== undefined
@@ -138,6 +164,11 @@ function validateSearchInput(
     !uuidPattern.test(record.workspaceId) ||
     typeof record.conversationId !== "string" ||
     !uuidPattern.test(record.conversationId) ||
+    (record.threadRootMessageId !== null &&
+      (typeof record.threadRootMessageId !== "string" ||
+        !uuidPattern.test(record.threadRootMessageId))) ||
+    !Number.isSafeInteger(record.expectedCursor) ||
+    (record.expectedCursor as number) < 0 ||
     record.algorithm !== "hmac-sha256-conversation-v2" ||
     !Array.isArray(record.tokens) ||
     record.tokens.length < 1 ||
@@ -155,6 +186,8 @@ function validateSearchInput(
   const validated: Omit<SearchMessageCandidatesInput, "cursor"> = {
     workspaceId: record.workspaceId,
     conversationId: record.conversationId,
+    threadRootMessageId: record.threadRootMessageId as string | null,
+    expectedCursor: record.expectedCursor as number,
     algorithm: "hmac-sha256-conversation-v2",
     tokens: [...record.tokens].sort(),
     limit: record.limit as number,
@@ -206,6 +239,7 @@ function prepareSearch(
                      AND message_search.token_algorithm = ?
                      AND projection.workspace_id = ?
                      AND projection.conversation_id = ?
+                     AND (? IS NULL OR projection.thread_root_message_id = ?)
                      AND projection.status = 'active'`;
   const orderAndLimit = ` ORDER BY projection.created_cursor DESC,
                                   projection.conversation_id ASC,
@@ -221,6 +255,8 @@ function prepareSearch(
         request.algorithm,
         request.workspaceId,
         request.conversationId,
+        request.threadRootMessageId,
+        request.threadRootMessageId,
         request.limit + 1,
       );
   }
@@ -246,6 +282,8 @@ function prepareSearch(
       request.algorithm,
       request.workspaceId,
       request.conversationId,
+      request.threadRootMessageId,
+      request.threadRootMessageId,
       createdCursor,
       createdCursor,
       conversationId,
@@ -253,6 +291,26 @@ function prepareSearch(
       conversationId,
       messageId,
       request.limit + 1,
+    );
+}
+
+function projectionCheckpoint(
+  database: D1Database,
+  request: SearchMessageCandidatesInput,
+): D1PreparedStatement {
+  return database
+    .prepare(
+      `SELECT COALESCE(MAX(last_cursor), 0) AS projected_cursor
+       FROM message_projection
+       WHERE workspace_id = ?
+         AND conversation_id = ?
+         AND (? IS NULL OR thread_root_message_id = ?)`,
+    )
+    .bind(
+      request.workspaceId,
+      request.conversationId,
+      request.threadRootMessageId,
+      request.threadRootMessageId,
     );
 }
 

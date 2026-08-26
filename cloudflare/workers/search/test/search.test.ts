@@ -15,6 +15,7 @@ interface Candidate {
 
 interface SearchSuccess {
   ok: true;
+  indexState: "current" | "lagging";
   candidates: Candidate[];
   nextCursor: [number, string, string] | null;
 }
@@ -54,6 +55,7 @@ async function seedMessage(
     status?: "active" | "retracted" | "erased";
     createdCursor?: number;
     lastCursor?: number;
+    threadRootMessageId?: string;
   },
 ): Promise<void> {
   const status = options.status ?? "active";
@@ -84,7 +86,7 @@ async function seedMessage(
         options.messageId,
         "00000000-0000-8000-8000-000000000999",
         status,
-        options.messageId,
+        options.threadRootMessageId ?? options.messageId,
         status === "erased" ? null : "a".repeat(64),
         status === "erased" ? null : 1,
         createdCursor,
@@ -114,7 +116,12 @@ async function seedMessage(
 }
 
 async function search(input: unknown): Promise<SearchSuccess> {
-  const result = await exports.default.searchMessages(input);
+  const record = input as Record<string, unknown>;
+  const result = await exports.default.searchMessages({
+    threadRootMessageId: null,
+    expectedCursor: 0,
+    ...record,
+  });
   expect(result.ok).toBe(true);
   if (!result.ok) {
     throw new Error(`Search failed: ${result.code}`);
@@ -179,6 +186,56 @@ beforeAll(async () => {
 });
 
 describe("private Message candidate search RPC", () => {
+  it("confines candidates to one Fil and reports its projection lag", async () => {
+    const workspaceId = workspaceByShard[2];
+    const firstRoot = messageId(2, 5_000);
+    const secondRoot = messageId(2, 5_001);
+    const firstReply = messageId(2, 5_002);
+    const secondReply = messageId(2, 5_003);
+    await seedMessage(databases[2], {
+      workspaceId,
+      messageId: firstReply,
+      threadRootMessageId: firstRoot,
+      tokens: [tokenD],
+      createdCursor: 200,
+      lastCursor: 210,
+    });
+    await seedMessage(databases[2], {
+      workspaceId,
+      messageId: secondReply,
+      threadRootMessageId: secondRoot,
+      tokens: [tokenD],
+      createdCursor: 201,
+      lastCursor: 211,
+    });
+
+    const current = await exports.default.searchMessages({
+      workspaceId,
+      conversationId,
+      threadRootMessageId: firstRoot,
+      expectedCursor: 210,
+      algorithm: "hmac-sha256-conversation-v2",
+      tokens: [tokenD],
+      limit: 10,
+    });
+    expect(current).toMatchObject({
+      ok: true,
+      indexState: "current",
+      candidates: [{ messageId: firstReply }],
+    });
+
+    const lagging = await exports.default.searchMessages({
+      workspaceId,
+      conversationId,
+      threadRootMessageId: firstRoot,
+      expectedCursor: 211,
+      algorithm: "hmac-sha256-conversation-v2",
+      tokens: [tokenD],
+      limit: 10,
+    });
+    expect(lagging).toMatchObject({ ok: true, indexState: "lagging" });
+  });
+
   it("requires an explicit Conversation scope", async () => {
     await expect(
       exports.default.searchMessages({
@@ -376,6 +433,8 @@ describe("private Message candidate search RPC", () => {
       exports.default.searchMessages({
         workspaceId: workspaceByShard[3],
         conversationId,
+        threadRootMessageId: null,
+        expectedCursor: 0,
         algorithm: "hmac-sha256-conversation-v2",
         tokens: [tokenD],
         limit: 2,
@@ -525,6 +584,8 @@ describe("private Message candidate search RPC", () => {
       exports.default.searchMessages({
         workspaceId: workspaceByShard[0],
         conversationId,
+        threadRootMessageId: null,
+        expectedCursor: 0,
         algorithm: "hmac-sha256-conversation-v2",
         tokens: [tokenA],
         limit: 10,

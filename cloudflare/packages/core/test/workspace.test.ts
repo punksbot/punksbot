@@ -1,17 +1,21 @@
 import type {
   CreateWorkspaceCommand,
+  LeaveWorkspaceCommand,
   RemoveWorkspaceMemberCommand,
   RenameWorkspaceCommand,
   SetWorkspaceMemberRoleCommand,
+  TransferWorkspaceOwnershipCommand,
   Workspace,
 } from "@punks/contracts";
 import { describe, expect, it } from "vitest";
 
 import {
   decideCreateWorkspace,
+  decideLeaveWorkspaceV2,
   decideRemoveWorkspaceMember,
   decideRenameWorkspace,
   decideSetWorkspaceMemberRole,
+  decideTransferWorkspaceOwnershipV2,
   PUNKS_EVENT_KINDS,
   WorkspaceDomainError,
 } from "../src";
@@ -118,12 +122,33 @@ describe("Workspace decisions", () => {
       cursor: 1,
       now,
     }).nextState;
+    expect(() =>
+      decideSetWorkspaceMemberRole(
+        created,
+        {
+          contract: "workspace.member-set-role@1",
+          commandId: "47da754e-dcd3-4c39-aeca-8fb1454a57ec",
+          workspaceId,
+          actor: { kind: "punk", punkId: ownerId },
+          payload: {
+            targetPunkId: memberId,
+            role: "moderator",
+            expectedRevision: 1,
+          },
+        },
+        { workspaceId, cursor: 2, now },
+      ),
+    ).toThrow(WorkspaceDomainError);
     const add: SetWorkspaceMemberRoleCommand = {
       contract: "workspace.member-set-role@1",
       commandId: "47da754e-dcd3-4c39-aeca-8fb1454a57ed",
       workspaceId,
       actor: { kind: "punk", punkId: ownerId },
-      payload: { targetPunkId: memberId, role: "member" },
+      payload: {
+        targetPunkId: memberId,
+        role: "member",
+        expectedRevision: 1,
+      },
     };
     const added = decideSetWorkspaceMemberRole(created, add, {
       workspaceId,
@@ -139,7 +164,11 @@ describe("Workspace decisions", () => {
     const promote: SetWorkspaceMemberRoleCommand = {
       ...add,
       commandId: "325b9b17-c7a8-4f3c-aa4b-344299a89f2d",
-      payload: { targetPunkId: memberId, role: "moderator" },
+      payload: {
+        targetPunkId: memberId,
+        role: "moderator",
+        expectedRevision: 2,
+      },
     };
     const promoted = decideSetWorkspaceMemberRole(added.nextState, promote, {
       workspaceId,
@@ -156,7 +185,7 @@ describe("Workspace decisions", () => {
       commandId: "7f7fbcb7-e055-4ef0-9bf1-a3c5cfbce103",
       workspaceId,
       actor: { kind: "punk", punkId: ownerId },
-      payload: { targetPunkId: memberId },
+      payload: { targetPunkId: memberId, expectedRevision: 3 },
     };
     const removed = decideRemoveWorkspaceMember(promoted.nextState, remove, {
       workspaceId,
@@ -180,7 +209,11 @@ describe("Workspace decisions", () => {
       commandId: "938d68c6-9ed9-45cb-967b-4cde2bb34dcb",
       workspaceId,
       actor: { kind: "punk", punkId: ownerId },
-      payload: { targetPunkId: ownerId, role: "member" },
+      payload: {
+        targetPunkId: ownerId,
+        role: "member",
+        expectedRevision: 1,
+      },
     };
     expect(() =>
       decideSetWorkspaceMemberRole(created, demote, {
@@ -195,7 +228,7 @@ describe("Workspace decisions", () => {
       commandId: "e2dcf59a-8ffc-481c-8342-a0c7f0ad10e9",
       workspaceId,
       actor: { kind: "punk", punkId: ownerId },
-      payload: { targetPunkId: ownerId },
+      payload: { targetPunkId: ownerId, expectedRevision: 1 },
     };
     expect(() =>
       decideRemoveWorkspaceMember(created, remove, {
@@ -204,5 +237,168 @@ describe("Workspace decisions", () => {
         now,
       }),
     ).toThrow(WorkspaceDomainError);
+  });
+
+  it("lets a non-primary member leave and removes only that Punk", async () => {
+    const created = decideCreateWorkspace(null, createCommand, {
+      workspaceId,
+      cursor: 1,
+      now,
+    }).nextState;
+    const current: Workspace = {
+      ...created,
+      members: [
+        { punkId: ownerId, role: "owner" },
+        { punkId: memberId, role: "member" },
+      ],
+      revision: 2,
+      cursor: 2,
+    };
+    const leave: LeaveWorkspaceCommand = {
+      contract: "workspace.leave@1",
+      commandId: "a2dcf59a-8ffc-481c-8342-a0c7f0ad10e9",
+      workspaceId,
+      actor: { kind: "punk", punkId: memberId },
+      payload: {},
+    };
+
+    const decision = await decideLeaveWorkspaceV2(current, leave, {
+      workspaceId,
+      cursor: 3,
+      now,
+    });
+
+    expect(decision.nextState).toMatchObject({
+      ownerPunkId: ownerId,
+      members: [{ punkId: ownerId, role: "owner" }],
+      revision: 3,
+      cursor: 3,
+    });
+    expect(decision.event.kind).toBe(PUNKS_EVENT_KINDS.workspaceMemberRemoved);
+    expect(decision.event.tags).toContainEqual(["target", "punk", memberId]);
+    expect(decision.membershipProjection.chunks[0]?.memberDeltas).toEqual([
+      { punkId: memberId, present: false, role: "member" },
+    ]);
+
+    await expect(
+      decideLeaveWorkspaceV2(
+        current,
+        {
+          ...leave,
+          actor: { kind: "punk", punkId: ownerId },
+        },
+        {
+          workspaceId,
+          cursor: 3,
+          now,
+        },
+      ),
+    ).rejects.toThrow(WorkspaceDomainError);
+    await expect(
+      decideLeaveWorkspaceV2(
+        current,
+        {
+          ...leave,
+          actor: {
+            kind: "punk",
+            punkId: "00000000-0000-8000-8000-000000000003",
+          },
+        },
+        {
+          workspaceId,
+          cursor: 3,
+          now,
+        },
+      ),
+    ).rejects.toThrow(WorkspaceDomainError);
+  });
+
+  it("transfers primary ownership atomically with two bounded role deltas", async () => {
+    const created = decideCreateWorkspace(null, createCommand, {
+      workspaceId,
+      cursor: 1,
+      now,
+    }).nextState;
+    const current: Workspace = {
+      ...created,
+      members: [
+        { punkId: ownerId, role: "owner" },
+        { punkId: memberId, role: "moderator" },
+      ],
+      revision: 2,
+      cursor: 2,
+    };
+    const transfer: TransferWorkspaceOwnershipCommand = {
+      contract: "workspace.transfer-ownership@1",
+      commandId: "b2dcf59a-8ffc-481c-8342-a0c7f0ad10e9",
+      workspaceId,
+      actor: { kind: "punk", punkId: ownerId },
+      payload: {
+        targetPunkId: memberId,
+        expectedRevision: 2,
+        reauthorizationId: "c2dcf59a-8ffc-481c-8342-a0c7f0ad10e9",
+      },
+    };
+
+    const decision = await decideTransferWorkspaceOwnershipV2(
+      current,
+      transfer,
+      { workspaceId, cursor: 3, now },
+    );
+
+    expect(decision.nextState).toMatchObject({
+      ownerPunkId: memberId,
+      members: [
+        { punkId: ownerId, role: "member" },
+        { punkId: memberId, role: "owner" },
+      ],
+      revision: 3,
+      cursor: 3,
+    });
+    expect(decision.event.kind).toBe(PUNKS_EVENT_KINDS.workspaceMemberRoleSet);
+    expect(JSON.parse(decision.event.content)).toMatchObject({
+      transition: {
+        type: "ownership-transferred",
+        memberTransitions: [
+          {
+            type: "member-upserted",
+            targetPunkId: ownerId,
+            previousRole: "owner",
+            role: "member",
+          },
+          {
+            type: "member-upserted",
+            targetPunkId: memberId,
+            previousRole: "moderator",
+            role: "owner",
+          },
+        ],
+      },
+    });
+    expect(decision.membershipProjection.chunks[0]?.memberDeltas).toEqual([
+      { punkId: ownerId, present: true, role: "member" },
+      { punkId: memberId, present: true, role: "owner" },
+    ]);
+
+    await expect(
+      decideTransferWorkspaceOwnershipV2(
+        current,
+        { ...transfer, actor: { kind: "punk", punkId: memberId } },
+        { workspaceId, cursor: 3, now },
+      ),
+    ).rejects.toThrow(WorkspaceDomainError);
+    await expect(
+      decideTransferWorkspaceOwnershipV2(
+        current,
+        {
+          ...transfer,
+          payload: {
+            ...transfer.payload,
+            targetPunkId: "00000000-0000-8000-8000-000000000003",
+          },
+        },
+        { workspaceId, cursor: 3, now },
+      ),
+    ).rejects.toThrow(WorkspaceDomainError);
   });
 });

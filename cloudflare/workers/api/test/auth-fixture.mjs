@@ -26,6 +26,7 @@ const revokedSessionIds = new Set();
 const sessionResolutionHolds = new Map();
 const invocationTimes = new Map();
 const accountMergeRightsIndexCalls = [];
+const workspaceOwnershipTransferAuthorizations = new Map();
 const accountMergeRightsIndexAvailability = {
   prepare: true,
   commit: true,
@@ -211,6 +212,33 @@ export class PunkSessionService extends WorkerEntrypoint {
     };
     fixtureProfiles.set(punkId, next);
     return { ok: true, state: structuredClone(next), replayed: false };
+  }
+}
+
+export class WorkspaceOwnershipAuthorizationService extends WorkerEntrypoint {
+  issueWorkspaceOwnershipTransferAuthorization(input) {
+    workspaceOwnershipTransferAuthorizations.set(input.authorizationId, {
+      sessionId: input.sessionId,
+      punkId: input.punkId,
+      consumedBy: null,
+    });
+  }
+
+  consume(input) {
+    const authorization = workspaceOwnershipTransferAuthorizations.get(
+      input.authorizationId,
+    );
+    if (
+      authorization === undefined ||
+      authorization.sessionId !== input.sessionId ||
+      authorization.punkId !== input.punkId ||
+      (authorization.consumedBy !== null &&
+        authorization.consumedBy !== input.commandId)
+    ) {
+      return false;
+    }
+    authorization.consumedBy = input.commandId;
+    return true;
   }
 }
 

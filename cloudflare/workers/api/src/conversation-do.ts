@@ -22,6 +22,7 @@ import type {
   MessageReactionMutationResponse,
   MessageReactionProjectionEnvelope,
   PostMessageCommand,
+  PresenceTypingPatch,
   RemoveConversationMemberCommand,
   RemoveMessageReactionCommand,
   RetractMessageCommand,
@@ -552,12 +553,119 @@ export class ConversationDO extends DurableObject<ApiEnv> {
       resumeAfterCursor: afterCursor,
       targetHighWaterCursor: targetHighWater,
     });
+    try {
+      const typing =
+        await this.env.PRESENCE.getByName(workspaceId).currentTyping(
+          conversationId,
+        );
+      if (Array.isArray(typing) && typing.length <= 100) {
+        for (const patch of typing) {
+          if (
+            validateContract("punks://contracts/presence.typing.patch@1", patch)
+              .valid
+          ) {
+            this.sendFollowFrame(server, {
+              schemaVersion: 1,
+              type: "typing",
+              patch,
+            });
+          }
+        }
+      }
+    } catch {
+      // Presence is deliberately lossy and never blocks authoritative FOLLOW.
+    }
     this.ctx.waitUntil(this.pumpFollower(server));
     return new Response(null, {
       status: 101,
       headers: { "sec-websocket-protocol": FOLLOW_PROTOCOL },
       webSocket: client,
     });
+  }
+
+  /** Best-effort ephemeral patch accepted only from the Workspace PresenceDO. */
+  async publishTypingPatch(input: unknown): Promise<{ ok: boolean }> {
+    if (
+      typeof input !== "object" ||
+      input === null ||
+      Array.isArray(input) ||
+      !("patch" in input) ||
+      !("sessionId" in input) ||
+      !validateContract(
+        "punks://contracts/presence.typing.patch@1",
+        input.patch,
+      ).valid
+    ) {
+      return { ok: false };
+    }
+    const { patch, sessionId } = input as {
+      patch: PresenceTypingPatch;
+      sessionId: unknown;
+    };
+    const state = this.effectiveState();
+    if (
+      state === null ||
+      state.status !== "active" ||
+      state.id !== patch.conversationId ||
+      state.workspaceId !== patch.workspaceId
+    ) {
+      return { ok: false };
+    }
+    if (typeof sessionId === "string") {
+      let session: Awaited<
+        ReturnType<ApiEnv["AUTH_SERVICE"]["resolveSessionId"]>
+      >;
+      try {
+        session = await this.env.AUTH_SERVICE.resolveSessionId(sessionId);
+      } catch {
+        return { ok: false };
+      }
+      if (
+        session === null ||
+        !validateContract("punks://contracts/auth.session@1", session).valid ||
+        session.sessionId !== sessionId ||
+        session.punkId !== patch.punkId ||
+        Date.parse(session.expiresAt) <= Date.now() ||
+        !canReadConversation(state, patch.punkId)
+      ) {
+        return { ok: false };
+      }
+      try {
+        const authorization = await this.env.WORKSPACES.getByName(
+          patch.workspaceId,
+        ).authorize({
+          workspaceId: patch.workspaceId,
+          punkId: patch.punkId,
+          permission: "workspace.read",
+        });
+        if (validateSearchWorkspaceAuthorization(authorization)?.ok !== true) {
+          return { ok: false };
+        }
+      } catch {
+        return { ok: false };
+      }
+    } else if (patch.active || sessionId !== null) {
+      return { ok: false };
+    }
+
+    for (const socket of this.ctx.getWebSockets()) {
+      const attachment = parseFollowAttachment(socket.deserializeAttachment());
+      if (attachment === null) {
+        socket.close(1008, "invalid attachment");
+        continue;
+      }
+      const authorization = await this.authorizeFollower(attachment);
+      if (authorization.status === "active") {
+        this.sendFollowFrame(socket, {
+          schemaVersion: 1,
+          type: "typing",
+          patch,
+        });
+      } else if (authorization.status === "denied") {
+        socket.close(1008, "authorization revoked");
+      }
+    }
+    return { ok: true };
   }
 
   private visibleHighWaterCursor(aggregateCursor: number): number {
@@ -3953,7 +4061,8 @@ export class ConversationDO extends DurableObject<ApiEnv> {
       conversation === null ||
       this.ctx.id.name !== query.conversationId ||
       conversation.id !== query.conversationId ||
-      conversation.workspaceId !== query.workspaceId
+      conversation.workspaceId !== query.workspaceId ||
+      conversation.status !== "active"
     ) {
       return { ok: false, code: "not_found" };
     }
@@ -4009,6 +4118,7 @@ export class ConversationDO extends DurableObject<ApiEnv> {
       punkId,
       workspaceId: query.workspaceId,
       conversationId: query.conversationId,
+      threadRootMessageId: query.threadRootMessageId,
       algorithm: MESSAGE_SEARCH_ALGORITHM,
       normalization: MESSAGE_SEARCH_NORMALIZATION,
       queryBinding,
@@ -4026,6 +4136,10 @@ export class ConversationDO extends DurableObject<ApiEnv> {
     }
 
     const preparedItems: PreparedSearchItem[] = [];
+    const expectedCursor = this.messageSearchExpectedCursor(query);
+    if (expectedCursor === null) {
+      return { ok: false, code: "internal" };
+    }
     const candidateBudget = Math.min(
       MESSAGE_SEARCH_MAX_CANDIDATE_BUDGET,
       Math.max(
@@ -4037,6 +4151,7 @@ export class ConversationDO extends DurableObject<ApiEnv> {
     let scannedCandidates = 0;
     let hasMore = false;
     let exhausted = false;
+    let partialReason: "index_lagging" | "index_unavailable" | null = null;
 
     searchLoop: while (
       preparedItems.length < query.limit &&
@@ -4049,6 +4164,8 @@ export class ConversationDO extends DurableObject<ApiEnv> {
       const searchRequest: SearchMessageCandidatesInput = {
         workspaceId: query.workspaceId,
         conversationId: query.conversationId,
+        threadRootMessageId: query.threadRootMessageId,
+        expectedCursor,
         algorithm: MESSAGE_SEARCH_ALGORITHM,
         tokens: derivedQuery.tokens,
         limit: batchLimit,
@@ -4058,14 +4175,27 @@ export class ConversationDO extends DurableObject<ApiEnv> {
       try {
         rawResult = await this.env.MESSAGE_SEARCH.searchMessages(searchRequest);
       } catch {
-        return { ok: false, code: "search_unavailable" };
+        partialReason = "index_unavailable";
+        hasMore = true;
+        break;
       }
       const searchResult = validateSearchMessageCandidatesResult(
         rawResult,
         searchRequest,
       );
-      if (searchResult === null || !searchResult.ok) {
+      if (searchResult === null) {
         return { ok: false, code: "search_unavailable" };
+      }
+      if (!searchResult.ok) {
+        if (searchResult.code === "invalid_request") {
+          return { ok: false, code: "search_unavailable" };
+        }
+        partialReason = "index_unavailable";
+        hasMore = true;
+        break;
+      }
+      if (searchResult.indexState === "lagging") {
+        partialReason = "index_lagging";
       }
       if (searchResult.candidates.length === 0) {
         exhausted = true;
@@ -4118,24 +4248,29 @@ export class ConversationDO extends DurableObject<ApiEnv> {
     }
     if (!exhausted && scannedCandidates >= candidateBudget) {
       hasMore = true;
+      partialReason ??= "index_lagging";
     }
 
     let nextCursor: string | null = null;
     if (hasMore) {
       if (lastConsumedPosition === null) {
-        return { ok: false, code: "search_unavailable" };
-      }
-      try {
-        nextCursor = await encodeMessageSearchCursor(
-          {
-            version: 1,
-            ...cursorScope,
-            position: lastConsumedPosition,
-          },
-          cursorKey,
-        );
-      } catch {
-        return { ok: false, code: "search_unavailable" };
+        if (partialReason !== "index_unavailable") {
+          return { ok: false, code: "search_unavailable" };
+        }
+        nextCursor = query.cursor;
+      } else {
+        try {
+          nextCursor = await encodeMessageSearchCursor(
+            {
+              version: 1,
+              ...cursorScope,
+              position: lastConsumedPosition,
+            },
+            cursorKey,
+          );
+        } catch {
+          return { ok: false, code: "search_unavailable" };
+        }
       }
     }
 
@@ -4148,6 +4283,7 @@ export class ConversationDO extends DurableObject<ApiEnv> {
       finalConversation === null ||
       finalConversation.id !== query.conversationId ||
       finalConversation.workspaceId !== query.workspaceId ||
+      finalConversation.status !== "active" ||
       !canReadConversation(finalConversation, punkId)
     ) {
       return { ok: false, code: "forbidden" };
@@ -4159,6 +4295,8 @@ export class ConversationDO extends DurableObject<ApiEnv> {
         current === null ||
         current.workspaceId !== query.workspaceId ||
         current.conversationId !== query.conversationId ||
+        (query.threadRootMessageId !== null &&
+          current.threadRootMessageId !== query.threadRootMessageId) ||
         current.createdCursor !== prepared.candidate.createdCursor
       ) {
         return { ok: false, code: "internal" };
@@ -4194,7 +4332,10 @@ export class ConversationDO extends DurableObject<ApiEnv> {
     const response: MessageSearchResponse = {
       workspaceId: query.workspaceId,
       conversationId: query.conversationId,
+      threadRootMessageId: query.threadRootMessageId,
       order: "createdCursor-descending",
+      completeness: partialReason === null ? "complete" : "partial",
+      partialReason,
       items: stableItems,
       nextCursor,
     };
@@ -6147,9 +6288,21 @@ export class ConversationDO extends DurableObject<ApiEnv> {
     if (
       initial === null ||
       initial.id !== query.conversationId ||
-      initial.workspaceId !== query.workspaceId
+      initial.workspaceId !== query.workspaceId ||
+      initial.status !== "active"
     ) {
       return { ok: false, code: "not_found" };
+    }
+    if (query.threadRootMessageId !== null) {
+      const root = this.message(query.threadRootMessageId);
+      if (
+        root === null ||
+        root.workspaceId !== query.workspaceId ||
+        root.conversationId !== query.conversationId ||
+        root.threadRootMessageId !== query.threadRootMessageId
+      ) {
+        return { ok: false, code: "not_found" };
+      }
     }
     if (!canReadConversation(initial, punkId)) {
       return { ok: false, code: "forbidden" };
@@ -6181,7 +6334,8 @@ export class ConversationDO extends DurableObject<ApiEnv> {
     if (
       current === null ||
       current.id !== query.conversationId ||
-      current.workspaceId !== query.workspaceId
+      current.workspaceId !== query.workspaceId ||
+      current.status !== "active"
     ) {
       return { ok: false, code: "not_found" };
     }
@@ -6207,6 +6361,8 @@ export class ConversationDO extends DurableObject<ApiEnv> {
       initial === null ||
       initial.workspaceId !== query.workspaceId ||
       initial.conversationId !== query.conversationId ||
+      (query.threadRootMessageId !== null &&
+        initial.threadRootMessageId !== query.threadRootMessageId) ||
       initial.createdCursor !== candidate.createdCursor
     ) {
       return { ok: false, code: "internal" };
@@ -6255,6 +6411,8 @@ export class ConversationDO extends DurableObject<ApiEnv> {
       current === null ||
       current.workspaceId !== query.workspaceId ||
       current.conversationId !== query.conversationId ||
+      (query.threadRootMessageId !== null &&
+        current.threadRootMessageId !== query.threadRootMessageId) ||
       current.createdCursor !== candidate.createdCursor
     ) {
       return { ok: false, code: "internal" };
@@ -6290,6 +6448,30 @@ export class ConversationDO extends DurableObject<ApiEnv> {
         view: view as MessageSearchResponse["items"][number],
       },
     };
+  }
+
+  private messageSearchExpectedCursor(
+    query: MessageSearchQuery,
+  ): number | null {
+    const clauses = ["workspace_id = ?", "conversation_id = ?"];
+    const bindings: string[] = [query.workspaceId, query.conversationId];
+    if (query.threadRootMessageId !== null) {
+      clauses.push("thread_root_message_id = ?");
+      bindings.push(query.threadRootMessageId);
+    }
+    const row = this.ctx.storage.sql
+      .exec<{ expected_cursor: number }>(
+        `SELECT COALESCE(MAX(cursor), 0) AS expected_cursor
+         FROM messages
+         WHERE ${clauses.join(" AND ")}`,
+        ...bindings,
+      )
+      .toArray()[0];
+    return row !== undefined &&
+      Number.isSafeInteger(row.expected_cursor) &&
+      row.expected_cursor >= 0
+      ? row.expected_cursor
+      : null;
   }
 
   private historyMessageIds(
@@ -10453,7 +10635,9 @@ function validateSearchMessageCandidatesResult(
   }
   if (
     record.ok !== true ||
-    Object.keys(record).sort().join(",") !== "candidates,nextCursor,ok" ||
+    Object.keys(record).sort().join(",") !==
+      "candidates,indexState,nextCursor,ok" ||
+    (record.indexState !== "current" && record.indexState !== "lagging") ||
     !Array.isArray(record.candidates) ||
     record.candidates.length > request.limit
   ) {
@@ -10512,7 +10696,12 @@ function validateSearchMessageCandidatesResult(
   } else {
     nextCursor = record.nextCursor;
   }
-  return { ok: true, candidates, nextCursor };
+  return {
+    ok: true,
+    indexState: record.indexState,
+    candidates,
+    nextCursor,
+  };
 }
 
 function isMessageCandidateCursor(
@@ -10540,7 +10729,10 @@ function messageSearchResponseFits(
       JSON.stringify({
         workspaceId: query.workspaceId,
         conversationId: query.conversationId,
+        threadRootMessageId: query.threadRootMessageId,
         order: "createdCursor-descending",
+        completeness: "partial",
+        partialReason: "index_lagging",
         items,
         nextCursor,
       }),

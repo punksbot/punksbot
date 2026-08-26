@@ -13,6 +13,7 @@ import { route } from "../src/router";
 
 const ownerPunkId = "00000000-0000-8000-8000-000000000001";
 const otherPunkId = "00000000-0000-8000-8000-000000000002";
+const mergedAliasPunkId = "00000000-0000-8000-8000-000000000003";
 const hiddenPunkId = "f0000000-0000-8000-8000-000000000099";
 const operatorAuthorization =
   "Bearer operator-test-token-00000000000000000000000000000000000000000000";
@@ -72,6 +73,7 @@ async function setMember(
   workspaceId: string,
   commandId: string,
   present: boolean,
+  expectedRevision: number,
 ): Promise<void> {
   const command: SetWorkspaceMemberRoleCommand | RemoveWorkspaceMemberCommand =
     present
@@ -80,14 +82,18 @@ async function setMember(
           commandId,
           workspaceId,
           actor: { kind: "punk", punkId: ownerPunkId },
-          payload: { targetPunkId: otherPunkId, role: "member" },
+          payload: {
+            targetPunkId: otherPunkId,
+            role: "member",
+            expectedRevision,
+          },
         }
       : {
           contract: "workspace.member-remove@1",
           commandId,
           workspaceId,
           actor: { kind: "punk", punkId: ownerPunkId },
-          payload: { targetPunkId: otherPunkId },
+          payload: { targetPunkId: otherPunkId, expectedRevision },
         };
   const response = await SELF.fetch(
     `https://punks.bot/api/v1/workspaces/${workspaceId}/members/${otherPunkId}`,
@@ -111,6 +117,10 @@ function profileEnvironment() {
     [hiddenPunkId, punk(hiddenPunkId, "Marina")],
   ]);
   const projected: unknown[] = [];
+  const workspaceAuthorizationCalls = { count: 0 };
+  let projectionHook:
+    | ((input: { punkId?: string }) => Promise<void> | void)
+    | null = null;
   const auth = {
     resolveSessionCookie(cookie: string) {
       const punkId = cookie.includes("session-owner")
@@ -159,7 +169,9 @@ function profileEnvironment() {
       return { ok: true, state: structuredClone(next), replayed: false };
     },
     resolvePunkSummary(punkId: string) {
-      const profile = profiles.get(punkId);
+      const profile = profiles.get(
+        punkId === mergedAliasPunkId ? otherPunkId : punkId,
+      );
       return profile === undefined
         ? null
         : {
@@ -184,8 +196,9 @@ function profileEnvironment() {
     listConversationCandidates() {
       return [];
     },
-    upsertPunkProfile(input: unknown) {
+    async upsertPunkProfile(input: unknown) {
       projected.push(structuredClone(input));
+      await projectionHook?.(input as { punkId?: string });
       return true;
     },
     searchPunkCandidates(input: { prefix: string; afterPunkId?: string }) {
@@ -213,9 +226,26 @@ function profileEnvironment() {
       ...(env as ApiEnv),
       AUTH_SERVICE: auth,
       PROJECTION_DIRECTORY: directory,
+      WORKSPACES: {
+        getByName(name: string) {
+          const workspace = env.WORKSPACES.getByName(name);
+          return {
+            authorize(input: unknown) {
+              workspaceAuthorizationCalls.count += 1;
+              return workspace.authorize(input);
+            },
+          };
+        },
+      },
     } as unknown as ApiEnv,
     profiles,
     projected,
+    workspaceAuthorizationCalls,
+    setProjectionHook(
+      hook: ((input: { punkId?: string }) => Promise<void> | void) | null,
+    ) {
+      projectionHook = hook;
+    },
   };
 }
 
@@ -300,7 +330,12 @@ describe("Punk profile and private search API", () => {
       "punk-private-search",
       "e1000000-0000-4000-8000-000000000001",
     );
-    await setMember(workspaceId, "e2000000-0000-4000-8000-000000000002", true);
+    await setMember(
+      workspaceId,
+      "e2000000-0000-4000-8000-000000000002",
+      true,
+      1,
+    );
     const runtime = profileEnvironment();
 
     const summaries = await route(
@@ -380,7 +415,60 @@ describe("Punk profile and private search API", () => {
       nextCursor: null,
     });
 
-    await setMember(workspaceId, "e3000000-0000-4000-8000-000000000003", false);
+    const aliasLookup = await route(
+      new Request(
+        `https://punks.bot/api/v1/workspaces/${workspaceId}/punks/search`,
+        {
+          method: "POST",
+          headers: {
+            cookie: "__Host-punks_session=session-owner",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            contract: "punk.search@1",
+            workspaceId,
+            query: { kind: "punk_id", punkId: mergedAliasPunkId },
+            limit: 1,
+            cursor: null,
+          }),
+        },
+      ),
+      runtime.env,
+    );
+    expect(aliasLookup.status).toBe(200);
+    await expect(aliasLookup.json()).resolves.toMatchObject({
+      items: [{ punkId: otherPunkId, displayName: "Marie" }],
+    });
+
+    const aliasAuthor = await route(
+      new Request(
+        `https://punks.bot/api/v1/workspaces/${workspaceId}/authors/resolve`,
+        {
+          method: "POST",
+          headers: {
+            cookie: "__Host-punks_session=session-owner",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            contract: "author.resolve@1",
+            workspaceId,
+            authors: [{ kind: "punk", punkId: mergedAliasPunkId }],
+          }),
+        },
+      ),
+      runtime.env,
+    );
+    expect(aliasAuthor.status).toBe(200);
+    await expect(aliasAuthor.json()).resolves.toMatchObject({
+      authors: [{ kind: "punk", punkId: otherPunkId, displayName: "Marie" }],
+    });
+
+    await setMember(
+      workspaceId,
+      "e3000000-0000-4000-8000-000000000003",
+      false,
+      2,
+    );
     const exactAfterRevocation = await route(
       new Request(
         `https://punks.bot/api/v1/workspaces/${workspaceId}/punks/search`,
@@ -439,5 +527,136 @@ describe("Punk profile and private search API", () => {
       code: "query_too_short",
       retry: "never",
     });
+  });
+
+  it("drops summaries and exact results revoked during projection delivery", async () => {
+    const workspaceId = await createWorkspace(
+      "punk-delivery-fence",
+      "f2000000-0000-4000-8000-000000000001",
+    );
+    await setMember(
+      workspaceId,
+      "f2000000-0000-4000-8000-000000000002",
+      true,
+      1,
+    );
+    const runtime = profileEnvironment();
+    let removed = false;
+    runtime.setProjectionHook(async ({ punkId }) => {
+      if (punkId !== otherPunkId || removed) return;
+      removed = true;
+      await setMember(
+        workspaceId,
+        "f2000000-0000-4000-8000-000000000003",
+        false,
+        2,
+      );
+    });
+    const summaries = await route(
+      new Request(
+        `https://punks.bot/api/v1/workspaces/${workspaceId}/punks/summaries`,
+        {
+          method: "POST",
+          headers: {
+            cookie: "__Host-punks_session=session-owner",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            contract: "punk.summary-batch@1",
+            workspaceId,
+            punkIds: [otherPunkId],
+          }),
+        },
+      ),
+      runtime.env,
+    );
+    expect(summaries.status).toBe(200);
+    await expect(summaries.json()).resolves.toMatchObject({ items: [] });
+
+    await setMember(
+      workspaceId,
+      "f2000000-0000-4000-8000-000000000004",
+      true,
+      3,
+    );
+    removed = false;
+    runtime.setProjectionHook(async ({ punkId }) => {
+      if (punkId !== otherPunkId || removed) return;
+      removed = true;
+      await setMember(
+        workspaceId,
+        "f2000000-0000-4000-8000-000000000005",
+        false,
+        4,
+      );
+    });
+    const exact = await route(
+      new Request(
+        `https://punks.bot/api/v1/workspaces/${workspaceId}/punks/search`,
+        {
+          method: "POST",
+          headers: {
+            cookie: "__Host-punks_session=session-owner",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            contract: "punk.search@1",
+            workspaceId,
+            query: { kind: "punk_id", punkId: otherPunkId },
+            limit: 1,
+            cursor: null,
+          }),
+        },
+      ),
+      runtime.env,
+    );
+    expect(exact.status).toBe(200);
+    await expect(exact.json()).resolves.toMatchObject({
+      items: [],
+      nextCursor: null,
+    });
+  });
+
+  it("uses the same Workspace authorization shape for missing and inaccessible exact IDs", async () => {
+    const workspaceId = await createWorkspace(
+      "punk-exact-oracle",
+      "f3000000-0000-4000-8000-000000000001",
+    );
+    const runtime = profileEnvironment();
+    const exact = (punkId: string) =>
+      route(
+        new Request(
+          `https://punks.bot/api/v1/workspaces/${workspaceId}/punks/search`,
+          {
+            method: "POST",
+            headers: {
+              cookie: "__Host-punks_session=session-owner",
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              contract: "punk.search@1",
+              workspaceId,
+              query: { kind: "punk_id", punkId },
+              limit: 1,
+              cursor: null,
+            }),
+          },
+        ),
+        runtime.env,
+      );
+
+    runtime.workspaceAuthorizationCalls.count = 0;
+    const inaccessible = await exact(hiddenPunkId);
+    const inaccessibleCalls = runtime.workspaceAuthorizationCalls.count;
+    runtime.workspaceAuthorizationCalls.count = 0;
+    const missing = await exact("f0000000-0000-8000-8000-000000000098");
+    const missingCalls = runtime.workspaceAuthorizationCalls.count;
+
+    expect(inaccessible.status).toBe(200);
+    expect(missing.status).toBe(200);
+    await expect(inaccessible.json()).resolves.toMatchObject({ items: [] });
+    await expect(missing.json()).resolves.toMatchObject({ items: [] });
+    expect(inaccessibleCalls).toBe(missingCalls);
+    expect(inaccessibleCalls).toBeGreaterThan(0);
   });
 });

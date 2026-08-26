@@ -48,6 +48,8 @@ export type MessageCandidateCursor = readonly [
 export interface SearchMessageCandidatesInput {
   workspaceId: string;
   conversationId: string;
+  threadRootMessageId: string | null;
+  expectedCursor: number;
   algorithm: "hmac-sha256-conversation-v2";
   tokens: string[];
   limit: number;
@@ -64,6 +66,7 @@ export interface MessageSearchCandidate {
 export type SearchMessageCandidatesResult =
   | {
       ok: true;
+      indexState: "current" | "lagging";
       candidates: MessageSearchCandidate[];
       nextCursor: MessageCandidateCursor | null;
     }
@@ -165,6 +168,8 @@ export interface ApiEnv extends CloudflareBindings {
   MESSAGE_HISTORY_CURSOR_KEY: string;
   /** Independent secret for Punk-bound Workspace and Stream continuations. */
   DIRECTORY_CURSOR_KEY: string;
+  /** Independent HMAC key for short, upload-intention-scoped credentials. */
+  MEDIA_UPLOAD_GRANT_KEY: string;
   ERASURE_REGISTRY: CloudflareBindings["ERASURE_REGISTRY"] &
     ErasureRegistryService;
   MESSAGE_SEARCH: CloudflareBindings["MESSAGE_SEARCH"] &
@@ -183,6 +188,9 @@ export interface ApiEnv extends CloudflareBindings {
   BOT_RUNTIME_IDENTITY: CloudflareBindings["BOT_RUNTIME_IDENTITY"] &
     RuntimeIdentityService;
   ACCOUNT_MERGE_AUTHORITY: CloudflareBindings["ACCOUNT_MERGE_AUTHORITY"];
+  WORKSPACE_OWNERSHIP_AUTHORITY: CloudflareBindings["WORKSPACE_OWNERSHIP_AUTHORITY"] & {
+    consume(input: unknown): Promise<boolean>;
+  };
   ACCOUNT_MERGE_RIGHTS_INDEX: CloudflareBindings["ACCOUNT_MERGE_RIGHTS_INDEX"] & {
     prepareWorkspaceMembershipChange(input: unknown): Promise<boolean>;
     commitWorkspaceMembershipChange(input: unknown): Promise<boolean>;

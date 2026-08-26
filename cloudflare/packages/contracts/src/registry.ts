@@ -82,6 +82,7 @@ import conversationView from "../schemas/conversation.view.schema.json";
 import conversation from "../schemas/conversation.schema.json";
 import desktopCompatibilityResponse from "../schemas/desktop.compatibility-response.schema.json";
 import desktopCompatibility from "../schemas/desktop.compatibility.schema.json";
+import desktopPresenceDeliverySource from "../schemas/desktop.presence-delivery.schema.json";
 import journalSegment from "../schemas/journal.segment.schema.json";
 import journalSegmentV2Source from "../schemas/journal.segment-v2.schema.json";
 import messageReactionProjectionSource from "../schemas/message-reaction.projection.schema.json";
@@ -104,9 +105,21 @@ import messageSearchResponseSource from "../schemas/message.search-response.sche
 import messageSearch from "../schemas/message.search.schema.json";
 import messageView from "../schemas/message.view.schema.json";
 import message from "../schemas/message.schema.json";
+import mediaUploadAbandon from "../schemas/media-upload.abandon.schema.json";
+import mediaUploadFinalize from "../schemas/media-upload.finalize.schema.json";
+import mediaUploadGrantCreate from "../schemas/media-upload.grant-create.schema.json";
+import mediaUploadGrantSource from "../schemas/media-upload.grant.schema.json";
+import mediaUploadPart from "../schemas/media-upload.part.schema.json";
+import mediaUploadStatus from "../schemas/media-upload.status.schema.json";
 import signedEvent from "../schemas/nostr.signed-event.schema.json";
 import unsignedEvent from "../schemas/nostr.unsigned-event.schema.json";
 import problem from "../schemas/problem.schema.json";
+import presenceHoldServerFrameSource from "../schemas/presence.hold-server-frame.schema.json";
+import presenceHold from "../schemas/presence.hold.schema.json";
+import presenceStatusSet from "../schemas/presence.status.set.schema.json";
+import presenceTypingPatch from "../schemas/presence.typing.patch.schema.json";
+import presenceTypingSignal from "../schemas/presence.typing.signal.schema.json";
+import presenceView from "../schemas/presence.view.schema.json";
 import punk from "../schemas/punk.schema.json";
 import punkGet from "../schemas/punk.get.schema.json";
 import punkSearchResponse from "../schemas/punk.search-response.schema.json";
@@ -122,6 +135,9 @@ import workspacePunksView from "../schemas/workspace.punks-view.schema.json";
 import workspacePublicView from "../schemas/workspace.public-view.schema.json";
 import workspaceCreate from "../schemas/workspace.create.schema.json";
 import workspaceGet from "../schemas/workspace.get.schema.json";
+import workspaceGovernanceResponseSource from "../schemas/workspace.governance-response.schema.json";
+import workspaceGovernanceView from "../schemas/workspace.governance-view.schema.json";
+import workspaceGovernance from "../schemas/workspace.governance.schema.json";
 import workspaceListResponse from "../schemas/workspace.list-response.schema.json";
 import workspaceList from "../schemas/workspace.list.schema.json";
 import workspaceInvitation from "../schemas/workspace.invitation.schema.json";
@@ -132,10 +148,13 @@ import workspaceInviteResponseSource from "../schemas/workspace.invite-response.
 import workspaceInviteRevokeResponseSource from "../schemas/workspace.invite-revoke-response.schema.json";
 import workspaceInviteRevoke from "../schemas/workspace.invite-revoke.schema.json";
 import workspaceInvite from "../schemas/workspace.invite.schema.json";
+import workspaceLeave from "../schemas/workspace.leave.schema.json";
 import workspaceMemberRemove from "../schemas/workspace.member-remove.schema.json";
 import workspaceMemberSetRole from "../schemas/workspace.member-set-role.schema.json";
+import workspaceMembershipLifecycleResponse from "../schemas/workspace.membership-lifecycle-response.schema.json";
 import workspaceMembershipMutationResponseSource from "../schemas/workspace.membership-mutation-response.schema.json";
 import workspaceRename from "../schemas/workspace.rename.schema.json";
+import workspaceTransferOwnership from "../schemas/workspace.transfer-ownership.schema.json";
 import workspace from "../schemas/workspace.schema.json";
 
 const accountMergePlanCreate = {
@@ -169,7 +188,23 @@ const workspaceMembershipMutationResponse = {
   ...workspaceMembershipMutationResponseSource,
   properties: {
     ...workspaceMembershipMutationResponseSource.properties,
-    workspace,
+    workspace: workspaceGovernanceView,
+  },
+};
+
+const workspaceGovernanceResponse = {
+  ...workspaceGovernanceResponseSource,
+  properties: {
+    ...workspaceGovernanceResponseSource.properties,
+    workspace: workspaceGovernanceView,
+  },
+};
+
+const mediaUploadGrant = {
+  ...mediaUploadGrantSource,
+  properties: {
+    ...mediaUploadGrantSource.properties,
+    status: mediaUploadStatus,
   },
 };
 
@@ -317,6 +352,67 @@ const conversationFollowServerFrame = {
             .messages,
           items: messageView,
         },
+      },
+    },
+    typing: {
+      ...conversationFollowServerFrameSource.$defs.typing,
+      properties: {
+        ...conversationFollowServerFrameSource.$defs.typing.properties,
+        patch: presenceTypingPatch,
+      },
+    },
+  },
+};
+
+const presenceHoldServerFrame = {
+  ...presenceHoldServerFrameSource,
+  $defs: {
+    ...presenceHoldServerFrameSource.$defs,
+    presenceView: Object.fromEntries(
+      Object.entries(presenceView).filter(([key]) => key !== "$id"),
+    ),
+    accepted: {
+      ...presenceHoldServerFrameSource.$defs.accepted,
+      properties: {
+        ...presenceHoldServerFrameSource.$defs.accepted.properties,
+        presences: {
+          ...presenceHoldServerFrameSource.$defs.accepted.properties.presences,
+          items: { $ref: "#/$defs/presenceView" },
+        },
+      },
+    },
+    presence: {
+      ...presenceHoldServerFrameSource.$defs.presence,
+      properties: {
+        ...presenceHoldServerFrameSource.$defs.presence.properties,
+        presence: { $ref: "#/$defs/presenceView" },
+      },
+    },
+  },
+};
+
+const desktopPresenceDelivery = {
+  ...desktopPresenceDeliverySource,
+  $defs: {
+    ...desktopPresenceDeliverySource.$defs,
+    presenceView: Object.fromEntries(
+      Object.entries(presenceView).filter(([key]) => key !== "$id"),
+    ),
+    accepted: {
+      ...desktopPresenceDeliverySource.$defs.accepted,
+      properties: {
+        ...desktopPresenceDeliverySource.$defs.accepted.properties,
+        presences: {
+          ...desktopPresenceDeliverySource.$defs.accepted.properties.presences,
+          items: { $ref: "#/$defs/presenceView" },
+        },
+      },
+    },
+    presence: {
+      ...desktopPresenceDeliverySource.$defs.presence,
+      properties: {
+        ...desktopPresenceDeliverySource.$defs.presence.properties,
+        presence: { $ref: "#/$defs/presenceView" },
       },
     },
   },
@@ -525,6 +621,13 @@ export const contractSchemas = {
     conversationFollowClientFrame,
   "punks://contracts/conversation.follow-server-frame@1":
     conversationFollowServerFrame,
+  "punks://contracts/presence.hold@1": presenceHold,
+  "punks://contracts/presence.status.set@1": presenceStatusSet,
+  "punks://contracts/presence.typing.signal@1": presenceTypingSignal,
+  "punks://contracts/presence.view@1": presenceView,
+  "punks://contracts/presence.hold-server-frame@1": presenceHoldServerFrame,
+  "punks://contracts/presence.typing.patch@1": presenceTypingPatch,
+  "punks://contracts/desktop.presence-delivery@1": desktopPresenceDelivery,
   "punks://contracts/conversation.get@1": conversationGet,
   "punks://contracts/conversation.list@1": conversationList,
   "punks://contracts/conversation.list-response@1": conversationListResponse,
@@ -563,9 +666,19 @@ export const contractSchemas = {
   "punks://contracts/message.search@1": messageSearch,
   "punks://contracts/message.search-response@1": messageSearchResponse,
   "punks://contracts/message.view@1": messageView,
+  "punks://contracts/media-upload.grant-create@1": mediaUploadGrantCreate,
+  "punks://contracts/media-upload.grant@1": mediaUploadGrant,
+  "punks://contracts/media-upload.part@1": mediaUploadPart,
+  "punks://contracts/media-upload.finalize@1": mediaUploadFinalize,
+  "punks://contracts/media-upload.abandon@1": mediaUploadAbandon,
+  "punks://contracts/media-upload.status@1": mediaUploadStatus,
   "punks://contracts/workspace@1": workspace,
   "punks://contracts/workspace.create@1": workspaceCreate,
   "punks://contracts/workspace.get@1": workspaceGet,
+  "punks://contracts/workspace.governance@1": workspaceGovernance,
+  "punks://contracts/workspace.governance-response@1":
+    workspaceGovernanceResponse,
+  "punks://contracts/workspace.governance-view@1": workspaceGovernanceView,
   "punks://contracts/workspace.list@1": workspaceList,
   "punks://contracts/workspace.list-response@1": workspaceListResponse,
   "punks://contracts/workspace.invitation@1": workspaceInvitation,
@@ -578,11 +691,16 @@ export const contractSchemas = {
   "punks://contracts/workspace.invite-claim@1": workspaceInviteClaim,
   "punks://contracts/workspace.invite-claim-response@1":
     workspaceInviteClaimResponse,
+  "punks://contracts/workspace.leave@1": workspaceLeave,
   "punks://contracts/workspace.member-remove@1": workspaceMemberRemove,
   "punks://contracts/workspace.member-set-role@1": workspaceMemberSetRole,
+  "punks://contracts/workspace.membership-lifecycle-response@1":
+    workspaceMembershipLifecycleResponse,
   "punks://contracts/workspace.membership-mutation-response@1":
     workspaceMembershipMutationResponse,
   "punks://contracts/workspace.rename@1": workspaceRename,
+  "punks://contracts/workspace.transfer-ownership@1":
+    workspaceTransferOwnership,
   "punks://contracts/nostr.unsigned-event@1": unsignedEvent,
   "punks://contracts/nostr.signed-event@1": signedEvent,
   "punks://contracts/attestation.request@1": attestationRequest,

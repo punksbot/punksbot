@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/workspace.governance@1",
+  "title": "GetWorkspaceGovernanceQuery",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "workspaceId", "limit", "cursor"],
+  "properties": {
+    "contract": { "const": "workspace.governance@1" },
+    "workspaceId": { "type": "string", "format": "uuid" },
+    "limit": { "type": "integer", "minimum": 1, "maximum": 100 },
+    "cursor": {
+      "oneOf": [
+        { "type": "string", "pattern": "^[A-Za-z0-9._~-]{1,1024}$" },
+        { "type": "null" }
+      ]
+    }
+  }
+}

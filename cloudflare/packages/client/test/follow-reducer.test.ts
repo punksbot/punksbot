@@ -26,6 +26,39 @@ const changes: ConversationFollowServerFrame = {
 };
 
 describe("FOLLOW reducer", () => {
+  it("keeps an ephemeral typing signal outside durable cursor state", () => {
+    const state = reduceFollowFrame(createFollowState(4), accepted).state;
+    const reduction = reduceFollowFrame(state, {
+      schemaVersion: 1,
+      type: "typing",
+      patch: {
+        workspaceId: "22222222-2222-4222-8222-222222222222",
+        conversationId: "33333333-3333-4333-8333-333333333333",
+        punkId: "11111111-1111-4111-8111-111111111111",
+        active: true,
+        leaseGeneration: 7,
+        sequence: 3,
+        expiresAt: "2026-08-26T10:00:05.000Z",
+      },
+    });
+
+    expect(reduction).toEqual({
+      state,
+      effect: {
+        kind: "typing",
+        patch: {
+          workspaceId: "22222222-2222-4222-8222-222222222222",
+          conversationId: "33333333-3333-4333-8333-333333333333",
+          punkId: "11111111-1111-4111-8111-111111111111",
+          active: true,
+          leaseGeneration: 7,
+          sequence: 3,
+          expiresAt: "2026-08-26T10:00:05.000Z",
+        },
+      },
+    });
+  });
+
   it("does not expose an ACK until the renderer confirms one atomic batch", () => {
     const opened = reduceFollowFrame(createFollowState(4), accepted);
     const delivery = reduceFollowFrame(opened.state, changes);

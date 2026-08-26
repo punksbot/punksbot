@@ -116,7 +116,11 @@ export async function startDesktop(
     method?: "google" | "github" | "passkey";
     session?: string;
     originHeader?: string | null;
-    purpose?: "link_google" | "link_github" | "register_passkey";
+    purpose?:
+      | "link_google"
+      | "link_github"
+      | "register_passkey"
+      | "transfer_workspace_ownership";
     authorizationId?: string;
     nativeHeader?: boolean;
   } = {},
@@ -298,7 +302,11 @@ export async function readyGoogle(subject: string): Promise<StartedDesktop> {
 export async function reauthenticateFor(
   subject: string,
   session: string,
-  purpose: "link_google" | "link_github" | "register_passkey",
+  purpose:
+    | "link_google"
+    | "link_github"
+    | "register_passkey"
+    | "transfer_workspace_ownership",
 ): Promise<{
   started: StartedDesktop;
   deliveryId: string;

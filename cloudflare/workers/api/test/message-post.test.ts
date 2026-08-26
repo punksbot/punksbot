@@ -53,7 +53,11 @@ async function addMember(workspaceId: string, commandId: string) {
     commandId,
     workspaceId,
     actor: { kind: "punk", punkId: ownerPunkId },
-    payload: { targetPunkId: otherPunkId, role: "member" },
+    payload: {
+      targetPunkId: otherPunkId,
+      role: "member",
+      expectedRevision: 1,
+    },
   };
   const response = await SELF.fetch(
     `https://punks.bot/api/v1/workspaces/${workspaceId}/members/${otherPunkId}`,
@@ -76,7 +80,7 @@ async function removeMember(workspaceId: string, commandId: string) {
     commandId,
     workspaceId,
     actor: { kind: "punk", punkId: ownerPunkId },
-    payload: { targetPunkId: otherPunkId },
+    payload: { targetPunkId: otherPunkId, expectedRevision: 2 },
   };
   const response = await SELF.fetch(
     `https://punks.bot/api/v1/workspaces/${workspaceId}/members/${otherPunkId}`,

@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     message_mutations::canonical_reaction, social_validation::valid_rfc3339,
     social_validation::validate_message_view_runtime, validate_uuid, ClientFailure, MessageView,
+    PresenceTypingPatch,
 };
 
 /// Typed `punks.follow.v1` server frame.
@@ -33,6 +34,11 @@ pub enum FollowServerFrame {
         reaction_patches: Vec<ReactionPatch>,
         #[serde(rename = "reactionCollectionPatches")]
         reaction_collection_patches: Vec<ReactionCollectionPatch>,
+    },
+    Typing {
+        #[serde(rename = "schemaVersion")]
+        schema_version: u8,
+        patch: PresenceTypingPatch,
     },
     Ready {
         #[serde(rename = "schemaVersion")]
@@ -165,6 +171,7 @@ pub enum ClientResyncReason {
 pub enum FollowEffect {
     None,
     ApplyBatch(FollowServerFrame),
+    Typing(PresenceTypingPatch),
     BecameLive,
     Resync {
         reason: ClientResyncReason,
@@ -183,6 +190,7 @@ impl FollowEffect {
         match self {
             Self::None => "none",
             Self::ApplyBatch(_) => "apply_batch",
+            Self::Typing(_) => "typing",
             Self::BecameLive => "became_live",
             Self::Resync {
                 reason: ClientResyncReason::CursorGap,
@@ -244,6 +252,15 @@ pub(crate) fn validate_follow_frame(
             if *schema_version != 1 {
                 return Err(invalid_follow_frame());
             }
+        }
+        FollowServerFrame::Typing {
+            schema_version,
+            patch,
+        } => {
+            if *schema_version != 1 {
+                return Err(invalid_follow_frame());
+            }
+            crate::presence::validate_typing_patch(patch, workspace_id, conversation_id)?;
         }
         FollowServerFrame::ConversationUnavailable {
             schema_version,
@@ -382,6 +399,29 @@ pub fn reduce_follow_frame(state: &FollowState, frame: FollowServerFrame) -> Fol
                     reason: *reason,
                     cursor: *cursor,
                 },
+            }
+        }
+        FollowServerFrame::Typing {
+            schema_version,
+            patch,
+        } => {
+            if *schema_version != 1
+                || matches!(
+                    state.phase,
+                    FollowPhase::AwaitingAcceptance
+                        | FollowPhase::ResyncRequired
+                        | FollowPhase::Terminal
+                )
+            {
+                return resync(
+                    state,
+                    ClientResyncReason::ProtocolViolation,
+                    state.applied_cursor,
+                );
+            }
+            FollowReduction {
+                state: state.clone(),
+                effect: FollowEffect::Typing(patch.clone()),
             }
         }
         FollowServerFrame::Accepted {

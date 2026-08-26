@@ -1,6 +1,52 @@
 {
   "components": {
     "schemas": {
+      "AbandonMediaUploadCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "punk"
+              },
+              "punkId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "punkId"
+            ],
+            "type": "object"
+          },
+          "commandId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "contract": {
+            "const": "media-upload.abandon@1"
+          },
+          "uploadId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "workspaceId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "contract",
+          "commandId",
+          "workspaceId",
+          "uploadId",
+          "actor"
+        ],
+        "title": "AbandonMediaUploadCommand",
+        "type": "object"
+      },
       "AccountMergeFreshProof": {
         "additionalProperties": false,
         "maxProperties": 12,
@@ -1169,6 +1215,9 @@
             "$ref": "#/components/schemas/ConversationFollowServerFrameChanges"
           },
           {
+            "$ref": "#/components/schemas/ConversationFollowServerFrameTyping"
+          },
+          {
             "$ref": "#/components/schemas/ConversationFollowServerFrameReady"
           },
           {
@@ -1484,6 +1533,26 @@
         ],
         "type": "object"
       },
+      "ConversationFollowServerFrameTyping": {
+        "additionalProperties": false,
+        "properties": {
+          "patch": {
+            "$ref": "#/components/schemas/PresenceTypingPatch"
+          },
+          "schemaVersion": {
+            "const": 1
+          },
+          "type": {
+            "const": "typing"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "type",
+          "patch"
+        ],
+        "type": "object"
+      },
       "ConversationView": {
         "additionalProperties": false,
         "properties": {
@@ -1728,6 +1797,94 @@
         "title": "CreateAccountMergePlanCommand",
         "type": "object"
       },
+      "CreateMediaUploadGrantCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "punk"
+              },
+              "punkId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "punkId"
+            ],
+            "type": "object"
+          },
+          "commandId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "contract": {
+            "const": "media-upload.grant-create@1"
+          },
+          "payload": {
+            "additionalProperties": false,
+            "properties": {
+              "byteLength": {
+                "maximum": 268435456,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "contentType": {
+                "enum": [
+                  "application/json",
+                  "application/pdf",
+                  "application/zip",
+                  "audio/mpeg",
+                  "audio/ogg",
+                  "audio/wav",
+                  "audio/webm",
+                  "image/avif",
+                  "image/gif",
+                  "image/jpeg",
+                  "image/png",
+                  "image/webp",
+                  "text/csv",
+                  "text/markdown",
+                  "text/plain",
+                  "video/mp4",
+                  "video/quicktime",
+                  "video/webm"
+                ]
+              },
+              "purpose": {
+                "const": "message_attachment"
+              },
+              "sha256": {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "purpose",
+              "byteLength",
+              "contentType",
+              "sha256"
+            ],
+            "type": "object"
+          },
+          "workspaceId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "contract",
+          "commandId",
+          "workspaceId",
+          "actor",
+          "payload"
+        ],
+        "title": "CreateMediaUploadGrantCommand",
+        "type": "object"
+      },
       "CreateWorkspaceInvitationCommand": {
         "additionalProperties": false,
         "properties": {
@@ -1941,7 +2098,8 @@
             "enum": [
               "link_google",
               "link_github",
-              "register_passkey"
+              "register_passkey",
+              "transfer_workspace_ownership"
             ]
           }
         },
@@ -2297,7 +2455,8 @@
             "enum": [
               "link_google",
               "link_github",
-              "register_passkey"
+              "register_passkey",
+              "transfer_workspace_ownership"
             ]
           },
           "verifierCommitment": {
@@ -2627,6 +2786,106 @@
         "title": "DesktopCompatibilityResponse",
         "type": "object"
       },
+      "DesktopPresenceDelivery": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/DesktopPresenceDeliveryAccepted"
+          },
+          {
+            "$ref": "#/components/schemas/DesktopPresenceDeliveryPresence"
+          },
+          {
+            "$ref": "#/components/schemas/DesktopPresenceDeliveryRealtimeDegraded"
+          }
+        ],
+        "title": "DesktopPresenceDelivery"
+      },
+      "DesktopPresenceDeliveryAccepted": {
+        "additionalProperties": false,
+        "properties": {
+          "awayAfterMs": {
+            "maximum": 60000,
+            "minimum": 10000,
+            "type": "integer"
+          },
+          "clientGeneration": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "expiresAfterMs": {
+            "maximum": 120000,
+            "minimum": 15000,
+            "type": "integer"
+          },
+          "heartbeatIntervalMs": {
+            "maximum": 30000,
+            "minimum": 5000,
+            "type": "integer"
+          },
+          "kind": {
+            "const": "accepted"
+          },
+          "leaseGeneration": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "presences": {
+            "items": {
+              "$ref": "#/components/schemas/PresenceView"
+            },
+            "maxItems": 10000,
+            "type": "array",
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "kind",
+          "clientGeneration",
+          "leaseGeneration",
+          "heartbeatIntervalMs",
+          "awayAfterMs",
+          "expiresAfterMs",
+          "presences"
+        ],
+        "type": "object"
+      },
+      "DesktopPresenceDeliveryPresence": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "presence"
+          },
+          "presence": {
+            "$ref": "#/components/schemas/PresenceView"
+          }
+        },
+        "required": [
+          "kind",
+          "presence"
+        ],
+        "type": "object"
+      },
+      "DesktopPresenceDeliveryRealtimeDegraded": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "realtime_degraded"
+          },
+          "reason": {
+            "enum": [
+              "authorization_unavailable",
+              "capacity_unavailable"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "reason"
+        ],
+        "type": "object"
+      },
       "DesktopSessionRenewExchange": {
         "oneOf": [
           {
@@ -2937,6 +3196,52 @@
         "title": "DesktopSessionRevokeResponse",
         "type": "object"
       },
+      "FinalizeMediaUploadCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "punk"
+              },
+              "punkId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "punkId"
+            ],
+            "type": "object"
+          },
+          "commandId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "contract": {
+            "const": "media-upload.finalize@1"
+          },
+          "uploadId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "workspaceId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "contract",
+          "commandId",
+          "workspaceId",
+          "uploadId",
+          "actor"
+        ],
+        "title": "FinalizeMediaUploadCommand",
+        "type": "object"
+      },
       "FollowConversationQuery": {
         "additionalProperties": false,
         "properties": {
@@ -3001,6 +3306,42 @@
         "title": "GetPunkProfileQuery",
         "type": "object"
       },
+      "GetWorkspaceGovernanceQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "contract": {
+            "const": "workspace.governance@1"
+          },
+          "cursor": {
+            "oneOf": [
+              {
+                "pattern": "^[A-Za-z0-9._~-]{1,1024}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "limit": {
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "workspaceId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "contract",
+          "workspaceId",
+          "limit",
+          "cursor"
+        ],
+        "title": "GetWorkspaceGovernanceQuery",
+        "type": "object"
+      },
       "GetWorkspaceInvitationQuery": {
         "additionalProperties": false,
         "properties": {
@@ -3037,6 +3378,53 @@
           "workspaceId"
         ],
         "title": "GetWorkspaceQuery",
+        "type": "object"
+      },
+      "LeaveWorkspaceCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "punk"
+              },
+              "punkId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "punkId"
+            ],
+            "type": "object"
+          },
+          "commandId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "contract": {
+            "const": "workspace.leave@1"
+          },
+          "payload": {
+            "additionalProperties": false,
+            "maxProperties": 0,
+            "type": "object"
+          },
+          "workspaceId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "contract",
+          "commandId",
+          "workspaceId",
+          "actor",
+          "payload"
+        ],
+        "title": "LeaveWorkspaceCommand",
         "type": "object"
       },
       "ListConversationsQuery": {
@@ -3349,6 +3737,367 @@
         ],
         "type": "object"
       },
+      "MediaUploadGrant": {
+        "additionalProperties": false,
+        "properties": {
+          "contract": {
+            "const": "media-upload.grant@1"
+          },
+          "credential": {
+            "additionalProperties": false,
+            "properties": {
+              "scheme": {
+                "const": "PunksUpload"
+              },
+              "token": {
+                "maxLength": 80,
+                "minLength": 60,
+                "pattern": "^mug1\\.[0-9]{13}\\.[A-Za-z0-9_-]{43}$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "scheme",
+              "token"
+            ],
+            "type": "object"
+          },
+          "endpoints": {
+            "additionalProperties": false,
+            "properties": {
+              "abandonUrl": {
+                "maxLength": 256,
+                "pattern": "^/api/v1/workspaces/[0-9a-f-]{36}/media-uploads/[0-9a-f-]{36}$",
+                "type": "string"
+              },
+              "finalizeUrl": {
+                "maxLength": 256,
+                "pattern": "^/api/v1/workspaces/[0-9a-f-]{36}/media-uploads/[0-9a-f-]{36}/finalize$",
+                "type": "string"
+              },
+              "partUrlTemplate": {
+                "maxLength": 256,
+                "pattern": "^/api/v1/workspaces/[0-9a-f-]{36}/media-uploads/[0-9a-f-]{36}/parts/\\{partNumber\\}$",
+                "type": "string"
+              },
+              "statusUrl": {
+                "maxLength": 256,
+                "pattern": "^/api/v1/workspaces/[0-9a-f-]{36}/media-uploads/[0-9a-f-]{36}$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "partUrlTemplate",
+              "finalizeUrl",
+              "statusUrl",
+              "abandonUrl"
+            ],
+            "type": "object"
+          },
+          "replayed": {
+            "type": "boolean"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MediaUploadStatus"
+          }
+        },
+        "required": [
+          "contract",
+          "status",
+          "credential",
+          "endpoints",
+          "replayed"
+        ],
+        "title": "MediaUploadGrant",
+        "type": "object"
+      },
+      "MediaUploadPart": {
+        "additionalProperties": false,
+        "properties": {
+          "byteLength": {
+            "maximum": 8388608,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "contract": {
+            "const": "media-upload.part@1"
+          },
+          "partNumber": {
+            "maximum": 32,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "replayed": {
+            "type": "boolean"
+          },
+          "sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "uploadId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "contract",
+          "uploadId",
+          "partNumber",
+          "byteLength",
+          "sha256",
+          "replayed"
+        ],
+        "title": "MediaUploadPart",
+        "type": "object"
+      },
+      "MediaUploadStatus": {
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "else": {
+              "properties": {
+                "candidate": {
+                  "type": "null"
+                }
+              }
+            },
+            "if": {
+              "properties": {
+                "state": {
+                  "const": "candidate"
+                }
+              },
+              "required": [
+                "state"
+              ]
+            },
+            "then": {
+              "properties": {
+                "candidate": {
+                  "$ref": "#/components/schemas/MediaUploadStatusCandidate"
+                },
+                "failure": {
+                  "type": "null"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "state": {
+                  "const": "rejected"
+                }
+              },
+              "required": [
+                "state"
+              ]
+            },
+            "then": {
+              "properties": {
+                "failure": {
+                  "$ref": "#/components/schemas/MediaUploadStatusFailure"
+                }
+              }
+            }
+          }
+        ],
+        "properties": {
+          "byteLength": {
+            "maximum": 268435456,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "candidate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MediaUploadStatusCandidate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "contentType": {
+            "maxLength": 127,
+            "minLength": 1,
+            "type": "string"
+          },
+          "contract": {
+            "const": "media-upload.status@1"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "failure": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MediaUploadStatusFailure"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "issuedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "partCount": {
+            "maximum": 32,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "partSize": {
+            "const": 8388608
+          },
+          "punkId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "purpose": {
+            "const": "message_attachment"
+          },
+          "sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "uploading",
+              "finalizing",
+              "candidate",
+              "cleanup_pending",
+              "abandoned",
+              "expired",
+              "rejected"
+            ]
+          },
+          "uploadId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "uploadedParts": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "byteLength": {
+                  "maximum": 8388608,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "partNumber": {
+                  "maximum": 32,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "sha256": {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "partNumber",
+                "byteLength",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "maxItems": 32,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "workspaceId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "contract",
+          "uploadId",
+          "workspaceId",
+          "punkId",
+          "purpose",
+          "byteLength",
+          "contentType",
+          "sha256",
+          "issuedAt",
+          "expiresAt",
+          "partSize",
+          "partCount",
+          "state",
+          "uploadedParts",
+          "candidate",
+          "failure"
+        ],
+        "title": "MediaUploadStatus",
+        "type": "object"
+      },
+      "MediaUploadStatusCandidate": {
+        "additionalProperties": false,
+        "properties": {
+          "byteLength": {
+            "maximum": 268435456,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "contentType": {
+            "maxLength": 127,
+            "minLength": 1,
+            "type": "string"
+          },
+          "finalizedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "mediaId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mediaId",
+          "byteLength",
+          "contentType",
+          "sha256",
+          "finalizedAt"
+        ],
+        "type": "object"
+      },
+      "MediaUploadStatusFailure": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "enum": [
+              "storage_unavailable",
+              "hash_invalid",
+              "conflict",
+              "ambiguous",
+              "expired",
+              "abandoned",
+              "authorization_lost"
+            ]
+          },
+          "retry": {
+            "enum": [
+              "same_command",
+              "later",
+              "new_intent",
+              "never"
+            ]
+          }
+        },
+        "required": [
+          "code",
+          "retry"
+        ],
+        "type": "object"
+      },
       "MessageHistoryQuery": {
         "additionalProperties": false,
         "oneOf": [
@@ -3620,6 +4369,203 @@
           "reaction",
           "reactedAt"
         ],
+        "type": "object"
+      },
+      "MessageSearchQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "contract": {
+            "const": "message.search@1"
+          },
+          "conversationId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "cursor": {
+            "anyOf": [
+              {
+                "maxLength": 1024,
+                "minLength": 50,
+                "pattern": "^msc1\\.[A-Za-z0-9_-]{16}\\.[A-Za-z0-9_-]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "limit": {
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "query": {
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          },
+          "threadRootMessageId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "workspaceId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "contract",
+          "workspaceId",
+          "conversationId",
+          "threadRootMessageId",
+          "query",
+          "cursor",
+          "limit"
+        ],
+        "title": "MessageSearchQuery",
+        "type": "object"
+      },
+      "MessageSearchResponse": {
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "completeness": {
+                  "const": "complete"
+                }
+              },
+              "required": [
+                "completeness"
+              ]
+            },
+            "then": {
+              "properties": {
+                "partialReason": {
+                  "type": "null"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "completeness": {
+                  "const": "partial"
+                }
+              },
+              "required": [
+                "completeness"
+              ]
+            },
+            "then": {
+              "properties": {
+                "partialReason": {
+                  "enum": [
+                    "index_lagging",
+                    "index_unavailable"
+                  ]
+                }
+              }
+            }
+          }
+        ],
+        "properties": {
+          "completeness": {
+            "enum": [
+              "complete",
+              "partial"
+            ]
+          },
+          "conversationId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/MessageView"
+                },
+                {
+                  "properties": {
+                    "status": {
+                      "const": "active"
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              ]
+            },
+            "maxItems": 100,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "maxLength": 1024,
+                "minLength": 50,
+                "pattern": "^msc1\\.[A-Za-z0-9_-]{16}\\.[A-Za-z0-9_-]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "order": {
+            "const": "createdCursor-descending"
+          },
+          "partialReason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "index_lagging",
+                  "index_unavailable"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "threadRootMessageId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "workspaceId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspaceId",
+          "conversationId",
+          "threadRootMessageId",
+          "order",
+          "completeness",
+          "partialReason",
+          "items",
+          "nextCursor"
+        ],
+        "title": "MessageSearchResponse",
         "type": "object"
       },
       "MessageView": {
@@ -4203,6 +5149,409 @@
         "title": "PostMessageResponse",
         "type": "object"
       },
+      "PresenceHoldFrame": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/PresenceHoldFrameHold"
+          },
+          {
+            "$ref": "#/components/schemas/PresenceHoldFrameHeartbeat"
+          }
+        ],
+        "title": "PresenceHoldFrame"
+      },
+      "PresenceHoldFrameHeartbeat": {
+        "additionalProperties": false,
+        "properties": {
+          "contract": {
+            "const": "presence.hold@1"
+          },
+          "leaseToken": {
+            "$ref": "#/components/schemas/PresenceHoldFrameLeaseToken"
+          },
+          "sequence": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "type": {
+            "const": "heartbeat"
+          }
+        },
+        "required": [
+          "contract",
+          "type",
+          "leaseToken",
+          "sequence"
+        ],
+        "type": "object"
+      },
+      "PresenceHoldFrameHold": {
+        "additionalProperties": false,
+        "properties": {
+          "clientGeneration": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "contract": {
+            "const": "presence.hold@1"
+          },
+          "deviceId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "holdId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "type": {
+            "const": "hold"
+          },
+          "workspaceId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "contract",
+          "type",
+          "workspaceId",
+          "deviceId",
+          "clientGeneration",
+          "holdId"
+        ],
+        "type": "object"
+      },
+      "PresenceHoldFrameLeaseToken": {
+        "pattern": "^pls1\\.[A-Za-z0-9_-]{43}$",
+        "type": "string"
+      },
+      "PresenceHoldServerFrame": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/PresenceHoldServerFrameAccepted"
+          },
+          {
+            "$ref": "#/components/schemas/PresenceHoldServerFramePresence"
+          },
+          {
+            "$ref": "#/components/schemas/PresenceHoldServerFrameRealtimeDegraded"
+          }
+        ],
+        "title": "PresenceHoldServerFrame"
+      },
+      "PresenceHoldServerFrameAccepted": {
+        "additionalProperties": false,
+        "properties": {
+          "awayAfterMs": {
+            "maximum": 60000,
+            "minimum": 10000,
+            "type": "integer"
+          },
+          "clientGeneration": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "expiresAfterMs": {
+            "maximum": 120000,
+            "minimum": 15000,
+            "type": "integer"
+          },
+          "heartbeatIntervalMs": {
+            "maximum": 30000,
+            "minimum": 5000,
+            "type": "integer"
+          },
+          "leaseGeneration": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "leaseToken": {
+            "pattern": "^pls1\\.[A-Za-z0-9_-]{43}$",
+            "type": "string"
+          },
+          "presences": {
+            "items": {
+              "$ref": "#/components/schemas/PresenceView"
+            },
+            "maxItems": 10000,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "schemaVersion": {
+            "const": 1
+          },
+          "type": {
+            "const": "accepted"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "type",
+          "leaseToken",
+          "leaseGeneration",
+          "clientGeneration",
+          "heartbeatIntervalMs",
+          "awayAfterMs",
+          "expiresAfterMs",
+          "presences"
+        ],
+        "type": "object"
+      },
+      "PresenceHoldServerFramePresence": {
+        "additionalProperties": false,
+        "properties": {
+          "presence": {
+            "$ref": "#/components/schemas/PresenceView"
+          },
+          "schemaVersion": {
+            "const": 1
+          },
+          "type": {
+            "const": "presence"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "type",
+          "presence"
+        ],
+        "type": "object"
+      },
+      "PresenceHoldServerFrameRealtimeDegraded": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "enum": [
+              "authorization_unavailable",
+              "capacity_unavailable"
+            ]
+          },
+          "schemaVersion": {
+            "const": 1
+          },
+          "type": {
+            "const": "realtime-degraded"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "type",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "PresenceTypingPatch": {
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "else": {
+              "properties": {
+                "expiresAt": {
+                  "type": "null"
+                }
+              }
+            },
+            "if": {
+              "properties": {
+                "active": {
+                  "const": true
+                }
+              },
+              "required": [
+                "active"
+              ]
+            },
+            "then": {
+              "properties": {
+                "expiresAt": {
+                  "format": "date-time",
+                  "type": "string"
+                }
+              }
+            }
+          }
+        ],
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "conversationId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "leaseGeneration": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "punkId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sequence": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "workspaceId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspaceId",
+          "conversationId",
+          "punkId",
+          "active",
+          "leaseGeneration",
+          "sequence",
+          "expiresAt"
+        ],
+        "title": "PresenceTypingPatch",
+        "type": "object"
+      },
+      "PresenceTypingSignal": {
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "contract": {
+            "const": "presence.typing.signal@1"
+          },
+          "conversationId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "leaseToken": {
+            "pattern": "^pls1\\.[A-Za-z0-9_-]{43}$",
+            "type": "string"
+          },
+          "sequence": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "workspaceId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "contract",
+          "leaseToken",
+          "sequence",
+          "workspaceId",
+          "conversationId",
+          "active"
+        ],
+        "title": "PresenceTypingSignal",
+        "type": "object"
+      },
+      "PresenceView": {
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "else": {
+              "properties": {
+                "expiresAt": {
+                  "format": "date-time",
+                  "type": "string"
+                }
+              }
+            },
+            "if": {
+              "properties": {
+                "state": {
+                  "const": "offline"
+                }
+              },
+              "required": [
+                "state"
+              ]
+            },
+            "then": {
+              "properties": {
+                "expiresAt": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        ],
+        "properties": {
+          "expiresAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "leaseGeneration": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "punkId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sequence": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "state": {
+            "enum": [
+              "online",
+              "away",
+              "offline"
+            ]
+          },
+          "status": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 1,
+                "pattern": "^(?!\\s)(?!.*\\s$)[^\\r\\n\\u2028\\u2029]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "punkId",
+          "state",
+          "status",
+          "leaseGeneration",
+          "sequence",
+          "expiresAt"
+        ],
+        "title": "PresenceView",
+        "type": "object"
+      },
       "Punk": {
         "additionalProperties": false,
         "properties": {
@@ -4638,6 +5987,7 @@
               "idempotency_conflict",
               "identity_conflict",
               "revision_conflict",
+              "invalid_transition",
               "invite_invalid",
               "invite_expired",
               "invite_exhausted",
@@ -4645,6 +5995,11 @@
               "invite_role_forbidden",
               "query_too_short",
               "command_in_progress",
+              "storage_unavailable",
+              "upload_hash_invalid",
+              "upload_conflict",
+              "upload_ambiguous",
+              "upload_expired",
               "attestation_failed",
               "temporarily_unavailable",
               "internal"
@@ -4809,6 +6164,66 @@
         "required": [
           "reaction"
         ],
+        "type": "object"
+      },
+      "RemoveWorkspaceMemberCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "punk"
+              },
+              "punkId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "punkId"
+            ],
+            "type": "object"
+          },
+          "commandId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "contract": {
+            "const": "workspace.member-remove@1"
+          },
+          "payload": {
+            "additionalProperties": false,
+            "properties": {
+              "expectedRevision": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "targetPunkId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "targetPunkId",
+              "expectedRevision"
+            ],
+            "type": "object"
+          },
+          "workspaceId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "contract",
+          "commandId",
+          "workspaceId",
+          "actor",
+          "payload"
+        ],
+        "title": "RemoveWorkspaceMemberCommand",
         "type": "object"
       },
       "ResolveAuthorsQuery": {
@@ -5061,6 +6476,178 @@
         "title": "RevokeWorkspaceInvitationResponse",
         "type": "object"
       },
+      "SetPresenceStatusSignal": {
+        "additionalProperties": false,
+        "properties": {
+          "contract": {
+            "const": "presence.status.set@1"
+          },
+          "leaseToken": {
+            "pattern": "^pls1\\.[A-Za-z0-9_-]{43}$",
+            "type": "string"
+          },
+          "sequence": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 1,
+                "pattern": "^(?!\\s)(?!.*\\s$)[^\\r\\n\\u2028\\u2029]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "contract",
+          "leaseToken",
+          "sequence",
+          "status"
+        ],
+        "title": "SetPresenceStatusSignal",
+        "type": "object"
+      },
+      "SetWorkspaceMemberRoleCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "punk"
+              },
+              "punkId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "punkId"
+            ],
+            "type": "object"
+          },
+          "commandId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "contract": {
+            "const": "workspace.member-set-role@1"
+          },
+          "payload": {
+            "additionalProperties": false,
+            "properties": {
+              "expectedRevision": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "role": {
+                "enum": [
+                  "owner",
+                  "moderator",
+                  "member",
+                  "guest"
+                ]
+              },
+              "targetPunkId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "targetPunkId",
+              "role",
+              "expectedRevision"
+            ],
+            "type": "object"
+          },
+          "workspaceId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "contract",
+          "commandId",
+          "workspaceId",
+          "actor",
+          "payload"
+        ],
+        "title": "SetWorkspaceMemberRoleCommand",
+        "type": "object"
+      },
+      "TransferWorkspaceOwnershipCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "punk"
+              },
+              "punkId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "punkId"
+            ],
+            "type": "object"
+          },
+          "commandId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "contract": {
+            "const": "workspace.transfer-ownership@1"
+          },
+          "payload": {
+            "additionalProperties": false,
+            "properties": {
+              "expectedRevision": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "reauthorizationId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "targetPunkId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "targetPunkId",
+              "expectedRevision",
+              "reauthorizationId"
+            ],
+            "type": "object"
+          },
+          "workspaceId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "contract",
+          "commandId",
+          "workspaceId",
+          "actor",
+          "payload"
+        ],
+        "title": "TransferWorkspaceOwnershipCommand",
+        "type": "object"
+      },
       "UpdatePunkProfileCommand": {
         "additionalProperties": false,
         "properties": {
@@ -5202,6 +6789,139 @@
         "title": "Workspace",
         "type": "object"
       },
+      "WorkspaceGovernanceResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "contract": {
+            "const": "workspace.governance-response@1"
+          },
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/WorkspaceGovernanceResponseMember"
+            },
+            "maxItems": 100,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "nextCursor": {
+            "oneOf": [
+              {
+                "pattern": "^[A-Za-z0-9._~-]{1,1024}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "workspace": {
+            "$ref": "#/components/schemas/WorkspaceGovernanceView"
+          }
+        },
+        "required": [
+          "contract",
+          "workspace",
+          "members",
+          "nextCursor"
+        ],
+        "title": "WorkspaceGovernanceResponse",
+        "type": "object"
+      },
+      "WorkspaceGovernanceResponseMember": {
+        "additionalProperties": false,
+        "properties": {
+          "punkId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "owner",
+              "moderator",
+              "member",
+              "guest"
+            ]
+          }
+        },
+        "required": [
+          "punkId",
+          "role"
+        ],
+        "type": "object"
+      },
+      "WorkspaceGovernanceView": {
+        "additionalProperties": false,
+        "properties": {
+          "contract": {
+            "const": "workspace.governance-view@1"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "cursor": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "memberCount": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          },
+          "ownerPunkId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "revision": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "slug": {
+            "maxLength": 48,
+            "minLength": 2,
+            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])$",
+            "type": "string"
+          },
+          "status": {
+            "const": "active"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "visibility": {
+            "enum": [
+              "private",
+              "punks",
+              "public"
+            ]
+          }
+        },
+        "required": [
+          "contract",
+          "id",
+          "slug",
+          "name",
+          "visibility",
+          "status",
+          "ownerPunkId",
+          "memberCount",
+          "revision",
+          "cursor",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "WorkspaceGovernanceView",
+        "type": "object"
+      },
       "WorkspaceInvitationView": {
         "additionalProperties": false,
         "properties": {
@@ -5308,22 +7028,127 @@
         "title": "WorkspaceInvitationView",
         "type": "object"
       },
+      "WorkspaceMembershipLifecycleResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "contract": {
+            "const": "workspace.membership-lifecycle-response@1"
+          },
+          "outcome": {
+            "enum": [
+              "left",
+              "ownership_transferred"
+            ]
+          },
+          "replayed": {
+            "type": "boolean"
+          },
+          "revision": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "role": {
+            "oneOf": [
+              {
+                "const": "member"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "workspaceId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "contract",
+          "workspaceId",
+          "revision",
+          "outcome",
+          "role",
+          "replayed"
+        ],
+        "title": "WorkspaceMembershipLifecycleResponse",
+        "type": "object"
+      },
       "WorkspaceMembershipMutationResponse": {
         "additionalProperties": false,
         "properties": {
           "contract": {
             "const": "workspace.membership-mutation-response@1"
           },
+          "memberDeltas": {
+            "items": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "present": {
+                      "const": true
+                    },
+                    "punkId": {
+                      "format": "uuid",
+                      "type": "string"
+                    },
+                    "role": {
+                      "enum": [
+                        "owner",
+                        "moderator",
+                        "member",
+                        "guest"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "punkId",
+                    "present",
+                    "role"
+                  ],
+                  "title": "PresentWorkspaceMemberDelta",
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "present": {
+                      "const": false
+                    },
+                    "punkId": {
+                      "format": "uuid",
+                      "type": "string"
+                    },
+                    "role": {
+                      "type": "null"
+                    }
+                  },
+                  "required": [
+                    "punkId",
+                    "present",
+                    "role"
+                  ],
+                  "title": "RemovedWorkspaceMemberDelta",
+                  "type": "object"
+                }
+              ]
+            },
+            "maxItems": 2,
+            "minItems": 1,
+            "type": "array",
+            "uniqueItems": true
+          },
           "replayed": {
             "type": "boolean"
           },
           "workspace": {
-            "$ref": "#/components/schemas/Workspace"
+            "$ref": "#/components/schemas/WorkspaceGovernanceView"
           }
         },
         "required": [
           "contract",
           "workspace",
+          "memberDeltas",
           "replayed"
         ],
         "title": "WorkspaceMembershipMutationResponse",
@@ -5845,78 +7670,6 @@
           }
         },
         "summary": "checkCompatibility (account · read)",
-        "tags": [
-          "account"
-        ]
-      }
-    },
-    "/api/v1/punk": {
-      "get": {
-        "operationId": "getPunkProfile",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Punk"
-                }
-              }
-            },
-            "description": "Réponse de succès du Worker."
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PunksProblem"
-                }
-              }
-            },
-            "description": "Erreur fermée de la taxonomie Punks."
-          }
-        },
-        "summary": "getPunkProfile (account · read)",
-        "tags": [
-          "account"
-        ]
-      },
-      "patch": {
-        "operationId": "updatePunkProfile",
-        "parameters": [],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdatePunkProfileCommand"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Punk"
-                }
-              }
-            },
-            "description": "Réponse de succès du Worker."
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PunksProblem"
-                }
-              }
-            },
-            "description": "Erreur fermée de la taxonomie Punks."
-          }
-        },
-        "summary": "updatePunkProfile (account · mutation)",
         "tags": [
           "account"
         ]
@@ -6505,110 +8258,6 @@
           }
         },
         "summary": "removeReaction (workspace · mutation)",
-        "tags": [
-          "workspace"
-        ]
-      }
-    },
-    "/api/v1/workspaces/{workspaceId}/punks/search": {
-      "post": {
-        "operationId": "searchPunks",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "workspaceId",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PunkSearchQuery"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PunkSearchResponse"
-                }
-              }
-            },
-            "description": "Réponse de succès du Worker."
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PunksProblem"
-                }
-              }
-            },
-            "description": "Erreur fermée de la taxonomie Punks."
-          }
-        },
-        "summary": "searchPunks (workspace · read)",
-        "tags": [
-          "workspace"
-        ]
-      }
-    },
-    "/api/v1/workspaces/{workspaceId}/punks/summaries": {
-      "post": {
-        "operationId": "getPunkSummaries",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "workspaceId",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PunkSummaryBatchQuery"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PunkSummaryBatchResponse"
-                }
-              }
-            },
-            "description": "Réponse de succès du Worker."
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PunksProblem"
-                }
-              }
-            },
-            "description": "Erreur fermée de la taxonomie Punks."
-          }
-        },
-        "summary": "getPunkSummaries (workspace · read)",
         "tags": [
           "workspace"
         ]

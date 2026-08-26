@@ -18,6 +18,7 @@ import type {
   ToggleMessageReactionCommand,
   PostMessageCommand,
   InstallBotCommand,
+  LeaveWorkspaceCommand,
   RetractMessageCommand,
   RestoreMessageCommand as RestoreMessageDomainCommand,
   RevokeBotInstallationCommand,
@@ -43,6 +44,8 @@ import type {
   RevokeWorkspaceInvitationCommand,
   RevokeWorkspaceInvitationResponse,
   WorkspaceInvitationView,
+  WorkspaceGovernanceView,
+  TransferWorkspaceOwnershipCommand,
 } from "@punks/contracts";
 import type { WorkspacePermission, WorkspaceRole } from "@punks/core";
 import type { BoundedMessageState, MessageContentVersion } from "@punks/core";
@@ -52,6 +55,8 @@ export type WorkspaceCommand =
   | RenameWorkspaceCommand
   | SetWorkspaceMemberRoleCommand
   | RemoveWorkspaceMemberCommand
+  | LeaveWorkspaceCommand
+  | TransferWorkspaceOwnershipCommand
   | ClaimWorkspaceInvitationCommand;
 
 export interface WorkspaceMutationAuthorization {
@@ -417,6 +422,27 @@ export type WorkspaceQuery = {
 export type WorkspaceQueryResult =
   | { ok: true; state: Workspace }
   | { ok: false; code: "invalid_contract" | "not_found" };
+
+export interface WorkspaceGovernancePageQuery {
+  workspaceId: string;
+  punkId: string;
+  limit: number;
+  afterPunkId?: string;
+  authorityCursor?: number;
+}
+
+export type WorkspaceGovernancePageResult =
+  | {
+      ok: true;
+      workspace: WorkspaceGovernanceView;
+      members: Workspace["members"];
+      authorityCursor: number;
+      nextPositionPunkId: string | null;
+    }
+  | {
+      ok: false;
+      code: "invalid_request" | "not_found" | "forbidden" | "cursor_stale";
+    };
 
 export interface WorkspaceAuthorizationRequest {
   workspaceId: string;

@@ -88,7 +88,10 @@ the complete promotion dossier and the required tranche receipt.
    API secret of at least 32 bytes as `MESSAGE_HISTORY_CURSOR_KEY`. Install a
    fourth independent API secret of at least 32 bytes as
    `DIRECTORY_CURSOR_KEY` for Punk-bound Workspace and Stream continuations.
-   Never echo any of these values in a terminal log. These cursor secrets are
+   Install a fifth independent API secret of at least 32 bytes as
+   `MEDIA_UPLOAD_GRANT_KEY`; it signs only short, intention-scoped upload
+   grants and must not be reused for cursors, Sessions or R2 credentials.
+   Never echo any of these values in a terminal log. These API secrets are
    deliberately absent from Wrangler vars and are not provisioned by this
    repository.
 3. Register separate staging OAuth applications whose only callback URLs are

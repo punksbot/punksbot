@@ -126,7 +126,12 @@
         "punkId": { "type": "string", "format": "uuid" },
         "intent": { "const": "reauthenticate" },
         "targetMethod": {
-          "enum": ["link_google", "link_github", "register_passkey"]
+          "enum": [
+            "link_google",
+            "link_github",
+            "register_passkey",
+            "transfer_workspace_ownership"
+          ]
         },
         "handoffId": { "type": "string", "format": "uuid" },
         "expiresAt": { "type": "string", "format": "date-time" }

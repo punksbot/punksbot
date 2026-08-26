@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/presence.hold-server-frame@1",
+  "title": "PresenceHoldServerFrame",
+  "$comment": "Bounded ephemeral punks.presence.v1 output. Frames contain current public presentation only and no Session, cookie, device identifier, access role, historical cursor, acknowledgement or replay promise.",
+  "oneOf": [
+    { "$ref": "#/$defs/accepted" },
+    { "$ref": "#/$defs/presence" },
+    { "$ref": "#/$defs/realtimeDegraded" }
+  ],
+  "$defs": {
+    "accepted": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "type",
+        "leaseToken",
+        "leaseGeneration",
+        "clientGeneration",
+        "heartbeatIntervalMs",
+        "awayAfterMs",
+        "expiresAfterMs",
+        "presences"
+      ],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "type": { "const": "accepted" },
+        "leaseToken": {
+          "type": "string",
+          "pattern": "^pls1\\.[A-Za-z0-9_-]{43}$"
+        },
+        "leaseGeneration": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "clientGeneration": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "heartbeatIntervalMs": {
+          "type": "integer",
+          "minimum": 5000,
+          "maximum": 30000
+        },
+        "awayAfterMs": {
+          "type": "integer",
+          "minimum": 10000,
+          "maximum": 60000
+        },
+        "expiresAfterMs": {
+          "type": "integer",
+          "minimum": 15000,
+          "maximum": 120000
+        },
+        "presences": {
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": { "$ref": "schemas/presence.view.schema.json" }
+        }
+      }
+    },
+    "presence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "type", "presence"],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "type": { "const": "presence" },
+        "presence": { "$ref": "schemas/presence.view.schema.json" }
+      }
+    },
+    "realtimeDegraded": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "type", "reason"],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "type": { "const": "realtime-degraded" },
+        "reason": {
+          "enum": ["authorization_unavailable", "capacity_unavailable"]
+        }
+      }
+    }
+  }
+}

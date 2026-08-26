@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::{
-    decode, validate_uuid, ClientFailure, FailureKind, PunksAccountClient, RequestSafety,
-    WorkspaceSession, WorkspaceSummary,
+    contracts_profile, decode, validate_uuid, ClientFailure, FailureKind, PunksAccountClient,
+    RequestSafety, WorkspaceSession, WorkspaceSummary,
 };
 
 const IDENTITY_GOVERNANCE_CAPABILITY: &str = "identity-governance";
@@ -28,110 +28,56 @@ pub enum WorkspaceRole {
     Guest,
 }
 
-/// One authoritative roster entry.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct WorkspaceMember {
-    pub punk_id: String,
-    pub role: WorkspaceRole,
-}
-
-/// Full Workspace authority view available only to a current member.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct WorkspaceGovernanceView {
-    pub id: String,
-    pub slug: String,
-    pub name: String,
-    pub visibility: String,
-    pub status: String,
-    pub owner_punk_id: String,
-    pub members: Vec<WorkspaceMember>,
-    pub revision: u64,
-    pub cursor: u64,
-    pub created_at: String,
-    pub updated_at: String,
-}
-
-/// Bounded Workspace coordinates exposed to a holder of an opaque code.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct WorkspaceInvitationWorkspace {
-    pub id: String,
-    pub slug: String,
-    pub name: String,
-}
-
-/// Invitation state deliberately excluding issuer identity and roster data.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct WorkspaceInvitationView {
-    pub contract: String,
-    pub invitation_id: String,
-    pub workspace: WorkspaceInvitationWorkspace,
-    pub workspace_revision: u64,
-    pub role: WorkspaceInvitationRole,
-    pub status: String,
-    pub issued_at: String,
-    pub expires_at: String,
-    pub revoked_at: Option<String>,
-    pub max_uses: u16,
-    pub uses: u16,
-    pub uses_remaining: u16,
-}
-
-/// Result returned only to the issuer; the opaque code is never cached by React Query.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct CreateWorkspaceInvitationResult {
-    pub contract: String,
-    pub invitation: WorkspaceInvitationView,
-    pub code: String,
-    pub replayed: bool,
-}
-
-/// Closed acknowledgement for an invitation revocation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct RevokeWorkspaceInvitationResult {
-    pub contract: String,
-    pub invitation: WorkspaceInvitationView,
-    pub replayed: bool,
-}
-
-/// Closed acknowledgement for a Workspace role or membership mutation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct WorkspaceMembershipMutationResult {
-    pub contract: String,
-    pub workspace: WorkspaceGovernanceView,
-    pub replayed: bool,
-}
-
-/// Bounded Workspace summary returned after a claim.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ClaimedWorkspaceSummary {
-    pub id: String,
-    pub slug: String,
-    pub name: String,
-    pub visibility: String,
-    pub role: String,
-    pub revision: u64,
-}
-
-/// Idempotent result of an explicit invitation claim.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ClaimWorkspaceInvitationResult {
-    pub contract: String,
-    pub result: String,
-    pub workspace: ClaimedWorkspaceSummary,
-    pub replayed: bool,
-}
+/// Generated, bounded response DTOs transported unchanged through Tauri IPC.
+pub type WorkspaceGovernanceMetadata = contracts_profile::WorkspaceGovernanceView;
+pub type WorkspaceGovernancePage = contracts_profile::WorkspaceGovernanceResponse;
+pub type WorkspaceInvitationView = contracts_profile::WorkspaceInvitationView;
+pub type CreateWorkspaceInvitationResult = contracts_profile::CreateWorkspaceInvitationResponse;
+pub type RevokeWorkspaceInvitationResult = contracts_profile::RevokeWorkspaceInvitationResponse;
+pub type WorkspaceMembershipMutationResult = contracts_profile::WorkspaceMembershipMutationResponse;
+pub type WorkspaceMembershipLifecycleResult =
+    contracts_profile::WorkspaceMembershipLifecycleResponse;
+pub type ClaimWorkspaceInvitationResult = contracts_profile::ClaimWorkspaceInvitationResponse;
 
 fn valid_timestamp(value: &str) -> bool {
     DateTime::parse_from_rfc3339(value).is_ok()
+}
+
+fn claim_visibility(
+    value: &contracts_profile::ClaimWorkspaceInvitationResponseWorkspaceVisibility,
+) -> &'static str {
+    use contracts_profile::ClaimWorkspaceInvitationResponseWorkspaceVisibility as Visibility;
+    match value {
+        Visibility::Private => "private",
+        Visibility::Punks => "punks",
+        Visibility::Public => "public",
+    }
+}
+
+fn claim_role(
+    value: &contracts_profile::ClaimWorkspaceInvitationResponseWorkspaceRole,
+) -> &'static str {
+    use contracts_profile::ClaimWorkspaceInvitationResponseWorkspaceRole as Role;
+    match value {
+        Role::Owner => "owner",
+        Role::Moderator => "moderator",
+        Role::Member => "member",
+        Role::Guest => "guest",
+    }
+}
+
+fn generated_role_matches(
+    value: &contracts_profile::PresentWorkspaceMemberDeltaRole,
+    expected: WorkspaceRole,
+) -> bool {
+    use contracts_profile::PresentWorkspaceMemberDeltaRole as Role;
+    matches!(
+        (value, expected),
+        (Role::Owner, WorkspaceRole::Owner)
+            | (Role::Moderator, WorkspaceRole::Moderator)
+            | (Role::Member, WorkspaceRole::Member)
+            | (Role::Guest, WorkspaceRole::Guest)
+    )
 }
 
 fn invitation_workspace_id(code: &str) -> Result<&str, ClientFailure> {
@@ -158,10 +104,6 @@ fn validate_invitation(
 ) -> Result<WorkspaceInvitationView, ClientFailure> {
     validate_uuid(&invitation.invitation_id, "invitationId")?;
     validate_uuid(&invitation.workspace.id, "workspaceId")?;
-    let status = matches!(
-        invitation.status.as_str(),
-        "issued" | "revoked" | "expired" | "exhausted"
-    );
     if invitation.contract != "workspace.invitation@1"
         || invitation.workspace.id != expected_workspace_id
         || invitation.workspace_revision == 0
@@ -169,7 +111,6 @@ fn validate_invitation(
         || invitation.workspace.slug.len() > 48
         || invitation.workspace.name.is_empty()
         || invitation.workspace.name.len() > 80
-        || !status
         || !valid_timestamp(&invitation.issued_at)
         || !valid_timestamp(&invitation.expires_at)
         || invitation
@@ -186,44 +127,33 @@ fn validate_invitation(
     Ok(invitation)
 }
 
-fn validate_governance(
-    workspace: WorkspaceGovernanceView,
+fn validate_governance_metadata(
+    workspace: WorkspaceGovernanceMetadata,
     expected_workspace_id: &str,
-) -> Result<WorkspaceGovernanceView, ClientFailure> {
+) -> Result<WorkspaceGovernanceMetadata, ClientFailure> {
     validate_uuid(&workspace.id, "workspaceId")?;
     validate_uuid(&workspace.owner_punk_id, "ownerPunkId")?;
-    let mut seen = std::collections::HashSet::with_capacity(workspace.members.len());
-    for member in &workspace.members {
-        validate_uuid(&member.punk_id, "member.punkId")?;
-        if !seen.insert(member.punk_id.as_str()) {
-            return Err(ClientFailure::contract("workspace@1"));
-        }
-    }
-    if workspace.id != expected_workspace_id
+    if workspace.contract != "workspace.governance-view@1"
+        || workspace.id != expected_workspace_id
         || workspace.slug.is_empty()
         || workspace.slug.len() > 48
         || workspace.name.is_empty()
         || workspace.name.len() > 80
-        || !matches!(
-            workspace.visibility.as_str(),
-            "private" | "punks" | "public"
-        )
         || workspace.status != "active"
-        || workspace.members.is_empty()
+        || workspace.member_count == 0
         || workspace.revision == 0
         || workspace.cursor == 0
         || !valid_timestamp(&workspace.created_at)
         || !valid_timestamp(&workspace.updated_at)
-        || !workspace.members.iter().any(|member| {
-            member.punk_id == workspace.owner_punk_id && member.role == WorkspaceRole::Owner
-        })
     {
-        return Err(ClientFailure::contract("workspace@1"));
+        return Err(ClientFailure::contract("workspace.governance-view@1"));
     }
     Ok(workspace)
 }
 
-async fn require_governance_capability(client: &PunksAccountClient) -> Result<(), ClientFailure> {
+pub(crate) async fn require_identity_governance(
+    client: &PunksAccountClient,
+) -> Result<(), ClientFailure> {
     let state = client.inner.state.lock().await;
     if state.compatibility.as_ref().is_some_and(|value| {
         value.compatible
@@ -259,7 +189,7 @@ impl PunksAccountClient {
         &self,
         code: &str,
     ) -> Result<WorkspaceInvitationView, ClientFailure> {
-        require_governance_capability(self).await?;
+        require_identity_governance(self).await?;
         let workspace_id = invitation_workspace_id(code)?.to_owned();
         let response = self
             .inner
@@ -280,7 +210,7 @@ impl PunksAccountClient {
         code: &str,
         expected_revision: u64,
     ) -> Result<ClaimWorkspaceInvitationResult, ClientFailure> {
-        require_governance_capability(self).await?;
+        require_identity_governance(self).await?;
         if expected_revision == 0 {
             return Err(ClientFailure::contract("workspace.invite-claim@1"));
         }
@@ -306,13 +236,8 @@ impl PunksAccountClient {
         let result: ClaimWorkspaceInvitationResult =
             decode("workspace.invite-claim-response@1", response)?;
         if result.contract != "workspace.invite-claim-response@1"
-            || !matches!(result.result.as_str(), "joined" | "already_member")
             || result.workspace.id != workspace_id
             || result.workspace.revision < expected_revision
-            || !matches!(
-                result.workspace.role.as_str(),
-                "owner" | "moderator" | "member" | "guest"
-            )
         {
             return Err(ClientFailure::contract("workspace.invite-claim-response@1"));
         }
@@ -321,8 +246,8 @@ impl PunksAccountClient {
             id: result.workspace.id.clone(),
             slug: result.workspace.slug.clone(),
             name: result.workspace.name.clone(),
-            visibility: result.workspace.visibility.clone(),
-            role: result.workspace.role.clone(),
+            visibility: claim_visibility(&result.workspace.visibility).to_owned(),
+            role: claim_role(&result.workspace.role).to_owned(),
             revision: result.workspace.revision,
         };
         let mut state = self.inner.state.lock().await;
@@ -335,23 +260,72 @@ impl PunksAccountClient {
 }
 
 impl WorkspaceSession {
-    /// Reads the authoritative roster directly from the Workspace Durable Object.
-    pub async fn get_governance(&self) -> Result<WorkspaceGovernanceView, ClientFailure> {
-        require_governance_capability(&PunksAccountClient {
+    /// Reads one stable, authority-bound roster page from the Workspace Durable Object.
+    pub async fn get_governance_page(
+        &self,
+        limit: u16,
+        cursor: Option<&str>,
+    ) -> Result<WorkspaceGovernancePage, ClientFailure> {
+        require_identity_governance(&PunksAccountClient {
             inner: self.inner.clone(),
         })
         .await?;
+        if !(1..=100).contains(&limit)
+            || cursor.is_some_and(|value| {
+                value.is_empty()
+                    || value.len() > 1_024
+                    || !value.bytes().all(|byte| {
+                        byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'~' | b'-')
+                    })
+            })
+        {
+            return Err(ClientFailure::contract("workspace.governance@1"));
+        }
         self.assert_current().await?;
+        let query = {
+            let mut serializer = url::form_urlencoded::Serializer::new(String::new());
+            serializer.append_pair("limit", &limit.to_string());
+            if let Some(cursor) = cursor {
+                serializer.append_pair("cursor", cursor);
+            }
+            serializer.finish()
+        };
         let response = self
             .request(
                 Method::GET,
-                format!("/api/v1/workspaces/{}/governance", self.lease.workspace_id),
+                format!(
+                    "/api/v1/workspaces/{}/governance?{query}",
+                    self.lease.workspace_id
+                ),
                 None,
                 RequestSafety::Read,
             )
             .await?;
         self.assert_current().await?;
-        validate_governance(decode("workspace@1", response)?, &self.lease.workspace_id)
+        let mut page: WorkspaceGovernancePage =
+            decode("workspace.governance-response@1", response)?;
+        page.workspace = validate_governance_metadata(page.workspace, &self.lease.workspace_id)?;
+        if page.contract != "workspace.governance-response@1"
+            || page.members.len() > usize::from(limit)
+            || page.members.len() as u64 > page.workspace.member_count
+            || page.next_cursor.as_ref().is_some_and(|value| {
+                value.is_empty()
+                    || value.len() > 1_024
+                    || !value.bytes().all(|byte| {
+                        byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'~' | b'-')
+                    })
+            })
+        {
+            return Err(ClientFailure::contract("workspace.governance-response@1"));
+        }
+        let mut seen = std::collections::HashSet::with_capacity(page.members.len());
+        for member in &page.members {
+            validate_uuid(&member.punk_id, "member.punkId")?;
+            if !seen.insert(member.punk_id.as_str()) {
+                return Err(ClientFailure::contract("workspace.governance-response@1"));
+            }
+        }
+        Ok(page)
     }
 
     /// Emits one bounded invitation through the generation-bound native Session.
@@ -362,7 +336,7 @@ impl WorkspaceSession {
         ttl_seconds: Option<u32>,
         max_uses: Option<u16>,
     ) -> Result<CreateWorkspaceInvitationResult, ClientFailure> {
-        require_governance_capability(&PunksAccountClient {
+        require_identity_governance(&PunksAccountClient {
             inner: self.inner.clone(),
         })
         .await?;
@@ -419,7 +393,7 @@ impl WorkspaceSession {
         invitation_id: &str,
         expected_revision: u64,
     ) -> Result<RevokeWorkspaceInvitationResult, ClientFailure> {
-        require_governance_capability(&PunksAccountClient {
+        require_identity_governance(&PunksAccountClient {
             inner: self.inner.clone(),
         })
         .await?;
@@ -455,7 +429,10 @@ impl WorkspaceSession {
         let invitation = validate_invitation(result.invitation, &self.lease.workspace_id)?;
         if result.contract != "workspace.invite-revoke-response@1"
             || invitation.invitation_id != invitation_id
-            || invitation.status != "revoked"
+            || !matches!(
+                invitation.status,
+                contracts_profile::WorkspaceInvitationViewStatus::Revoked
+            )
         {
             return Err(ClientFailure::contract(
                 "workspace.invite-revoke-response@1",
@@ -474,11 +451,14 @@ impl WorkspaceSession {
         role: WorkspaceRole,
         expected_revision: u64,
     ) -> Result<WorkspaceMembershipMutationResult, ClientFailure> {
-        require_governance_capability(&PunksAccountClient {
+        require_identity_governance(&PunksAccountClient {
             inner: self.inner.clone(),
         })
         .await?;
         validate_uuid(target_punk_id, "targetPunkId")?;
+        let Some(expected_next_revision) = expected_revision.checked_add(1) else {
+            return Err(ClientFailure::contract("workspace.member-set-role@1"));
+        };
         if expected_revision == 0 {
             return Err(ClientFailure::contract("workspace.member-set-role@1"));
         }
@@ -508,13 +488,17 @@ impl WorkspaceSession {
         self.assert_current().await?;
         let result: WorkspaceMembershipMutationResult =
             decode("workspace.membership-mutation-response@1", response)?;
-        let workspace = validate_governance(result.workspace, &self.lease.workspace_id)?;
+        let workspace = validate_governance_metadata(result.workspace, &self.lease.workspace_id)?;
+        let valid_delta = matches!(
+            result.member_deltas.as_slice(),
+            [contracts_profile::WorkspaceMembershipMutationResponseMemberDeltas::WorkspaceMembershipMutationResponseMemberDeltasSuccess(delta)]
+                if delta.punk_id == target_punk_id
+                    && delta.present
+                    && generated_role_matches(&delta.role, role)
+        );
         if result.contract != "workspace.membership-mutation-response@1"
-            || workspace.revision != expected_revision + 1
-            || !workspace
-                .members
-                .iter()
-                .any(|member| member.punk_id == target_punk_id && member.role == role)
+            || workspace.revision != expected_next_revision
+            || !valid_delta
         {
             return Err(ClientFailure::contract(
                 "workspace.membership-mutation-response@1",
@@ -532,11 +516,14 @@ impl WorkspaceSession {
         target_punk_id: &str,
         expected_revision: u64,
     ) -> Result<WorkspaceMembershipMutationResult, ClientFailure> {
-        require_governance_capability(&PunksAccountClient {
+        require_identity_governance(&PunksAccountClient {
             inner: self.inner.clone(),
         })
         .await?;
         validate_uuid(target_punk_id, "targetPunkId")?;
+        let Some(expected_next_revision) = expected_revision.checked_add(1) else {
+            return Err(ClientFailure::contract("workspace.member-remove@1"));
+        };
         if expected_revision == 0 {
             return Err(ClientFailure::contract("workspace.member-remove@1"));
         }
@@ -565,13 +552,15 @@ impl WorkspaceSession {
         self.assert_current().await?;
         let result: WorkspaceMembershipMutationResult =
             decode("workspace.membership-mutation-response@1", response)?;
-        let workspace = validate_governance(result.workspace, &self.lease.workspace_id)?;
+        let workspace = validate_governance_metadata(result.workspace, &self.lease.workspace_id)?;
+        let valid_delta = matches!(
+            result.member_deltas.as_slice(),
+            [contracts_profile::WorkspaceMembershipMutationResponseMemberDeltas::WorkspaceMembershipMutationResponseMemberDeltasFailure(delta)]
+                if delta.punk_id == target_punk_id && !delta.present
+        );
         if result.contract != "workspace.membership-mutation-response@1"
-            || workspace.revision != expected_revision + 1
-            || workspace
-                .members
-                .iter()
-                .any(|member| member.punk_id == target_punk_id)
+            || workspace.revision != expected_next_revision
+            || !valid_delta
         {
             return Err(ClientFailure::contract(
                 "workspace.membership-mutation-response@1",
@@ -581,5 +570,111 @@ impl WorkspaceSession {
             workspace,
             ..result
         })
+    }
+
+    /// Leaves the current Workspace and invalidates every local lease before returning.
+    pub async fn leave_workspace(
+        &self,
+    ) -> Result<WorkspaceMembershipLifecycleResult, ClientFailure> {
+        require_identity_governance(&PunksAccountClient {
+            inner: self.inner.clone(),
+        })
+        .await?;
+        self.assert_current().await?;
+        let command_id = uuid::Uuid::new_v4().to_string();
+        let response = self
+            .request(
+                Method::POST,
+                format!("/api/v1/workspaces/{}/leave", self.lease.workspace_id),
+                Some(json!({
+                    "contract": "workspace.leave@1",
+                    "commandId": command_id,
+                    "workspaceId": self.lease.workspace_id,
+                    "actor": { "kind": "punk", "punkId": self.lease.punk_id },
+                    "payload": {},
+                })),
+                RequestSafety::Mutation,
+            )
+            .await?;
+        self.assert_current().await?;
+        let result: WorkspaceMembershipLifecycleResult =
+            decode("workspace.membership-lifecycle-response@1", response)?;
+        if result.contract != "workspace.membership-lifecycle-response@1"
+            || result.workspace_id != self.lease.workspace_id
+            || result.revision == 0
+            || !matches!(
+                result.outcome,
+                contracts_profile::WorkspaceMembershipLifecycleResponseOutcome::Left
+            )
+            || result.role.is_some()
+        {
+            return Err(ClientFailure::contract(
+                "workspace.membership-lifecycle-response@1",
+            ));
+        }
+        self.invalidate_departed_workspace().await;
+        Ok(result)
+    }
+
+    /// Transfers primary ownership after one native-only reauthorization grant.
+    pub async fn transfer_ownership(
+        &self,
+        target_punk_id: &str,
+        expected_revision: u64,
+        reauthorization_id: &str,
+    ) -> Result<WorkspaceMembershipLifecycleResult, ClientFailure> {
+        require_identity_governance(&PunksAccountClient {
+            inner: self.inner.clone(),
+        })
+        .await?;
+        validate_uuid(target_punk_id, "targetPunkId")?;
+        validate_uuid(reauthorization_id, "reauthorizationId")?;
+        let Some(expected_next_revision) = expected_revision.checked_add(1) else {
+            return Err(ClientFailure::contract("workspace.transfer-ownership@1"));
+        };
+        if expected_revision == 0 {
+            return Err(ClientFailure::contract("workspace.transfer-ownership@1"));
+        }
+        self.assert_current().await?;
+        let command_id = uuid::Uuid::new_v4().to_string();
+        let response = self
+            .request(
+                Method::POST,
+                format!(
+                    "/api/v1/workspaces/{}/transfer-ownership",
+                    self.lease.workspace_id
+                ),
+                Some(json!({
+                    "contract": "workspace.transfer-ownership@1",
+                    "commandId": command_id,
+                    "workspaceId": self.lease.workspace_id,
+                    "actor": { "kind": "punk", "punkId": self.lease.punk_id },
+                    "payload": {
+                        "targetPunkId": target_punk_id,
+                        "expectedRevision": expected_revision,
+                        "reauthorizationId": reauthorization_id,
+                    },
+                })),
+                RequestSafety::Mutation,
+            )
+            .await?;
+        self.assert_current().await?;
+        let result: WorkspaceMembershipLifecycleResult =
+            decode("workspace.membership-lifecycle-response@1", response)?;
+        if result.contract != "workspace.membership-lifecycle-response@1"
+            || result.workspace_id != self.lease.workspace_id
+            || result.revision != expected_next_revision
+            || !matches!(
+                result.outcome,
+                contracts_profile::WorkspaceMembershipLifecycleResponseOutcome::OwnershipTransferred
+            )
+            || result.role.as_deref() != Some("member")
+        {
+            return Err(ClientFailure::contract(
+                "workspace.membership-lifecycle-response@1",
+            ));
+        }
+        self.record_membership_role("member", result.revision).await;
+        Ok(result)
     }
 }

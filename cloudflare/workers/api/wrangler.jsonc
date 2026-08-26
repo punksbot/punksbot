@@ -20,7 +20,8 @@
       "MESSAGE_SEARCH_MASTER_KEY",
       "MESSAGE_SEARCH_CURSOR_KEY",
       "MESSAGE_HISTORY_CURSOR_KEY",
-      "DIRECTORY_CURSOR_KEY"
+      "DIRECTORY_CURSOR_KEY",
+      "MEDIA_UPLOAD_GRANT_KEY"
     ]
   },
   "r2_buckets": [
@@ -42,7 +43,9 @@
         "name": "CONVERSATION_IDENTITIES",
         "class_name": "ConversationIdentityDO"
       },
-      { "name": "MESSAGE_CONTENT", "class_name": "MessageContentDO" }
+      { "name": "MESSAGE_CONTENT", "class_name": "MessageContentDO" },
+      { "name": "MEDIA_UPLOADS", "class_name": "MediaUploadDO" },
+      { "name": "PRESENCE", "class_name": "PresenceDO" }
     ]
   },
   "migrations": [
@@ -65,6 +68,10 @@
     {
       "tag": "v5",
       "new_sqlite_classes": ["BotDO", "BotSlugDO", "BotInstallationDO"]
+    },
+    {
+      "tag": "v6",
+      "new_sqlite_classes": ["MediaUploadDO", "PresenceDO"]
     }
   ],
   "services": [
@@ -103,6 +110,15 @@
       "binding": "AUTH_SERVICE",
       "service": "punks-auth",
       "entrypoint": "PunkSessionService"
+    },
+    {
+      "binding": "WORKSPACE_OWNERSHIP_AUTHORITY",
+      "service": "punks-auth",
+      "entrypoint": "WorkspaceOwnershipAuthorizationService",
+      "props": {
+        "role": "punks-workspace-ownership-authorizer",
+        "environment": "local"
+      }
     },
     {
       "binding": "ACCOUNT_MERGE_AUTHORITY",
@@ -166,7 +182,8 @@
           "MESSAGE_SEARCH_MASTER_KEY",
           "MESSAGE_SEARCH_CURSOR_KEY",
           "MESSAGE_HISTORY_CURSOR_KEY",
-          "DIRECTORY_CURSOR_KEY"
+          "DIRECTORY_CURSOR_KEY",
+          "MEDIA_UPLOAD_GRANT_KEY"
         ]
       },
       "r2_buckets": [
@@ -188,7 +205,9 @@
             "name": "CONVERSATION_IDENTITIES",
             "class_name": "ConversationIdentityDO"
           },
-          { "name": "MESSAGE_CONTENT", "class_name": "MessageContentDO" }
+          { "name": "MESSAGE_CONTENT", "class_name": "MessageContentDO" },
+          { "name": "MEDIA_UPLOADS", "class_name": "MediaUploadDO" },
+          { "name": "PRESENCE", "class_name": "PresenceDO" }
         ]
       },
       "services": [
@@ -227,6 +246,15 @@
           "binding": "AUTH_SERVICE",
           "service": "punks-auth-staging",
           "entrypoint": "PunkSessionService"
+        },
+        {
+          "binding": "WORKSPACE_OWNERSHIP_AUTHORITY",
+          "service": "punks-auth-staging",
+          "entrypoint": "WorkspaceOwnershipAuthorizationService",
+          "props": {
+            "role": "punks-workspace-ownership-authorizer",
+            "environment": "staging"
+          }
         },
         {
           "binding": "ACCOUNT_MERGE_AUTHORITY",

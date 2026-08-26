@@ -43,8 +43,6 @@ describe("desktop-social-loop@1 profile", () => {
     expect(desktopSocialLoop.operations.map(({ name }) => name)).toEqual([
       "checkCompatibility",
       "getSession",
-      "getPunkProfile",
-      "updatePunkProfile",
       "startDesktopAuthentication",
       "getDesktopAuthenticationStatus",
       "claimDesktopAuthentication",
@@ -61,8 +59,6 @@ describe("desktop-social-loop@1 profile", () => {
       "getTimeline",
       "getThread",
       "resolveAuthors",
-      "getPunkSummaries",
-      "searchPunks",
       "followConversation",
       "confirmFollowBatch",
       "postMessage",

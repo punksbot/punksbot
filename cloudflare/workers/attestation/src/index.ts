@@ -669,18 +669,54 @@ function attestationPolicyAllows(request: AttestationRequest): boolean {
     );
   }
 
-  const expectedContract =
+  const expectedContracts =
     request.event.kind === 50000
-      ? "workspace.create@1"
+      ? ["workspace.create@1"]
       : request.event.kind === 50001
-        ? "workspace.rename@1"
+        ? ["workspace.rename@1"]
         : request.event.kind === 50003
-          ? "workspace.member-set-role@1"
+          ? ["workspace.member-set-role@1", "workspace.transfer-ownership@1"]
           : request.event.kind === 50004
-            ? "workspace.member-remove@1"
-            : null;
+            ? ["workspace.member-remove@1", "workspace.leave@1"]
+            : [];
+  const contract = request.event.tags.find(
+    ([name]) => name === "contract",
+  )?.[1];
+  const actors = request.event.tags.filter(([name]) => name === "actor");
+  const targets = request.event.tags.filter(([name]) => name === "target");
+  const previousOwners = request.event.tags.filter(
+    ([name]) => name === "previous_owner",
+  );
+  const actor = actors[0];
+  const target = targets[0];
+  const previousOwner = previousOwners[0];
+  const punkIdPattern =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+  const lifecycleBinding =
+    contract === "workspace.leave@1"
+      ? actors.length === 1 &&
+        targets.length === 1 &&
+        actor?.length === 3 &&
+        target?.length === 3 &&
+        actor[1] === "punk" &&
+        target[1] === "punk" &&
+        actor[2] === target[2] &&
+        punkIdPattern.test(actor[2] ?? "")
+      : contract === "workspace.transfer-ownership@1"
+        ? targets.length === 1 &&
+          previousOwners.length === 1 &&
+          target?.length === 3 &&
+          previousOwner?.length === 3 &&
+          target[1] === "punk" &&
+          previousOwner[1] === "punk" &&
+          target[2] !== previousOwner[2] &&
+          punkIdPattern.test(target[2] ?? "") &&
+          punkIdPattern.test(previousOwner[2] ?? "")
+        : true;
   return (
-    expectedContract !== null &&
+    contract !== undefined &&
+    expectedContracts.includes(contract) &&
+    lifecycleBinding &&
     hasExactlyOneTag(request, "cursor", /^[1-9][0-9]*$/) &&
     hasExactlyOneTag(
       request,
@@ -690,7 +726,7 @@ function attestationPolicyAllows(request: AttestationRequest): boolean {
     hasExactlyOneTag(
       request,
       "contract",
-      new RegExp(`^${expectedContract.replaceAll(".", "\\.")}$`),
+      new RegExp(`^${contract.replaceAll(".", "\\.")}$`),
     ) &&
     hasExactlyOneTag(request, "actor", /^(punk|bot)$/)
   );

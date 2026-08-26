@@ -70,7 +70,12 @@ export interface DesktopAuthFlowRecord {
   flowId: string;
   intent: DesktopAuthIntent;
   method: DesktopAuthMethod;
-  purpose: "link_google" | "link_github" | "register_passkey" | null;
+  purpose:
+    | "link_google"
+    | "link_github"
+    | "register_passkey"
+    | "transfer_workspace_ownership"
+    | null;
   verifierCommitment: string;
   environment: "local" | "staging" | "production";
   phase: DesktopAuthPhase;

@@ -230,6 +230,7 @@ test("emits only content-addressed evidence tied to the installed artifact", asy
   const input = fixture();
   t.after(() => rmSync(input.root, { recursive: true, force: true }));
   const output = join(input.root, "evidence");
+  const networkOutput = join(output, "network-proof.json");
   const result = await emitInstalledAppEvidence(
     {
       platform: "linux-x64",
@@ -239,11 +240,22 @@ test("emits only content-addressed evidence tied to the installed artifact", asy
       signature: input.signature,
       transcript: input.transcriptPath,
       output,
+      networkOutput,
     },
     { remoteBoundary: remoteBoundary() },
   );
 
   assert.equal(result.references.length, 4 + 5 + REQUIRED_STORIES.length + 7);
+  const networkProof = JSON.parse(readFileSync(networkOutput, "utf8"));
+  assert.deepEqual(networkProof, {
+    schema: "punks.installed-network-proof.v1",
+    platform: "linux-x64",
+    candidateSha: SOURCE_SHA,
+    stagingDeploymentId: DEPLOYMENT_ID,
+    transcriptSha256: sha256(input.transcriptPath),
+    network: input.transcript.network,
+  });
+  assert.equal(result.networkProofSha256, sha256(networkOutput));
   const index = JSON.parse(readFileSync(join(output, "index.json"), "utf8"));
   assert.equal(index.schema, "punks.promotion-evidence-index.v1");
   for (const reference of index.preuves) {
@@ -609,6 +621,8 @@ test("the real CLI exposes no post-proof or remote-boundary bypass", async (t) =
       input.transcriptPath,
       "--proof-output",
       join(input.root, "evidence"),
+      "--network-output",
+      join(input.root, "evidence", "network-proof.json"),
       "--post-staging-proof",
       input.stagingDeploymentProof,
     ]),

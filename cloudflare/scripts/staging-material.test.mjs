@@ -33,8 +33,9 @@ test("generates independent staging machine secrets and the matching public key"
       bindings.MESSAGE_SEARCH_CURSOR_KEY,
       bindings.MESSAGE_HISTORY_CURSOR_KEY,
       bindings.DIRECTORY_CURSOR_KEY,
+      bindings.MEDIA_UPLOAD_GRANT_KEY,
     ]).size,
-    6,
+    7,
   );
 
   const firstContent = await readFile(path, "utf8");

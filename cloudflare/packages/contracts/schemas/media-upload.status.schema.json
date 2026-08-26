@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/media-upload.status@1",
+  "title": "MediaUploadStatus",
+  "$comment": "Status is the authoritative recovery surface after a timeout or ambiguous mutation. Candidate state is reached only after the temporary multipart object has been re-read, size/type checked, SHA-256 verified and copied create-only to its candidate key.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "uploadId",
+    "workspaceId",
+    "punkId",
+    "purpose",
+    "byteLength",
+    "contentType",
+    "sha256",
+    "issuedAt",
+    "expiresAt",
+    "partSize",
+    "partCount",
+    "state",
+    "uploadedParts",
+    "candidate",
+    "failure"
+  ],
+  "properties": {
+    "contract": { "const": "media-upload.status@1" },
+    "uploadId": { "type": "string", "format": "uuid" },
+    "workspaceId": { "type": "string", "format": "uuid" },
+    "punkId": { "type": "string", "format": "uuid" },
+    "purpose": { "const": "message_attachment" },
+    "byteLength": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 268435456
+    },
+    "contentType": { "type": "string", "minLength": 1, "maxLength": 127 },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "issuedAt": { "type": "string", "format": "date-time" },
+    "expiresAt": { "type": "string", "format": "date-time" },
+    "partSize": { "const": 8388608 },
+    "partCount": { "type": "integer", "minimum": 1, "maximum": 32 },
+    "state": {
+      "enum": [
+        "uploading",
+        "finalizing",
+        "candidate",
+        "cleanup_pending",
+        "abandoned",
+        "expired",
+        "rejected"
+      ]
+    },
+    "uploadedParts": {
+      "type": "array",
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["partNumber", "byteLength", "sha256"],
+        "properties": {
+          "partNumber": { "type": "integer", "minimum": 1, "maximum": 32 },
+          "byteLength": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 8388608
+          },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+        }
+      }
+    },
+    "candidate": {
+      "anyOf": [
+        { "$ref": "#/$defs/candidate" },
+        { "type": "null" }
+      ]
+    },
+    "failure": {
+      "anyOf": [
+        { "$ref": "#/$defs/failure" },
+        { "type": "null" }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "state": { "const": "candidate" } },
+        "required": ["state"]
+      },
+      "then": {
+        "properties": {
+          "candidate": { "$ref": "#/$defs/candidate" },
+          "failure": { "type": "null" }
+        }
+      },
+      "else": { "properties": { "candidate": { "type": "null" } } }
+    },
+    {
+      "if": {
+        "properties": { "state": { "const": "rejected" } },
+        "required": ["state"]
+      },
+      "then": { "properties": { "failure": { "$ref": "#/$defs/failure" } } }
+    }
+  ],
+  "$defs": {
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mediaId",
+        "byteLength",
+        "contentType",
+        "sha256",
+        "finalizedAt"
+      ],
+      "properties": {
+        "mediaId": { "type": "string", "format": "uuid" },
+        "byteLength": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 268435456
+        },
+        "contentType": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 127
+        },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "finalizedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "failure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "retry"],
+      "properties": {
+        "code": {
+          "enum": [
+            "storage_unavailable",
+            "hash_invalid",
+            "conflict",
+            "ambiguous",
+            "expired",
+            "abandoned",
+            "authorization_lost"
+          ]
+        },
+        "retry": { "enum": ["same_command", "later", "new_intent", "never"] }
+      }
+    }
+  }
+}

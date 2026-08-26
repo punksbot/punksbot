@@ -367,7 +367,7 @@ impl WorkspaceSession {
         Ok(acknowledgement)
     }
 
-    async fn require_capability(&self, capability: &str) -> Result<(), ClientFailure> {
+    pub(crate) async fn require_capability(&self, capability: &str) -> Result<(), ClientFailure> {
         let state = self.inner.state.lock().await;
         let available = state.compatibility.as_ref().is_some_and(|value| {
             value.compatible

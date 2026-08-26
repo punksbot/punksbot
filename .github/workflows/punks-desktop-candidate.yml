@@ -260,6 +260,13 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
+      - name: Download the exact staging proof for the installed leg
+        id: download_staging_proof_for_leg
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: punks-staging-deployment-proof-${{ inputs.source_sha }}
+          path: ${{ runner.temp }}/punks-staging-proof
+
       - name: Require clean source before dependency installation
         id: clean_source
         shell: bash
@@ -1039,6 +1046,78 @@ jobs:
               ;;
           esac
 
+      - name: Exercise the installed social loop and seal its evidence
+        id: exercise_installed_candidate
+        if: inputs.validation_scope == 'full-candidate'
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.PUNKS_CLOUDFLARE_API_TOKEN }}
+          PUNKS_PROMOTION_SESSION: ${{ secrets.PUNKS_PROMOTION_SESSION }}
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$PUNKS_PROMOTION_SESSION"
+          staging_proof="$RUNNER_TEMP/punks-staging-proof/staging-deployment-proof.json"
+          test -f "$staging_proof"
+          cargo build \
+            --locked \
+            --release \
+            --target "$TARGET" \
+            --manifest-path desktop/src-tauri/Cargo.toml \
+            --package punks-promotion-session
+          helper="desktop/src-tauri/target/$TARGET/release/punks-promotion-session"
+          if [[ "$PLATFORM" == "windows-x64" ]]; then helper="${helper}.exe"; fi
+          printf '%s' "$PUNKS_PROMOTION_SESSION" | "$helper"
+          cleanup_session() { "$helper" --destroy; }
+          trap cleanup_session EXIT
+
+          bundle="desktop/src-tauri/target/$TARGET/release/bundle"
+          case "$PLATFORM" in
+            macos-*)
+              installed_source="$(find "$bundle/macos" -maxdepth 1 -type f -name '*.app.tar.gz')"
+              signature_source="${installed_source}.sig"
+              suffix='.app.tar.gz'
+              ;;
+            linux-x64)
+              installed_source="$(find "$bundle/appimage" -maxdepth 1 -type f -name '*.AppImage')"
+              signature_source="${installed_source}.sig"
+              suffix='.AppImage'
+              ;;
+            windows-x64)
+              installed_source="$(find "$bundle/nsis" -maxdepth 1 -type f -name '*.exe')"
+              signature_source="${installed_source}.sig"
+              suffix='.exe'
+              ;;
+            *)
+              echo "Unsupported platform: $PLATFORM" >&2
+              exit 1
+              ;;
+          esac
+          installed_artifact="$RUNNER_TEMP/punks-desktop-${PLATFORM}-${SOURCE_SHA}${suffix}"
+          updater_signature="${installed_artifact}.sig"
+          cp "$installed_source" "$installed_artifact"
+          cp "$signature_source" "$updater_signature"
+          network_log="$RUNNER_TEMP/punks-network-${PLATFORM}.jsonl"
+          driver_transcript="$RUNNER_TEMP/punks-transcript-${PLATFORM}.json"
+          PUNKS_PROMOTION_NETWORK_LOG="$network_log" \
+            node scripts/candidate/exercise-installed-social-loop.mjs \
+              --platform "$PLATFORM" \
+              --source-sha "$SOURCE_SHA" \
+              --staging-deployment-proof "$staging_proof" \
+              --bundle "$bundle" \
+              --installed-artifact "$installed_artifact" \
+              --network-log "$network_log" \
+              --output "$driver_transcript"
+          node scripts/candidate/installed-app.mjs \
+            --platform "$PLATFORM" \
+            --source-sha "$SOURCE_SHA" \
+            --staging-deployment-proof "$staging_proof" \
+            --installed-artifact "$installed_artifact" \
+            --updater-signature "$updater_signature" \
+            --driver-transcript "$driver_transcript" \
+            --proof-output "$RUNNER_TEMP/punks-installed-proof-${PLATFORM}" \
+            --network-output "$RUNNER_TEMP/punks-installed-proof-${PLATFORM}/network-proof.json"
+
       - name: Stage one closed platform leg
         id: stage_leg
         shell: bash
@@ -1051,6 +1130,8 @@ jobs:
             --staging-deployment-id "$STAGING_DEPLOYMENT_ID" \
             --bundle "desktop/src-tauri/target/${TARGET}/release/bundle" \
             --native-proof "$RUNNER_TEMP/native-proof.json" \
+            --installed-proof "$RUNNER_TEMP/punks-installed-proof-${PLATFORM}" \
+            --network-proof "$RUNNER_TEMP/punks-installed-proof-${PLATFORM}/network-proof.json" \
             --output candidate-leg
 
       - name: Upload intermediate platform leg
@@ -1132,7 +1213,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
+      artifact-metadata: write
       contents: read
+      attestations: write
+      id-token: write
     env:
       SOURCE_SHA: ${{ inputs.source_sha }}
       STAGING_DEPLOYMENT_ID: ${{ inputs.staging_deployment_id }}
@@ -1177,6 +1261,84 @@ jobs:
             --release-tag "punks-staging-${SOURCE_SHA}" \
             --source-ref "$GITHUB_REF" \
             --signer-workflow "github.com/$GITHUB_REPOSITORY/.github/workflows/punks-desktop-candidate.yml"
+
+      - name: Attest the exact pre-dossier aggregate
+        id: attest_pre_dossier_candidate
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            candidate/release-assets/*
+            candidate/aggregate-manifest.json
+            candidate/staging-deployment-proof.json
+            candidate/promotion-evidence/**/*
+
+      - name: Verify the pre-dossier aggregate provenance
+        id: verify_pre_dossier_candidate
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ATTESTATION_BUNDLE: ${{ steps.attest_pre_dossier_candidate.outputs.bundle-path }}
+        run: |
+          set -euo pipefail
+          mkdir -p candidate/promotion-evidence/provenance-verification
+          while IFS= read -r -d '' subject; do
+            output="candidate/promotion-evidence/provenance-verification/$(printf '%s' "$subject" | sha256sum | cut -d ' ' -f 1).json"
+            gh attestation verify "$subject" \
+              --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "github.com/$GITHUB_REPOSITORY/.github/workflows/punks-desktop-candidate.yml" \
+              --source-digest "$SOURCE_SHA" \
+              --source-ref "$GITHUB_REF" \
+              --deny-self-hosted-runners \
+              --bundle "$ATTESTATION_BUNDLE" \
+              --format json > "$output"
+            test -s "$output"
+          done < <(find candidate/release-assets candidate/promotion-evidence \
+            -type f -print0; printf '%s\0' candidate/aggregate-manifest.json candidate/staging-deployment-proof.json)
+          cp "$ATTESTATION_BUNDLE" candidate/promotion-evidence/pre-dossier-provenance.sigstore.json
+
+      - name: Complete the content-addressed promotion evidence
+        id: complete_promotion_evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/candidate/complete-promotion-evidence.mjs \
+            --candidate candidate \
+            --source-sha "$SOURCE_SHA" \
+            --staging-deployment-id "$STAGING_DEPLOYMENT_ID" \
+            --promotion-profile cloudflare/promotion-profiles.json \
+            --staging-material cloudflare/staging.resources.json \
+            --release-graph docs/migration/release-graph.yaml \
+            --withdrawal-inventory docs/migration/withdrawal-inventory.yaml \
+            --goldens docs/migration/goldens-ledger.yaml \
+            --provenance-bundle candidate/promotion-evidence/pre-dossier-provenance.sigstore.json \
+            --output candidate/promotion-evidence/index.json
+
+      - name: Assemble the exact promotion dossier
+        id: assemble_promotion_dossier
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/candidate/promotion-dossier.mjs \
+            --racine-preuves candidate/promotion-evidence \
+            --index-preuves candidate/promotion-evidence/index.json \
+            --candidat-sha "$SOURCE_SHA" \
+            --promotion-profile cloudflare/promotion-profiles.json \
+            --staging-deployment-proof candidate/promotion-evidence/staging-deployment-proof.json \
+            --provenance-bundle candidate/promotion-evidence/pre-dossier-provenance.sigstore.json \
+            --repository "$GITHUB_REPOSITORY" \
+            --source-ref "$GITHUB_REF" \
+            --signer-workflow "github.com/$GITHUB_REPOSITORY/.github/workflows/punks-desktop-candidate.yml" \
+            --sortie candidate/promotion-dossier.json
+
+      - name: Validate the promotion dossier and emit its local pair
+        id: validate_promotion_dossier
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' candidate/ candidate-input/ >> .git/info/exclude
+          pnpm promotion:valider -- \
+            candidate/promotion-dossier.json \
+            --sortie candidate/promotion
 
       - name: Upload unattested aggregate for final attestation
         id: upload_aggregate
@@ -1324,3 +1486,114 @@ jobs:
           path: candidate
           if-no-files-found: error
           retention-days: 30
+
+  publish_promotion:
+    name: Publish immutable T1 proofs and activate the verified candidate
+    needs: aggregate
+    if: inputs.validation_scope == 'full-candidate'
+    environment: punks-staging-promotion
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: write
+    env:
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      PUNKS_R2_PRIMARY_DESTINATION: ${{ vars.PUNKS_R2_PRIMARY_DESTINATION }}
+      PUNKS_R2_RECOVERY_DESTINATION: ${{ vars.PUNKS_R2_RECOVERY_DESTINATION }}
+    steps:
+      - name: Checkout the immutable publisher source
+        id: checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Wait for and download the final attested candidate
+        id: download_final_candidate
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          artifact_name="punks-desktop-candidate-${SOURCE_SHA}"
+          found=false
+          for _attempt in $(seq 1 90); do
+            if gh api \
+              "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" \
+              --paginate \
+              --jq '.artifacts[] | select(.expired == false) | .name' \
+              | grep -Fx "$artifact_name" >/dev/null; then
+              found=true
+              break
+            fi
+            sleep 10
+          done
+          test "$found" = true
+          gh run download "$GITHUB_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "$artifact_name" \
+            --dir candidate
+          test -f candidate/promotion-dossier.json
+          test -f candidate/promotion/attestation-tranche-1.json
+          test -f candidate/promotion/recu-promotion-1.json
+
+      - name: Publish the immutable attestation and Receipt
+        id: publish_immutable_proofs
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PUNKS_R2_PRIMARY_API_TOKEN: ${{ secrets.PUNKS_R2_PRIMARY_API_TOKEN }}
+          PUNKS_R2_PRIMARY_ACCESS_KEY_ID: ${{ secrets.PUNKS_R2_PRIMARY_ACCESS_KEY_ID }}
+          PUNKS_R2_PRIMARY_SECRET_ACCESS_KEY: ${{ secrets.PUNKS_R2_PRIMARY_SECRET_ACCESS_KEY }}
+          PUNKS_R2_RECOVERY_API_TOKEN: ${{ secrets.PUNKS_R2_RECOVERY_API_TOKEN }}
+          PUNKS_R2_RECOVERY_ACCESS_KEY_ID: ${{ secrets.PUNKS_R2_RECOVERY_ACCESS_KEY_ID }}
+          PUNKS_R2_RECOVERY_SECRET_ACCESS_KEY: ${{ secrets.PUNKS_R2_RECOVERY_SECRET_ACCESS_KEY }}
+          PUNKS_RELEASE_APPROVERS_JSON: ${{ secrets.PUNKS_RELEASE_APPROVERS_JSON }}
+          PUNKS_RELEASE_APPROVERS_ANCHOR_SHA256: ${{ secrets.PUNKS_RELEASE_APPROVERS_ANCHOR_SHA256 }}
+          PUNKS_R2_DESTINATIONS_ANCHOR_SHA256: ${{ secrets.PUNKS_R2_DESTINATIONS_ANCHOR_SHA256 }}
+        run: |
+          set -euo pipefail
+          test -n "$PUNKS_R2_PRIMARY_DESTINATION"
+          test -n "$PUNKS_R2_RECOVERY_DESTINATION"
+          node scripts/promotion-publish.mjs \
+            --graphe docs/migration/release-graph.yaml \
+            --dossier candidate/promotion-dossier.json \
+            --attestation candidate/promotion/attestation-tranche-1.json \
+            --recu candidate/promotion/recu-promotion-1.json \
+            --depot "$GITHUB_REPOSITORY" \
+            --tag "punks-staging-${SOURCE_SHA}" \
+            --canal punks-desktop \
+            --r2-primaire "$PUNKS_R2_PRIMARY_DESTINATION" \
+            --r2-secondaire "$PUNKS_R2_RECOVERY_DESTINATION" \
+            --bootstrap-r2 \
+            --frontieres scripts/promotion-frontiers.mjs
+
+      - name: Activate the exact verified draft
+        id: activate_verified_draft
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          release_tag="punks-staging-${SOURCE_SHA}"
+          before="$RUNNER_TEMP/release-before.json"
+          gh release view "$release_tag" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json isDraft,isPrerelease,targetCommitish,tagName > "$before"
+          jq -e --arg sha "$SOURCE_SHA" --arg tag "$release_tag" '
+            .isDraft == true and
+            .isPrerelease == false and
+            .targetCommitish == $sha and
+            .tagName == $tag
+          ' "$before" >/dev/null
+          gh release edit "$release_tag" \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft=false \
+            --prerelease
+          gh release view "$release_tag" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json isDraft,isPrerelease,targetCommitish,tagName \
+            --jq ".isDraft == false and .isPrerelease == true and .targetCommitish == \"${SOURCE_SHA}\" and .tagName == \"${release_tag}\"" \
+            | grep -Fx true >/dev/null

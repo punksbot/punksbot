@@ -11,6 +11,10 @@ import { describe, expect, it } from "vitest";
 
 const ownerPunkId = "00000000-0000-8000-8000-000000000001";
 const secondaryOwnerPunkId = "00000000-0000-8000-8000-000000000002";
+const ownerAuthorization = {
+  sessionId: "11111111-1111-8111-8111-111111111111",
+  punkId: ownerPunkId,
+};
 
 function createWorkspaceCommand(commandId: string): CreateWorkspaceCommand {
   return {
@@ -84,24 +88,37 @@ describe("WorkspaceDO storage bounds", () => {
       ),
     ).resolves.toMatchObject({ ok: true });
     await expect(
-      reductionStub.execute({
-        contract: "workspace.member-set-role@1",
-        commandId: "af100000-0000-8000-8000-000000000003",
-        workspaceId: reductionWorkspaceId,
-        actor: { kind: "punk", punkId: ownerPunkId },
-        payload: { targetPunkId: secondaryOwnerPunkId, role: "guest" },
-      } satisfies SetWorkspaceMemberRoleCommand),
+      reductionStub.executeAuthorized(
+        {
+          contract: "workspace.member-set-role@1",
+          commandId: "af100000-0000-8000-8000-000000000003",
+          workspaceId: reductionWorkspaceId,
+          actor: { kind: "punk", punkId: ownerPunkId },
+          payload: {
+            targetPunkId: secondaryOwnerPunkId,
+            role: "guest",
+            expectedRevision: 1,
+          },
+        } satisfies SetWorkspaceMemberRoleCommand,
+        ownerAuthorization,
+      ),
     ).resolves.toMatchObject({ ok: true });
     await runInDurableObject(reductionStub, async (instance, state) => {
       await fillProjectionRows(reductionWorkspaceId, state);
       await expect(
-        instance.execute({
-          contract: "workspace.member-remove@1",
-          commandId: "af100000-0000-8000-8000-000000000004",
-          workspaceId: reductionWorkspaceId,
-          actor: { kind: "punk", punkId: ownerPunkId },
-          payload: { targetPunkId: secondaryOwnerPunkId },
-        } satisfies RemoveWorkspaceMemberCommand),
+        instance.executeAuthorized(
+          {
+            contract: "workspace.member-remove@1",
+            commandId: "af100000-0000-8000-8000-000000000004",
+            workspaceId: reductionWorkspaceId,
+            actor: { kind: "punk", punkId: ownerPunkId },
+            payload: {
+              targetPunkId: secondaryOwnerPunkId,
+              expectedRevision: 2,
+            },
+          } satisfies RemoveWorkspaceMemberCommand,
+          ownerAuthorization,
+        ),
       ).resolves.toMatchObject({ ok: true });
       expect(
         state.storage.sql
@@ -705,19 +722,35 @@ describe("WorkspaceDO storage bounds", () => {
         createWorkspaceCommand("a7000000-0000-8000-8000-000000000002"),
       ),
     ).resolves.toMatchObject({ ok: true });
-    const addSecondaryOwner: SetWorkspaceMemberRoleCommand = {
+    const admitSecondaryMember: SetWorkspaceMemberRoleCommand = {
       contract: "workspace.member-set-role@1",
       commandId: "a7000000-0000-8000-8000-000000000003",
       workspaceId,
       actor: { kind: "punk", punkId: ownerPunkId },
-      payload: { targetPunkId: secondaryOwnerPunkId, role: "owner" },
+      payload: {
+        targetPunkId: secondaryOwnerPunkId,
+        role: "member",
+        expectedRevision: 1,
+      },
     };
-    await expect(stub.execute(addSecondaryOwner)).resolves.toMatchObject({
-      ok: true,
-    });
+    await expect(
+      stub.executeAuthorized(admitSecondaryMember, ownerAuthorization),
+    ).resolves.toMatchObject({ ok: true });
+    const promoteSecondaryOwner: SetWorkspaceMemberRoleCommand = {
+      ...admitSecondaryMember,
+      commandId: "a7000000-0000-8000-8000-000000000008",
+      payload: {
+        targetPunkId: secondaryOwnerPunkId,
+        role: "owner",
+        expectedRevision: 2,
+      },
+    };
+    await expect(
+      stub.executeAuthorized(promoteSecondaryOwner, ownerAuthorization),
+    ).resolves.toMatchObject({ ok: true });
 
     const observed = await runInDurableObject(stub, async (instance, state) => {
-      for (let index = 2; index < 256; index += 1) {
+      for (let index = 3; index < 256; index += 1) {
         state.storage.sql.exec(
           `INSERT INTO command_results
             (command_id, payload_hash, command_json, response_json, committed_at)
@@ -730,28 +763,34 @@ describe("WorkspaceDO storage bounds", () => {
       const roleCommand = (
         commandId: string,
         role: "moderator" | "member" | "guest",
+        expectedRevision: number,
       ): SetWorkspaceMemberRoleCommand => ({
         contract: "workspace.member-set-role@1",
         commandId,
         workspaceId,
         actor: { kind: "punk", punkId: ownerPunkId },
-        payload: { targetPunkId: secondaryOwnerPunkId, role },
+        payload: { targetPunkId: secondaryOwnerPunkId, role, expectedRevision },
       });
       const reductions = [
-        roleCommand("a7000000-0000-8000-8000-000000000004", "moderator"),
-        roleCommand("a7000000-0000-8000-8000-000000000005", "member"),
-        roleCommand("a7000000-0000-8000-8000-000000000006", "guest"),
+        roleCommand("a7000000-0000-8000-8000-000000000004", "moderator", 3),
+        roleCommand("a7000000-0000-8000-8000-000000000005", "member", 4),
+        roleCommand("a7000000-0000-8000-8000-000000000006", "guest", 5),
         {
           contract: "workspace.member-remove@1",
           commandId: "a7000000-0000-8000-8000-000000000007",
           workspaceId,
           actor: { kind: "punk", punkId: ownerPunkId },
-          payload: { targetPunkId: secondaryOwnerPunkId },
+          payload: {
+            targetPunkId: secondaryOwnerPunkId,
+            expectedRevision: 6,
+          },
         } satisfies RemoveWorkspaceMemberCommand,
       ];
       const results = [];
       for (const reduction of reductions) {
-        results.push(await instance.execute(reduction));
+        results.push(
+          await instance.executeAuthorized(reduction, ownerAuthorization),
+        );
       }
       return {
         results,
@@ -773,7 +812,7 @@ describe("WorkspaceDO storage bounds", () => {
     expect(observed.results.every((result) => result.ok)).toBe(true);
     expect(observed.query).toMatchObject({
       ok: true,
-      state: { cursor: 6, members: [{ punkId: ownerPunkId, role: "owner" }] },
+      state: { cursor: 7, members: [{ punkId: ownerPunkId, role: "owner" }] },
     });
     expect(observed).toMatchObject({
       pending: 0,
@@ -792,13 +831,20 @@ describe("WorkspaceDO storage bounds", () => {
       ),
     ).resolves.toMatchObject({ ok: true });
     await expect(
-      stub.execute({
-        contract: "workspace.member-set-role@1",
-        commandId: "a8000000-0000-8000-8000-000000000003",
-        workspaceId,
-        actor: { kind: "punk", punkId: ownerPunkId },
-        payload: { targetPunkId: existingGuestPunkId, role: "guest" },
-      } satisfies SetWorkspaceMemberRoleCommand),
+      stub.executeAuthorized(
+        {
+          contract: "workspace.member-set-role@1",
+          commandId: "a8000000-0000-8000-8000-000000000003",
+          workspaceId,
+          actor: { kind: "punk", punkId: ownerPunkId },
+          payload: {
+            targetPunkId: existingGuestPunkId,
+            role: "guest",
+            expectedRevision: 1,
+          },
+        } satisfies SetWorkspaceMemberRoleCommand,
+        ownerAuthorization,
+      ),
     ).resolves.toMatchObject({ ok: true });
 
     const observed = await runInDurableObject(stub, async (instance, state) => {
@@ -812,20 +858,34 @@ describe("WorkspaceDO storage bounds", () => {
           "2026-08-21T00:00:00.000Z",
         );
       }
-      const add = await instance.execute({
-        contract: "workspace.member-set-role@1",
-        commandId: "a8000000-0000-8000-8000-000000000004",
-        workspaceId,
-        actor: { kind: "punk", punkId: ownerPunkId },
-        payload: { targetPunkId: newGuestPunkId, role: "guest" },
-      } satisfies SetWorkspaceMemberRoleCommand);
-      const promote = await instance.execute({
-        contract: "workspace.member-set-role@1",
-        commandId: "a8000000-0000-8000-8000-000000000005",
-        workspaceId,
-        actor: { kind: "punk", punkId: ownerPunkId },
-        payload: { targetPunkId: existingGuestPunkId, role: "member" },
-      } satisfies SetWorkspaceMemberRoleCommand);
+      const add = await instance.executeAuthorized(
+        {
+          contract: "workspace.member-set-role@1",
+          commandId: "a8000000-0000-8000-8000-000000000004",
+          workspaceId,
+          actor: { kind: "punk", punkId: ownerPunkId },
+          payload: {
+            targetPunkId: newGuestPunkId,
+            role: "guest",
+            expectedRevision: 2,
+          },
+        } satisfies SetWorkspaceMemberRoleCommand,
+        ownerAuthorization,
+      );
+      const promote = await instance.executeAuthorized(
+        {
+          contract: "workspace.member-set-role@1",
+          commandId: "a8000000-0000-8000-8000-000000000005",
+          workspaceId,
+          actor: { kind: "punk", punkId: ownerPunkId },
+          payload: {
+            targetPunkId: existingGuestPunkId,
+            role: "member",
+            expectedRevision: 2,
+          },
+        } satisfies SetWorkspaceMemberRoleCommand,
+        ownerAuthorization,
+      );
       const rename = await instance.execute({
         contract: "workspace.rename@1",
         commandId: "a8000000-0000-8000-8000-000000000006",
@@ -877,13 +937,20 @@ describe("WorkspaceDO storage bounds", () => {
       ),
     ).resolves.toMatchObject({ ok: true });
     await expect(
-      stub.execute({
-        contract: "workspace.member-set-role@1",
-        commandId: "a9000000-0000-8000-8000-000000000003",
-        workspaceId,
-        actor: { kind: "punk", punkId: ownerPunkId },
-        payload: { targetPunkId: guestPunkId, role: "guest" },
-      } satisfies SetWorkspaceMemberRoleCommand),
+      stub.executeAuthorized(
+        {
+          contract: "workspace.member-set-role@1",
+          commandId: "a9000000-0000-8000-8000-000000000003",
+          workspaceId,
+          actor: { kind: "punk", punkId: ownerPunkId },
+          payload: {
+            targetPunkId: guestPunkId,
+            role: "guest",
+            expectedRevision: 1,
+          },
+        } satisfies SetWorkspaceMemberRoleCommand,
+        ownerAuthorization,
+      ),
     ).resolves.toMatchObject({ ok: true });
 
     const observed = await runInDurableObject(stub, async (instance, state) => {
@@ -900,13 +967,16 @@ describe("WorkspaceDO storage bounds", () => {
         "0".repeat(64),
         "2026-08-21T00:00:00.000Z",
       );
-      const remove = await instance.execute({
-        contract: "workspace.member-remove@1",
-        commandId: "a9000000-0000-8000-8000-000000000004",
-        workspaceId,
-        actor: { kind: "punk", punkId: ownerPunkId },
-        payload: { targetPunkId: guestPunkId },
-      } satisfies RemoveWorkspaceMemberCommand);
+      const remove = await instance.executeAuthorized(
+        {
+          contract: "workspace.member-remove@1",
+          commandId: "a9000000-0000-8000-8000-000000000004",
+          workspaceId,
+          actor: { kind: "punk", punkId: ownerPunkId },
+          payload: { targetPunkId: guestPunkId, expectedRevision: 2 },
+        } satisfies RemoveWorkspaceMemberCommand,
+        ownerAuthorization,
+      );
       const rename = await instance.execute({
         contract: "workspace.rename@1",
         commandId: "a9000000-0000-8000-8000-000000000005",

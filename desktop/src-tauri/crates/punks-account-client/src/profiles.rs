@@ -2,10 +2,11 @@ use std::collections::HashSet;
 
 use chrono::DateTime;
 use reqwest::Method;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::{json, Value};
 use unicode_normalization::UnicodeNormalization;
 
+use crate::workspace_governance::require_identity_governance;
 use crate::{
     contracts_profile, decode, validate_uuid, ClientFailure, FailureKind, PunksAccountClient,
     RequestSafety, WorkspaceSession,
@@ -14,14 +15,9 @@ use crate::{
 /// Full self-only Compte Punks profile returned by `punk.get@1`.
 pub type PunkProfile = contracts_profile::Punk;
 
-/// Allowlisted presentation sidecar visible to another authorized Punk.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct PunkPublicSummary {
-    pub punk_id: String,
-    pub display_name: String,
-    pub avatar_url: Option<String>,
-}
+/// Generated allowlisted presentation sidecar visible to an authorized Punk.
+pub type PunkPublicSummary = contracts_profile::PunkSummaryBatchResponseSummary;
+pub type PunkSummaryPage = contracts_profile::PunkSummaryBatchResponse;
 
 /// Closed private-search intent supported by the Workspace session.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -30,13 +26,8 @@ pub enum PunkSearchInput {
     PunkId(String),
 }
 
-/// One bounded page without total counts or matching metadata.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct PunkSearchPage {
-    pub items: Vec<PunkPublicSummary>,
-    pub next_cursor: Option<String>,
-}
+/// Generated bounded response without totals or candidate metadata.
+pub type PunkSearchPage = contracts_profile::PunkSearchResponse;
 
 fn canonical_display_name(value: &str) -> Result<String, ClientFailure> {
     let canonical = value.trim().nfc().collect::<String>();
@@ -80,7 +71,10 @@ fn lowercase_hex_digest(value: &str) -> bool {
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
-fn valid_identity(value: &Value) -> bool {
+fn valid_identity(value: &impl Serialize) -> bool {
+    let Ok(value) = serde_json::to_value(value) else {
+        return false;
+    };
     let Some(identity) = value.as_object() else {
         return false;
     };
@@ -142,14 +136,18 @@ fn validate_profile(profile: &PunkProfile) -> Result<(), ClientFailure> {
     Ok(())
 }
 
-fn validate_summary(summary: PunkPublicSummary) -> Result<PunkPublicSummary, ClientFailure> {
-    validate_uuid(&summary.punk_id, "punkId")?;
-    if canonical_display_name(&summary.display_name)? != summary.display_name
-        || canonical_avatar_url(summary.avatar_url.as_deref())? != summary.avatar_url
+fn validate_summary(
+    punk_id: &str,
+    display_name: &str,
+    avatar_url: Option<&str>,
+) -> Result<(), ClientFailure> {
+    validate_uuid(punk_id, "punkId")?;
+    if canonical_display_name(display_name)? != display_name
+        || canonical_avatar_url(avatar_url)? != avatar_url.map(str::to_owned)
     {
         return Err(ClientFailure::contract("punk.summary@1"));
     }
-    Ok(summary)
+    Ok(())
 }
 
 fn canonical_prefix(value: &str) -> Result<String, ClientFailure> {
@@ -206,6 +204,7 @@ fn validate_search_cursor(value: &str) -> Result<(), ClientFailure> {
 impl PunksAccountClient {
     /// Reads the full profile only for the currently authenticated Punk.
     pub async fn get_punk_profile(&self) -> Result<PunkProfile, ClientFailure> {
+        require_identity_governance(self).await?;
         self.require_compatible().await?;
         let response = self
             .inner
@@ -229,6 +228,7 @@ impl PunksAccountClient {
         display_name: &str,
         avatar_url: Option<&str>,
     ) -> Result<PunkProfile, ClientFailure> {
+        require_identity_governance(self).await?;
         self.require_compatible().await?;
         if expected_revision == 0 {
             return Err(ClientFailure::contract("punk.update@1"));
@@ -275,7 +275,11 @@ impl WorkspaceSession {
     pub async fn get_punk_summaries(
         &self,
         punk_ids: &[String],
-    ) -> Result<Vec<PunkPublicSummary>, ClientFailure> {
+    ) -> Result<PunkSummaryPage, ClientFailure> {
+        require_identity_governance(&PunksAccountClient {
+            inner: self.inner.clone(),
+        })
+        .await?;
         if punk_ids.is_empty() || punk_ids.len() > 100 {
             return Err(ClientFailure::contract("punk.summary-batch@1"));
         }
@@ -303,28 +307,24 @@ impl WorkspaceSession {
             )
             .await?;
         self.assert_current().await?;
-        let page: contracts_profile::PunkSummaryBatchResponse =
-            decode("punk.summary-batch-response@1", response)?;
+        let page: PunkSummaryPage = decode("punk.summary-batch-response@1", response)?;
         if page.workspace_id != self.lease.workspace_id || page.items.len() > 100 {
             return Err(ClientFailure::contract("punk.summary-batch-response@1"));
         }
         let mut returned = HashSet::with_capacity(page.items.len());
-        page.items
-            .into_iter()
-            .map(|summary| {
-                let summary = validate_summary(PunkPublicSummary {
-                    punk_id: summary.punk_id,
-                    display_name: summary.display_name,
-                    avatar_url: summary.avatar_url,
-                })?;
-                if !requested.contains(summary.punk_id.as_str())
-                    || !returned.insert(summary.punk_id.clone())
-                {
-                    return Err(ClientFailure::contract("punk.summary-batch-response@1"));
-                }
-                Ok(summary)
-            })
-            .collect()
+        for summary in &page.items {
+            validate_summary(
+                &summary.punk_id,
+                &summary.display_name,
+                summary.avatar_url.as_deref(),
+            )?;
+            if !requested.contains(summary.punk_id.as_str())
+                || !returned.insert(summary.punk_id.clone())
+            {
+                return Err(ClientFailure::contract("punk.summary-batch-response@1"));
+            }
+        }
+        Ok(page)
     }
 
     /// Performs one bounded private search without exposing candidate metadata.
@@ -334,6 +334,10 @@ impl WorkspaceSession {
         limit: u8,
         cursor: Option<&str>,
     ) -> Result<PunkSearchPage, ClientFailure> {
+        require_identity_governance(&PunksAccountClient {
+            inner: self.inner.clone(),
+        })
+        .await?;
         if limit == 0 || limit > 20 {
             return Err(ClientFailure::contract("punk.search@1 limit"));
         }
@@ -372,8 +376,7 @@ impl WorkspaceSession {
             )
             .await?;
         self.assert_current().await?;
-        let page: contracts_profile::PunkSearchResponse =
-            decode("punk.search-response@1", response)?;
+        let page: PunkSearchPage = decode("punk.search-response@1", response)?;
         if page.workspace_id != self.lease.workspace_id || page.items.len() > usize::from(limit) {
             return Err(ClientFailure::contract("punk.search-response@1"));
         }
@@ -386,30 +389,22 @@ impl WorkspaceSession {
             }
         }
         let mut returned = HashSet::with_capacity(page.items.len());
-        let items = page
-            .items
-            .into_iter()
-            .map(|summary| {
-                let summary = validate_summary(PunkPublicSummary {
-                    punk_id: summary.punk_id,
-                    display_name: summary.display_name,
-                    avatar_url: summary.avatar_url,
-                })?;
-                if !returned.insert(summary.punk_id.clone())
-                    || prefix.as_ref().is_some_and(|prefix| {
-                        canonical_search_key(&summary.display_name)
-                            .is_ok_and(|key| !key.starts_with(prefix))
-                    })
-                {
-                    return Err(ClientFailure::contract("punk.search-response@1"));
-                }
-                Ok(summary)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        for summary in &page.items {
+            validate_summary(
+                &summary.punk_id,
+                &summary.display_name,
+                summary.avatar_url.as_deref(),
+            )?;
+            if !returned.insert(summary.punk_id.clone())
+                || prefix.as_ref().is_some_and(|prefix| {
+                    canonical_search_key(&summary.display_name)
+                        .is_ok_and(|key| !key.starts_with(prefix))
+                })
+            {
+                return Err(ClientFailure::contract("punk.search-response@1"));
+            }
+        }
         self.assert_current().await?;
-        Ok(PunkSearchPage {
-            items,
-            next_cursor: page.next_cursor,
-        })
+        Ok(page)
     }
 }

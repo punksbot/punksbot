@@ -162,6 +162,7 @@ export async function emitInstalledAppEvidence(
     signature,
     transcript,
     output,
+    networkOutput = join(resolve(output), "network-proof.json"),
   },
   { remoteBoundary } = {},
 ) {
@@ -203,6 +204,10 @@ export async function emitInstalledAppEvidence(
   }
   const { stories, accessibility } = transcriptValide;
   const outputPath = resolve(output);
+  const networkOutputPath = resolve(networkOutput);
+  if (networkOutputPath !== join(outputPath, "network-proof.json")) {
+    fail("network proof must be written inside the newly owned evidence root");
+  }
   const transcriptDigest = sha256(parsed.content);
   const observation = await observeStagingDeployment(
     {
@@ -233,6 +238,21 @@ export async function emitInstalledAppEvidence(
   }
   mkdirSync(join(outputPath, "sha256"), { mode: 0o700 });
   const common = { platform, candidateSha, stagingDeploymentId };
+  const networkProof = {
+    schema: "punks.installed-network-proof.v1",
+    platform,
+    candidateSha,
+    stagingDeploymentId,
+    transcriptSha256: transcriptDigest,
+    network: parsed.transcript.network,
+  };
+  const networkProofContent = Buffer.from(
+    `${JSON.stringify(networkProof, null, 2)}\n`,
+  );
+  writeFileSync(networkOutputPath, networkProofContent, {
+    flag: "wx",
+    mode: 0o600,
+  });
   const artifactSubject = writeSubject(
     outputPath,
     artifactFile.content,
@@ -386,7 +406,11 @@ export async function emitInstalledAppEvidence(
     `${JSON.stringify({ schema: "punks.promotion-evidence-index.v1", preuves: references }, null, 2)}\n`,
     { flag: "wx", mode: 0o600 },
   );
-  return { references, transcriptSha256: transcriptDigest };
+  return {
+    references,
+    transcriptSha256: transcriptDigest,
+    networkProofSha256: sha256(networkProofContent),
+  };
 }
 
 function options(argv) {
@@ -398,6 +422,7 @@ function options(argv) {
     "--updater-signature",
     "--driver-transcript",
     "--proof-output",
+    "--network-output",
   ]);
   const result = new Map();
   for (let index = 0; index < argv.length; index += 2) {
@@ -432,6 +457,7 @@ export async function run(argv = process.argv.slice(2)) {
     signature: required("--updater-signature"),
     transcript: required("--driver-transcript"),
     output: required("--proof-output"),
+    networkOutput: required("--network-output"),
   });
 }
 

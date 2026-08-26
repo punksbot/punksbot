@@ -114,6 +114,12 @@ export {
   type DirectoryCursorScope,
 } from "./directory-cursor";
 export {
+  decodeWorkspaceGovernanceCursor,
+  encodeWorkspaceGovernanceCursor,
+  type WorkspaceGovernanceCursor,
+  type WorkspaceGovernanceCursorScope,
+} from "./workspace-governance-cursor";
+export {
   encodeMembershipProjectionPayload,
   MAX_MEMBERSHIP_DELTA_CHUNKS,
   MAX_MEMBERSHIP_DELTAS_PER_CHUNK,
@@ -254,6 +260,16 @@ export {
   type MessageHistoryCursorScope,
 } from "./message-history-cursor";
 export {
+  expectedMediaUploadPartSize,
+  mediaUploadGrantClaims,
+  MEDIA_UPLOAD_GRANT_TTL_MS,
+  MEDIA_UPLOAD_MAX_BYTES,
+  MEDIA_UPLOAD_OPERATION_LEASE_MS,
+  MEDIA_UPLOAD_PART_SIZE,
+  prepareMediaUploadIntent,
+  type PreparedMediaUploadIntent,
+} from "./media-upload";
+export {
   prepareBotInstallationJournalSegment,
   prepareBotJournalSegment,
   prepareJournalSegment,
@@ -281,12 +297,16 @@ export {
   decideCreateWorkspaceV2,
   decideClaimWorkspaceInvitation,
   decideClaimWorkspaceInvitationV2,
+  decideLeaveWorkspace,
+  decideLeaveWorkspaceV2,
   decideRemoveWorkspaceMember,
   decideRemoveWorkspaceMemberV2,
   decideRenameWorkspace,
   decideRenameWorkspaceV2,
   decideSetWorkspaceMemberRole,
   decideSetWorkspaceMemberRoleV2,
+  decideTransferWorkspaceOwnership,
+  decideTransferWorkspaceOwnershipV2,
   PUNKS_EVENT_KINDS,
   WorkspaceDomainError,
   type WorkspaceDecision,

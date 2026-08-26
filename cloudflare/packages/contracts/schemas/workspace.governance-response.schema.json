@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/workspace.governance-response@1",
+  "title": "WorkspaceGovernanceResponse",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "workspace", "members", "nextCursor"],
+  "properties": {
+    "contract": { "const": "workspace.governance-response@1" },
+    "workspace": {
+      "$ref": "schemas/workspace.governance-view.schema.json"
+    },
+    "members": {
+      "type": "array",
+      "maxItems": 100,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/member" }
+    },
+    "nextCursor": {
+      "oneOf": [
+        { "type": "string", "pattern": "^[A-Za-z0-9._~-]{1,1024}$" },
+        { "type": "null" }
+      ]
+    }
+  },
+  "$defs": {
+    "member": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["punkId", "role"],
+      "properties": {
+        "punkId": { "type": "string", "format": "uuid" },
+        "role": { "enum": ["owner", "moderator", "member", "guest"] }
+      }
+    }
+  }
+}

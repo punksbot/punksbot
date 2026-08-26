@@ -61,7 +61,7 @@ async function addWorkspaceMember(
     commandId,
     workspaceId,
     actor: { kind: "punk", punkId: ownerPunkId },
-    payload: { targetPunkId, role },
+    payload: { targetPunkId, role, expectedRevision: 1 },
   };
   return SELF.fetch(
     `https://punks.bot/api/v1/workspaces/${workspaceId}/members/${targetPunkId}`,
@@ -389,7 +389,11 @@ describe("Punks Workspace API", () => {
       commandId: "fc33ed62-27ec-4e0b-bb46-8904faf226d3",
       workspaceId,
       actor: { kind: "punk", punkId: ownerPunkId },
-      payload: { targetPunkId: otherPunkId, role: "member" },
+      payload: {
+        targetPunkId: otherPunkId,
+        role: "member",
+        expectedRevision: 1,
+      },
     };
     const memberUrl = `https://punks.bot/api/v1/workspaces/${workspaceId}/members/${otherPunkId}`;
     const put = (
@@ -410,10 +414,11 @@ describe("Punks Workspace API", () => {
     expect(added.status).toBe(200);
     await expect(added.json()).resolves.toMatchObject({
       workspace: {
-        members: expect.arrayContaining([
-          { punkId: otherPunkId, role: "member" },
-        ]),
+        contract: "workspace.governance-view@1",
+        memberCount: 2,
+        revision: 2,
       },
+      memberDeltas: [{ punkId: otherPunkId, present: true, role: "member" }],
       replayed: false,
     });
     const replay = await put(setRole);
@@ -430,7 +435,11 @@ describe("Punks Workspace API", () => {
       {
         ...setRole,
         commandId: "94525c2f-4b18-4dec-8c3d-26a822e7cbaa",
-        payload: { targetPunkId: otherPunkId, role: "moderator" },
+        payload: {
+          targetPunkId: otherPunkId,
+          role: "moderator",
+          expectedRevision: 2,
+        },
       },
       "session-other",
     );
@@ -441,7 +450,7 @@ describe("Punks Workspace API", () => {
       commandId: "09e49917-f18a-417e-b3d4-175b3d34ed62",
       workspaceId,
       actor: { kind: "punk", punkId: ownerPunkId },
-      payload: { targetPunkId: otherPunkId },
+      payload: { targetPunkId: otherPunkId, expectedRevision: 2 },
     } as const;
     const removed = await SELF.fetch(memberUrl, {
       method: "DELETE",
@@ -477,7 +486,11 @@ describe("Punks Workspace API", () => {
       commandId: "9f9accd8-bb81-42bb-a3a1-a0158536947f",
       workspaceId,
       actor: { kind: "punk", punkId: ownerPunkId },
-      payload: { targetPunkId: missingPunkId, role: "guest" },
+      payload: {
+        targetPunkId: missingPunkId,
+        role: "guest",
+        expectedRevision: 1,
+      },
     };
     const response = await SELF.fetch(
       `https://punks.bot/api/v1/workspaces/${workspaceId}/members/${missingPunkId}`,

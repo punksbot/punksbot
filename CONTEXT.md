@@ -148,6 +148,28 @@ _À éviter_ : jeton partagé de Workspace, autorisation dérivée de la Connexi
 Événement attesté qui conserve la preuve minimale d’une suppression après destruction de la clé donnant accès au contenu chiffré concerné.
 _À éviter_ : soft delete, réécriture du journal
 
+**Présence** :
+Signal décoratif et éphémère indiquant l’activité courante d’un Punk dans un
+Workspace ; elle peut être perdue, retardée ou omise et ne prouve jamais une
+identité, un accès, un rôle ou une action.
+_À éviter_ : statut d’autorité, historique de connexion, preuve d’activité
+
+**Bail de Présence** :
+Coordonnée courte et renouvelable d’une Présence courante, liée au Punk, au
+Workspace, à l’appareil et à la génération ; son expiration signifie
+`offline` et détruit Statut et Signaux de frappe associés.
+_À éviter_ : Session de Compte Punks, abonnement durable, événement historique
+
+**Statut de Présence** :
+Courte chaîne facultative portée uniquement par le Bail de Présence vivant,
+sans historique, recherche, indexation ni valeur d’autorité.
+_À éviter_ : profil du Punk, message de statut persistant
+
+**Signal de frappe** :
+Indication éphémère et auto-expirante qu’un Punk saisit dans une Conversation
+qu’il peut actuellement lire ; sa perte ou son omission est normale.
+_À éviter_ : accusé de lecture, événement de Message, preuve de participation
+
 **Huddle** :
 Session audio temps réel tenue dans un Workspace entre des Punks et, lorsque leurs capacités le permettent, des Bots.
 _À éviter_ : salon vocal, appel audio
@@ -211,6 +233,18 @@ _À éviter_ : type mutable, champs anticipés, extension générique
 **Message** :
 Contenu publié par un Punk ou une Installation de Bot autorisée dans une Conversation ; ses éditions, rétractions, restaurations et son éventuel Marqueur d’effacement s’ajoutent au journal sans réécrire l’historique.
 _À éviter_ : événement brut, post Nostr
+
+**Intention d’upload média** :
+Engagement immuable et expirant d’un Punk dans un Workspace à téléverser exactement un contenu lié à un purpose, une taille, un type déclaré et une empreinte déterminés ; elle n’est ni un Média accepté ni une référence de Message.
+_À éviter_ : upload multipart, pièce jointe, média accepté
+
+**Grant d’upload média** :
+Autorisation courte et minimale issue d’une Intention d’upload média, utilisable seulement pour les opérations de cette intention sans exposer de credential R2 durable.
+_À éviter_ : Session de Compte Punks, clé R2, URL présignée durable
+
+**Objet candidat média** :
+Contenu dont la taille, le type déclaré et l’empreinte ont été vérifiés selon son Intention d’upload média, mais qui reste en quarantaine et n’est encore ni livrable ni attachable.
+_À éviter_ : Média accepté, pièce jointe, variante livrable
 
 **Réaction** :
 Présence autoritaire et idempotente, possédée par la Conversation, d’un Punk ou d’une Installation de Bot sur la coordonnée unique formée par un Message et une valeur canonique. Un Punk peut l’ajouter, la retirer ou la basculer ; une Installation de Bot exige une capacité explicite et reste refusée par défaut. La rétraction du Message la masque temporairement, sa restauration peut la rendre de nouveau visible et son effacement définitif la masque irréversiblement, sans exposer de roster non borné.

@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/media-upload.grant@1",
+  "title": "MediaUploadGrant",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "status", "credential", "endpoints", "replayed"],
+  "properties": {
+    "contract": { "const": "media-upload.grant@1" },
+    "status": { "$ref": "schemas/media-upload.status.schema.json" },
+    "credential": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scheme", "token"],
+      "properties": {
+        "scheme": { "const": "PunksUpload" },
+        "token": {
+          "type": "string",
+          "minLength": 60,
+          "maxLength": 80,
+          "pattern": "^mug1\\.[0-9]{13}\\.[A-Za-z0-9_-]{43}$"
+        }
+      }
+    },
+    "endpoints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "partUrlTemplate",
+        "finalizeUrl",
+        "statusUrl",
+        "abandonUrl"
+      ],
+      "properties": {
+        "partUrlTemplate": {
+          "type": "string",
+          "maxLength": 256,
+          "pattern": "^/api/v1/workspaces/[0-9a-f-]{36}/media-uploads/[0-9a-f-]{36}/parts/\\{partNumber\\}$"
+        },
+        "finalizeUrl": {
+          "type": "string",
+          "maxLength": 256,
+          "pattern": "^/api/v1/workspaces/[0-9a-f-]{36}/media-uploads/[0-9a-f-]{36}/finalize$"
+        },
+        "statusUrl": {
+          "type": "string",
+          "maxLength": 256,
+          "pattern": "^/api/v1/workspaces/[0-9a-f-]{36}/media-uploads/[0-9a-f-]{36}$"
+        },
+        "abandonUrl": {
+          "type": "string",
+          "maxLength": 256,
+          "pattern": "^/api/v1/workspaces/[0-9a-f-]{36}/media-uploads/[0-9a-f-]{36}$"
+        }
+      }
+    },
+    "replayed": { "type": "boolean" }
+  }
+}

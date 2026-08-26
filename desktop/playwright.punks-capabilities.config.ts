@@ -7,6 +7,7 @@ export default defineConfig({
   testDir: "./tests/e2e",
   testMatch: [
     "**/capability-masking.spec.ts",
+    "**/conversation-search.spec.ts",
     "**/punk-profile-search.spec.ts",
   ],
   timeout: 30_000,
@@ -22,7 +23,7 @@ export default defineConfig({
   webServer: {
     command: `pnpm exec vite preview --host 127.0.0.1 --port ${port} --strictPort`,
     cwd: ".",
-    reuseExistingServer: false,
+    reuseExistingServer: !process.env.CI,
     url: baseURL,
   },
 });

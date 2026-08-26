@@ -98,14 +98,18 @@ async function setOtherMember(
           commandId,
           workspaceId,
           actor: { kind: "punk", punkId: ownerPunkId },
-          payload: { targetPunkId: otherPunkId, role: "member" },
+          payload: {
+            targetPunkId: otherPunkId,
+            role: "member",
+            expectedRevision: 1,
+          },
         }
       : {
           contract: "workspace.member-remove@1",
           commandId,
           workspaceId,
           actor: { kind: "punk", punkId: ownerPunkId },
-          payload: { targetPunkId: otherPunkId },
+          payload: { targetPunkId: otherPunkId, expectedRevision: 2 },
         };
   const response = await SELF.fetch(
     `https://punks.bot/api/v1/workspaces/${workspaceId}/members/${otherPunkId}`,

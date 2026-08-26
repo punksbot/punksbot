@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/presence.typing.patch@1",
+  "title": "PresenceTypingPatch",
+  "$comment": "Cursor-free ephemeral Conversation patch. A client deduplicates by Punk, leaseGeneration and sequence and removes active typing at expiresAt without requesting replay.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "workspaceId",
+    "conversationId",
+    "punkId",
+    "active",
+    "leaseGeneration",
+    "sequence",
+    "expiresAt"
+  ],
+  "properties": {
+    "workspaceId": { "type": "string", "format": "uuid" },
+    "conversationId": { "type": "string", "format": "uuid" },
+    "punkId": { "type": "string", "format": "uuid" },
+    "active": { "type": "boolean" },
+    "leaseGeneration": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "expiresAt": {
+      "anyOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "active": { "const": true } },
+        "required": ["active"]
+      },
+      "then": {
+        "properties": {
+          "expiresAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "else": { "properties": { "expiresAt": { "type": "null" } } }
+    }
+  ]
+}

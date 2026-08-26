@@ -43,6 +43,7 @@ test("uploads only the minimum secret set to each Worker", () => {
     [
       "ATTESTATION_PUBLIC_KEYS_JSON",
       "DIRECTORY_CURSOR_KEY",
+      "MEDIA_UPLOAD_GRANT_KEY",
       "MESSAGE_HISTORY_CURSOR_KEY",
       "MESSAGE_SEARCH_CURSOR_KEY",
       "MESSAGE_SEARCH_MASTER_KEY",

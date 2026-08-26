@@ -5,15 +5,17 @@ type: "created"
 } | {
 type: "renamed"
 previousSlug: string
-} | {
-type: "member-upserted"
-targetPunkId: string
-previousRole: NullableWorkspaceRole
-role: WorkspaceRole
-} | {
+} | MemberUpsertedTransition | {
 type: "member-removed"
 targetPunkId: string
 previousRole: WorkspaceRole
+} | {
+type: "ownership-transferred"
+/**
+ * @minItems 2
+ * @maxItems 2
+ */
+memberTransitions: [MemberUpsertedTransition, MemberUpsertedTransition]
 })
 export type NullableWorkspaceRole = (WorkspaceRole | null)
 export type WorkspaceRole = ("owner" | "moderator" | "member" | "guest")
@@ -36,6 +38,12 @@ revision: number
 cursor: number
 createdAt: string
 updatedAt: string
+}
+export interface MemberUpsertedTransition {
+type: "member-upserted"
+targetPunkId: string
+previousRole: NullableWorkspaceRole
+role: WorkspaceRole
 }
 export interface MembershipCommitment {
 algorithm: "sha256-canonical-json"

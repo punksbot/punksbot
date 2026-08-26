@@ -33,7 +33,10 @@ mod failure;
 mod follow;
 mod follow_connection;
 mod message_mutations;
+mod message_search;
 mod native_auth;
+mod presence;
+mod presence_connection;
 mod profiles;
 mod promotion_audit;
 mod semantic_trace;
@@ -51,7 +54,18 @@ pub use follow::{
 };
 pub use follow_connection::{FollowCancellation, FollowConnection, FollowDelivery};
 pub use message_mutations::MessageReplyTarget;
-pub use profiles::{PunkProfile, PunkPublicSummary, PunkSearchInput, PunkSearchPage};
+pub use message_search::{
+    MessageSearchCompleteness, MessageSearchPage, MessageSearchPartialReason,
+};
+pub use presence::{
+    reduce_presence_frame, PresenceAvailability, PresenceDegradedReason, PresenceDelivery,
+    PresenceEffect, PresenceReduction, PresenceServerFrame, PresenceState, PresenceTypingPatch,
+    PresenceView,
+};
+pub use presence_connection::{PresenceCancellation, PresenceConnection};
+pub use profiles::{
+    PunkProfile, PunkPublicSummary, PunkSearchInput, PunkSearchPage, PunkSummaryPage,
+};
 pub use semantic_trace::{
     normalize_semantic_trace, run_semantic_scenario, SemanticEvent, SemanticObservation,
     SemanticTrace,
@@ -62,8 +76,9 @@ use transport::{decode, HttpTransport, RequestSafety, Transport};
 pub use validation::{validate_navigation_url, PunksNavigationTarget};
 pub use workspace_governance::{
     ClaimWorkspaceInvitationResult, CreateWorkspaceInvitationResult,
-    RevokeWorkspaceInvitationResult, WorkspaceGovernanceView, WorkspaceInvitationRole,
-    WorkspaceInvitationView, WorkspaceMembershipMutationResult, WorkspaceRole,
+    RevokeWorkspaceInvitationResult, WorkspaceGovernanceMetadata, WorkspaceGovernancePage,
+    WorkspaceInvitationRole, WorkspaceInvitationView, WorkspaceMembershipLifecycleResult,
+    WorkspaceMembershipMutationResult, WorkspaceRole,
 };
 
 /// Build distribution used by the Compatibility handshake.
@@ -619,6 +634,7 @@ impl PunksAccountClient {
         Ok(WorkspaceSession {
             inner: Arc::clone(&self.inner),
             lease,
+            device_id: uuid::Uuid::new_v4().to_string(),
             cancellation,
             operations,
         })
@@ -648,6 +664,7 @@ impl PunksAccountClient {
 pub struct WorkspaceSession {
     inner: Arc<AccountInner>,
     lease: WorkspaceLease,
+    device_id: String,
     cancellation: CancellationToken,
     operations: Arc<RwLock<()>>,
 }
@@ -671,6 +688,36 @@ impl WorkspaceSession {
         };
         if let Some(active_operations) = active_operations {
             let _closed = active_operations.write().await;
+        }
+    }
+
+    async fn invalidate_departed_workspace(&self) {
+        self.cancellation.cancel();
+        let active_operations = {
+            let mut state = self.inner.state.lock().await;
+            state.workspaces_by_id.remove(&self.lease.workspace_id);
+            state
+                .workspace_ids_by_slug
+                .retain(|_, workspace_id| workspace_id != &self.lease.workspace_id);
+            if state.active_lease.as_ref() == Some(&self.lease) {
+                PunksAccountClient::invalidate_workspace_state(&mut state)
+            } else {
+                None
+            }
+        };
+        if let Some(active_operations) = active_operations {
+            let _closed = active_operations.write().await;
+        }
+    }
+
+    async fn record_membership_role(&self, role: &str, revision: u64) {
+        let mut state = self.inner.state.lock().await;
+        if state.active_lease.as_ref() != Some(&self.lease) {
+            return;
+        }
+        if let Some(workspace) = state.workspaces_by_id.get_mut(&self.lease.workspace_id) {
+            workspace.role = role.to_owned();
+            workspace.revision = revision;
         }
     }
 

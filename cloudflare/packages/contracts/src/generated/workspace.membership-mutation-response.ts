@@ -2,28 +2,35 @@
 
 export interface WorkspaceMembershipMutationResponse {
 contract: "workspace.membership-mutation-response@1"
-workspace: Workspace
+workspace: WorkspaceGovernanceView
+/**
+ * @minItems 1
+ * @maxItems 2
+ */
+memberDeltas: [(PresentWorkspaceMemberDelta | RemovedWorkspaceMemberDelta)]|[(PresentWorkspaceMemberDelta | RemovedWorkspaceMemberDelta), (PresentWorkspaceMemberDelta | RemovedWorkspaceMemberDelta)]
 replayed: boolean
 }
-export interface Workspace {
+export interface WorkspaceGovernanceView {
+contract: "workspace.governance-view@1"
 id: string
 slug: string
 name: string
 visibility: ("private" | "punks" | "public")
-status: ("active" | "deleting" | "deleted")
+status: "active"
 ownerPunkId: string
-/**
- * @minItems 1
- */
-members: [{
-punkId: string
-role: ("owner" | "moderator" | "member" | "guest")
-}, ...({
-punkId: string
-role: ("owner" | "moderator" | "member" | "guest")
-})[]]
+memberCount: number
 revision: number
 cursor: number
 createdAt: string
 updatedAt: string
+}
+export interface PresentWorkspaceMemberDelta {
+punkId: string
+present: true
+role: ("owner" | "moderator" | "member" | "guest")
+}
+export interface RemovedWorkspaceMemberDelta {
+punkId: string
+present: false
+role: null
 }

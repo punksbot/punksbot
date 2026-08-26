@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { exports as workerExports } from "cloudflare:workers";
 
 import { bytesToBase64Url } from "../src/crypto";
 import { route } from "../src/router";
@@ -24,6 +25,48 @@ import {
 } from "./desktop-ceremony-helpers";
 
 describe("DesktopAuthFlow protocol (issue #54)", () => {
+  it("consomme une réauthentification de transfert seulement pour sa Session et sa commande", async () => {
+    const subject = `desktop-transfer-${crypto.randomUUID()}`;
+    const current = await provisionIdentity(subject);
+    const reauth = await reauthenticateFor(
+      subject,
+      current.cookie,
+      "transfer_workspace_ownership",
+    );
+    const session = await workerExports.PunkSessionService.resolveSessionCookie(
+      current.cookie,
+    );
+    if (session === null) throw new TypeError("Desktop Session is absent");
+    const factory =
+      workerExports.WorkspaceOwnershipAuthorizationService as (options: {
+        props: unknown;
+      }) => { consume(input: unknown): Promise<boolean> };
+    const authority = factory({
+      props: {
+        role: "punks-workspace-ownership-authorizer",
+        environment: "local",
+      },
+    });
+    const commandId = crypto.randomUUID();
+    const input = {
+      authorizationId: reauth.authorizationId,
+      commandId,
+      punkId: session.punkId,
+      sessionId: session.sessionId,
+    };
+
+    await expect(authority.consume(input)).resolves.toBe(false);
+    expect((await confirm(reauth.started, reauth.deliveryId)).status).toBe(200);
+    await expect(authority.consume(input)).resolves.toBe(true);
+    await expect(authority.consume(input)).resolves.toBe(true);
+    await expect(
+      authority.consume({ ...input, commandId: crypto.randomUUID() }),
+    ).resolves.toBe(false);
+    await expect(
+      authority.consume({ ...input, punkId: crypto.randomUUID() }),
+    ).resolves.toBe(false);
+  });
+
   it("demande confirmation avant de continuer avec la Session web", async () => {
     const web = await provisionIdentity(`desktop-web-${crypto.randomUUID()}`);
     const { started } = await startDesktop();

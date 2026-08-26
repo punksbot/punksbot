@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/workspace.membership-lifecycle-response@1",
+  "title": "WorkspaceMembershipLifecycleResponse",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "workspaceId",
+    "revision",
+    "outcome",
+    "role",
+    "replayed"
+  ],
+  "properties": {
+    "contract": { "const": "workspace.membership-lifecycle-response@1" },
+    "workspaceId": { "type": "string", "format": "uuid" },
+    "revision": { "type": "integer", "minimum": 1 },
+    "outcome": { "enum": ["left", "ownership_transferred"] },
+    "role": {
+      "oneOf": [{ "const": "member" }, { "type": "null" }]
+    },
+    "replayed": { "type": "boolean" }
+  }
+}

@@ -271,6 +271,8 @@ describe("artefacts API générés desktop-social-loop@1", () => {
       /class MessageHistoryQuery \{[\s\S]*?final String contract;[\s\S]*?final String workspaceId;[\s\S]*?final int limit;/,
     );
     expect(dart).not.toMatch(/final Object\??\s+[A-Za-z_][A-Za-z0-9_]*;/);
+    expect(dart).toContain("final Null role;");
+    expect(dart).not.toContain("Never?");
   });
 
   it("Dart : chaque objet fermé rejette les champs inconnus et valide les constantes", () => {
@@ -366,6 +368,31 @@ describe("artefacts API générés desktop-social-loop@1", () => {
     for (const contract of contracts) {
       expect(rust).toContain(`"punks://contracts/${contract}" =>`);
     }
+  });
+
+  it("Rust : les DTOs identité et gouvernance conservent leurs objets fermés", () => {
+    const rust = readFileSync(
+      fileURLToPath(
+        new URL("../generated/rust/punks_contracts.rs", import.meta.url),
+      ),
+      "utf8",
+    );
+    const declaration = (name: string) => {
+      const match = rust.match(
+        new RegExp(`pub struct ${name} \\{[\\s\\S]*?\\n\\}`),
+      );
+      expect(match, name).not.toBeNull();
+      return match?.[0] ?? "";
+    };
+    expect(declaration("WorkspaceInvitationView")).not.toContain(
+      "serde_json::Value",
+    );
+    expect(declaration("WorkspaceMembershipMutationResponse")).not.toContain(
+      "serde_json::Value",
+    );
+    expect(declaration("CreateWorkspaceInvitationResponse")).not.toContain(
+      "serde_json::Value",
+    );
   });
 
   it("Rust : chaque échange desktop namespace ses propres variants", () => {

@@ -3,6 +3,7 @@ import {
   Suspense,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -36,6 +37,7 @@ import { mutationErrorMessage } from "./punksMutationErrors";
 import { usePunksAccount, usePunksWorkspace } from "./PunksRuntime";
 import type { PunksRoute } from "./routes";
 import { useConversationFollow } from "./useConversationFollow";
+import { usePunksRealtimeSignals } from "./PunksRealtimeSignals";
 
 type AuthorActor = MessageView["author"];
 type AuthorActors = [AuthorActor, ...AuthorActor[]];
@@ -45,6 +47,11 @@ const NO_MESSAGE_ACTIONS: MessageActionsRenderer = () => null;
 const LazyMessageLifecycleBridge = lazy(() =>
   import("./MessageLifecycleControls").then((module) => ({
     default: module.MessageLifecycleBridge,
+  })),
+);
+const LazyConversationSearchLauncher = lazy(() =>
+  import("./ConversationSearchControls").then((module) => ({
+    default: module.ConversationSearchLauncher,
   })),
 );
 
@@ -67,8 +74,15 @@ export function PunksConversation({
   const account = usePunksAccount();
   const canReact = usePunksCapabilityAvailable("unicode-reactions");
   const lifecycleAvailable = usePunksCapabilityAvailable("message-lifecycle");
+  const searchAvailable = usePunksCapabilityAvailable("search");
   const { scope, manager, workspace } = usePunksWorkspace();
   const queryClient = useQueryClient();
+  const {
+    status: realtimeStatus,
+    presences,
+    typing,
+    signalTyping,
+  } = usePunksRealtimeSignals();
   const [content, setContent] = useState("");
   const [topic, setTopic] = useState("");
   const [paginationPending, setPaginationPending] = useState(false);
@@ -233,6 +247,50 @@ export function PunksConversation({
   const topicValid = !topicRequired || topic.trim().length > 0;
   const canModerate =
     workspace.role === "owner" || workspace.role === "moderator";
+  const typingActiveRef = useRef(false);
+  const hasTypingContent = canCompose && content.trim().length > 0;
+
+  useEffect(() => {
+    if (realtimeStatus !== "live" || !hasTypingContent) {
+      if (typingActiveRef.current) {
+        typingActiveRef.current = false;
+        void signalTyping(conversationId, false);
+      }
+      return;
+    }
+    typingActiveRef.current = true;
+    void signalTyping(conversationId, true);
+    const interval = window.setInterval(() => {
+      void signalTyping(conversationId, true);
+    }, 3_000);
+    return () => {
+      window.clearInterval(interval);
+      if (typingActiveRef.current) {
+        typingActiveRef.current = false;
+        void signalTyping(conversationId, false);
+      }
+    };
+  }, [conversationId, hasTypingContent, realtimeStatus, signalTyping]);
+
+  const typingPunks = useMemo(
+    () =>
+      [...typing.values()].filter(
+        (patch) =>
+          patch.conversationId === conversationId &&
+          patch.active &&
+          patch.punkId !== account.session?.punkId,
+      ),
+    [account.session?.punkId, conversationId, typing],
+  );
+  const typingLabel = useMemo(() => {
+    const names = typingPunks.map(
+      (patch) => authors.get(`punk:${patch.punkId}`)?.displayName ?? "Someone",
+    );
+    if (names.length === 0) return null;
+    if (names.length === 1) return `${names[0]} is typing…`;
+    if (names.length === 2) return `${names[0]} and ${names[1]} are typing…`;
+    return `${names[0]}, ${names[1]} and ${names.length - 2} others are typing…`;
+  }, [authors, typingPunks]);
 
   const applyMessageAcknowledgement = (message: MessageView) => {
     if (!manager.isCurrent(scope)) return;
@@ -476,6 +534,14 @@ export function PunksConversation({
     };
     account.navigate(route);
   };
+  const openSearchResult = (resultMessageId: string) => {
+    return account.navigate({
+      kind: "message",
+      workspaceSlug: workspace.slug,
+      conversationId,
+      messageId: resultMessageId,
+    });
+  };
 
   const baseMutationError = mutationErrorMessage(
     messageMutation.error ?? reactionMutation.error,
@@ -554,6 +620,18 @@ export function PunksConversation({
           <div className="mt-3">
             <ConversationStatusBanner status={followStatus} />
           </div>
+          {searchAvailable &&
+          (messageId === null || threadRootMessageId !== null) ? (
+            <Suspense fallback={null}>
+              <LazyConversationSearchLauncher
+                conversationId={conversationId}
+                onOpenMessage={openSearchResult}
+                threadRootMessageId={
+                  messageId === null ? null : threadRootMessageId
+                }
+              />
+            </Suspense>
+          ) : null}
         </header>
 
         {messageId !== null && targetMessage === undefined ? (
@@ -600,6 +678,11 @@ export function PunksConversation({
                 key={message.id}
                 messageActions={renderMessageActions(message)}
                 message={message}
+                presence={
+                  message.author.kind === "punk"
+                    ? presences.get(message.author.punkId)
+                    : undefined
+                }
                 onOpenThread={() => openThread(message)}
                 onToggleReaction={(reaction) =>
                   void reactionMutation.mutateAsync({ message, reaction })
@@ -659,6 +742,14 @@ export function PunksConversation({
             }
           }}
         >
+          <p
+            aria-live="polite"
+            className="mb-2 min-h-4 text-xs text-muted-foreground"
+            data-testid="punks-typing-indicator"
+            role="status"
+          >
+            {typingLabel ?? ""}
+          </p>
           {messageId === null ? (
             <div className="mb-2">
               <label

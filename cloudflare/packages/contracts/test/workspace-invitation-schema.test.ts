@@ -44,6 +44,126 @@ function validInvitation() {
 }
 
 describe("Workspace invitation contracts", () => {
+  it("closes voluntary departure and strong ownership transfer commands", () => {
+    const workspaceId = "00000000-0000-8000-8000-000000000001";
+    const ownerId = "00000000-0000-8000-8000-000000000002";
+    const targetId = "00000000-0000-8000-8000-000000000003";
+    const commandId = "00000000-0000-8000-8000-000000000004";
+    const reauthorizationId = "00000000-0000-8000-8000-000000000005";
+
+    const leave = {
+      contract: "workspace.leave@1",
+      commandId,
+      workspaceId,
+      actor: { kind: "punk", punkId: targetId },
+      payload: {},
+    };
+    expect(
+      validateContract("punks://contracts/workspace.leave@1" as never, leave)
+        .valid,
+    ).toBe(true);
+    expect(
+      validateContract("punks://contracts/workspace.leave@1" as never, {
+        ...leave,
+        payload: { targetPunkId: targetId },
+      }).valid,
+    ).toBe(false);
+
+    const transfer = {
+      contract: "workspace.transfer-ownership@1",
+      commandId,
+      workspaceId,
+      actor: { kind: "punk", punkId: ownerId },
+      payload: {
+        targetPunkId: targetId,
+        expectedRevision: 7,
+        reauthorizationId,
+      },
+    };
+    expect(
+      validateContract(
+        "punks://contracts/workspace.transfer-ownership@1" as never,
+        transfer,
+      ).valid,
+    ).toBe(true);
+    expect(
+      validateContract(
+        "punks://contracts/workspace.transfer-ownership@1" as never,
+        {
+          ...transfer,
+          payload: { targetPunkId: targetId, expectedRevision: 7 },
+        },
+      ).valid,
+    ).toBe(false);
+
+    for (const response of [
+      {
+        contract: "workspace.membership-lifecycle-response@1",
+        workspaceId,
+        revision: 8,
+        outcome: "left",
+        role: null,
+        replayed: false,
+      },
+      {
+        contract: "workspace.membership-lifecycle-response@1",
+        workspaceId,
+        revision: 8,
+        outcome: "ownership_transferred",
+        role: "member",
+        replayed: true,
+      },
+    ]) {
+      expect(
+        validateContract(
+          "punks://contracts/workspace.membership-lifecycle-response@1" as never,
+          response,
+        ).valid,
+      ).toBe(true);
+      expect(response).not.toHaveProperty("members");
+      expect(response).not.toHaveProperty("ownerPunkId");
+    }
+  });
+
+  it("requires an optimistic revision fence on every membership mutation", () => {
+    const base = {
+      commandId: "2a2e9e5e-bf3f-4f29-8f37-03ed6bb08009",
+      workspaceId,
+      actor: { kind: "punk", punkId: ownerId },
+    };
+    const setRole = {
+      ...base,
+      contract: "workspace.member-set-role@1",
+      payload: {
+        targetPunkId: "00000000-0000-8000-8000-000000000002",
+        role: "member",
+        expectedRevision: 7,
+      },
+    };
+    const remove = {
+      ...base,
+      contract: "workspace.member-remove@1",
+      payload: {
+        targetPunkId: "00000000-0000-8000-8000-000000000002",
+        expectedRevision: 7,
+      },
+    };
+
+    for (const [contract, command] of [
+      ["punks://contracts/workspace.member-set-role@1", setRole],
+      ["punks://contracts/workspace.member-remove@1", remove],
+    ] as const) {
+      expect(validateContract(contract as never, command).valid).toBe(true);
+      const { expectedRevision: _, ...unfencedPayload } = command.payload;
+      expect(
+        validateContract(contract as never, {
+          ...command,
+          payload: unfencedPayload,
+        }).valid,
+      ).toBe(false);
+    }
+  });
+
   it("accepts only bounded member or guest promises", () => {
     expect(
       validateContract(
@@ -219,25 +339,78 @@ describe("Workspace invitation contracts", () => {
     }
   });
 
-  it("closes Workspace role mutation acknowledgements", () => {
+  it("paginates the authoritative roster without embedding it in Workspace detail", () => {
+    const summary = {
+      contract: "workspace.governance-view@1",
+      id: workspaceId,
+      slug: "core-team",
+      name: "Core Team",
+      visibility: "private",
+      status: "active",
+      ownerPunkId: ownerId,
+      memberCount: 101,
+      revision: 7,
+      cursor: 7,
+      createdAt: "2026-08-25T10:00:00.000Z",
+      updatedAt: "2026-08-25T10:00:00.000Z",
+    };
+    const query = {
+      contract: "workspace.governance@1",
+      workspaceId,
+      limit: 100,
+      cursor: null,
+    };
+    expect(
+      validateContract(
+        "punks://contracts/workspace.governance@1" as never,
+        query,
+      ),
+    ).toEqual({ valid: true });
+    const page = {
+      contract: "workspace.governance-response@1",
+      workspace: summary,
+      members: Array.from({ length: 100 }, (_, index) => ({
+        punkId: `00000000-0000-8000-8000-${String(index + 1).padStart(12, "0")}`,
+        role: index === 0 ? "owner" : "member",
+      })),
+      nextCursor: `pmc1.${"A".repeat(16)}.${"A".repeat(43)}`,
+    };
+    expect(
+      validateContract(
+        "punks://contracts/workspace.governance-response@1" as never,
+        page,
+      ),
+    ).toEqual({ valid: true });
+    expect(
+      validateContract(
+        "punks://contracts/workspace.governance-response@1" as never,
+        { ...page, members: [...page.members, page.members[0]] },
+      ).valid,
+    ).toBe(false);
+    expect(page.workspace).not.toHaveProperty("members");
+  });
+
+  it("closes Workspace role mutation acknowledgements to bounded deltas", () => {
     expect(
       validateContract(
         "punks://contracts/workspace.membership-mutation-response@1" as never,
         {
           contract: "workspace.membership-mutation-response@1",
           workspace: {
+            contract: "workspace.governance-view@1",
             id: workspaceId,
             slug: "core-team",
             name: "Core Team",
             visibility: "private",
             status: "active",
             ownerPunkId: ownerId,
-            members: [{ punkId: ownerId, role: "owner" }],
+            memberCount: 1,
             revision: 7,
             cursor: 7,
             createdAt: "2026-08-25T10:00:00.000Z",
             updatedAt: "2026-08-25T10:00:00.000Z",
           },
+          memberDeltas: [{ punkId: ownerId, present: true, role: "owner" }],
           replayed: false,
         },
       ),

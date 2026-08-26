@@ -89,6 +89,7 @@ export type {
 } from "./generated/desktop-session.revoke";
 export type { DesktopCompatibilityQuery } from "./generated/desktop.compatibility";
 export type { DesktopCompatibilityResponse } from "./generated/desktop.compatibility-response";
+export type { DesktopPresenceDelivery } from "./generated/desktop.presence-delivery";
 export type { ArchiveConversationCommand } from "./generated/conversation.archive";
 export type { CreateConversationCommand } from "./generated/conversation.create";
 export type {
@@ -142,9 +143,21 @@ export type { MessageSearchResponse } from "./generated/message.search-response"
 export type { MessageSearchQuery } from "./generated/message.search";
 export type { MessageView } from "./generated/message.view";
 export type { Message } from "./generated/message";
+export type { AbandonMediaUploadCommand } from "./generated/media-upload.abandon";
+export type { FinalizeMediaUploadCommand } from "./generated/media-upload.finalize";
+export type { CreateMediaUploadGrantCommand } from "./generated/media-upload.grant-create";
+export type { MediaUploadGrant } from "./generated/media-upload.grant";
+export type { MediaUploadPart } from "./generated/media-upload.part";
+export type { MediaUploadStatus } from "./generated/media-upload.status";
 export type { SignedNostrEvent } from "./generated/nostr.signed-event";
 export type { UnsignedNostrEvent } from "./generated/nostr.unsigned-event";
 export type { PunksProblem } from "./generated/problem";
+export type { PresenceHoldFrame } from "./generated/presence.hold";
+export type { SetPresenceStatusSignal } from "./generated/presence.status.set";
+export type { PresenceTypingSignal } from "./generated/presence.typing.signal";
+export type { PresenceView } from "./generated/presence.view";
+export type { PresenceHoldServerFrame } from "./generated/presence.hold-server-frame";
+export type { PresenceTypingPatch } from "./generated/presence.typing.patch";
 export type { GetPunkProfileQuery } from "./generated/punk.get";
 export type { PunkSearchResponse } from "./generated/punk.search-response";
 export type { PunkSearchQuery } from "./generated/punk.search";
@@ -168,6 +181,9 @@ export type { PunksWorkspaceView } from "./generated/workspace.punks-view";
 export type { PublicWorkspaceView } from "./generated/workspace.public-view";
 export type { CreateWorkspaceCommand } from "./generated/workspace.create";
 export type { GetWorkspaceQuery } from "./generated/workspace.get";
+export type { GetWorkspaceGovernanceQuery } from "./generated/workspace.governance";
+export type { WorkspaceGovernanceResponse } from "./generated/workspace.governance-response";
+export type { WorkspaceGovernanceView } from "./generated/workspace.governance-view";
 export type { ListWorkspacesQuery } from "./generated/workspace.list";
 export type {
   ListWorkspacesResponse,
@@ -181,10 +197,13 @@ export type { RevokeWorkspaceInvitationCommand } from "./generated/workspace.inv
 export type { RevokeWorkspaceInvitationResponse } from "./generated/workspace.invite-revoke-response";
 export type { ClaimWorkspaceInvitationCommand } from "./generated/workspace.invite-claim";
 export type { ClaimWorkspaceInvitationResponse } from "./generated/workspace.invite-claim-response";
+export type { LeaveWorkspaceCommand } from "./generated/workspace.leave";
 export type { RemoveWorkspaceMemberCommand } from "./generated/workspace.member-remove";
 export type { SetWorkspaceMemberRoleCommand } from "./generated/workspace.member-set-role";
+export type { WorkspaceMembershipLifecycleResponse } from "./generated/workspace.membership-lifecycle-response";
 export type { WorkspaceMembershipMutationResponse } from "./generated/workspace.membership-mutation-response";
 export type { RenameWorkspaceCommand } from "./generated/workspace.rename";
+export type { TransferWorkspaceOwnershipCommand } from "./generated/workspace.transfer-ownership";
 export type { Workspace } from "./generated/workspace";
 
 export type { ContractId } from "./registry";

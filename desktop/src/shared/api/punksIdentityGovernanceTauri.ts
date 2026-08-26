@@ -2,9 +2,13 @@ import type {
   ClaimWorkspaceInvitationResponse,
   CreateWorkspaceInvitationResponse,
   RevokeWorkspaceInvitationResponse,
-  Workspace,
+  WorkspaceGovernanceResponse,
   WorkspaceInvitationView,
+  WorkspaceMembershipLifecycleResponse,
   WorkspaceMembershipMutationResponse,
+  Punk,
+  PunkSearchResponse,
+  PunkSummaryBatchResponse,
 } from "@punks/contracts";
 
 import type {
@@ -14,8 +18,49 @@ import type {
   RevokeWorkspaceInvitationInput,
   SetWorkspaceMemberRoleInput,
   WorkspaceLease,
+  WorkspaceGovernancePageInput,
+  PunkSearchInput,
+  PunkSearchPage,
+  UpdatePunkProfileInput,
+  TransferWorkspaceOwnershipInput,
 } from "./punksClientTypes";
 import { invokePunks, requireContract } from "./punksTauriTransport";
+
+export async function getPunkProfile(): Promise<Punk> {
+  return requireContract<Punk>(
+    "punks://contracts/punk@1",
+    await invokePunks("punks_get_punk_profile"),
+  );
+}
+
+export async function updatePunkProfile(
+  input: UpdatePunkProfileInput,
+): Promise<Punk> {
+  return requireContract<Punk>(
+    "punks://contracts/punk@1",
+    await invokePunks("punks_update_punk_profile", { input }),
+  );
+}
+
+export async function getPunkSummaries(
+  lease: WorkspaceLease,
+  punkIds: string[],
+): Promise<PunkSummaryBatchResponse> {
+  return requireContract<PunkSummaryBatchResponse>(
+    "punks://contracts/punk.summary-batch-response@1",
+    await invokePunks("punks_get_punk_summaries", { lease, punkIds }),
+  );
+}
+
+export async function searchPunks(
+  lease: WorkspaceLease,
+  input: { query: PunkSearchInput; limit: number; cursor: string | null },
+): Promise<PunkSearchPage> {
+  return requireContract<PunkSearchResponse>(
+    "punks://contracts/punk.search-response@1",
+    await invokePunks("punks_search_punks", { lease, input }),
+  );
+}
 
 export async function getWorkspaceInvitation(
   code: string,
@@ -37,10 +82,11 @@ export async function claimWorkspaceInvitation(
 
 export async function getWorkspaceGovernance(
   lease: WorkspaceLease,
-): Promise<Workspace> {
-  return requireContract<Workspace>(
-    "punks://contracts/workspace@1",
-    await invokePunks("punks_get_workspace_governance", { lease }),
+  input: WorkspaceGovernancePageInput,
+): Promise<WorkspaceGovernanceResponse> {
+  return requireContract<WorkspaceGovernanceResponse>(
+    "punks://contracts/workspace.governance-response@1",
+    await invokePunks("punks_get_workspace_governance", { lease, input }),
   );
 }
 
@@ -81,5 +127,24 @@ export async function removeWorkspaceMember(
   return requireContract<WorkspaceMembershipMutationResponse>(
     "punks://contracts/workspace.membership-mutation-response@1",
     await invokePunks("punks_remove_workspace_member", { lease, input }),
+  );
+}
+
+export async function leaveWorkspace(
+  lease: WorkspaceLease,
+): Promise<WorkspaceMembershipLifecycleResponse> {
+  return requireContract<WorkspaceMembershipLifecycleResponse>(
+    "punks://contracts/workspace.membership-lifecycle-response@1",
+    await invokePunks("punks_leave_workspace", { lease }),
+  );
+}
+
+export async function transferWorkspaceOwnership(
+  lease: WorkspaceLease,
+  input: TransferWorkspaceOwnershipInput,
+): Promise<WorkspaceMembershipLifecycleResponse> {
+  return requireContract<WorkspaceMembershipLifecycleResponse>(
+    "punks://contracts/workspace.membership-lifecycle-response@1",
+    await invokePunks("punks_transfer_workspace_ownership", { lease, input }),
   );
 }

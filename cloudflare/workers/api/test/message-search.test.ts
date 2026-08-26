@@ -1,4 +1,5 @@
 import type {
+  ArchiveConversationCommand,
   CreateConversationCommand,
   CreateWorkspaceCommand,
   MessageSearchResponse,
@@ -125,6 +126,7 @@ async function search(
     cursor?: string | null;
     limit?: number;
     cookie?: string;
+    threadRootMessageId?: string | null;
   } = {},
 ): Promise<Response> {
   return SELF.fetch(
@@ -139,6 +141,7 @@ async function search(
         contract: "message.search@1",
         workspaceId: createdWorkspaceId,
         conversationId: createdConversationId,
+        threadRootMessageId: options.threadRootMessageId ?? null,
         query: options.query ?? "needle",
         cursor: options.cursor ?? null,
         limit: options.limit ?? 50,
@@ -207,6 +210,34 @@ async function createConversation(
   expect(response.status).toBe(201);
   return ((await response.json()) as { conversation: { id: string } })
     .conversation.id;
+}
+
+async function archiveConversation(
+  createdWorkspaceId: string,
+  createdConversationId: string,
+): Promise<void> {
+  const command: ArchiveConversationCommand = {
+    contract: "conversation.archive@1",
+    commandId: crypto.randomUUID(),
+    workspaceId: createdWorkspaceId,
+    conversationId: createdConversationId,
+    actor: { kind: "punk", punkId: ownerPunkId },
+    payload: { cause: "manual" },
+  };
+  const response = await SELF.fetch(
+    `https://punks.bot/api/v1/workspaces/${createdWorkspaceId}/conversations/${createdConversationId}/archive`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie: "__Host-punks_session=session-owner",
+        "idempotency-key": command.commandId,
+      },
+      body: JSON.stringify(command),
+    },
+  );
+  const text = await response.text();
+  expect(response.status, text).toBe(200);
 }
 
 async function edit(
@@ -283,7 +314,11 @@ async function setOtherMember(createdWorkspaceId: string): Promise<void> {
     commandId: "ea9ad4c9-e6d8-494a-834f-9d88f31308a1",
     workspaceId: createdWorkspaceId,
     actor: { kind: "punk", punkId: ownerPunkId },
-    payload: { targetPunkId: otherPunkId, role: "member" },
+    payload: {
+      targetPunkId: otherPunkId,
+      role: "member",
+      expectedRevision: 1,
+    },
   };
   const response = await SELF.fetch(
     `https://punks.bot/api/v1/workspaces/${createdWorkspaceId}/members/${otherPunkId}`,
@@ -297,7 +332,8 @@ async function setOtherMember(createdWorkspaceId: string): Promise<void> {
       body: JSON.stringify(command),
     },
   );
-  expect(response.status).toBe(200);
+  const text = await response.text();
+  expect(response.status, text).toBe(200);
 }
 
 async function removeOtherMember(createdWorkspaceId: string): Promise<void> {
@@ -306,7 +342,7 @@ async function removeOtherMember(createdWorkspaceId: string): Promise<void> {
     commandId: "4cf40c29-70c5-4b0c-9da0-ea4a55f101f1",
     workspaceId: createdWorkspaceId,
     actor: { kind: "punk", punkId: ownerPunkId },
-    payload: { targetPunkId: otherPunkId },
+    payload: { targetPunkId: otherPunkId, expectedRevision: 2 },
   };
   const response = await SELF.fetch(
     `https://punks.bot/api/v1/workspaces/${createdWorkspaceId}/members/${otherPunkId}`,
@@ -329,6 +365,7 @@ async function post(
   commandId: string,
   content: string,
   topic: string | null = null,
+  replyToMessageId: string | null = null,
 ): Promise<MessageView> {
   const command: PostMessageCommand = {
     contract: "message.post@1",
@@ -339,7 +376,7 @@ async function post(
     payload: {
       content,
       topic,
-      replyToMessageId: null,
+      replyToMessageId,
       broadcast: false,
       mentionedPunkIds: [],
       mediaIds: [],
@@ -375,6 +412,7 @@ describe("Conversation Message search API", () => {
           contract: "message.search@1",
           workspaceId,
           conversationId,
+          threadRootMessageId: null,
           query: "needle",
           cursor: null,
           limit: 50,
@@ -424,6 +462,7 @@ describe("Conversation Message search API", () => {
           contract: "message.search@1",
           workspaceId: createdWorkspaceId,
           conversationId: createdConversationId,
+          threadRootMessageId: null,
           query: "AUTH refresh",
           cursor: null,
           limit: 50,
@@ -465,6 +504,186 @@ describe("Conversation Message search API", () => {
     );
   });
 
+  it("confines one search to its requested Fil", async () => {
+    const createdWorkspaceId = await createWorkspace();
+    const createdConversationId = await createConversation(createdWorkspaceId);
+    const firstRoot = await post(
+      createdWorkspaceId,
+      createdConversationId,
+      crypto.randomUUID(),
+      "first root",
+    );
+    const secondRoot = await post(
+      createdWorkspaceId,
+      createdConversationId,
+      crypto.randomUUID(),
+      "second root",
+    );
+    const firstReply = await post(
+      createdWorkspaceId,
+      createdConversationId,
+      crypto.randomUUID(),
+      "needle first thread",
+      null,
+      firstRoot.id,
+    );
+    const secondReply = await post(
+      createdWorkspaceId,
+      createdConversationId,
+      crypto.randomUUID(),
+      "needle second thread",
+      null,
+      secondRoot.id,
+    );
+    await programCandidates(
+      [firstReply, secondReply].map((message) => ({
+        workspaceId: createdWorkspaceId,
+        conversationId: createdConversationId,
+        messageId: message.id,
+        threadRootMessageId: message.threadRootMessageId,
+        createdCursor: message.createdCursor,
+        lastCursor: message.cursor,
+      })),
+    );
+
+    const response = await search(createdWorkspaceId, createdConversationId, {
+      threadRootMessageId: firstRoot.id,
+    });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as MessageSearchResponse;
+    expect(body.threadRootMessageId).toBe(firstRoot.id);
+    expect(body.items.map(({ id }) => id)).toEqual([firstReply.id]);
+    expect(body.items).not.toContainEqual(
+      expect.objectContaining({ id: secondReply.id }),
+    );
+    expect(await searchCalls()).toEqual([
+      expect.objectContaining({
+        threadRootMessageId: firstRoot.id,
+        expectedCursor: firstReply.cursor,
+      }),
+    ]);
+  });
+
+  it("returns a typed partial page when the index is unavailable or lagging", async () => {
+    const createdWorkspaceId = await createWorkspace();
+    const createdConversationId = await createConversation(createdWorkspaceId);
+    const message = await post(
+      createdWorkspaceId,
+      createdConversationId,
+      crypto.randomUUID(),
+      "needle remains authorized",
+    );
+
+    await setSearchMode("unavailable");
+    const unavailableResponse = await search(
+      createdWorkspaceId,
+      createdConversationId,
+    );
+    expect(unavailableResponse.status).toBe(200);
+    expect(await unavailableResponse.json()).toMatchObject({
+      completeness: "partial",
+      partialReason: "index_unavailable",
+      items: [],
+      nextCursor: null,
+    });
+
+    await setSearchMode("available");
+    await setRawSearchResult({
+      ok: true,
+      indexState: "lagging",
+      candidates: [
+        {
+          messageId: message.id,
+          conversationId: createdConversationId,
+          createdCursor: message.createdCursor,
+          lastCursor: message.cursor,
+        },
+      ],
+      nextCursor: null,
+    });
+    const laggingResponse = await search(
+      createdWorkspaceId,
+      createdConversationId,
+    );
+    expect(laggingResponse.status).toBe(200);
+    expect(await laggingResponse.json()).toMatchObject({
+      completeness: "partial",
+      partialReason: "index_lagging",
+      items: [{ id: message.id }],
+    });
+  });
+
+  it("removes an archived Conversation before consulting the index", async () => {
+    const createdWorkspaceId = await createWorkspace();
+    const createdConversationId = await createConversation(createdWorkspaceId);
+    await archiveConversation(createdWorkspaceId, createdConversationId);
+
+    const response = await search(createdWorkspaceId, createdConversationId);
+
+    expect(response.status).toBe(404);
+    expect(await searchCalls()).toEqual([]);
+  });
+
+  it("does not disclose or consult the index for an unknown Fil", async () => {
+    const createdWorkspaceId = await createWorkspace();
+    const createdConversationId = await createConversation(createdWorkspaceId);
+
+    const response = await search(createdWorkspaceId, createdConversationId, {
+      threadRootMessageId: "88888888-8888-4888-8888-888888888888",
+    });
+
+    expect(response.status).toBe(404);
+    expect(await searchCalls()).toEqual([]);
+  });
+
+  it("keeps an unavailable continuation without dropping its opaque position", async () => {
+    const createdWorkspaceId = await createWorkspace();
+    const createdConversationId = await createConversation(createdWorkspaceId);
+    const messages = [
+      await post(
+        createdWorkspaceId,
+        createdConversationId,
+        crypto.randomUUID(),
+        "needle first",
+      ),
+      await post(
+        createdWorkspaceId,
+        createdConversationId,
+        crypto.randomUUID(),
+        "needle second",
+      ),
+    ];
+    await programCandidates(
+      messages.map((message) => ({
+        workspaceId: createdWorkspaceId,
+        conversationId: createdConversationId,
+        messageId: message.id,
+        createdCursor: message.createdCursor,
+        lastCursor: message.cursor,
+      })),
+    );
+    const firstResponse = await search(
+      createdWorkspaceId,
+      createdConversationId,
+      { limit: 1 },
+    );
+    const first = (await firstResponse.json()) as MessageSearchResponse;
+    expect(first.nextCursor).not.toBeNull();
+    await setSearchMode("unavailable");
+
+    const partialResponse = await search(
+      createdWorkspaceId,
+      createdConversationId,
+      { limit: 1, cursor: first.nextCursor },
+    );
+    const partial = (await partialResponse.json()) as MessageSearchResponse;
+
+    expect(partial.completeness).toBe("partial");
+    expect(partial.partialReason).toBe("index_unavailable");
+    expect(partial.items).toEqual([]);
+    expect(partial.nextCursor).toMatch(/^msc1\./u);
+  });
+
   it("refuses zero or thirty-three lexical terms before Search RPC", async () => {
     const createdWorkspaceId = await createWorkspace();
     const createdConversationId = await createConversation(createdWorkspaceId);
@@ -492,17 +711,19 @@ describe("Conversation Message search API", () => {
           contract: "message.search@1",
           workspaceId: createdWorkspaceId,
           conversationId: createdConversationId,
+          threadRootMessageId: null,
         }),
       },
     );
     expect(missingQuery.status).toBe(400);
     expect(await searchCalls()).toEqual([]);
 
-    for (const omitted of ["cursor", "limit"] as const) {
+    for (const omitted of ["cursor", "limit", "threadRootMessageId"] as const) {
       const exactBody = {
         contract: "message.search@1",
         workspaceId: createdWorkspaceId,
         conversationId: createdConversationId,
+        threadRootMessageId: null,
         query: "needle",
         cursor: null,
         limit: 50,
@@ -599,6 +820,7 @@ describe("Conversation Message search API", () => {
             contract: "message.search@1",
             workspaceId: createdWorkspaceId,
             conversationId: createdConversationId,
+            threadRootMessageId: null,
             query: "needle",
             cursor: null,
             limit: 50,
@@ -736,6 +958,11 @@ describe("Conversation Message search API", () => {
         cursor,
         limit: 2,
       }),
+      search(createdWorkspaceId, createdConversationId, {
+        cursor,
+        limit: 1,
+        threadRootMessageId: messages[0]?.id ?? null,
+      }),
       search(createdWorkspaceId, otherConversationId, { cursor, limit: 1 }),
       search(otherWorkspaceId, otherWorkspaceConversationId, {
         cursor,
@@ -748,7 +975,7 @@ describe("Conversation Message search API", () => {
       }),
     ]);
     expect(invalidResponses.map(({ status }) => status)).toEqual([
-      400, 400, 400, 400, 400, 400,
+      400, 400, 400, 400, 400, 400, 400,
     ]);
     expect(await searchCalls()).toHaveLength(callsAfterFirst);
 
@@ -851,6 +1078,8 @@ describe("Conversation Message search API", () => {
     expect(firstResponse.status).toBe(200);
     const first = (await firstResponse.json()) as MessageSearchResponse;
     expect(first.items).toEqual([]);
+    expect(first.completeness).toBe("partial");
+    expect(first.partialReason).toBe("index_lagging");
     expect(first.nextCursor).toMatch(/^msc1\./);
 
     const secondResponse = await search(
@@ -864,7 +1093,7 @@ describe("Conversation Message search API", () => {
     expect(second.nextCursor).toBeNull();
   });
 
-  it("fails the whole page for Search, vault, or candidate integrity failures", async () => {
+  it("types index failures as partial and still fails the whole page for vault failures", async () => {
     const createdWorkspaceId = await createWorkspace();
     const createdConversationId = await createConversation(createdWorkspaceId);
     const first = await post(
@@ -888,14 +1117,27 @@ describe("Conversation Message search API", () => {
     }));
     await programCandidates(candidates);
 
-    for (const mode of ["unavailable", "malformed"]) {
-      await setSearchMode(mode);
-      const response = await search(createdWorkspaceId, createdConversationId);
-      const text = await response.text();
-      expect(response.status, text).toBe(503);
-      expect(text).not.toMatch(/msc1\.|h2_|needle|contentKey|ciphertext/);
-      await setSearchMode("available");
-    }
+    await setSearchMode("unavailable");
+    const unavailable = await search(createdWorkspaceId, createdConversationId);
+    const unavailableText = await unavailable.text();
+    expect(unavailable.status, unavailableText).toBe(200);
+    expect(JSON.parse(unavailableText)).toMatchObject({
+      completeness: "partial",
+      partialReason: "index_unavailable",
+      items: [],
+    });
+    expect(unavailableText).not.toMatch(
+      /msc1\.|h2_|needle|contentKey|ciphertext/,
+    );
+
+    await setSearchMode("malformed");
+    const malformed = await search(createdWorkspaceId, createdConversationId);
+    const malformedText = await malformed.text();
+    expect(malformed.status, malformedText).toBe(503);
+    expect(malformedText).not.toMatch(
+      /msc1\.|h2_|needle|contentKey|ciphertext/,
+    );
+    await setSearchMode("available");
 
     await setRawSearchResult({
       ok: true,

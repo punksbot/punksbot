@@ -9,6 +9,7 @@ import type {
   GetWorkspaceInvitationQuery,
   GetWorkspaceQuery,
   JournalSegmentArchive,
+  LeaveWorkspaceCommand,
   MembershipJournalSegmentArchiveV2,
   RemoveWorkspaceMemberCommand,
   RevokeWorkspaceInvitationCommand,
@@ -19,9 +20,11 @@ import type {
   UnsignedNostrEvent,
   Workspace,
   WorkspaceEventContentV2,
+  WorkspaceGovernanceView,
   WorkspaceInvitationView,
   WorkspaceProjectionMessage,
   WorkspaceProjectionMessageV2,
+  TransferWorkspaceOwnershipCommand,
 } from "@punks/contracts";
 import { validateContract } from "@punks/contracts";
 import {
@@ -30,12 +33,16 @@ import {
   decideClaimWorkspaceInvitationV2,
   decideCreateWorkspace,
   decideCreateWorkspaceV2,
+  decideLeaveWorkspace,
+  decideLeaveWorkspaceV2,
   decideRemoveWorkspaceMember,
   decideRemoveWorkspaceMemberV2,
   decideRenameWorkspace,
   decideRenameWorkspaceV2,
   decideSetWorkspaceMemberRole,
   decideSetWorkspaceMemberRoleV2,
+  decideTransferWorkspaceOwnership,
+  decideTransferWorkspaceOwnershipV2,
   encodeMembershipProjectionPayload,
   isStrictWorkspaceRoleReduction,
   prepareJournalSegment,
@@ -58,6 +65,8 @@ import type {
   CommittedWorkspaceCommand,
   WorkspaceCommand,
   WorkspaceExecuteResult,
+  WorkspaceGovernancePageQuery,
+  WorkspaceGovernancePageResult,
   WorkspaceInvitationClaimResult,
   WorkspaceInvitationFailureCode,
   WorkspaceInvitationMutationResult,
@@ -180,54 +189,72 @@ interface AccountMergeWorkspaceMembershipChange {
   };
 }
 
-function accountMergeWorkspaceMembershipChange(
+function accountMergeWorkspaceMembershipChanges(
   command: WorkspaceCommand,
   nextState: Workspace,
-): AccountMergeWorkspaceMembershipChange | null {
-  let punkId: string;
-  let membership: AccountMergeWorkspaceMembershipChange["membership"];
+): AccountMergeWorkspaceMembershipChange[] {
+  const change = (
+    punkId: string,
+    membership: AccountMergeWorkspaceMembershipChange["membership"],
+  ): AccountMergeWorkspaceMembershipChange => {
+    if (!UUID.test(punkId) || !UUID.test(nextState.id)) {
+      throw new Error("Workspace membership change has invalid authority IDs");
+    }
+    return {
+      operationId: command.commandId,
+      workspaceId: nextState.id,
+      punkId,
+      membership,
+    };
+  };
   switch (command.contract) {
     case "workspace.create@1":
-      punkId = command.actor.punkId;
-      membership = { role: "owner", revision: nextState.revision };
-      break;
+      return [
+        change(command.actor.punkId, {
+          role: "owner",
+          revision: nextState.revision,
+        }),
+      ];
     case "workspace.member-set-role@1":
-      punkId = command.payload.targetPunkId;
-      membership = {
-        role: command.payload.role,
-        revision: nextState.revision,
-      };
-      break;
+      return [
+        change(command.payload.targetPunkId, {
+          role: command.payload.role,
+          revision: nextState.revision,
+        }),
+      ];
     case "workspace.member-remove@1":
-      punkId = command.payload.targetPunkId;
-      membership = null;
-      break;
+      return [change(command.payload.targetPunkId, null)];
+    case "workspace.leave@1":
+      return [change(command.actor.punkId, null)];
+    case "workspace.transfer-ownership@1":
+      return [
+        change(command.actor.punkId, {
+          role: "member",
+          revision: nextState.revision,
+        }),
+        change(nextState.ownerPunkId, {
+          role: "owner",
+          revision: nextState.revision,
+        }),
+      ];
     case "workspace.invite-claim@1": {
-      punkId = command.actor.punkId;
+      const punkId = command.actor.punkId;
       const claimed = nextState.members.find(
         (member) => member.punkId === punkId,
       );
       if (claimed === undefined) {
         throw new Error("Invitation claim did not create membership");
       }
-      membership = {
-        role: claimed.role as WorkspaceRole,
-        revision: nextState.revision,
-      };
-      break;
+      return [
+        change(punkId, {
+          role: claimed.role as WorkspaceRole,
+          revision: nextState.revision,
+        }),
+      ];
     }
     case "workspace.rename@1":
-      return null;
+      return [];
   }
-  if (!UUID.test(punkId) || !UUID.test(nextState.id)) {
-    throw new Error("Workspace membership change has invalid authority IDs");
-  }
-  return {
-    operationId: command.commandId,
-    workspaceId: nextState.id,
-    punkId,
-    membership,
-  };
 }
 
 export class WorkspaceDO extends DurableObject<ApiEnv> {
@@ -243,7 +270,11 @@ export class WorkspaceDO extends DurableObject<ApiEnv> {
 
   async execute(input: unknown): Promise<WorkspaceExecuteResult> {
     const command = parseDirectWorkspaceCommand(input);
-    if (command === null) {
+    if (
+      command === null ||
+      (command.contract !== "workspace.create@1" &&
+        command.contract !== "workspace.rename@1")
+    ) {
       return { ok: false, code: "invalid_contract" };
     }
     return this.executeWorkspaceCommand(command, null, null);
@@ -258,7 +289,9 @@ export class WorkspaceDO extends DurableObject<ApiEnv> {
     if (
       command === null ||
       (command.contract !== "workspace.member-set-role@1" &&
-        command.contract !== "workspace.member-remove@1") ||
+        command.contract !== "workspace.member-remove@1" &&
+        command.contract !== "workspace.leave@1" &&
+        command.contract !== "workspace.transfer-ownership@1") ||
       !validWorkspaceMutationAuthorization(authorization, command.actor.punkId)
     ) {
       return { ok: false, code: "invalid_contract" };
@@ -344,6 +377,18 @@ export class WorkspaceDO extends DurableObject<ApiEnv> {
             return decideRemoveWorkspaceMemberV2(
               current,
               command as RemoveWorkspaceMemberCommand,
+              context,
+            );
+          case "workspace.leave@1":
+            return decideLeaveWorkspaceV2(
+              current,
+              command as LeaveWorkspaceCommand,
+              context,
+            );
+          case "workspace.transfer-ownership@1":
+            return decideTransferWorkspaceOwnershipV2(
+              current,
+              command as TransferWorkspaceOwnershipCommand,
               context,
             );
           case "workspace.invite-claim@1":
@@ -950,6 +995,115 @@ export class WorkspaceDO extends DurableObject<ApiEnv> {
     return { ok: true, state };
   }
 
+  /** Returns one cursor-stable roster page to a current member manager. */
+  queryGovernancePage(input: unknown): WorkspaceGovernancePageResult {
+    if (
+      typeof input !== "object" ||
+      input === null ||
+      Array.isArray(input) ||
+      Object.keys(input).some(
+        (key) =>
+          key !== "workspaceId" &&
+          key !== "punkId" &&
+          key !== "limit" &&
+          key !== "afterPunkId" &&
+          key !== "authorityCursor",
+      ) ||
+      !("workspaceId" in input) ||
+      !("punkId" in input) ||
+      !("limit" in input)
+    ) {
+      return { ok: false, code: "invalid_request" };
+    }
+    const query = input as WorkspaceGovernancePageQuery;
+    if (
+      typeof query.workspaceId !== "string" ||
+      query.workspaceId !== this.ctx.id.name ||
+      !UUID.test(query.workspaceId) ||
+      typeof query.punkId !== "string" ||
+      !UUID.test(query.punkId) ||
+      !Number.isSafeInteger(query.limit) ||
+      query.limit < 1 ||
+      query.limit > 100 ||
+      (query.afterPunkId !== undefined &&
+        (typeof query.afterPunkId !== "string" ||
+          !UUID.test(query.afterPunkId))) ||
+      (query.authorityCursor !== undefined &&
+        (!Number.isSafeInteger(query.authorityCursor) ||
+          query.authorityCursor < 1))
+    ) {
+      return { ok: false, code: "invalid_request" };
+    }
+    const state = this.state();
+    if (
+      state === null ||
+      state.status !== "active" ||
+      state.id !== query.workspaceId
+    ) {
+      return { ok: false, code: "not_found" };
+    }
+    const member = state.members.find(
+      (candidate) => candidate.punkId === query.punkId,
+    );
+    if (
+      member === undefined ||
+      !roleHasPermission(member.role as WorkspaceRole, "members.manage")
+    ) {
+      return { ok: false, code: "forbidden" };
+    }
+    if (
+      query.authorityCursor !== undefined &&
+      query.authorityCursor !== state.cursor
+    ) {
+      return { ok: false, code: "cursor_stale" };
+    }
+    const ordered = [...state.members].sort((left, right) =>
+      left.punkId.localeCompare(right.punkId),
+    );
+    let start = 0;
+    if (query.afterPunkId !== undefined) {
+      const position = ordered.findIndex(
+        (candidate) => candidate.punkId === query.afterPunkId,
+      );
+      if (position < 0) return { ok: false, code: "invalid_request" };
+      start = position + 1;
+    }
+    const candidates = ordered.slice(start, start + query.limit + 1);
+    const members = candidates.slice(0, query.limit) as Workspace["members"];
+    const workspace: WorkspaceGovernanceView = {
+      contract: "workspace.governance-view@1",
+      id: state.id,
+      slug: state.slug,
+      name: state.name,
+      visibility: state.visibility,
+      status: "active",
+      ownerPunkId: state.ownerPunkId,
+      memberCount: state.members.length,
+      revision: state.revision,
+      cursor: state.cursor,
+      createdAt: state.createdAt,
+      updatedAt: state.updatedAt,
+    };
+    if (
+      !validateContract(
+        "punks://contracts/workspace.governance-view@1",
+        workspace,
+      ).valid
+    ) {
+      return { ok: false, code: "invalid_request" };
+    }
+    return {
+      ok: true,
+      workspace,
+      members,
+      authorityCursor: state.cursor,
+      nextPositionPunkId:
+        candidates.length > query.limit
+          ? (members.at(-1)?.punkId ?? null)
+          : null,
+    };
+  }
+
   authorize(input: unknown): WorkspaceAuthorizationResult {
     if (
       typeof input !== "object" ||
@@ -1402,11 +1556,11 @@ export class WorkspaceDO extends DurableObject<ApiEnv> {
   }
 
   private async abandonPreparedWorkspaceMutation(
-    rightsChange: AccountMergeWorkspaceMembershipChange | null,
+    rightsChanges: readonly AccountMergeWorkspaceMembershipChange[],
     commandId: string,
     payloadHash: string,
   ): Promise<void> {
-    if (rightsChange !== null) {
+    for (const rightsChange of rightsChanges) {
       try {
         await this.env.ACCOUNT_MERGE_RIGHTS_INDEX.abortWorkspaceMembershipChange(
           rightsChange,
@@ -1669,30 +1823,78 @@ export class WorkspaceDO extends DurableObject<ApiEnv> {
     const command = JSON.parse(
       String(pending.command_json),
     ) as WorkspaceCommand;
-    let rightsChange: AccountMergeWorkspaceMembershipChange | null;
-    try {
-      rightsChange = accountMergeWorkspaceMembershipChange(command, nextState);
-      if (
-        rightsChange !== null &&
-        !(await this.env.ACCOUNT_MERGE_RIGHTS_INDEX.prepareWorkspaceMembershipChange(
-          rightsChange,
-        ))
-      ) {
-        this.markPendingFailure();
-        return { ok: false, code: "internal" };
-      }
-    } catch {
-      this.markPendingFailure();
-      return { ok: false, code: "internal" };
-    }
     const authorization = parsePendingAuthorization(pending);
     if (
       authorization === undefined ||
       (authorization !== null &&
         !(await this.validMutationSession(authorization)))
     ) {
+      await this.abandonPreparedWorkspaceMutation([], commandId, payloadHash);
+      return { ok: false, code: "forbidden" };
+    }
+    if (
+      command.contract === "workspace.transfer-ownership@1" &&
+      (authorization === null ||
+        !(await this.env.WORKSPACE_OWNERSHIP_AUTHORITY.consume({
+          authorizationId: command.payload.reauthorizationId,
+          commandId,
+          punkId: authorization.punkId,
+          sessionId: authorization.sessionId,
+        })))
+    ) {
+      await this.abandonPreparedWorkspaceMutation([], commandId, payloadHash);
+      return { ok: false, code: "forbidden" };
+    }
+    let rightsChanges: AccountMergeWorkspaceMembershipChange[];
+    try {
+      rightsChanges = accountMergeWorkspaceMembershipChanges(
+        command,
+        nextState,
+      );
+      const prepared: AccountMergeWorkspaceMembershipChange[] = [];
+      for (const rightsChange of rightsChanges) {
+        if (
+          !(await this.env.ACCOUNT_MERGE_RIGHTS_INDEX.prepareWorkspaceMembershipChange(
+            rightsChange,
+          ))
+        ) {
+          for (const preparedChange of prepared) {
+            await this.env.ACCOUNT_MERGE_RIGHTS_INDEX.abortWorkspaceMembershipChange(
+              preparedChange,
+            );
+          }
+          this.markPendingFailure();
+          return { ok: false, code: "internal" };
+        }
+        prepared.push(rightsChange);
+      }
+    } catch {
+      this.markPendingFailure();
+      return { ok: false, code: "internal" };
+    }
+    if (
+      authorization !== null &&
+      !(await this.validMutationSession(authorization))
+    ) {
       await this.abandonPreparedWorkspaceMutation(
-        rightsChange,
+        rightsChanges,
+        commandId,
+        payloadHash,
+      );
+      return { ok: false, code: "forbidden" };
+    }
+    if (
+      command.contract === "workspace.transfer-ownership@1" &&
+      (authorization === null ||
+        !(await this.env.WORKSPACE_OWNERSHIP_AUTHORITY.consume({
+          authorizationId: command.payload.reauthorizationId,
+          commandId,
+          punkId: authorization.punkId,
+          sessionId: authorization.sessionId,
+        })))
+    ) {
+      await this.abandonPreparedWorkspaceMutation(
+        rightsChanges,
         commandId,
         payloadHash,
       );
@@ -1701,7 +1903,7 @@ export class WorkspaceDO extends DurableObject<ApiEnv> {
     if (command.contract === "workspace.invite-claim@1") {
       if (pendingInvitation === null) {
         await this.abandonPreparedWorkspaceMutation(
-          rightsChange,
+          rightsChanges,
           commandId,
           payloadHash,
         );
@@ -1719,7 +1921,7 @@ export class WorkspaceDO extends DurableObject<ApiEnv> {
         !invitationMatchesPending(currentInvitation, pendingInvitation)
       ) {
         await this.abandonPreparedWorkspaceMutation(
-          rightsChange,
+          rightsChanges,
           commandId,
           payloadHash,
         );
@@ -1727,7 +1929,7 @@ export class WorkspaceDO extends DurableObject<ApiEnv> {
       }
       if (status !== "issued") {
         await this.abandonPreparedWorkspaceMutation(
-          rightsChange,
+          rightsChanges,
           commandId,
           payloadHash,
         );
@@ -1890,15 +2092,15 @@ export class WorkspaceDO extends DurableObject<ApiEnv> {
         responseJson,
         now,
       );
-      if (rightsChange !== null) {
+      if (rightsChanges.length > 0) {
         this.ctx.storage.sql.exec(
           `INSERT INTO account_merge_rights_outbox
             (operation_id, change_json, created_at)
            VALUES (?, ?, ?)
            ON CONFLICT(operation_id) DO UPDATE SET
              change_json = excluded.change_json`,
-          rightsChange.operationId,
-          canonicalJson(rightsChange),
+          commandId,
+          canonicalJson(rightsChanges),
           now,
         );
       }
@@ -1922,7 +2124,7 @@ export class WorkspaceDO extends DurableObject<ApiEnv> {
     });
 
     if (finalized === undefined) {
-      if (rightsChange !== null) {
+      for (const rightsChange of rightsChanges) {
         try {
           await this.env.ACCOUNT_MERGE_RIGHTS_INDEX.abortWorkspaceMembershipChange(
             rightsChange,
@@ -2141,18 +2343,26 @@ export class WorkspaceDO extends DurableObject<ApiEnv> {
       )
       .toArray()[0];
     if (row === undefined) return true;
-    let change: AccountMergeWorkspaceMembershipChange;
+    let changes: AccountMergeWorkspaceMembershipChange[];
     try {
-      change = JSON.parse(
-        row.change_json,
-      ) as AccountMergeWorkspaceMembershipChange;
+      const parsed = JSON.parse(row.change_json) as unknown;
+      changes = Array.isArray(parsed)
+        ? (parsed as AccountMergeWorkspaceMembershipChange[])
+        : [parsed as AccountMergeWorkspaceMembershipChange];
       if (
-        change.operationId !== row.operation_id ||
-        !(await this.env.ACCOUNT_MERGE_RIGHTS_INDEX.commitWorkspaceMembershipChange(
-          change,
-        ))
+        changes.length === 0 ||
+        changes.some((change) => change.operationId !== row.operation_id)
       ) {
         return false;
+      }
+      for (const change of changes) {
+        if (
+          !(await this.env.ACCOUNT_MERGE_RIGHTS_INDEX.commitWorkspaceMembershipChange(
+            change,
+          ))
+        ) {
+          return false;
+        }
       }
     } catch {
       return false;
@@ -2688,6 +2898,11 @@ function isWorkspaceAuthorityReduction(
       (member) => member.punkId === command.payload.targetPunkId,
     );
   }
+  if (command.contract === "workspace.leave@1") {
+    return current.members.some(
+      (member) => member.punkId === command.actor.punkId,
+    );
+  }
   if (command.contract !== "workspace.member-set-role@1") {
     return false;
   }
@@ -2816,7 +3031,11 @@ function validPendingWorkspaceReductionV2(
       ? current.members.find(
           (member) => member.punkId === command.payload.targetPunkId,
         )
-      : undefined;
+      : command.contract === "workspace.leave@1"
+        ? current.members.find(
+            (member) => member.punkId === command.actor.punkId,
+          )
+        : undefined;
   const expectedTransition =
     command.contract === "workspace.member-set-role@1"
       ? {
@@ -2832,16 +3051,22 @@ function validPendingWorkspaceReductionV2(
             targetPunkId: command.payload.targetPunkId,
             previousRole: existing.role,
           }
-        : command.contract === "workspace.invite-claim@1"
+        : command.contract === "workspace.leave@1" && existing !== undefined
           ? {
-              type: "member-upserted" as const,
+              type: "member-removed" as const,
               targetPunkId: command.actor.punkId,
-              previousRole: null,
-              role: nextState.members.find(
-                (member) => member.punkId === command.actor.punkId,
-              )?.role,
+              previousRole: existing.role,
             }
-          : null;
+          : command.contract === "workspace.invite-claim@1"
+            ? {
+                type: "member-upserted" as const,
+                targetPunkId: command.actor.punkId,
+                previousRole: null,
+                role: nextState.members.find(
+                  (member) => member.punkId === command.actor.punkId,
+                )?.role,
+              }
+            : null;
   const expectedDeltas =
     command.contract === "workspace.member-set-role@1"
       ? [
@@ -2860,17 +3085,25 @@ function validPendingWorkspaceReductionV2(
               role: existing.role,
             },
           ]
-        : command.contract === "workspace.invite-claim@1"
+        : command.contract === "workspace.leave@1" && existing !== undefined
           ? [
               {
                 punkId: command.actor.punkId,
-                present: true,
-                role: nextState.members.find(
-                  (member) => member.punkId === command.actor.punkId,
-                )?.role,
+                present: false,
+                role: existing.role,
               },
             ]
-          : [];
+          : command.contract === "workspace.invite-claim@1"
+            ? [
+                {
+                  punkId: command.actor.punkId,
+                  present: true,
+                  role: nextState.members.find(
+                    (member) => member.punkId === command.actor.punkId,
+                  )?.role,
+                },
+              ]
+            : [];
   const placeholder = placeholderSignedEvent(unsigned);
   return (
     expectedTransition !== null &&
@@ -2996,9 +3229,13 @@ function parseWorkspaceCommand(value: string): WorkspaceCommand | null {
           ? "punks://contracts/workspace.member-set-role@1"
           : contract === "workspace.member-remove@1"
             ? "punks://contracts/workspace.member-remove@1"
-            : contract === "workspace.invite-claim@1"
-              ? "punks://contracts/workspace.invite-claim@1"
-              : null;
+            : contract === "workspace.leave@1"
+              ? "punks://contracts/workspace.leave@1"
+              : contract === "workspace.transfer-ownership@1"
+                ? "punks://contracts/workspace.transfer-ownership@1"
+                : contract === "workspace.invite-claim@1"
+                  ? "punks://contracts/workspace.invite-claim@1"
+                  : null;
   return contractId !== null && validateContract(contractId, parsed).valid
     ? (parsed as WorkspaceCommand)
     : null;
@@ -3092,6 +3329,10 @@ function decideWorkspaceCommand(
       return decideSetWorkspaceMemberRole(current, command, context);
     case "workspace.member-remove@1":
       return decideRemoveWorkspaceMember(current, command, context);
+    case "workspace.leave@1":
+      return decideLeaveWorkspace(current, command, context);
+    case "workspace.transfer-ownership@1":
+      return decideTransferWorkspaceOwnership(current, command, context);
     case "workspace.invite-claim@1":
       if (invitation === null) {
         throw new Error("Invitation claim is missing its authority snapshot");
@@ -3120,6 +3361,10 @@ async function decideWorkspaceCommandV2(
       return decideSetWorkspaceMemberRoleV2(current, command, context);
     case "workspace.member-remove@1":
       return decideRemoveWorkspaceMemberV2(current, command, context);
+    case "workspace.leave@1":
+      return decideLeaveWorkspaceV2(current, command, context);
+    case "workspace.transfer-ownership@1":
+      return decideTransferWorkspaceOwnershipV2(current, command, context);
     case "workspace.invite-claim@1":
       if (invitation === null) {
         throw new Error("Invitation claim is missing its authority snapshot");
@@ -3143,6 +3388,8 @@ function decideWorkspaceReduction(
       return decideSetWorkspaceMemberRole(current, command, context);
     case "workspace.member-remove@1":
       return decideRemoveWorkspaceMember(current, command, context);
+    case "workspace.leave@1":
+      return decideLeaveWorkspace(current, command, context);
     default:
       throw new Error("Workspace pending overlay is not a reduction");
   }

@@ -66,30 +66,6 @@ mod const_checkers {
         }
     }
 
-    pub(super) fn expect_const_punk_get_1<'de, D>(deserializer: D) -> Result<String, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let value = String::deserialize(deserializer)?;
-        if value == "punk.get@1" {
-            Ok(value)
-        } else {
-            Err(de::Error::custom("unexpected constant"))
-        }
-    }
-
-    pub(super) fn expect_const_punk_update_1<'de, D>(deserializer: D) -> Result<String, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let value = String::deserialize(deserializer)?;
-        if value == "punk.update@1" {
-            Ok(value)
-        } else {
-            Err(de::Error::custom("unexpected constant"))
-        }
-    }
-
     pub(super) fn expect_const_desktop_auth_start_1<'de, D>(
         deserializer: D,
     ) -> Result<String, D::Error>
@@ -526,84 +502,6 @@ mod const_checkers {
         }
     }
 
-    pub(super) fn expect_const_punk_summary_batch_1<'de, D>(
-        deserializer: D,
-    ) -> Result<String, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let value = String::deserialize(deserializer)?;
-        if value == "punk.summary-batch@1" {
-            Ok(value)
-        } else {
-            Err(de::Error::custom("unexpected constant"))
-        }
-    }
-
-    pub(super) fn expect_const_punk_summary_batch_response_1<'de, D>(
-        deserializer: D,
-    ) -> Result<String, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let value = String::deserialize(deserializer)?;
-        if value == "punk.summary-batch-response@1" {
-            Ok(value)
-        } else {
-            Err(de::Error::custom("unexpected constant"))
-        }
-    }
-
-    pub(super) fn expect_const_punk_search_1<'de, D>(deserializer: D) -> Result<String, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let value = String::deserialize(deserializer)?;
-        if value == "punk.search@1" {
-            Ok(value)
-        } else {
-            Err(de::Error::custom("unexpected constant"))
-        }
-    }
-
-    pub(super) fn expect_const_prefix<'de, D>(deserializer: D) -> Result<String, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let value = String::deserialize(deserializer)?;
-        if value == "prefix" {
-            Ok(value)
-        } else {
-            Err(de::Error::custom("unexpected constant"))
-        }
-    }
-
-    pub(super) fn expect_const_punk_id<'de, D>(deserializer: D) -> Result<String, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let value = String::deserialize(deserializer)?;
-        if value == "punk_id" {
-            Ok(value)
-        } else {
-            Err(de::Error::custom("unexpected constant"))
-        }
-    }
-
-    pub(super) fn expect_const_punk_search_response_1<'de, D>(
-        deserializer: D,
-    ) -> Result<String, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let value = String::deserialize(deserializer)?;
-        if value == "punk.search-response@1" {
-            Ok(value)
-        } else {
-            Err(de::Error::custom("unexpected constant"))
-        }
-    }
-
     pub(super) fn expect_const_conversation_follow_1<'de, D>(
         deserializer: D,
     ) -> Result<String, D::Error>
@@ -636,6 +534,18 @@ mod const_checkers {
     {
         let value = String::deserialize(deserializer)?;
         if value == "changes" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_typing<'de, D>(deserializer: D) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "typing" {
             Ok(value)
         } else {
             Err(de::Error::custom("unexpected constant"))
@@ -738,6 +648,230 @@ mod const_checkers {
     {
         let value = String::deserialize(deserializer)?;
         if value == "message.reaction-remove@1" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_media_upload_grant_create_1<'de, D>(
+        deserializer: D,
+    ) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "media-upload.grant-create@1" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_message_attachment<'de, D>(
+        deserializer: D,
+    ) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "message_attachment" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_media_upload_grant_1<'de, D>(
+        deserializer: D,
+    ) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "media-upload.grant@1" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_punks_upload<'de, D>(deserializer: D) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "PunksUpload" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_media_upload_part_1<'de, D>(
+        deserializer: D,
+    ) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "media-upload.part@1" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_media_upload_finalize_1<'de, D>(
+        deserializer: D,
+    ) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "media-upload.finalize@1" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_media_upload_abandon_1<'de, D>(
+        deserializer: D,
+    ) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "media-upload.abandon@1" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_media_upload_status_1<'de, D>(
+        deserializer: D,
+    ) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "media-upload.status@1" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_u8388608<'de, D>(deserializer: D) -> Result<u64, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = u64::deserialize(deserializer)?;
+        if value == 8388608 {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_punk_get_1<'de, D>(deserializer: D) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "punk.get@1" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_punk_update_1<'de, D>(deserializer: D) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "punk.update@1" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_punk_summary_batch_1<'de, D>(
+        deserializer: D,
+    ) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "punk.summary-batch@1" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_punk_summary_batch_response_1<'de, D>(
+        deserializer: D,
+    ) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "punk.summary-batch-response@1" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_punk_search_1<'de, D>(deserializer: D) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "punk.search@1" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_prefix<'de, D>(deserializer: D) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "prefix" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_punk_id<'de, D>(deserializer: D) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "punk_id" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_punk_search_response_1<'de, D>(
+        deserializer: D,
+    ) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "punk.search-response@1" {
             Ok(value)
         } else {
             Err(de::Error::custom("unexpected constant"))
@@ -884,6 +1018,104 @@ mod const_checkers {
         }
     }
 
+    pub(super) fn expect_const_workspace_member_set_role_1<'de, D>(
+        deserializer: D,
+    ) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "workspace.member-set-role@1" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_workspace_governance_1<'de, D>(
+        deserializer: D,
+    ) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "workspace.governance@1" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_workspace_governance_view_1<'de, D>(
+        deserializer: D,
+    ) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "workspace.governance-view@1" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_workspace_governance_response_1<'de, D>(
+        deserializer: D,
+    ) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "workspace.governance-response@1" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_workspace_member_remove_1<'de, D>(
+        deserializer: D,
+    ) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "workspace.member-remove@1" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_workspace_leave_1<'de, D>(
+        deserializer: D,
+    ) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "workspace.leave@1" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_workspace_transfer_ownership_1<'de, D>(
+        deserializer: D,
+    ) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "workspace.transfer-ownership@1" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
     pub(super) fn expect_const_workspace_membership_mutation_response_1<'de, D>(
         deserializer: D,
     ) -> Result<String, D::Error>
@@ -892,6 +1124,20 @@ mod const_checkers {
     {
         let value = String::deserialize(deserializer)?;
         if value == "workspace.membership-mutation-response@1" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_workspace_membership_lifecycle_response_1<'de, D>(
+        deserializer: D,
+    ) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "workspace.membership-lifecycle-response@1" {
             Ok(value)
         } else {
             Err(de::Error::custom("unexpected constant"))
@@ -1009,6 +1255,136 @@ mod const_checkers {
             Err(de::Error::custom("unexpected constant"))
         }
     }
+
+    pub(super) fn expect_const_presence_hold_1<'de, D>(deserializer: D) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "presence.hold@1" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_hold<'de, D>(deserializer: D) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "hold" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_heartbeat<'de, D>(deserializer: D) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "heartbeat" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_presence_status_set_1<'de, D>(
+        deserializer: D,
+    ) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "presence.status.set@1" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_presence_typing_signal_1<'de, D>(
+        deserializer: D,
+    ) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "presence.typing.signal@1" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_presence<'de, D>(deserializer: D) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "presence" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_realtime_degraded<'de, D>(
+        deserializer: D,
+    ) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "realtime-degraded" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_realtime_degradedRealtimeDegraded<'de, D>(
+        deserializer: D,
+    ) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "realtime_degraded" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_message_search_1<'de, D>(deserializer: D) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "message.search@1" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
+
+    pub(super) fn expect_const_created_cursor_descending<'de, D>(
+        deserializer: D,
+    ) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value == "createdCursor-descending" {
+            Ok(value)
+        } else {
+            Err(de::Error::custom("unexpected constant"))
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -1093,6 +1469,16 @@ pub struct DesktopCompatibilityResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct AuthSessionPunk {
+    pub id: String,
+    #[serde(rename = "displayName")]
+    pub display_name: String,
+    #[serde(rename = "avatarUrl")]
+    pub avatar_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct AuthSession {
     #[serde(rename = "sessionId")]
     pub session_id: String,
@@ -1104,67 +1490,7 @@ pub struct AuthSession {
     pub expires_at: String,
     #[serde(rename = "recentReauthUntil")]
     pub recent_reauth_until: Option<String>,
-    pub punk: serde_json::Value,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct GetPunkProfileQuery {
-    #[serde(
-        rename = "contract",
-        deserialize_with = "const_checkers::expect_const_punk_get_1"
-    )]
-    pub contract: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub enum PunkStatus {
-    #[serde(rename = "active")]
-    Active,
-    #[serde(rename = "merged")]
-    Merged,
-    #[serde(rename = "deleting")]
-    Deleting,
-    #[serde(rename = "deleted")]
-    Deleted,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct Punk {
-    pub id: String,
-    pub status: PunkStatus,
-    #[serde(rename = "displayName")]
-    pub display_name: String,
-    #[serde(rename = "avatarUrl")]
-    pub avatar_url: Option<String>,
-    pub identities: Vec<serde_json::Value>,
-    #[serde(rename = "mergedInto")]
-    pub merged_into: Option<String>,
-    pub revision: u64,
-    #[serde(rename = "createdAt")]
-    pub created_at: String,
-    #[serde(rename = "updatedAt")]
-    pub updated_at: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct UpdatePunkProfileCommand {
-    #[serde(
-        rename = "contract",
-        deserialize_with = "const_checkers::expect_const_punk_update_1"
-    )]
-    pub contract: String,
-    #[serde(rename = "commandId")]
-    pub command_id: String,
-    #[serde(rename = "expectedRevision")]
-    pub expected_revision: u64,
-    #[serde(rename = "displayName")]
-    pub display_name: String,
-    #[serde(rename = "avatarUrl")]
-    pub avatar_url: Option<String>,
+    pub punk: AuthSessionPunk,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -1204,6 +1530,8 @@ pub enum DesktopAuthStartRequestPurpose {
     LinkGithub,
     #[serde(rename = "register_passkey")]
     RegisterPasskey,
+    #[serde(rename = "transfer_workspace_ownership")]
+    TransferWorkspaceOwnership,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -1461,6 +1789,16 @@ pub struct DesktopAuthClaimRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DesktopAuthClaimExchangeSessionPunk {
+    pub id: String,
+    #[serde(rename = "displayName")]
+    pub display_name: String,
+    #[serde(rename = "avatarUrl")]
+    pub avatar_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct DesktopAuthClaimExchangeSession {
     #[serde(rename = "sessionId")]
     pub session_id: String,
@@ -1472,7 +1810,7 @@ pub struct DesktopAuthClaimExchangeSession {
     pub expires_at: String,
     #[serde(rename = "recentReauthUntil")]
     pub recent_reauth_until: Option<String>,
-    pub punk: serde_json::Value,
+    pub punk: DesktopAuthClaimExchangeSessionPunk,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -1526,6 +1864,8 @@ pub enum DesktopAuthClaimExchangeAuthorizationTargetMethod {
     LinkGithub,
     #[serde(rename = "register_passkey")]
     RegisterPasskey,
+    #[serde(rename = "transfer_workspace_ownership")]
+    TransferWorkspaceOwnership,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -1716,6 +2056,16 @@ pub struct DesktopSessionRenewPrepareRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DesktopSessionRenewExchangeSessionPunk {
+    pub id: String,
+    #[serde(rename = "displayName")]
+    pub display_name: String,
+    #[serde(rename = "avatarUrl")]
+    pub avatar_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct DesktopSessionRenewExchangeSession {
     #[serde(rename = "sessionId")]
     pub session_id: String,
@@ -1727,7 +2077,7 @@ pub struct DesktopSessionRenewExchangeSession {
     pub expires_at: String,
     #[serde(rename = "recentReauthUntil")]
     pub recent_reauth_until: Option<String>,
-    pub punk: serde_json::Value,
+    pub punk: DesktopSessionRenewExchangeSessionPunk,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -1967,6 +2317,27 @@ pub enum WorkspaceStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum WorkspaceMembersRole {
+    #[serde(rename = "owner")]
+    Owner,
+    #[serde(rename = "moderator")]
+    Moderator,
+    #[serde(rename = "member")]
+    Member,
+    #[serde(rename = "guest")]
+    Guest,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct WorkspaceMembers {
+    #[serde(rename = "punkId")]
+    pub punk_id: String,
+    pub role: WorkspaceMembersRole,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct Workspace {
     pub id: String,
@@ -1976,7 +2347,7 @@ pub struct Workspace {
     pub status: WorkspaceStatus,
     #[serde(rename = "ownerPunkId")]
     pub owner_punk_id: String,
-    pub members: Vec<serde_json::Value>,
+    pub members: Vec<WorkspaceMembers>,
     pub revision: u64,
     pub cursor: u64,
     #[serde(rename = "createdAt")]
@@ -2397,115 +2768,6 @@ pub struct ResolveAuthorsResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct PunkSummaryBatchQuery {
-    #[serde(
-        rename = "contract",
-        deserialize_with = "const_checkers::expect_const_punk_summary_batch_1"
-    )]
-    pub contract: String,
-    #[serde(rename = "workspaceId")]
-    pub workspace_id: String,
-    #[serde(rename = "punkIds")]
-    pub punk_ids: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct PunkSummaryBatchResponseSummary {
-    #[serde(rename = "punkId")]
-    pub punk_id: String,
-    #[serde(rename = "displayName")]
-    pub display_name: String,
-    #[serde(rename = "avatarUrl")]
-    pub avatar_url: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct PunkSummaryBatchResponse {
-    #[serde(
-        rename = "contract",
-        deserialize_with = "const_checkers::expect_const_punk_summary_batch_response_1"
-    )]
-    pub contract: String,
-    #[serde(rename = "workspaceId")]
-    pub workspace_id: String,
-    pub items: Vec<PunkSummaryBatchResponseSummary>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct Prefix {
-    #[serde(
-        rename = "kind",
-        deserialize_with = "const_checkers::expect_const_prefix"
-    )]
-    pub kind: String,
-    pub value: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct PunkId {
-    #[serde(
-        rename = "kind",
-        deserialize_with = "const_checkers::expect_const_punk_id"
-    )]
-    pub kind: String,
-    #[serde(rename = "punkId")]
-    pub punk_id: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(untagged)]
-pub enum PunkSearchQueryQuery {
-    Prefix(Prefix),
-    PunkId(PunkId),
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct PunkSearchQuery {
-    #[serde(
-        rename = "contract",
-        deserialize_with = "const_checkers::expect_const_punk_search_1"
-    )]
-    pub contract: String,
-    #[serde(rename = "workspaceId")]
-    pub workspace_id: String,
-    pub query: PunkSearchQueryQuery,
-    pub limit: u64,
-    pub cursor: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct PunkSearchResponseSummary {
-    #[serde(rename = "punkId")]
-    pub punk_id: String,
-    #[serde(rename = "displayName")]
-    pub display_name: String,
-    #[serde(rename = "avatarUrl")]
-    pub avatar_url: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct PunkSearchResponse {
-    #[serde(
-        rename = "contract",
-        deserialize_with = "const_checkers::expect_const_punk_search_response_1"
-    )]
-    pub contract: String,
-    #[serde(rename = "workspaceId")]
-    pub workspace_id: String,
-    pub items: Vec<PunkSearchResponseSummary>,
-    #[serde(rename = "nextCursor")]
-    pub next_cursor: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct FollowConversationQuery {
     #[serde(
         rename = "contract",
@@ -2555,10 +2817,8 @@ pub struct ConversationFollowServerFrameThreadPatch {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct ConversationFollowServerFrameCanonicalReaction {
-    #[serde(flatten)]
-    pub extra: serde_json::Value,
-}
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct ConversationFollowServerFrameCanonicalReaction {}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
@@ -2618,6 +2878,22 @@ pub struct Changes {
     pub reaction_patches: Vec<ConversationFollowServerFrameReactionPatch>,
     #[serde(rename = "reactionCollectionPatches")]
     pub reaction_collection_patches: Vec<ConversationFollowServerFrameReactionCollectionPatch>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct Typing {
+    #[serde(
+        rename = "schemaVersion",
+        deserialize_with = "const_checkers::expect_const_u1"
+    )]
+    pub schema_version: u64,
+    #[serde(
+        rename = "type",
+        deserialize_with = "const_checkers::expect_const_typing"
+    )]
+    pub r#type: String,
+    pub patch: PresenceTypingPatch,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -2692,6 +2968,7 @@ pub struct ConversationUnavailable {
 pub enum ConversationFollowServerFrame {
     Accepted(Accepted),
     Changes(Changes),
+    Typing(Typing),
     Ready(Ready),
     ResyncRequired(ResyncRequired),
     ConversationUnavailable(ConversationUnavailable),
@@ -2741,6 +3018,20 @@ pub enum PostMessageCommandActor {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct PostMessageCommandPayload {
+    pub content: String,
+    #[serde(rename = "replyToMessageId")]
+    pub reply_to_message_id: Option<String>,
+    pub broadcast: bool,
+    pub topic: Option<String>,
+    #[serde(rename = "mentionedPunkIds")]
+    pub mentioned_punk_ids: Vec<String>,
+    #[serde(rename = "mediaIds")]
+    pub media_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct PostMessageCommand {
     #[serde(
         rename = "contract",
@@ -2754,7 +3045,7 @@ pub struct PostMessageCommand {
     #[serde(rename = "conversationId")]
     pub conversation_id: String,
     pub actor: PostMessageCommandActor,
-    pub payload: serde_json::Value,
+    pub payload: PostMessageCommandPayload,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -2847,10 +3138,8 @@ pub enum MessageReactionMutationResponseActor {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct MessageReactionMutationResponseCanonicalReaction {
-    #[serde(flatten)]
-    pub extra: serde_json::Value,
-}
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct MessageReactionMutationResponseCanonicalReaction {}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
@@ -2965,6 +3254,31 @@ pub enum ConversationVisibility {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+pub enum ConversationMembersAccess {
+    #[serde(rename = "owner")]
+    Owner,
+    #[serde(rename = "manager")]
+    Manager,
+    #[serde(rename = "member")]
+    Member,
+    #[serde(rename = "guest")]
+    Guest,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct ConversationMembers {
+    #[serde(rename = "punkId")]
+    pub punk_id: String,
+    pub access: ConversationMembersAccess,
+    #[serde(rename = "joinedAt")]
+    pub joined_at: String,
+    #[serde(rename = "invitedByPunkId")]
+    pub invited_by_punk_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub enum ConversationStatus {
     #[serde(rename = "active")]
     Active,
@@ -2999,7 +3313,7 @@ pub struct Conversation {
     pub ttl_deadline: Option<String>,
     #[serde(rename = "ownerPunkId")]
     pub owner_punk_id: String,
-    pub members: Vec<serde_json::Value>,
+    pub members: Vec<ConversationMembers>,
     pub status: ConversationStatus,
     pub revision: u64,
     pub cursor: u64,
@@ -3032,6 +3346,8 @@ pub enum PunksProblemCode {
     IdentityConflict,
     #[serde(rename = "revision_conflict")]
     RevisionConflict,
+    #[serde(rename = "invalid_transition")]
+    InvalidTransition,
     #[serde(rename = "invite_invalid")]
     InviteInvalid,
     #[serde(rename = "invite_expired")]
@@ -3046,6 +3362,16 @@ pub enum PunksProblemCode {
     QueryTooShort,
     #[serde(rename = "command_in_progress")]
     CommandInProgress,
+    #[serde(rename = "storage_unavailable")]
+    StorageUnavailable,
+    #[serde(rename = "upload_hash_invalid")]
+    UploadHashInvalid,
+    #[serde(rename = "upload_conflict")]
+    UploadConflict,
+    #[serde(rename = "upload_ambiguous")]
+    UploadAmbiguous,
+    #[serde(rename = "upload_expired")]
+    UploadExpired,
     #[serde(rename = "attestation_failed")]
     AttestationFailed,
     #[serde(rename = "temporarily_unavailable")]
@@ -3085,6 +3411,416 @@ pub struct PunksProblem {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct CreateMediaUploadGrantCommandActor {
+    #[serde(
+        rename = "kind",
+        deserialize_with = "const_checkers::expect_const_punk"
+    )]
+    pub kind: String,
+    #[serde(rename = "punkId")]
+    pub punk_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum CreateMediaUploadGrantCommandPayloadContentType {
+    #[serde(rename = "application/json")]
+    ApplicationJson,
+    #[serde(rename = "application/pdf")]
+    ApplicationPdf,
+    #[serde(rename = "application/zip")]
+    ApplicationZip,
+    #[serde(rename = "audio/mpeg")]
+    AudioMpeg,
+    #[serde(rename = "audio/ogg")]
+    AudioOgg,
+    #[serde(rename = "audio/wav")]
+    AudioWav,
+    #[serde(rename = "audio/webm")]
+    AudioWebm,
+    #[serde(rename = "image/avif")]
+    ImageAvif,
+    #[serde(rename = "image/gif")]
+    ImageGif,
+    #[serde(rename = "image/jpeg")]
+    ImageJpeg,
+    #[serde(rename = "image/png")]
+    ImagePng,
+    #[serde(rename = "image/webp")]
+    ImageWebp,
+    #[serde(rename = "text/csv")]
+    TextCsv,
+    #[serde(rename = "text/markdown")]
+    TextMarkdown,
+    #[serde(rename = "text/plain")]
+    TextPlain,
+    #[serde(rename = "video/mp4")]
+    VideoMp4,
+    #[serde(rename = "video/quicktime")]
+    VideoQuicktime,
+    #[serde(rename = "video/webm")]
+    VideoWebm,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct CreateMediaUploadGrantCommandPayload {
+    #[serde(
+        rename = "purpose",
+        deserialize_with = "const_checkers::expect_const_message_attachment"
+    )]
+    pub purpose: String,
+    #[serde(rename = "byteLength")]
+    pub byte_length: u64,
+    #[serde(rename = "contentType")]
+    pub content_type: CreateMediaUploadGrantCommandPayloadContentType,
+    pub sha256: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct CreateMediaUploadGrantCommand {
+    #[serde(
+        rename = "contract",
+        deserialize_with = "const_checkers::expect_const_media_upload_grant_create_1"
+    )]
+    pub contract: String,
+    #[serde(rename = "commandId")]
+    pub command_id: String,
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: String,
+    pub actor: CreateMediaUploadGrantCommandActor,
+    pub payload: CreateMediaUploadGrantCommandPayload,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct MediaUploadGrantCredential {
+    #[serde(
+        rename = "scheme",
+        deserialize_with = "const_checkers::expect_const_punks_upload"
+    )]
+    pub scheme: String,
+    pub token: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct MediaUploadGrantEndpoints {
+    #[serde(rename = "partUrlTemplate")]
+    pub part_url_template: String,
+    #[serde(rename = "finalizeUrl")]
+    pub finalize_url: String,
+    #[serde(rename = "statusUrl")]
+    pub status_url: String,
+    #[serde(rename = "abandonUrl")]
+    pub abandon_url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct MediaUploadGrant {
+    #[serde(
+        rename = "contract",
+        deserialize_with = "const_checkers::expect_const_media_upload_grant_1"
+    )]
+    pub contract: String,
+    pub status: MediaUploadStatus,
+    pub credential: MediaUploadGrantCredential,
+    pub endpoints: MediaUploadGrantEndpoints,
+    pub replayed: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct MediaUploadPart {
+    #[serde(
+        rename = "contract",
+        deserialize_with = "const_checkers::expect_const_media_upload_part_1"
+    )]
+    pub contract: String,
+    #[serde(rename = "uploadId")]
+    pub upload_id: String,
+    #[serde(rename = "partNumber")]
+    pub part_number: u64,
+    #[serde(rename = "byteLength")]
+    pub byte_length: u64,
+    pub sha256: String,
+    pub replayed: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct FinalizeMediaUploadCommandActor {
+    #[serde(
+        rename = "kind",
+        deserialize_with = "const_checkers::expect_const_punk"
+    )]
+    pub kind: String,
+    #[serde(rename = "punkId")]
+    pub punk_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct FinalizeMediaUploadCommand {
+    #[serde(
+        rename = "contract",
+        deserialize_with = "const_checkers::expect_const_media_upload_finalize_1"
+    )]
+    pub contract: String,
+    #[serde(rename = "commandId")]
+    pub command_id: String,
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: String,
+    #[serde(rename = "uploadId")]
+    pub upload_id: String,
+    pub actor: FinalizeMediaUploadCommandActor,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct AbandonMediaUploadCommandActor {
+    #[serde(
+        rename = "kind",
+        deserialize_with = "const_checkers::expect_const_punk"
+    )]
+    pub kind: String,
+    #[serde(rename = "punkId")]
+    pub punk_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct AbandonMediaUploadCommand {
+    #[serde(
+        rename = "contract",
+        deserialize_with = "const_checkers::expect_const_media_upload_abandon_1"
+    )]
+    pub contract: String,
+    #[serde(rename = "commandId")]
+    pub command_id: String,
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: String,
+    #[serde(rename = "uploadId")]
+    pub upload_id: String,
+    pub actor: AbandonMediaUploadCommandActor,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum MediaUploadStatusState {
+    #[serde(rename = "uploading")]
+    Uploading,
+    #[serde(rename = "finalizing")]
+    Finalizing,
+    #[serde(rename = "candidate")]
+    Candidate,
+    #[serde(rename = "cleanup_pending")]
+    CleanupPending,
+    #[serde(rename = "abandoned")]
+    Abandoned,
+    #[serde(rename = "expired")]
+    Expired,
+    #[serde(rename = "rejected")]
+    Rejected,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct MediaUploadStatusUploadedParts {
+    #[serde(rename = "partNumber")]
+    pub part_number: u64,
+    #[serde(rename = "byteLength")]
+    pub byte_length: u64,
+    pub sha256: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct MediaUploadStatusCandidate {
+    #[serde(rename = "mediaId")]
+    pub media_id: String,
+    #[serde(rename = "byteLength")]
+    pub byte_length: u64,
+    #[serde(rename = "contentType")]
+    pub content_type: String,
+    pub sha256: String,
+    #[serde(rename = "finalizedAt")]
+    pub finalized_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum MediaUploadStatusFailureCode {
+    #[serde(rename = "storage_unavailable")]
+    StorageUnavailable,
+    #[serde(rename = "hash_invalid")]
+    HashInvalid,
+    #[serde(rename = "conflict")]
+    Conflict,
+    #[serde(rename = "ambiguous")]
+    Ambiguous,
+    #[serde(rename = "expired")]
+    Expired,
+    #[serde(rename = "abandoned")]
+    Abandoned,
+    #[serde(rename = "authorization_lost")]
+    AuthorizationLost,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum MediaUploadStatusFailureRetry {
+    #[serde(rename = "same_command")]
+    SameCommand,
+    #[serde(rename = "later")]
+    Later,
+    #[serde(rename = "new_intent")]
+    NewIntent,
+    #[serde(rename = "never")]
+    Never,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct MediaUploadStatusFailure {
+    pub code: MediaUploadStatusFailureCode,
+    pub retry: MediaUploadStatusFailureRetry,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct MediaUploadStatus {
+    #[serde(
+        rename = "contract",
+        deserialize_with = "const_checkers::expect_const_media_upload_status_1"
+    )]
+    pub contract: String,
+    #[serde(rename = "uploadId")]
+    pub upload_id: String,
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: String,
+    #[serde(rename = "punkId")]
+    pub punk_id: String,
+    #[serde(
+        rename = "purpose",
+        deserialize_with = "const_checkers::expect_const_message_attachment"
+    )]
+    pub purpose: String,
+    #[serde(rename = "byteLength")]
+    pub byte_length: u64,
+    #[serde(rename = "contentType")]
+    pub content_type: String,
+    pub sha256: String,
+    #[serde(rename = "issuedAt")]
+    pub issued_at: String,
+    #[serde(rename = "expiresAt")]
+    pub expires_at: String,
+    #[serde(
+        rename = "partSize",
+        deserialize_with = "const_checkers::expect_const_u8388608"
+    )]
+    pub part_size: u64,
+    #[serde(rename = "partCount")]
+    pub part_count: u64,
+    pub state: MediaUploadStatusState,
+    #[serde(rename = "uploadedParts")]
+    pub uploaded_parts: Vec<MediaUploadStatusUploadedParts>,
+    pub candidate: Option<MediaUploadStatusCandidate>,
+    pub failure: Option<MediaUploadStatusFailure>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum PunkStatus {
+    #[serde(rename = "active")]
+    Active,
+    #[serde(rename = "merged")]
+    Merged,
+    #[serde(rename = "deleting")]
+    Deleting,
+    #[serde(rename = "deleted")]
+    Deleted,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum PunkIdentitiesProvider {
+    #[serde(rename = "google")]
+    Google,
+    #[serde(rename = "github")]
+    Github,
+    #[serde(rename = "passkey")]
+    Passkey,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct PunkIdentities {
+    pub provider: PunkIdentitiesProvider,
+    #[serde(rename = "subjectHash")]
+    pub subject_hash: String,
+    #[serde(rename = "emailHash")]
+    pub email_hash: String,
+    #[serde(rename = "verifiedEmail")]
+    pub verified_email: Option<String>,
+    pub username: Option<String>,
+    #[serde(rename = "credentialId")]
+    pub credential_id: Option<String>,
+    #[serde(rename = "linkedAt")]
+    pub linked_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct Punk {
+    pub id: String,
+    pub status: PunkStatus,
+    #[serde(rename = "displayName")]
+    pub display_name: String,
+    #[serde(rename = "avatarUrl")]
+    pub avatar_url: Option<String>,
+    pub identities: Vec<PunkIdentities>,
+    #[serde(rename = "mergedInto")]
+    pub merged_into: Option<String>,
+    pub revision: u64,
+    #[serde(rename = "createdAt")]
+    pub created_at: String,
+    #[serde(rename = "updatedAt")]
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct GetPunkProfileQuery {
+    #[serde(
+        rename = "contract",
+        deserialize_with = "const_checkers::expect_const_punk_get_1"
+    )]
+    pub contract: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct UpdatePunkProfileCommand {
+    #[serde(
+        rename = "contract",
+        deserialize_with = "const_checkers::expect_const_punk_update_1"
+    )]
+    pub contract: String,
+    #[serde(rename = "commandId")]
+    pub command_id: String,
+    #[serde(rename = "expectedRevision")]
+    pub expected_revision: u64,
+    #[serde(rename = "displayName")]
+    pub display_name: String,
+    #[serde(rename = "avatarUrl")]
+    pub avatar_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct PunkPublicSummary {
     #[serde(rename = "punkId")]
     pub punk_id: String,
@@ -3092,6 +3828,115 @@ pub struct PunkPublicSummary {
     pub display_name: String,
     #[serde(rename = "avatarUrl")]
     pub avatar_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct PunkSummaryBatchQuery {
+    #[serde(
+        rename = "contract",
+        deserialize_with = "const_checkers::expect_const_punk_summary_batch_1"
+    )]
+    pub contract: String,
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: String,
+    #[serde(rename = "punkIds")]
+    pub punk_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct PunkSummaryBatchResponseSummary {
+    #[serde(rename = "punkId")]
+    pub punk_id: String,
+    #[serde(rename = "displayName")]
+    pub display_name: String,
+    #[serde(rename = "avatarUrl")]
+    pub avatar_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct PunkSummaryBatchResponse {
+    #[serde(
+        rename = "contract",
+        deserialize_with = "const_checkers::expect_const_punk_summary_batch_response_1"
+    )]
+    pub contract: String,
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: String,
+    pub items: Vec<PunkSummaryBatchResponseSummary>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct Prefix {
+    #[serde(
+        rename = "kind",
+        deserialize_with = "const_checkers::expect_const_prefix"
+    )]
+    pub kind: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct PunkId {
+    #[serde(
+        rename = "kind",
+        deserialize_with = "const_checkers::expect_const_punk_id"
+    )]
+    pub kind: String,
+    #[serde(rename = "punkId")]
+    pub punk_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum PunkSearchQueryQuery {
+    Prefix(Prefix),
+    PunkId(PunkId),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct PunkSearchQuery {
+    #[serde(
+        rename = "contract",
+        deserialize_with = "const_checkers::expect_const_punk_search_1"
+    )]
+    pub contract: String,
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: String,
+    pub query: PunkSearchQueryQuery,
+    pub limit: u64,
+    pub cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct PunkSearchResponseSummary {
+    #[serde(rename = "punkId")]
+    pub punk_id: String,
+    #[serde(rename = "displayName")]
+    pub display_name: String,
+    #[serde(rename = "avatarUrl")]
+    pub avatar_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct PunkSearchResponse {
+    #[serde(
+        rename = "contract",
+        deserialize_with = "const_checkers::expect_const_punk_search_response_1"
+    )]
+    pub contract: String,
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: String,
+    pub items: Vec<PunkSearchResponseSummary>,
+    #[serde(rename = "nextCursor")]
+    pub next_cursor: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -3555,14 +4400,343 @@ pub enum AccountMergePlanResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct SetWorkspaceMemberRoleCommandActor {
+    #[serde(
+        rename = "kind",
+        deserialize_with = "const_checkers::expect_const_punk"
+    )]
+    pub kind: String,
+    #[serde(rename = "punkId")]
+    pub punk_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum SetWorkspaceMemberRoleCommandPayloadRole {
+    #[serde(rename = "owner")]
+    Owner,
+    #[serde(rename = "moderator")]
+    Moderator,
+    #[serde(rename = "member")]
+    Member,
+    #[serde(rename = "guest")]
+    Guest,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct SetWorkspaceMemberRoleCommandPayload {
+    #[serde(rename = "targetPunkId")]
+    pub target_punk_id: String,
+    pub role: SetWorkspaceMemberRoleCommandPayloadRole,
+    #[serde(rename = "expectedRevision")]
+    pub expected_revision: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct SetWorkspaceMemberRoleCommand {
+    #[serde(
+        rename = "contract",
+        deserialize_with = "const_checkers::expect_const_workspace_member_set_role_1"
+    )]
+    pub contract: String,
+    #[serde(rename = "commandId")]
+    pub command_id: String,
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: String,
+    pub actor: SetWorkspaceMemberRoleCommandActor,
+    pub payload: SetWorkspaceMemberRoleCommandPayload,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct GetWorkspaceGovernanceQuery {
+    #[serde(
+        rename = "contract",
+        deserialize_with = "const_checkers::expect_const_workspace_governance_1"
+    )]
+    pub contract: String,
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: String,
+    pub limit: u64,
+    pub cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum WorkspaceGovernanceViewVisibility {
+    #[serde(rename = "private")]
+    Private,
+    #[serde(rename = "punks")]
+    Punks,
+    #[serde(rename = "public")]
+    Public,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct WorkspaceGovernanceView {
+    #[serde(
+        rename = "contract",
+        deserialize_with = "const_checkers::expect_const_workspace_governance_view_1"
+    )]
+    pub contract: String,
+    pub id: String,
+    pub slug: String,
+    pub name: String,
+    pub visibility: WorkspaceGovernanceViewVisibility,
+    #[serde(
+        rename = "status",
+        deserialize_with = "const_checkers::expect_const_active"
+    )]
+    pub status: String,
+    #[serde(rename = "ownerPunkId")]
+    pub owner_punk_id: String,
+    #[serde(rename = "memberCount")]
+    pub member_count: u64,
+    pub revision: u64,
+    pub cursor: u64,
+    #[serde(rename = "createdAt")]
+    pub created_at: String,
+    #[serde(rename = "updatedAt")]
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum WorkspaceGovernanceResponseMemberRole {
+    #[serde(rename = "owner")]
+    Owner,
+    #[serde(rename = "moderator")]
+    Moderator,
+    #[serde(rename = "member")]
+    Member,
+    #[serde(rename = "guest")]
+    Guest,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct WorkspaceGovernanceResponseMember {
+    #[serde(rename = "punkId")]
+    pub punk_id: String,
+    pub role: WorkspaceGovernanceResponseMemberRole,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct WorkspaceGovernanceResponse {
+    #[serde(
+        rename = "contract",
+        deserialize_with = "const_checkers::expect_const_workspace_governance_response_1"
+    )]
+    pub contract: String,
+    pub workspace: WorkspaceGovernanceView,
+    pub members: Vec<WorkspaceGovernanceResponseMember>,
+    #[serde(rename = "nextCursor")]
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct RemoveWorkspaceMemberCommandActor {
+    #[serde(
+        rename = "kind",
+        deserialize_with = "const_checkers::expect_const_punk"
+    )]
+    pub kind: String,
+    #[serde(rename = "punkId")]
+    pub punk_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct RemoveWorkspaceMemberCommandPayload {
+    #[serde(rename = "targetPunkId")]
+    pub target_punk_id: String,
+    #[serde(rename = "expectedRevision")]
+    pub expected_revision: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct RemoveWorkspaceMemberCommand {
+    #[serde(
+        rename = "contract",
+        deserialize_with = "const_checkers::expect_const_workspace_member_remove_1"
+    )]
+    pub contract: String,
+    #[serde(rename = "commandId")]
+    pub command_id: String,
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: String,
+    pub actor: RemoveWorkspaceMemberCommandActor,
+    pub payload: RemoveWorkspaceMemberCommandPayload,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct LeaveWorkspaceCommandActor {
+    #[serde(
+        rename = "kind",
+        deserialize_with = "const_checkers::expect_const_punk"
+    )]
+    pub kind: String,
+    #[serde(rename = "punkId")]
+    pub punk_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct LeaveWorkspaceCommandPayload {}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct LeaveWorkspaceCommand {
+    #[serde(
+        rename = "contract",
+        deserialize_with = "const_checkers::expect_const_workspace_leave_1"
+    )]
+    pub contract: String,
+    #[serde(rename = "commandId")]
+    pub command_id: String,
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: String,
+    pub actor: LeaveWorkspaceCommandActor,
+    pub payload: LeaveWorkspaceCommandPayload,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct TransferWorkspaceOwnershipCommandActor {
+    #[serde(
+        rename = "kind",
+        deserialize_with = "const_checkers::expect_const_punk"
+    )]
+    pub kind: String,
+    #[serde(rename = "punkId")]
+    pub punk_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct TransferWorkspaceOwnershipCommandPayload {
+    #[serde(rename = "targetPunkId")]
+    pub target_punk_id: String,
+    #[serde(rename = "expectedRevision")]
+    pub expected_revision: u64,
+    #[serde(rename = "reauthorizationId")]
+    pub reauthorization_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct TransferWorkspaceOwnershipCommand {
+    #[serde(
+        rename = "contract",
+        deserialize_with = "const_checkers::expect_const_workspace_transfer_ownership_1"
+    )]
+    pub contract: String,
+    #[serde(rename = "commandId")]
+    pub command_id: String,
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: String,
+    pub actor: TransferWorkspaceOwnershipCommandActor,
+    pub payload: TransferWorkspaceOwnershipCommandPayload,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum PresentWorkspaceMemberDeltaRole {
+    #[serde(rename = "owner")]
+    Owner,
+    #[serde(rename = "moderator")]
+    Moderator,
+    #[serde(rename = "member")]
+    Member,
+    #[serde(rename = "guest")]
+    Guest,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct PresentWorkspaceMemberDelta {
+    #[serde(rename = "punkId")]
+    pub punk_id: String,
+    #[serde(
+        rename = "present",
+        deserialize_with = "const_checkers::expect_const_r_true"
+    )]
+    pub present: bool,
+    pub role: PresentWorkspaceMemberDeltaRole,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct RemovedWorkspaceMemberDelta {
+    #[serde(rename = "punkId")]
+    pub punk_id: String,
+    #[serde(
+        rename = "present",
+        deserialize_with = "const_checkers::expect_const_r_false"
+    )]
+    pub present: bool,
+    pub role: (),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum WorkspaceMembershipMutationResponseMemberDeltas {
+    WorkspaceMembershipMutationResponseMemberDeltasSuccess(PresentWorkspaceMemberDelta),
+    WorkspaceMembershipMutationResponseMemberDeltasFailure(RemovedWorkspaceMemberDelta),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct WorkspaceMembershipMutationResponse {
     #[serde(
         rename = "contract",
         deserialize_with = "const_checkers::expect_const_workspace_membership_mutation_response_1"
     )]
     pub contract: String,
-    pub workspace: Workspace,
+    pub workspace: WorkspaceGovernanceView,
+    #[serde(rename = "memberDeltas")]
+    pub member_deltas: Vec<WorkspaceMembershipMutationResponseMemberDeltas>,
     pub replayed: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum WorkspaceMembershipLifecycleResponseOutcome {
+    #[serde(rename = "left")]
+    Left,
+    #[serde(rename = "ownership_transferred")]
+    OwnershipTransferred,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct WorkspaceMembershipLifecycleResponse {
+    #[serde(
+        rename = "contract",
+        deserialize_with = "const_checkers::expect_const_workspace_membership_lifecycle_response_1"
+    )]
+    pub contract: String,
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: String,
+    pub revision: u64,
+    pub outcome: WorkspaceMembershipLifecycleResponseOutcome,
+    pub role: Option<String>,
+    pub replayed: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct WorkspaceInvitationViewWorkspace {
+    pub id: String,
+    pub slug: String,
+    pub name: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -3597,7 +4771,7 @@ pub struct WorkspaceInvitationView {
     pub contract: String,
     #[serde(rename = "invitationId")]
     pub invitation_id: String,
-    pub workspace: serde_json::Value,
+    pub workspace: WorkspaceInvitationViewWorkspace,
     #[serde(rename = "workspaceRevision")]
     pub workspace_revision: u64,
     pub role: WorkspaceInvitationViewRole,
@@ -3617,6 +4791,41 @@ pub struct WorkspaceInvitationView {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct CreateWorkspaceInvitationCommandActor {
+    #[serde(
+        rename = "kind",
+        deserialize_with = "const_checkers::expect_const_punk"
+    )]
+    pub kind: String,
+    #[serde(rename = "punkId")]
+    pub punk_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum CreateWorkspaceInvitationCommandPayloadRole {
+    #[serde(rename = "member")]
+    Member,
+    #[serde(rename = "guest")]
+    Guest,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct CreateWorkspaceInvitationCommandPayload {
+    pub role: CreateWorkspaceInvitationCommandPayloadRole,
+    #[serde(rename = "expectedRevision")]
+    pub expected_revision: u64,
+    #[serde(rename = "ttlSeconds")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ttl_seconds: Option<u64>,
+    #[serde(rename = "maxUses")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_uses: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct CreateWorkspaceInvitationCommand {
     #[serde(
         rename = "contract",
@@ -3627,8 +4836,8 @@ pub struct CreateWorkspaceInvitationCommand {
     pub command_id: String,
     #[serde(rename = "workspaceId")]
     pub workspace_id: String,
-    pub actor: serde_json::Value,
-    pub payload: serde_json::Value,
+    pub actor: CreateWorkspaceInvitationCommandActor,
+    pub payload: CreateWorkspaceInvitationCommandPayload,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -3657,6 +4866,27 @@ pub struct CreateWorkspaceInvitationResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct RevokeWorkspaceInvitationCommandActor {
+    #[serde(
+        rename = "kind",
+        deserialize_with = "const_checkers::expect_const_punk"
+    )]
+    pub kind: String,
+    #[serde(rename = "punkId")]
+    pub punk_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct RevokeWorkspaceInvitationCommandPayload {
+    #[serde(rename = "invitationId")]
+    pub invitation_id: String,
+    #[serde(rename = "expectedRevision")]
+    pub expected_revision: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct RevokeWorkspaceInvitationCommand {
     #[serde(
         rename = "contract",
@@ -3667,8 +4897,8 @@ pub struct RevokeWorkspaceInvitationCommand {
     pub command_id: String,
     #[serde(rename = "workspaceId")]
     pub workspace_id: String,
-    pub actor: serde_json::Value,
-    pub payload: serde_json::Value,
+    pub actor: RevokeWorkspaceInvitationCommandActor,
+    pub payload: RevokeWorkspaceInvitationCommandPayload,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -3685,6 +4915,26 @@ pub struct RevokeWorkspaceInvitationResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct ClaimWorkspaceInvitationCommandActor {
+    #[serde(
+        rename = "kind",
+        deserialize_with = "const_checkers::expect_const_punk"
+    )]
+    pub kind: String,
+    #[serde(rename = "punkId")]
+    pub punk_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct ClaimWorkspaceInvitationCommandPayload {
+    pub code: String,
+    #[serde(rename = "expectedRevision")]
+    pub expected_revision: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct ClaimWorkspaceInvitationCommand {
     #[serde(
         rename = "contract",
@@ -3695,8 +4945,8 @@ pub struct ClaimWorkspaceInvitationCommand {
     pub command_id: String,
     #[serde(rename = "workspaceId")]
     pub workspace_id: String,
-    pub actor: serde_json::Value,
-    pub payload: serde_json::Value,
+    pub actor: ClaimWorkspaceInvitationCommandActor,
+    pub payload: ClaimWorkspaceInvitationCommandPayload,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -3709,6 +4959,41 @@ pub enum ClaimWorkspaceInvitationResponseResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum ClaimWorkspaceInvitationResponseWorkspaceVisibility {
+    #[serde(rename = "private")]
+    Private,
+    #[serde(rename = "punks")]
+    Punks,
+    #[serde(rename = "public")]
+    Public,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum ClaimWorkspaceInvitationResponseWorkspaceRole {
+    #[serde(rename = "owner")]
+    Owner,
+    #[serde(rename = "moderator")]
+    Moderator,
+    #[serde(rename = "member")]
+    Member,
+    #[serde(rename = "guest")]
+    Guest,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct ClaimWorkspaceInvitationResponseWorkspace {
+    pub id: String,
+    pub slug: String,
+    pub name: String,
+    pub visibility: ClaimWorkspaceInvitationResponseWorkspaceVisibility,
+    pub role: ClaimWorkspaceInvitationResponseWorkspaceRole,
+    pub revision: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct ClaimWorkspaceInvitationResponse {
     #[serde(
@@ -3717,8 +5002,326 @@ pub struct ClaimWorkspaceInvitationResponse {
     )]
     pub contract: String,
     pub result: ClaimWorkspaceInvitationResponseResult,
-    pub workspace: serde_json::Value,
+    pub workspace: ClaimWorkspaceInvitationResponseWorkspace,
     pub replayed: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct Hold {
+    #[serde(
+        rename = "contract",
+        deserialize_with = "const_checkers::expect_const_presence_hold_1"
+    )]
+    pub contract: String,
+    #[serde(
+        rename = "type",
+        deserialize_with = "const_checkers::expect_const_hold"
+    )]
+    pub r#type: String,
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: String,
+    #[serde(rename = "deviceId")]
+    pub device_id: String,
+    #[serde(rename = "clientGeneration")]
+    pub client_generation: u64,
+    #[serde(rename = "holdId")]
+    pub hold_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct Heartbeat {
+    #[serde(
+        rename = "contract",
+        deserialize_with = "const_checkers::expect_const_presence_hold_1"
+    )]
+    pub contract: String,
+    #[serde(
+        rename = "type",
+        deserialize_with = "const_checkers::expect_const_heartbeat"
+    )]
+    pub r#type: String,
+    #[serde(rename = "leaseToken")]
+    pub lease_token: String,
+    pub sequence: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum PresenceHoldFrame {
+    Hold(Hold),
+    Heartbeat(Heartbeat),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct SetPresenceStatusSignal {
+    #[serde(
+        rename = "contract",
+        deserialize_with = "const_checkers::expect_const_presence_status_set_1"
+    )]
+    pub contract: String,
+    #[serde(rename = "leaseToken")]
+    pub lease_token: String,
+    pub sequence: u64,
+    pub status: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct PresenceTypingSignal {
+    #[serde(
+        rename = "contract",
+        deserialize_with = "const_checkers::expect_const_presence_typing_signal_1"
+    )]
+    pub contract: String,
+    #[serde(rename = "leaseToken")]
+    pub lease_token: String,
+    pub sequence: u64,
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: String,
+    #[serde(rename = "conversationId")]
+    pub conversation_id: String,
+    pub active: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum PresenceViewState {
+    #[serde(rename = "online")]
+    Online,
+    #[serde(rename = "away")]
+    Away,
+    #[serde(rename = "offline")]
+    Offline,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct PresenceView {
+    #[serde(rename = "punkId")]
+    pub punk_id: String,
+    pub state: PresenceViewState,
+    pub status: Option<String>,
+    #[serde(rename = "leaseGeneration")]
+    pub lease_generation: u64,
+    pub sequence: u64,
+    #[serde(rename = "expiresAt")]
+    pub expires_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct AcceptedAccepted {
+    #[serde(
+        rename = "schemaVersion",
+        deserialize_with = "const_checkers::expect_const_u1"
+    )]
+    pub schema_version: u64,
+    #[serde(
+        rename = "type",
+        deserialize_with = "const_checkers::expect_const_accepted"
+    )]
+    pub r#type: String,
+    #[serde(rename = "leaseToken")]
+    pub lease_token: String,
+    #[serde(rename = "leaseGeneration")]
+    pub lease_generation: u64,
+    #[serde(rename = "clientGeneration")]
+    pub client_generation: u64,
+    #[serde(rename = "heartbeatIntervalMs")]
+    pub heartbeat_interval_ms: u64,
+    #[serde(rename = "awayAfterMs")]
+    pub away_after_ms: u64,
+    #[serde(rename = "expiresAfterMs")]
+    pub expires_after_ms: u64,
+    pub presences: Vec<PresenceView>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct Presence {
+    #[serde(
+        rename = "schemaVersion",
+        deserialize_with = "const_checkers::expect_const_u1"
+    )]
+    pub schema_version: u64,
+    #[serde(
+        rename = "type",
+        deserialize_with = "const_checkers::expect_const_presence"
+    )]
+    pub r#type: String,
+    pub presence: PresenceView,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum RealtimeDegradedReason {
+    #[serde(rename = "authorization_unavailable")]
+    AuthorizationUnavailable,
+    #[serde(rename = "capacity_unavailable")]
+    CapacityUnavailable,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct RealtimeDegraded {
+    #[serde(
+        rename = "schemaVersion",
+        deserialize_with = "const_checkers::expect_const_u1"
+    )]
+    pub schema_version: u64,
+    #[serde(
+        rename = "type",
+        deserialize_with = "const_checkers::expect_const_realtime_degraded"
+    )]
+    pub r#type: String,
+    pub reason: RealtimeDegradedReason,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum PresenceHoldServerFrame {
+    Accepted(AcceptedAccepted),
+    Presence(Presence),
+    RealtimeDegraded(RealtimeDegraded),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct PresenceTypingPatch {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: String,
+    #[serde(rename = "conversationId")]
+    pub conversation_id: String,
+    #[serde(rename = "punkId")]
+    pub punk_id: String,
+    pub active: bool,
+    #[serde(rename = "leaseGeneration")]
+    pub lease_generation: u64,
+    pub sequence: u64,
+    #[serde(rename = "expiresAt")]
+    pub expires_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct AcceptedAccepted2 {
+    #[serde(
+        rename = "kind",
+        deserialize_with = "const_checkers::expect_const_accepted"
+    )]
+    pub kind: String,
+    #[serde(rename = "clientGeneration")]
+    pub client_generation: u64,
+    #[serde(rename = "leaseGeneration")]
+    pub lease_generation: u64,
+    #[serde(rename = "heartbeatIntervalMs")]
+    pub heartbeat_interval_ms: u64,
+    #[serde(rename = "awayAfterMs")]
+    pub away_after_ms: u64,
+    #[serde(rename = "expiresAfterMs")]
+    pub expires_after_ms: u64,
+    pub presences: Vec<PresenceView>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct PresencePresence {
+    #[serde(
+        rename = "kind",
+        deserialize_with = "const_checkers::expect_const_presence"
+    )]
+    pub kind: String,
+    pub presence: PresenceView,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum RealtimeDegradedRealtimeDegradedReason {
+    #[serde(rename = "authorization_unavailable")]
+    AuthorizationUnavailable,
+    #[serde(rename = "capacity_unavailable")]
+    CapacityUnavailable,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct RealtimeDegradedRealtimeDegraded {
+    #[serde(
+        rename = "kind",
+        deserialize_with = "const_checkers::expect_const_realtime_degradedRealtimeDegraded"
+    )]
+    pub kind: String,
+    pub reason: RealtimeDegradedRealtimeDegradedReason,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum DesktopPresenceDelivery {
+    Accepted(AcceptedAccepted2),
+    Presence(PresencePresence),
+    RealtimeDegraded(RealtimeDegradedRealtimeDegraded),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct MessageSearchQuery {
+    #[serde(
+        rename = "contract",
+        deserialize_with = "const_checkers::expect_const_message_search_1"
+    )]
+    pub contract: String,
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: String,
+    #[serde(rename = "conversationId")]
+    pub conversation_id: String,
+    #[serde(rename = "threadRootMessageId")]
+    pub thread_root_message_id: Option<String>,
+    pub query: String,
+    pub cursor: Option<String>,
+    pub limit: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum MessageSearchResponseCompleteness {
+    #[serde(rename = "complete")]
+    Complete,
+    #[serde(rename = "partial")]
+    Partial,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum MessageSearchResponsePartialReason {
+    #[serde(rename = "index_lagging")]
+    IndexLagging,
+    #[serde(rename = "index_unavailable")]
+    IndexUnavailable,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct MessageSearchResponse {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: String,
+    #[serde(rename = "conversationId")]
+    pub conversation_id: String,
+    #[serde(rename = "threadRootMessageId")]
+    pub thread_root_message_id: Option<String>,
+    #[serde(
+        rename = "order",
+        deserialize_with = "const_checkers::expect_const_created_cursor_descending"
+    )]
+    pub order: String,
+    pub completeness: MessageSearchResponseCompleteness,
+    #[serde(rename = "partialReason")]
+    pub partial_reason: Option<MessageSearchResponsePartialReason>,
+    pub items: Vec<MessageView>,
+    #[serde(rename = "nextCursor")]
+    pub next_cursor: Option<String>,
 }
 
 /// Décode tout contrat du profil par le même chemin de production.
@@ -3737,17 +5340,6 @@ pub fn decode_profile_contract(contract: &str, payload: serde_json::Value) -> Re
         "punks://contracts/auth.session@1" => serde_json::from_value::<AuthSession>(payload)
             .map(|_| ())
             .map_err(|error| error.to_string()),
-        "punks://contracts/punk.get@1" => serde_json::from_value::<GetPunkProfileQuery>(payload)
-            .map(|_| ())
-            .map_err(|error| error.to_string()),
-        "punks://contracts/punk@1" => serde_json::from_value::<Punk>(payload)
-            .map(|_| ())
-            .map_err(|error| error.to_string()),
-        "punks://contracts/punk.update@1" => {
-            serde_json::from_value::<UpdatePunkProfileCommand>(payload)
-                .map(|_| ())
-                .map_err(|error| error.to_string())
-        }
         "punks://contracts/desktop-auth.start@1" => {
             serde_json::from_value::<DesktopAuthStartExchange>(payload)
                 .map(|_| ())
@@ -3839,24 +5431,6 @@ pub fn decode_profile_contract(contract: &str, payload: serde_json::Value) -> Re
                 .map(|_| ())
                 .map_err(|error| error.to_string())
         }
-        "punks://contracts/punk.summary-batch@1" => {
-            serde_json::from_value::<PunkSummaryBatchQuery>(payload)
-                .map(|_| ())
-                .map_err(|error| error.to_string())
-        }
-        "punks://contracts/punk.summary-batch-response@1" => {
-            serde_json::from_value::<PunkSummaryBatchResponse>(payload)
-                .map(|_| ())
-                .map_err(|error| error.to_string())
-        }
-        "punks://contracts/punk.search@1" => serde_json::from_value::<PunkSearchQuery>(payload)
-            .map(|_| ())
-            .map_err(|error| error.to_string()),
-        "punks://contracts/punk.search-response@1" => {
-            serde_json::from_value::<PunkSearchResponse>(payload)
-                .map(|_| ())
-                .map_err(|error| error.to_string())
-        }
         "punks://contracts/conversation.follow@1" => {
             serde_json::from_value::<FollowConversationQuery>(payload)
                 .map(|_| ())
@@ -3901,9 +5475,68 @@ pub fn decode_profile_contract(contract: &str, payload: serde_json::Value) -> Re
         "punks://contracts/problem@1" => serde_json::from_value::<PunksProblem>(payload)
             .map(|_| ())
             .map_err(|error| error.to_string()),
+        "punks://contracts/media-upload.grant-create@1" => {
+            serde_json::from_value::<CreateMediaUploadGrantCommand>(payload)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        }
+        "punks://contracts/media-upload.grant@1" => {
+            serde_json::from_value::<MediaUploadGrant>(payload)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        }
+        "punks://contracts/media-upload.part@1" => {
+            serde_json::from_value::<MediaUploadPart>(payload)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        }
+        "punks://contracts/media-upload.finalize@1" => {
+            serde_json::from_value::<FinalizeMediaUploadCommand>(payload)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        }
+        "punks://contracts/media-upload.abandon@1" => {
+            serde_json::from_value::<AbandonMediaUploadCommand>(payload)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        }
+        "punks://contracts/media-upload.status@1" => {
+            serde_json::from_value::<MediaUploadStatus>(payload)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        }
+        "punks://contracts/punk@1" => serde_json::from_value::<Punk>(payload)
+            .map(|_| ())
+            .map_err(|error| error.to_string()),
+        "punks://contracts/punk.get@1" => serde_json::from_value::<GetPunkProfileQuery>(payload)
+            .map(|_| ())
+            .map_err(|error| error.to_string()),
+        "punks://contracts/punk.update@1" => {
+            serde_json::from_value::<UpdatePunkProfileCommand>(payload)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        }
         "punks://contracts/punk.summary@1" => serde_json::from_value::<PunkPublicSummary>(payload)
             .map(|_| ())
             .map_err(|error| error.to_string()),
+        "punks://contracts/punk.summary-batch@1" => {
+            serde_json::from_value::<PunkSummaryBatchQuery>(payload)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        }
+        "punks://contracts/punk.summary-batch-response@1" => {
+            serde_json::from_value::<PunkSummaryBatchResponse>(payload)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        }
+        "punks://contracts/punk.search@1" => serde_json::from_value::<PunkSearchQuery>(payload)
+            .map(|_| ())
+            .map_err(|error| error.to_string()),
+        "punks://contracts/punk.search-response@1" => {
+            serde_json::from_value::<PunkSearchResponse>(payload)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        }
         "punks://contracts/account-merge.fresh-proof@1" => {
             serde_json::from_value::<AccountMergeFreshProof>(payload)
                 .map(|_| ())
@@ -3924,8 +5557,48 @@ pub fn decode_profile_contract(contract: &str, payload: serde_json::Value) -> Re
                 .map(|_| ())
                 .map_err(|error| error.to_string())
         }
+        "punks://contracts/workspace.member-set-role@1" => {
+            serde_json::from_value::<SetWorkspaceMemberRoleCommand>(payload)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        }
+        "punks://contracts/workspace.governance@1" => {
+            serde_json::from_value::<GetWorkspaceGovernanceQuery>(payload)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        }
+        "punks://contracts/workspace.governance-view@1" => {
+            serde_json::from_value::<WorkspaceGovernanceView>(payload)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        }
+        "punks://contracts/workspace.governance-response@1" => {
+            serde_json::from_value::<WorkspaceGovernanceResponse>(payload)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        }
+        "punks://contracts/workspace.member-remove@1" => {
+            serde_json::from_value::<RemoveWorkspaceMemberCommand>(payload)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        }
+        "punks://contracts/workspace.leave@1" => {
+            serde_json::from_value::<LeaveWorkspaceCommand>(payload)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        }
+        "punks://contracts/workspace.transfer-ownership@1" => {
+            serde_json::from_value::<TransferWorkspaceOwnershipCommand>(payload)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        }
         "punks://contracts/workspace.membership-mutation-response@1" => {
             serde_json::from_value::<WorkspaceMembershipMutationResponse>(payload)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        }
+        "punks://contracts/workspace.membership-lifecycle-response@1" => {
+            serde_json::from_value::<WorkspaceMembershipLifecycleResponse>(payload)
                 .map(|_| ())
                 .map_err(|error| error.to_string())
         }
@@ -3966,6 +5639,47 @@ pub fn decode_profile_contract(contract: &str, payload: serde_json::Value) -> Re
         }
         "punks://contracts/workspace.invite-claim-response@1" => {
             serde_json::from_value::<ClaimWorkspaceInvitationResponse>(payload)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        }
+        "punks://contracts/presence.hold@1" => serde_json::from_value::<PresenceHoldFrame>(payload)
+            .map(|_| ())
+            .map_err(|error| error.to_string()),
+        "punks://contracts/presence.status.set@1" => {
+            serde_json::from_value::<SetPresenceStatusSignal>(payload)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        }
+        "punks://contracts/presence.typing.signal@1" => {
+            serde_json::from_value::<PresenceTypingSignal>(payload)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        }
+        "punks://contracts/presence.view@1" => serde_json::from_value::<PresenceView>(payload)
+            .map(|_| ())
+            .map_err(|error| error.to_string()),
+        "punks://contracts/presence.hold-server-frame@1" => {
+            serde_json::from_value::<PresenceHoldServerFrame>(payload)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        }
+        "punks://contracts/presence.typing.patch@1" => {
+            serde_json::from_value::<PresenceTypingPatch>(payload)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        }
+        "punks://contracts/desktop.presence-delivery@1" => {
+            serde_json::from_value::<DesktopPresenceDelivery>(payload)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        }
+        "punks://contracts/message.search@1" => {
+            serde_json::from_value::<MessageSearchQuery>(payload)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        }
+        "punks://contracts/message.search-response@1" => {
+            serde_json::from_value::<MessageSearchResponse>(payload)
                 .map(|_| ())
                 .map_err(|error| error.to_string())
         }

@@ -21,7 +21,7 @@
     "payload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["targetPunkId", "role"],
+      "required": ["targetPunkId", "role", "expectedRevision"],
       "properties": {
         "targetPunkId": { "type": "string", "format": "uuid" },
         "role": { "enum": ["owner", "moderator", "member", "guest"] },

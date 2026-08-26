@@ -1,6 +1,6 @@
 /* Generated from the canonical Punks JSON Schema. Do not edit. */
 
-export type ConversationFollowServerFrame = (Accepted | Changes | Ready | ResyncRequired | ConversationUnavailable)
+export type ConversationFollowServerFrame = (Accepted | Changes | Typing | Ready | ResyncRequired | ConversationUnavailable)
 export type MessageView = ({
 [k: string]: unknown | undefined
 } & {
@@ -47,6 +47,17 @@ updatedAt: string
 editedAt: (string | null)
 })
 export type CanonicalReaction = string
+export type PresenceTypingPatch = ({
+[k: string]: unknown | undefined
+} & {
+workspaceId: string
+conversationId: string
+punkId: string
+active: boolean
+leaseGeneration: number
+sequence: number
+expiresAt: (string | null)
+})
 
 export interface Accepted {
 schemaVersion: 1
@@ -96,6 +107,11 @@ messageId: string
 visibility: ("visible" | "temporarily-hidden" | "permanently-hidden")
 cursor: number
 refreshRequired: boolean
+}
+export interface Typing {
+schemaVersion: 1
+type: "typing"
+patch: PresenceTypingPatch
 }
 export interface Ready {
 schemaVersion: 1

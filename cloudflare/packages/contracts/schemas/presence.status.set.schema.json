@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/presence.status.set@1",
+  "title": "SetPresenceStatusSignal",
+  "$comment": "Loss-tolerant, rate-limited update on the current presence lease. null clears the optional status; the value is never journaled, indexed or archived.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "leaseToken", "sequence", "status"],
+  "properties": {
+    "contract": { "const": "presence.status.set@1" },
+    "leaseToken": {
+      "type": "string",
+      "pattern": "^pls1\\.[A-Za-z0-9_-]{43}$"
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "status": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^(?!\\s)(?!.*\\s$)[^\\r\\n\\u2028\\u2029]+$"
+        },
+        { "type": "null" }
+      ]
+    }
+  }
+}

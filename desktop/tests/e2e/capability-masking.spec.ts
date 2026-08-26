@@ -20,10 +20,10 @@ const PUNK_ID = "22222222-2222-4222-8222-222222222222";
 const SESSION_ID = "33333333-3333-4333-8333-333333333333";
 const CONVERSATION_ID = "44444444-4444-4444-8444-444444444444";
 const ALL_CAPABILITY_CHUNKS =
-  /PunksRuntime|punksTauriTransport|MessageLifecycleControls|punksMessageLifecycleTauri|IdentityGovernanceControls|punksIdentityGovernanceTauri/u;
+  /PunksRuntime|punksTauriTransport|MessageLifecycleControls|punksMessageLifecycleTauri|IdentityGovernanceControls|PunksIdentityPanels|punksIdentityGovernanceTauri|PunksPresenceRuntime|punksPresenceTauri/u;
 const LIFECYCLE_CHUNKS = /MessageLifecycleControls|punksMessageLifecycleTauri/u;
 const GOVERNANCE_CHUNKS =
-  /IdentityGovernanceControls|punksIdentityGovernanceTauri/u;
+  /IdentityGovernanceControls|PunksIdentityPanels|punksIdentityGovernanceTauri/u;
 
 const T1_CAPABILITIES = DESKTOP_SOCIAL_LOOP_CAPABILITIES;
 
@@ -125,10 +125,18 @@ async function installPunksTauriBoundary(
       let compatibilityFailures = compatibilitySeed.compatibilityFailures ?? 0;
       let generation = 0;
       let switchStarted = false;
+      let ownershipReauthenticationPending = false;
+      let ownershipReauthenticated = false;
+      let activeWorkspaces = structuredClone(workspaceSeed);
       let followBatchDelivered = false;
       let followLiveDelivered = false;
       let followLiveRequested = false;
       let releaseFollowLive: (() => void) | null = null;
+      let releaseFollowSignal: ((delivery: unknown) => void) | null = null;
+      const queuedFollowSignals: unknown[] = [];
+      let presenceAccepted = false;
+      let releasePresenceDelivery: ((delivery: unknown) => void) | null = null;
+      const queuedPresenceDeliveries: unknown[] = [];
       const socialMessages = structuredClone(socialSeed?.timeline.items ?? []);
       let governance = structuredClone(
         governanceSeed ?? {
@@ -145,6 +153,14 @@ async function installPunksTauriBoundary(
           updatedAt: "2026-08-25T10:00:00.000Z",
         },
       );
+      const governanceView = () => {
+        const { members, ...workspace } = governance;
+        return {
+          contract: "workspace.governance-view@1",
+          ...workspace,
+          memberCount: members.length,
+        };
+      };
       let issuedInvitation: {
         code: string;
         invitation: Record<string, unknown>;
@@ -167,6 +183,27 @@ async function installPunksTauriBoundary(
         __PUNKS_RELEASE_FOLLOW__: () => {
           followLiveRequested = true;
           releaseFollowLive?.();
+        },
+        __PUNKS_EMIT_TYPING__: (patch: unknown) => {
+          const delivery = { kind: "typing", patch };
+          const release = releaseFollowSignal;
+          if (release === null) queuedFollowSignals.push(delivery);
+          else {
+            releaseFollowSignal = null;
+            release(delivery);
+          }
+        },
+        __PUNKS_DEGRADE_PRESENCE__: () => {
+          const delivery = {
+            kind: "realtime_degraded",
+            reason: "capacity_unavailable",
+          };
+          const release = releasePresenceDelivery;
+          if (release === null) queuedPresenceDeliveries.push(delivery);
+          else {
+            releasePresenceDelivery = null;
+            release(delivery);
+          }
         },
       });
       if (mountedCapabilities !== undefined) {
@@ -219,6 +256,27 @@ async function installPunksTauriBoundary(
                 resumeAvailable: false,
               };
             }
+            if (ownershipReauthenticationPending) {
+              ownershipReauthenticationPending = false;
+              ownershipReauthenticated = true;
+              return {
+                state: "authenticated",
+                authentication: { phase: "confirmed", sessionId },
+                resumeAvailable: false,
+                session: {
+                  sessionId,
+                  punkId,
+                  authenticatedAt: "2026-08-25T10:00:00.000Z",
+                  expiresAt: "2026-08-26T10:00:00.000Z",
+                  recentReauthUntil: "2026-08-25T10:05:00.000Z",
+                  punk: {
+                    id: punkId,
+                    displayName: "Capability Test Punk",
+                    avatarUrl: null,
+                  },
+                },
+              };
+            }
             return {
               state: "authenticated",
               authentication: { phase: "idle" },
@@ -237,7 +295,7 @@ async function installPunksTauriBoundary(
               },
             };
           case "punks_list_workspaces":
-            return structuredClone(workspaceSeed);
+            return structuredClone(activeWorkspaces);
           case "punks_validate_navigation":
             return {
               kind: "workspace",
@@ -255,15 +313,25 @@ async function installPunksTauriBoundary(
           case "punks_list_streams":
             return structuredClone(socialSeed?.streams ?? []);
           case "punks_get_workspace_governance":
-            return structuredClone(governance);
+            return {
+              contract: "workspace.governance-response@1",
+              workspace: governanceView(),
+              members: structuredClone(governance.members),
+              nextCursor: null,
+            };
           case "punks_get_punk_summaries":
-            return ((args.punkIds as string[]) ?? []).map(
-              (candidate, index) => ({
-                punkId: candidate,
-                displayName: index === 0 ? "Capability Owner" : "Invited Punk",
-                avatarUrl: null,
-              }),
-            );
+            return {
+              contract: "punk.summary-batch-response@1",
+              workspaceId: governance.id,
+              items: ((args.punkIds as string[]) ?? []).map(
+                (candidate, index) => ({
+                  punkId: candidate,
+                  displayName:
+                    index === 0 ? "Capability Owner" : "Invited Punk",
+                  avatarUrl: null,
+                }),
+              ),
+            };
           case "punks_create_workspace_invitation": {
             const input = args.input as {
               role: "member" | "guest";
@@ -327,7 +395,14 @@ async function installPunksTauriBoundary(
             };
             return {
               contract: "workspace.membership-mutation-response@1",
-              workspace: structuredClone(governance),
+              workspace: governanceView(),
+              memberDeltas: [
+                {
+                  punkId: input.targetPunkId,
+                  present: true,
+                  role: input.role,
+                },
+              ],
               replayed: false,
             };
           }
@@ -343,7 +418,87 @@ async function installPunksTauriBoundary(
             };
             return {
               contract: "workspace.membership-mutation-response@1",
-              workspace: structuredClone(governance),
+              workspace: governanceView(),
+              memberDeltas: [
+                {
+                  punkId: input.targetPunkId,
+                  present: false,
+                  role: null,
+                },
+              ],
+              replayed: false,
+            };
+          }
+          case "punks_start_reauthentication":
+            ownershipReauthenticationPending = true;
+            ownershipReauthenticated = false;
+            return {
+              phase: "started",
+              intent: "reauthenticate",
+              method: String(args.method),
+            };
+          case "punks_transfer_workspace_ownership": {
+            if (!ownershipReauthenticated) {
+              throw {
+                kind: "problem",
+                message: "A fresh ownership reauthentication is required",
+              };
+            }
+            ownershipReauthenticated = false;
+            const input = args.input as {
+              targetPunkId: string;
+              expectedRevision: number;
+            };
+            const previousOwner = governance.ownerPunkId;
+            governance = {
+              ...governance,
+              ownerPunkId: input.targetPunkId,
+              members: governance.members.map((member) =>
+                member.punkId === previousOwner
+                  ? { ...member, role: "member" }
+                  : member.punkId === input.targetPunkId
+                    ? { ...member, role: "owner" }
+                    : member,
+              ) as Workspace["members"],
+              revision: governance.revision + 1,
+              cursor: governance.cursor + 1,
+            };
+            activeWorkspaces = activeWorkspaces.map((workspace) =>
+              workspace.id === governance.id
+                ? {
+                    ...workspace,
+                    role: "member",
+                    revision: governance.revision,
+                  }
+                : workspace,
+            );
+            return {
+              contract: "workspace.membership-lifecycle-response@1",
+              workspaceId: governance.id,
+              revision: governance.revision,
+              outcome: "ownership_transferred",
+              role: "member",
+              replayed: false,
+            };
+          }
+          case "punks_leave_workspace": {
+            governance = {
+              ...governance,
+              members: governance.members.filter(
+                (member) => member.punkId !== punkId,
+              ) as Workspace["members"],
+              revision: governance.revision + 1,
+              cursor: governance.cursor + 1,
+            };
+            activeWorkspaces = activeWorkspaces.filter(
+              (workspace) => workspace.id !== governance.id,
+            );
+            return {
+              contract: "workspace.membership-lifecycle-response@1",
+              workspaceId: governance.id,
+              revision: governance.revision,
+              outcome: "left",
+              role: null,
               replayed: false,
             };
           }
@@ -423,9 +578,54 @@ async function installPunksTauriBoundary(
                 };
               });
             }
-            return new Promise(() => undefined);
+            return (
+              queuedFollowSignals.shift() ??
+              new Promise((resolve) => {
+                releaseFollowSignal = resolve;
+              })
+            );
           case "punks_confirm_follow_batch":
           case "punks_close_follow":
+            return null;
+          case "punks_hold_presence":
+            return "presence-operation";
+          case "punks_presence_next":
+            if (!presenceAccepted) {
+              presenceAccepted = true;
+              return {
+                kind: "accepted",
+                clientGeneration: generation,
+                leaseGeneration: 1,
+                heartbeatIntervalMs: 15_000,
+                awayAfterMs: 30_000,
+                expiresAfterMs: 60_000,
+                presences: [
+                  {
+                    punkId,
+                    state: "online",
+                    status: null,
+                    leaseGeneration: 1,
+                    sequence: 1,
+                    expiresAt: "2032-01-01T00:01:00.000Z",
+                  },
+                ],
+              };
+            }
+            return (
+              queuedPresenceDeliveries.shift() ??
+              new Promise((resolve) => {
+                releasePresenceDelivery = resolve;
+              })
+            );
+          case "punks_set_presence_status":
+          case "punks_signal_presence_typing":
+            return null;
+          case "punks_close_presence":
+            releasePresenceDelivery?.({
+              kind: "realtime_degraded",
+              reason: "capacity_unavailable",
+            });
+            releasePresenceDelivery = null;
             return null;
           case "punks_post_message": {
             if (socialSeed === undefined) {
@@ -548,6 +748,8 @@ async function installPunksTauriBoundary(
             };
           case "punks_cancel_authentication":
             switchStarted = false;
+            ownershipReauthenticationPending = false;
+            ownershipReauthenticated = false;
             return { phase: "cancelled" };
           default:
             throw new Error(`Unexpected Punks command: ${command}`);
@@ -618,6 +820,26 @@ async function releaseFollow(page: Page): Promise<void> {
         __PUNKS_RELEASE_FOLLOW__?: () => void;
       }
     ).__PUNKS_RELEASE_FOLLOW__?.();
+  });
+}
+
+async function emitTyping(page: Page, patch: Record<string, unknown>) {
+  await page.evaluate((value) => {
+    (
+      window as typeof window & {
+        __PUNKS_EMIT_TYPING__?: (patch: unknown) => void;
+      }
+    ).__PUNKS_EMIT_TYPING__?.(value);
+  }, patch);
+}
+
+async function degradePresence(page: Page) {
+  await page.evaluate(() => {
+    (
+      window as typeof window & {
+        __PUNKS_DEGRADE_PRESENCE__?: () => void;
+      }
+    ).__PUNKS_DEGRADE_PRESENCE__?.();
   });
 }
 
@@ -1041,6 +1263,75 @@ test("un Propriétaire gouverne invitations et rôles par la frontière Punks", 
   expect(GOVERNANCE_CHUNKS.test("IdentityGovernanceControls")).toBe(true);
 });
 
+test("un Propriétaire réauthentifie le transfert puis quitte sans conserver de scope", async ({
+  page,
+}) => {
+  const targetPunkId = "55555555-5555-4555-8555-555555555555";
+  const capabilities = [...T1_CAPABILITIES, "identity-governance"];
+  await installPunksTauriBoundary(page, {
+    compatible: true,
+    capabilities,
+    mountedCapabilities: capabilities,
+    governance: {
+      id: WORKSPACE_ID,
+      slug: "capability-test",
+      name: "Capability Test",
+      visibility: "private",
+      status: "active",
+      ownerPunkId: PUNK_ID,
+      members: [
+        { punkId: PUNK_ID, role: "owner" },
+        { punkId: targetPunkId, role: "member" },
+      ],
+      revision: 1,
+      cursor: 1,
+      createdAt: "2026-08-25T10:00:00.000Z",
+      updatedAt: "2026-08-25T10:00:00.000Z",
+    },
+  });
+  await page.goto("/");
+  await page.getByTestId("punks-open-governance").click();
+  await page
+    .getByRole("button", { name: "Transfer ownership", exact: true })
+    .click();
+  const transferDialog = page.getByRole("dialog", {
+    name: "Transfer Workspace ownership",
+  });
+  await transferDialog.getByRole("textbox").fill("Invited Punk");
+  await transferDialog
+    .getByRole("button", { name: "Reauthenticate", exact: true })
+    .click();
+  await expect(
+    transferDialog.getByRole("button", { name: "Reauthenticated" }),
+  ).toBeVisible();
+  await transferDialog
+    .getByRole("button", { name: "Transfer ownership", exact: true })
+    .click();
+
+  await expect(page.getByTestId("punks-open-governance")).toHaveCount(0);
+  await page.getByTestId("punks-open-workspace-departure").click();
+  const departureDialog = page.getByRole("dialog", {
+    name: "Leave Capability Test",
+  });
+  await departureDialog.getByRole("textbox").fill("Capability Test");
+  await departureDialog
+    .getByTestId("punks-confirm-workspace-departure")
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Join a Workspace" }),
+  ).toBeVisible();
+
+  const commands = await invokedCommands(page);
+  expect(commands).toEqual(
+    expect.arrayContaining([
+      "punks_start_reauthentication",
+      "punks_transfer_workspace_ownership",
+      "punks_leave_workspace",
+      "punks_close_workspace",
+    ]),
+  );
+});
+
 test("une réponse reste dans le Fil du Message sélectionné", async ({
   page,
 }) => {
@@ -1111,4 +1402,94 @@ test("une révocation FOLLOW purge les vues et reste terminale", async ({
   expect(
     commands.filter((command) => command === "punks_follow_conversation"),
   ).toHaveLength(1);
+});
+
+test("la Présence préparée rend statut, frappe et dégradation honnêtes", async ({
+  page,
+}) => {
+  const messageId = "95555555-5555-4555-8555-555555555555";
+  const otherPunkId = "99999999-9999-4999-8999-999999999999";
+  const streamSummary: ConversationSummary = {
+    id: CONVERSATION_ID,
+    workspaceId: WORKSPACE_ID,
+    name: "Presence Loop",
+    type: "stream",
+    visibility: "private",
+    description: null,
+    topic: "Ephemeral",
+    purpose: "Exercise Presence without authority",
+    topicRequired: false,
+    ttlSeconds: null,
+    ttlDeadline: null,
+    revision: 1,
+    cursor: 1,
+    updatedAt: "2026-08-25T10:00:00.000Z",
+  };
+  const preparedCapabilities = [...T1_CAPABILITIES, "presence"];
+  await installPunksTauriBoundary(page, {
+    compatible: true,
+    capabilities: preparedCapabilities,
+    mountedCapabilities: preparedCapabilities,
+    social: {
+      streams: [streamSummary],
+      stream: {
+        ...streamSummary,
+        maxMembers: null,
+        status: "active",
+        createdAt: "2026-08-25T10:00:00.000Z",
+        archivedAt: null,
+      },
+      timeline: {
+        workspaceId: WORKSPACE_ID,
+        conversationId: CONVERSATION_ID,
+        highWaterCursor: 1,
+        order: "createdCursor-ascending",
+        items: [socialMessage(messageId, 1, "Presence is decorative")],
+        nextCursor: null,
+      },
+    },
+  });
+  await page.goto("/");
+  await expect(page.getByTestId("punks-realtime-status")).toHaveText(
+    "Realtime live",
+  );
+
+  await page.getByTestId(`punks-stream-${CONVERSATION_ID}`).click();
+  await releaseFollow(page);
+  await expect(page.getByTestId("punks-follow-live").first()).toBeVisible();
+  await expect(page.getByTestId(`punks-presence-${PUNK_ID}`)).toHaveAttribute(
+    "aria-label",
+    /is online/u,
+  );
+
+  await emitTyping(page, {
+    workspaceId: WORKSPACE_ID,
+    conversationId: CONVERSATION_ID,
+    punkId: otherPunkId,
+    active: true,
+    leaseGeneration: 4,
+    sequence: 1,
+    expiresAt: "2032-01-01T00:00:05.000Z",
+  });
+  await expect(page.getByTestId("punks-typing-indicator")).toHaveText(
+    "Someone is typing…",
+  );
+
+  await page.getByLabel("Status").fill("Reviewing T8");
+  await page.getByRole("button", { name: "Set" }).click();
+  await expect
+    .poll(async () =>
+      (await invokedCalls(page)).some(
+        ({ command, args }) =>
+          command === "punks_set_presence_status" &&
+          args.status === "Reviewing T8",
+      ),
+    )
+    .toBe(true);
+
+  await degradePresence(page);
+  await expect(page.getByTestId("punks-realtime-status")).toHaveText(
+    "Realtime unavailable",
+  );
+  expect(await invokedCommands(page)).not.toContain("subscribe_presence");
 });

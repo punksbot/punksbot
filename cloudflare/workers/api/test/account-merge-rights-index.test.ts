@@ -2,8 +2,12 @@ import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 
 const WORKSPACE_ID = "10000000-0000-8000-8000-000000000061";
-const OWNER_PUNK_ID = "20000000-0000-8000-8000-000000000061";
+const OWNER_PUNK_ID = "00000000-0000-8000-8000-000000000001";
 const MEMBER_PUNK_ID = "30000000-0000-8000-8000-000000000061";
+const OWNER_AUTHORIZATION = {
+  sessionId: "11111111-1111-8111-8111-111111111111",
+  punkId: OWNER_PUNK_ID,
+};
 
 interface RightsIndexFixture {
   resetCalls(): Promise<void>;
@@ -103,9 +107,15 @@ describe("authoritative account-merge rights indexing", () => {
       commandId: "50000000-0000-8000-8000-000000000062",
       workspaceId,
       actor: { kind: "punk" as const, punkId: OWNER_PUNK_ID },
-      payload: { targetPunkId: MEMBER_PUNK_ID, role: "member" as const },
+      payload: {
+        targetPunkId: MEMBER_PUNK_ID,
+        role: "member" as const,
+        expectedRevision: 1,
+      },
     };
-    expect(await workspace.execute(command)).toMatchObject({ ok: true });
+    expect(
+      await workspace.executeAuthorized(command, OWNER_AUTHORIZATION),
+    ).toMatchObject({ ok: true });
     expect(await rightsIndex().calls()).toEqual([
       {
         phase: "prepare",

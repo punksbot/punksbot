@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/media-upload.part@1",
+  "title": "MediaUploadPart",
+  "$comment": "The part SHA-256 is an idempotency coordinate supplied by the native client. It is not trusted as content integrity; finalization independently hashes the assembled object.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "uploadId",
+    "partNumber",
+    "byteLength",
+    "sha256",
+    "replayed"
+  ],
+  "properties": {
+    "contract": { "const": "media-upload.part@1" },
+    "uploadId": { "type": "string", "format": "uuid" },
+    "partNumber": { "type": "integer", "minimum": 1, "maximum": 32 },
+    "byteLength": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 8388608
+    },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "replayed": { "type": "boolean" }
+  }
+}

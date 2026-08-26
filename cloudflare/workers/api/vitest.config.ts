@@ -34,6 +34,8 @@ export default defineConfig({
             "message-history-cursor-test-key-000000000000000000000000000000",
           DIRECTORY_CURSOR_KEY:
             "directory-cursor-test-key-000000000000000000000000000000000",
+          MEDIA_UPLOAD_GRANT_KEY:
+            "media-upload-grant-test-key-00000000000000000000000000000000",
           JOURNAL_HOT_EVENTS: "1",
           JOURNAL_SEGMENT_EVENTS: "1",
           ATTESTATION_PUBLIC_KEYS_JSON: JSON.stringify({
@@ -95,6 +97,14 @@ export default defineConfig({
             entrypoint: "AccountMergeRightsIndexService",
             props: {
               role: "punks-account-merge-rights-index-writer",
+              environment: "local",
+            },
+          },
+          WORKSPACE_OWNERSHIP_AUTHORITY: {
+            name: "punks-auth",
+            entrypoint: "WorkspaceOwnershipAuthorizationService",
+            props: {
+              role: "punks-workspace-ownership-authorizer",
               environment: "local",
             },
           },

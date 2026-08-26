@@ -9,6 +9,7 @@ import {
   BotInvocationIssuer,
   BotInvocationVerifier,
   PunkSessionService,
+  WorkspaceOwnershipAuthorizationService,
 } from "../src";
 
 const workspaceId = "10000000-0000-8000-8000-000000000001";
@@ -35,6 +36,18 @@ function issuer(props: unknown) {
   const factory = workerExports.BotInvocationIssuer as (options: {
     props: unknown;
   }) => IssuerRpc;
+  return factory({ props });
+}
+
+function ownershipAuthority(props: unknown) {
+  type OwnershipRpc = {
+    fetch(request: Request): Promise<Response>;
+    consume(input: unknown): Promise<boolean>;
+  };
+  const factory =
+    workerExports.WorkspaceOwnershipAuthorizationService as (options: {
+      props: unknown;
+    }) => OwnershipRpc;
   return factory({ props });
 }
 
@@ -128,6 +141,38 @@ describe("role-separated private Auth RPC entrypoints", () => {
         "revokeAccountMergeFreshProof",
       ].sort(),
     );
+    expect(
+      Object.getOwnPropertyNames(
+        WorkspaceOwnershipAuthorizationService.prototype,
+      ).sort(),
+    ).toEqual(["constructor", "consume", "fetch"].sort());
+  });
+
+  it("keeps ownership authorization behind exact environment-scoped props", async () => {
+    const input = {
+      authorizationId: crypto.randomUUID(),
+      commandId: crypto.randomUUID(),
+      punkId: crypto.randomUUID(),
+      sessionId: "10000000-0000-8000-8000-000000000001",
+    };
+    for (const props of [
+      undefined,
+      {},
+      { role: "punks-workspace-ownership-authorizer" },
+      {
+        role: "punks-workspace-ownership-authorizer",
+        environment: "staging",
+      },
+      {
+        role: "punks-workspace-ownership-authorizer",
+        environment: "local",
+        capability: "workspace.transfer-ownership",
+      },
+    ]) {
+      await expect(ownershipAuthority(props).consume(input)).resolves.toBe(
+        false,
+      );
+    }
   });
 
   it("returns 404 from every named capability entrypoint", async () => {
@@ -138,8 +183,12 @@ describe("role-separated private Auth RPC entrypoints", () => {
         request,
       ),
       workerExports.BotInvocationVerifier.fetch(request),
+      ownershipAuthority({
+        role: "punks-workspace-ownership-authorizer",
+        environment: "local",
+      }).fetch(request),
     ]);
-    expect(responses.map(({ status }) => status)).toEqual([404, 404, 404]);
+    expect(responses.map(({ status }) => status)).toEqual([404, 404, 404, 404]);
     for (const response of responses) {
       expect(response.headers.get("cache-control")).toBe("no-store");
     }

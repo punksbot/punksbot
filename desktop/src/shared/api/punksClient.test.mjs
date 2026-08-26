@@ -346,6 +346,73 @@ test("fake history follows the authoritative newest-first page contract", async 
   assert.equal(older.nextCursor, null);
 });
 
+test("fake Conversation search stays inside its Fil and reports completeness", async () => {
+  const conversationId = "33333333-3333-4333-8333-333333333333";
+  const firstRoot = "66666666-6666-4666-8666-666666666666";
+  const secondRoot = "77777777-7777-4777-8777-777777777777";
+  const searchSeed = structuredClone(seed);
+  searchSeed.compatibility.capabilities.push("search");
+  searchSeed.streams[workspaceId] = [
+    {
+      id: conversationId,
+      workspaceId,
+      name: "general",
+      type: "stream",
+      visibility: "open",
+      description: null,
+      topic: null,
+      purpose: null,
+      topicRequired: false,
+      ttlSeconds: null,
+      ttlDeadline: null,
+      revision: 1,
+      cursor: 3,
+      updatedAt: "2026-08-22T10:00:00.000Z",
+    },
+  ];
+  searchSeed.messages[conversationId] = [
+    messageFixture(conversationId, 1, {
+      id: firstRoot,
+      threadRootMessageId: firstRoot,
+      content: "incident root",
+    }),
+    messageFixture(conversationId, 2, {
+      id: "88888888-8888-4888-8888-888888888888",
+      parentMessageId: firstRoot,
+      threadRootMessageId: firstRoot,
+      threadDepth: 1,
+      content: "incident response handbook",
+    }),
+    messageFixture(conversationId, 3, {
+      id: secondRoot,
+      threadRootMessageId: secondRoot,
+      content: "incident response elsewhere",
+    }),
+  ];
+  const account = createFakePunksAccountClient(searchSeed);
+  await account.checkCompatibility();
+  const workspace = await account.openWorkspace(workspaceId);
+
+  const page = await workspace.searchMessages({
+    conversationId,
+    threadRootMessageId: firstRoot,
+    query: "INCIDENT response",
+    cursor: null,
+    limit: 20,
+  });
+
+  assert.equal(
+    validateContract("punks://contracts/message.search-response@1", page).valid,
+    true,
+  );
+  assert.equal(page.completeness, "complete");
+  assert.equal(page.partialReason, null);
+  assert.deepEqual(
+    page.items.map(({ id }) => id),
+    ["88888888-8888-4888-8888-888888888888"],
+  );
+});
+
 test("fake social mutations preserve Message subjects, replies, and Reaction ACKs", async () => {
   const conversationId = "33333333-3333-4333-8333-333333333333";
   const rootId = "66666666-6666-4666-8666-666666666666";
@@ -737,10 +804,65 @@ test("fake identity governance preserves the native role and invitation semantic
     targetPunkId,
     expectedRevision: 2,
   });
-  assert.equal(removed.workspace.members.length, 1);
+  assert.deepEqual(removed.memberDeltas, [
+    { punkId: targetPunkId, present: false, role: null },
+  ]);
   const revoked = await workspace.revokeInvitation({
     invitationId: created.invitation.invitationId,
     expectedRevision: 3,
   });
   assert.equal(revoked.invitation.status, "revoked");
+});
+
+test("fake ownership transfer requires targeted reauthentication and departure invalidates the lease", async () => {
+  const governanceSeed = structuredClone(seed);
+  governanceSeed.compatibility.capabilities.push("identity-governance");
+  const targetPunkId = "33333333-3333-4333-8333-333333333333";
+  governanceSeed.governance = {
+    [workspaceId]: {
+      id: workspaceId,
+      slug: "alpha",
+      name: "Alpha",
+      visibility: "private",
+      status: "active",
+      ownerPunkId: punkId,
+      members: [
+        { punkId, role: "owner" },
+        { punkId: targetPunkId, role: "member" },
+      ],
+      revision: 1,
+      cursor: 1,
+      createdAt: "2026-08-26T00:00:00.000Z",
+      updatedAt: "2026-08-26T00:00:00.000Z",
+    },
+  };
+  const account = createFakePunksAccountClient(governanceSeed);
+  await account.checkCompatibility();
+  const workspace = await account.openWorkspace(workspaceId);
+
+  await assert.rejects(
+    workspace.transferOwnership({ targetPunkId, expectedRevision: 1 }),
+    /reauthorization/u,
+  );
+  await account.startReauthentication(
+    "passkey",
+    "transfer_workspace_ownership",
+  );
+  const transfer = await workspace.transferOwnership({
+    targetPunkId,
+    expectedRevision: 1,
+  });
+  assert.deepEqual(transfer, {
+    contract: "workspace.membership-lifecycle-response@1",
+    workspaceId,
+    revision: 2,
+    outcome: "ownership_transferred",
+    role: "member",
+    replayed: false,
+  });
+
+  const departure = await workspace.leaveWorkspace();
+  assert.equal(departure.outcome, "left");
+  assert.equal(departure.role, null);
+  await assert.rejects(workspace.listStreams(), /no longer current/u);
 });

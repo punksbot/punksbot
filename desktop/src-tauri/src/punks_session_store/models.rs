@@ -20,6 +20,7 @@ pub(crate) enum PendingAuthPurpose {
     LinkGoogle,
     LinkGithub,
     RegisterPasskey,
+    TransferWorkspaceOwnership,
 }
 
 #[derive(Debug)]
@@ -72,6 +73,7 @@ pub(crate) struct PendingReauthorization {
     pub(crate) session_id: String,
     pub(crate) punk_id: String,
     pub(crate) target_method: AuthenticationMethod,
+    pub(crate) target_purpose: PendingAuthPurpose,
     pub(crate) handoff_id: String,
     pub(crate) expires_at: SystemTime,
 }
@@ -528,6 +530,8 @@ pub(super) struct StoredPendingReauthorization {
     pub(super) session_id: String,
     pub(super) punk_id: String,
     pub(super) target_method: AuthenticationMethod,
+    #[serde(default)]
+    pub(super) target_purpose: Option<PendingAuthPurpose>,
     pub(super) handoff_id: String,
     pub(super) expires_at_seconds: u64,
 }
@@ -544,6 +548,7 @@ impl TryFrom<&PendingReauthorization> for StoredPendingReauthorization {
             session_id: value.session_id.clone(),
             punk_id: value.punk_id.clone(),
             target_method: value.target_method,
+            target_purpose: Some(value.target_purpose),
             handoff_id: value.handoff_id.clone(),
             expires_at_seconds: encode_time(value.expires_at)?,
         })
@@ -557,11 +562,17 @@ impl TryFrom<StoredPendingReauthorization> for PendingReauthorization {
         validate_uuid(&value.session_id)?;
         validate_uuid(&value.punk_id)?;
         validate_uuid(&value.handoff_id)?;
+        let target_purpose = value.target_purpose.unwrap_or(match value.target_method {
+            AuthenticationMethod::Google => PendingAuthPurpose::LinkGoogle,
+            AuthenticationMethod::Github => PendingAuthPurpose::LinkGithub,
+            AuthenticationMethod::Passkey => PendingAuthPurpose::RegisterPasskey,
+        });
         Ok(Self {
             authorization_id: value.authorization_id,
             session_id: value.session_id,
             punk_id: value.punk_id,
             target_method: value.target_method,
+            target_purpose,
             handoff_id: value.handoff_id,
             expires_at: decode_time(value.expires_at_seconds)?,
         })

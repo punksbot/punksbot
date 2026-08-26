@@ -22,6 +22,8 @@ export const LOCAL_BINDING_FILES = Object.freeze({
       "local-history-cursor-key-0000000000000000000000000000000000",
     DIRECTORY_CURSOR_KEY:
       "local-directory-cursor-key-00000000000000000000000000000000",
+    MEDIA_UPLOAD_GRANT_KEY:
+      "local-media-upload-grant-key-000000000000000000000000000000",
   }),
   "cloudflare/workers/auth/.dev.vars": Object.freeze({
     GOOGLE_OAUTH_CLIENT_ID: "local-google-client-id",

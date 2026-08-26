@@ -15,6 +15,12 @@ import {
 import { PunksDesktopFailure } from "@/shared/api/punksClient";
 
 import { usePunksAccount, usePunksWorkspace } from "./PunksRuntime";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "./PunksDialog";
 
 type IdentityPanel = "profile" | "search";
 
@@ -35,21 +41,6 @@ function failureCode(error: unknown): string | null {
   return error.problem.code;
 }
 
-export function PunksCurrentPunkName({ fallback }: { fallback: string }) {
-  const account = usePunksAccount();
-  const { scope, manager } = usePunksWorkspace();
-  const profile = useQuery({
-    queryKey: profileQueryKey(scope.lease.workspaceId, scope.lease.generation),
-    queryFn: () => manager.run(scope, () => account.client.getPunkProfile()),
-    enabled: false,
-  });
-  return (
-    <span data-testid="punks-current-punk-name">
-      {profile.data?.displayName ?? fallback}
-    </span>
-  );
-}
-
 function PanelFrame({
   label,
   onClose,
@@ -59,31 +50,21 @@ function PanelFrame({
   onClose(): void;
   children: ReactNode;
 }) {
-  const titleId = `punks-${label.toLocaleLowerCase("en-US").replaceAll(" ", "-")}`;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6">
-      <section
-        aria-labelledby={titleId}
-        aria-modal="true"
-        className="max-h-full w-full max-w-lg overflow-y-auto rounded-xl border border-border bg-background p-5 shadow-xl"
-        role="dialog"
-      >
-        <div className="flex items-center justify-between gap-4">
-          <h2 className="text-lg font-semibold" id={titleId}>
-            {label}
-          </h2>
-          <button
-            aria-label="Close"
-            className="rounded-md border border-border px-2 py-1 text-sm hover:bg-accent"
-            onClick={onClose}
-            type="button"
-          >
-            Close
-          </button>
-        </div>
+    <Dialog
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+      open
+    >
+      <DialogContent className="max-h-[90dvh] max-w-lg overflow-y-auto border border-border p-5">
+        <DialogTitle>{label}</DialogTitle>
+        <DialogDescription className="sr-only">
+          Punks identity and Workspace-authorized profile controls.
+        </DialogDescription>
         {children}
-      </section>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -346,5 +327,32 @@ export function PunksIdentityPanel({
     <PunkProfilePanel onClose={onClose} />
   ) : (
     <PunkSearchPanel onClose={onClose} />
+  );
+}
+
+export function PunksIdentityLauncher() {
+  const [panel, setPanel] = useState<IdentityPanel | null>(null);
+  return (
+    <>
+      <button
+        className="w-full rounded-md border border-border px-3 py-2 text-left text-sm hover:bg-accent/60"
+        data-testid="punks-open-profile"
+        onClick={() => setPanel("profile")}
+        type="button"
+      >
+        Profile
+      </button>
+      <button
+        className="w-full rounded-md border border-border px-3 py-2 text-left text-sm hover:bg-accent/60"
+        data-testid="punks-open-punk-search"
+        onClick={() => setPanel("search")}
+        type="button"
+      >
+        Find Punks
+      </button>
+      {panel !== null ? (
+        <PunksIdentityPanel onClose={() => setPanel(null)} panel={panel} />
+      ) : null}
+    </>
   );
 }

@@ -12,6 +12,7 @@ export const STAGING_MACHINE_KEYS = Object.freeze([
   "MESSAGE_SEARCH_CURSOR_KEY",
   "MESSAGE_HISTORY_CURSOR_KEY",
   "DIRECTORY_CURSOR_KEY",
+  "MEDIA_UPLOAD_GRANT_KEY",
 ]);
 
 export function parseBindingFile(text) {

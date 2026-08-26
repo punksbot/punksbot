@@ -4,10 +4,46 @@
   "title": "WorkspaceMembershipMutationResponse",
   "type": "object",
   "additionalProperties": false,
-  "required": ["contract", "workspace", "replayed"],
+  "required": ["contract", "workspace", "memberDeltas", "replayed"],
   "properties": {
     "contract": { "const": "workspace.membership-mutation-response@1" },
-    "workspace": { "$ref": "schemas/workspace.schema.json" },
+    "workspace": {
+      "$ref": "schemas/workspace.governance-view.schema.json"
+    },
+    "memberDeltas": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 2,
+      "uniqueItems": true,
+      "items": {
+        "oneOf": [
+          {
+            "title": "PresentWorkspaceMemberDelta",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["punkId", "present", "role"],
+            "properties": {
+              "punkId": { "type": "string", "format": "uuid" },
+              "present": { "const": true },
+              "role": {
+                "enum": ["owner", "moderator", "member", "guest"]
+              }
+            }
+          },
+          {
+            "title": "RemovedWorkspaceMemberDelta",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["punkId", "present", "role"],
+            "properties": {
+              "punkId": { "type": "string", "format": "uuid" },
+              "present": { "const": false },
+              "role": { "type": "null" }
+            }
+          }
+        ]
+      }
+    },
     "replayed": { "type": "boolean" }
   }
 }

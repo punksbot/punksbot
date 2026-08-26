@@ -105,7 +105,11 @@ describe("membership event v2 decisions", () => {
       commandId: "47da754e-dcd3-4c39-aeca-8fb1454a57ed",
       workspaceId,
       actor: { kind: "punk", punkId: ownerId },
-      payload: { targetPunkId: memberId, role: "guest" },
+      payload: {
+        targetPunkId: memberId,
+        role: "guest",
+        expectedRevision: 1,
+      },
     };
     const added = decideSetWorkspaceMemberRole(created, add, {
       workspaceId,
@@ -117,7 +121,7 @@ describe("membership event v2 decisions", () => {
       commandId: "7f7fbcb7-e055-4ef0-9bf1-a3c5cfbce103",
       workspaceId,
       actor: { kind: "punk", punkId: ownerId },
-      payload: { targetPunkId: memberId },
+      payload: { targetPunkId: memberId, expectedRevision: 2 },
     };
 
     const removed = await decideRemoveWorkspaceMemberV2(added, remove, {
@@ -385,7 +389,11 @@ describe("membership event v2 decisions", () => {
       commandId: "57da754e-dcd3-4c39-aeca-8fb1454a57ed",
       workspaceId,
       actor: { kind: "punk", punkId: ownerId },
-      payload: { targetPunkId: memberId, role: "member" },
+      payload: {
+        targetPunkId: memberId,
+        role: "member",
+        expectedRevision: 1,
+      },
     };
     const v2 = await decideSetWorkspaceMemberRoleV2(created, command, {
       workspaceId,

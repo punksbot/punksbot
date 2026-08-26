@@ -11,6 +11,6 @@ punkId: string
 payload: {
 targetPunkId: string
 role: ("owner" | "moderator" | "member" | "guest")
-expectedRevision?: number
+expectedRevision: number
 }
 }

@@ -2,20 +2,36 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "punks://contracts/message.search-response@1",
   "title": "MessageSearchResponse",
-  "$comment": "Runtime invariants: serialized UTF-8 is at most 1048576 bytes; every item is an authorized active MessageView in this Workspace and Conversation and still matches the current decrypted version; items follow createdCursor DESC, conversationId ASC, messageId ASC so createdCursor is non-increasing; nextCursor is emitted whenever more projected candidates remain.",
+  "$comment": "Runtime invariants: serialized UTF-8 is at most 1048576 bytes; every item is an authorized active MessageView in this Workspace, Conversation and nullable thread scope and still matches the current decrypted version; items follow createdCursor DESC, conversationId ASC, messageId ASC so createdCursor is non-increasing. A complete page has partialReason null. A partial page has the typed reason index_lagging or index_unavailable and never falls back to another authority.",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "workspaceId",
     "conversationId",
+    "threadRootMessageId",
     "order",
+    "completeness",
+    "partialReason",
     "items",
     "nextCursor"
   ],
   "properties": {
     "workspaceId": { "type": "string", "format": "uuid" },
     "conversationId": { "type": "string", "format": "uuid" },
+    "threadRootMessageId": {
+      "anyOf": [
+        { "type": "string", "format": "uuid" },
+        { "type": "null" }
+      ]
+    },
     "order": { "const": "createdCursor-descending" },
+    "completeness": { "enum": ["complete", "partial"] },
+    "partialReason": {
+      "anyOf": [
+        { "enum": ["index_lagging", "index_unavailable"] },
+        { "type": "null" }
+      ]
+    },
     "items": {
       "type": "array",
       "maxItems": 100,
@@ -41,5 +57,27 @@
         { "type": "null" }
       ]
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "completeness": { "const": "complete" } },
+        "required": ["completeness"]
+      },
+      "then": { "properties": { "partialReason": { "type": "null" } } }
+    },
+    {
+      "if": {
+        "properties": { "completeness": { "const": "partial" } },
+        "required": ["completeness"]
+      },
+      "then": {
+        "properties": {
+          "partialReason": {
+            "enum": ["index_lagging", "index_unavailable"]
+          }
+        }
+      }
+    }
+  ]
 }

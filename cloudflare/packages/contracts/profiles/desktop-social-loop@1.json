@@ -8,9 +8,6 @@
     "account-session",
     "authentication",
     "workspace-selection",
-    "punk-profile",
-    "bounded-punk-summaries",
-    "private-punk-search",
     "stream-list",
     "message-history",
     "threads",
@@ -79,26 +76,6 @@
       "retry": "safe_read",
       "cancellablePhases": ["before_emit", "in_flight"],
       "responseContract": "auth.session@1"
-    },
-    {
-      "name": "getPunkProfile",
-      "owner": "account",
-      "kind": "read",
-      "command": false,
-      "retry": "safe_read",
-      "cancellablePhases": ["before_emit", "in_flight"],
-      "requestContract": "punk.get@1",
-      "responseContract": "punk@1"
-    },
-    {
-      "name": "updatePunkProfile",
-      "owner": "account",
-      "kind": "mutation",
-      "command": true,
-      "retry": "human_intent_required",
-      "cancellablePhases": ["before_emit", "in_flight"],
-      "requestContract": "punk.update@1",
-      "responseContract": "punk@1"
     },
     {
       "name": "startDesktopAuthentication",
@@ -255,26 +232,6 @@
       "cancellablePhases": ["before_emit", "in_flight"],
       "requestContract": "author.resolve@1",
       "responseContract": "author.resolve-response@1"
-    },
-    {
-      "name": "getPunkSummaries",
-      "owner": "workspace",
-      "kind": "read",
-      "command": false,
-      "retry": "safe_read",
-      "cancellablePhases": ["before_emit", "in_flight"],
-      "requestContract": "punk.summary-batch@1",
-      "responseContract": "punk.summary-batch-response@1"
-    },
-    {
-      "name": "searchPunks",
-      "owner": "workspace",
-      "kind": "read",
-      "command": false,
-      "retry": "safe_read",
-      "cancellablePhases": ["before_emit", "in_flight"],
-      "requestContract": "punk.search@1",
-      "responseContract": "punk.search-response@1"
     },
     {
       "name": "followConversation",

@@ -245,6 +245,7 @@ fn reauthorization_survives_restart_and_is_consumed_only_by_its_exact_target() {
         session_id: session_id.into(),
         punk_id: "44444444-4444-4444-8444-444444444444".into(),
         target_method: AuthenticationMethod::Google,
+        target_purpose: PendingAuthPurpose::LinkGoogle,
         handoff_id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd".into(),
         expires_at: at(4_000_000_000),
     };
@@ -261,13 +262,13 @@ fn reauthorization_survives_restart_and_is_consumed_only_by_its_exact_target() {
         handoff.handoff_id
     );
     assert!(restarted
-        .take_reauthorization(AuthenticationMethod::Github)
+        .take_reauthorization(PendingAuthPurpose::LinkGithub)
         .unwrap()
         .is_none());
     assert!(restarted.load_reauthorization().unwrap().is_some());
     assert_eq!(
         restarted
-            .take_reauthorization(AuthenticationMethod::Google)
+            .take_reauthorization(PendingAuthPurpose::LinkGoogle)
             .unwrap()
             .unwrap()
             .authorization_id,
@@ -277,11 +278,42 @@ fn reauthorization_survives_restart_and_is_consumed_only_by_its_exact_target() {
 
     restarted.save_reauthorization(&handoff).unwrap();
     assert!(restarted
-        .take_reauthorization_at(AuthenticationMethod::Google, at(4_000_000_001))
+        .take_reauthorization_at(PendingAuthPurpose::LinkGoogle, at(4_000_000_001))
         .unwrap()
         .is_none());
     assert!(restarted.load_reauthorization().unwrap().is_none());
     restarted.save_reauthorization(&handoff).unwrap();
     restarted.sign_out_local().unwrap();
     assert!(restarted.load_reauthorization().unwrap().is_none());
+}
+
+#[test]
+fn ownership_reauthorization_is_not_consumed_as_a_passkey_registration() {
+    let (persistence, _) = store();
+    persistence
+        .save_active_session(&active("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", 'w'))
+        .unwrap();
+    let handoff = PendingReauthorization {
+        authorization_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa".into(),
+        session_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb".into(),
+        punk_id: "44444444-4444-4444-8444-444444444444".into(),
+        target_method: AuthenticationMethod::Passkey,
+        target_purpose: PendingAuthPurpose::TransferWorkspaceOwnership,
+        handoff_id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd".into(),
+        expires_at: at(4_000_000_000),
+    };
+    persistence.save_reauthorization(&handoff).unwrap();
+
+    assert!(persistence
+        .take_reauthorization(PendingAuthPurpose::RegisterPasskey)
+        .unwrap()
+        .is_none());
+    assert_eq!(
+        persistence
+            .take_reauthorization(PendingAuthPurpose::TransferWorkspaceOwnership)
+            .unwrap()
+            .unwrap()
+            .authorization_id,
+        handoff.authorization_id,
+    );
 }

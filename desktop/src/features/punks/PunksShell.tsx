@@ -6,15 +6,24 @@ import { usePunksCapabilityAvailable } from "@/shared/capabilities/PunksCapabili
 
 import { usePunksAccount, usePunksWorkspace } from "./PunksRuntime";
 import { PunksConversation } from "./PunksConversation";
-import {
-  PunksCurrentPunkName,
-  PunksIdentityPanel,
-} from "./PunksIdentityPanels";
 import type { PunksRoute } from "./routes";
 
-const LazyWorkspaceGovernanceLauncher = lazy(() =>
+const LazyPunksIdentityLauncher = lazy(() =>
+  import("./PunksIdentityPanels").then((module) => ({
+    default: module.PunksIdentityLauncher,
+  })),
+);
+
+const LazyWorkspaceAccessLaunchers = lazy(() =>
   import("./IdentityGovernanceControls").then((module) => ({
-    default: module.WorkspaceGovernanceLauncher,
+    default: module.WorkspaceAccessLaunchers,
+  })),
+);
+
+const LazyPunksPresenceRuntime = lazy(() => import("./PunksPresenceRuntime"));
+const LazyPunksPresenceControls = lazy(() =>
+  import("./PunksPresenceRuntime").then((module) => ({
+    default: module.PunksPresenceControls,
   })),
 );
 
@@ -40,14 +49,10 @@ function WorkspaceSidebar({
   const workspace = usePunksWorkspace();
   const route = account.route;
   const [showAccountSwitch, setShowAccountSwitch] = useState(false);
-  const [identityPanel, setIdentityPanel] = useState<
-    "profile" | "search" | null
-  >(null);
-  const profileAvailable = usePunksCapabilityAvailable("punk-profile");
-  const searchAvailable = usePunksCapabilityAvailable("private-punk-search");
   const governanceAvailable = usePunksCapabilityAvailable(
     "identity-governance",
   );
+  const presenceAvailable = usePunksCapabilityAvailable("presence");
   const selectedConversationId =
     route?.kind === "conversation" || route?.kind === "message"
       ? route.conversationId
@@ -66,9 +71,7 @@ function WorkspaceSidebar({
           {workspace.workspace.name}
         </h1>
         <p className="mt-1 truncate text-xs text-muted-foreground">
-          <PunksCurrentPunkName
-            fallback={account.session?.punk.displayName ?? "Punk"}
-          />
+          {account.session?.punk.displayName ?? "Punk"}
         </p>
       </div>
       <nav
@@ -128,30 +131,16 @@ function WorkspaceSidebar({
         </div>
       </nav>
       <div className="m-3 space-y-2">
-        {governanceAvailable ? (
+        {presenceAvailable ? (
           <Suspense fallback={null}>
-            <LazyWorkspaceGovernanceLauncher />
+            <LazyPunksPresenceControls />
           </Suspense>
         ) : null}
-        {profileAvailable ? (
-          <button
-            className="w-full rounded-md border border-border px-3 py-2 text-left text-sm hover:bg-accent/60"
-            data-testid="punks-open-profile"
-            onClick={() => setIdentityPanel("profile")}
-            type="button"
-          >
-            Profile
-          </button>
-        ) : null}
-        {searchAvailable ? (
-          <button
-            className="w-full rounded-md border border-border px-3 py-2 text-left text-sm hover:bg-accent/60"
-            data-testid="punks-open-punk-search"
-            onClick={() => setIdentityPanel("search")}
-            type="button"
-          >
-            Find Punks
-          </button>
+        {governanceAvailable ? (
+          <Suspense fallback={null}>
+            <LazyPunksIdentityLauncher />
+            <LazyWorkspaceAccessLaunchers />
+          </Suspense>
         ) : null}
         <button
           aria-expanded={showAccountSwitch}
@@ -194,12 +183,6 @@ function WorkspaceSidebar({
           Sign out
         </button>
       </div>
-      {identityPanel !== null ? (
-        <PunksIdentityPanel
-          onClose={() => setIdentityPanel(null)}
-          panel={identityPanel}
-        />
-      ) : null}
     </aside>
   );
 }
@@ -255,6 +238,7 @@ export function PunksShell() {
     queryFn: () => manager.run(scope, () => scope.session.listStreams()),
   });
   const streams = streamsQuery.data ?? [];
+  const presenceAvailable = usePunksCapabilityAvailable("presence");
   const navigate = (route: PunksRoute) => account.navigate(route);
   const route = account.route;
 
@@ -268,7 +252,7 @@ export function PunksShell() {
     );
   }
 
-  return (
+  const shell = (
     <div
       className="flex min-h-dvh bg-app text-foreground"
       data-testid="punks-workspace-shell"
@@ -282,5 +266,12 @@ export function PunksShell() {
       ) : null}
       <span className="sr-only">{workspace.id}</span>
     </div>
+  );
+  return presenceAvailable ? (
+    <Suspense fallback={shell}>
+      <LazyPunksPresenceRuntime>{shell}</LazyPunksPresenceRuntime>
+    </Suspense>
+  ) : (
+    shell
   );
 }

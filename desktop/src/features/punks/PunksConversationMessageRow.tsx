@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 
-import type { MessageView } from "@punks/contracts";
+import type { MessageView, PresenceView } from "@punks/contracts";
 
 import type { AuthorSummary } from "./PunksConversationTypes";
 import { actorKey } from "./PunksConversationTypes";
@@ -30,6 +30,7 @@ export function ConversationMessageRow({
   canReact = true,
   messageActions,
   message,
+  presence,
   reaction,
   reactionForValue,
   reactionPending = false,
@@ -42,6 +43,7 @@ export function ConversationMessageRow({
   canReact?: boolean;
   messageActions?: ReactNode;
   message: MessageView;
+  presence?: PresenceView;
   reaction: ReturnType<typeof reactionFor>;
   reactionForValue?(reaction: string): ReturnType<typeof reactionFor>;
   reactionPending?: boolean;
@@ -63,8 +65,23 @@ export function ConversationMessageRow({
       data-message-status={message.status}
     >
       <div className="flex items-baseline justify-between gap-3">
-        <span className="truncate text-sm font-medium">
-          {authorName(message, authors)}
+        <span className="flex min-w-0 items-center gap-1.5 truncate text-sm font-medium">
+          {presence !== undefined ? (
+            <span
+              aria-label={`${authorName(message, authors)} is ${presence.state}`}
+              className={`size-2 shrink-0 rounded-full ${
+                presence.state === "online"
+                  ? "bg-success"
+                  : presence.state === "away"
+                    ? "bg-warning"
+                    : "bg-muted-foreground"
+              }`}
+              data-testid={`punks-presence-${message.author.kind === "punk" ? message.author.punkId : "bot"}`}
+              role="img"
+              title={presence.status ?? presence.state}
+            />
+          ) : null}
+          <span className="truncate">{authorName(message, authors)}</span>
         </span>
         <time
           className="shrink-0 text-xs text-muted-foreground"

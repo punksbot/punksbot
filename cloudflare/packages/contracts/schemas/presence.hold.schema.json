@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/presence.hold@1",
+  "title": "PresenceHoldFrame",
+  "$comment": "Ephemeral punks.presence.v1 input. A hold is authorized from the native Session cookie; the lease token is a short-lived correlation fence, never an Account credential. Heartbeats renew only the current socket-bound lease.",
+  "oneOf": [{ "$ref": "#/$defs/hold" }, { "$ref": "#/$defs/heartbeat" }],
+  "$defs": {
+    "hold": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract",
+        "type",
+        "workspaceId",
+        "deviceId",
+        "clientGeneration",
+        "holdId"
+      ],
+      "properties": {
+        "contract": { "const": "presence.hold@1" },
+        "type": { "const": "hold" },
+        "workspaceId": { "type": "string", "format": "uuid" },
+        "deviceId": { "type": "string", "format": "uuid" },
+        "clientGeneration": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "holdId": { "type": "string", "format": "uuid" }
+      }
+    },
+    "heartbeat": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract", "type", "leaseToken", "sequence"],
+      "properties": {
+        "contract": { "const": "presence.hold@1" },
+        "type": { "const": "heartbeat" },
+        "leaseToken": { "$ref": "#/$defs/leaseToken" },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "leaseToken": {
+      "type": "string",
+      "pattern": "^pls1\\.[A-Za-z0-9_-]{43}$"
+    }
+  }
+}

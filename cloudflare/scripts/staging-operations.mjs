@@ -39,6 +39,7 @@ const SECRET_KEYS = Object.freeze({
     "MESSAGE_SEARCH_CURSOR_KEY",
     "MESSAGE_HISTORY_CURSOR_KEY",
     "DIRECTORY_CURSOR_KEY",
+    "MEDIA_UPLOAD_GRANT_KEY",
   ]),
   auth: Object.freeze([
     "GOOGLE_OAUTH_CLIENT_ID",
@@ -82,6 +83,7 @@ export function validateStagingBindings(bindings) {
     "MESSAGE_SEARCH_CURSOR_KEY",
     "MESSAGE_HISTORY_CURSOR_KEY",
     "DIRECTORY_CURSOR_KEY",
+    "MEDIA_UPLOAD_GRANT_KEY",
   ]) {
     if (bindings[key].length < 32) {
       throw new Error(`${key} must contain at least 32 characters`);

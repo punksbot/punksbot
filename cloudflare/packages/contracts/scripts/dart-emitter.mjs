@@ -147,6 +147,29 @@ class DartEmitter {
   }
 
   descriptor(schema, contextName, rootSchema) {
+    if (
+      Array.isArray(schema.allOf) &&
+      schema.$ref === undefined &&
+      schema.type === undefined &&
+      schema.properties === undefined &&
+      schema.oneOf === undefined &&
+      schema.anyOf === undefined &&
+      schema.enum === undefined
+    ) {
+      const structural = schema.allOf.find(
+        (candidate) =>
+          candidate.$ref !== undefined ||
+          candidate.type !== undefined ||
+          candidate.properties !== undefined ||
+          candidate.oneOf !== undefined ||
+          candidate.anyOf !== undefined ||
+          candidate.enum !== undefined,
+      );
+      if (structural === undefined) {
+        throw new Error(`allOf Dart non projetable : ${contextName}`);
+      }
+      return this.descriptor(structural, contextName, rootSchema);
+    }
     if (schema.$ref !== undefined) {
       const local = localDefinitionName(schema.$ref);
       if (local !== null) {
@@ -198,6 +221,9 @@ class DartEmitter {
         contextName,
         rootSchema,
       );
+    }
+    if (schema.type === "null") {
+      return { kind: "null", dart: "Null" };
     }
     const primitive = this.primitive(schema.type);
     if (primitive !== null) return primitive;
@@ -501,6 +527,8 @@ class DartEmitter {
     switch (descriptor.kind) {
       case "nullable":
         return `${expression} == null ? null : ${this.decode(descriptor.inner, expression, path)}`;
+      case "null":
+        return `_expectNull(${expression}, ${literal(path)})`;
       case "const": {
         const helper = {
           string: "_expectStringConst",
@@ -811,6 +839,7 @@ const DART_RUNTIME_HELPERS = [
   "bool _asBool(Object? value, String path) => value is bool ? value : _invalid(path, 'a boolean');",
   "List<Object?> _asList(Object? value, String path) => value is List<Object?> ? value : _invalid(path, 'a JSON array');",
   "Map<String, Object?> _asMap(Object? value, String path) => value is Map<String, Object?> ? value : _invalid(path, 'a JSON object');",
+  "Null _expectNull(Object? value, String path) => value == null ? null : _invalid(path, 'null');",
   "",
   "String _expectStringConst(Object? value, String expected, String path) {",
   "  final actual = _asString(value, path);",

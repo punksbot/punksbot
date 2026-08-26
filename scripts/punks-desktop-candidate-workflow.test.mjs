@@ -46,6 +46,7 @@ const expectedJobs = [
   "build",
   "gates",
   "preflight",
+  "publish_promotion",
   "verify_staging",
 ];
 const readPermissions = { contents: "read" };
@@ -66,7 +67,34 @@ const artifactSigningAction =
   "azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82";
 const azureLoginAction = "azure/login@f5d393ae46f8fde4be8b75f32e3fc50e654ad0ca";
 const allowedSecretSteps = {
-  PUNKS_CLOUDFLARE_API_TOKEN: ["verify_staging/observe_staging"],
+  PUNKS_CLOUDFLARE_API_TOKEN: [
+    "verify_staging/observe_staging",
+    "build/exercise_installed_candidate",
+  ],
+  PUNKS_PROMOTION_SESSION: ["build/exercise_installed_candidate"],
+  PUNKS_R2_PRIMARY_API_TOKEN: ["publish_promotion/publish_immutable_proofs"],
+  PUNKS_R2_PRIMARY_ACCESS_KEY_ID: [
+    "publish_promotion/publish_immutable_proofs",
+  ],
+  PUNKS_R2_PRIMARY_SECRET_ACCESS_KEY: [
+    "publish_promotion/publish_immutable_proofs",
+  ],
+  PUNKS_R2_RECOVERY_API_TOKEN: ["publish_promotion/publish_immutable_proofs"],
+  PUNKS_R2_RECOVERY_ACCESS_KEY_ID: [
+    "publish_promotion/publish_immutable_proofs",
+  ],
+  PUNKS_R2_RECOVERY_SECRET_ACCESS_KEY: [
+    "publish_promotion/publish_immutable_proofs",
+  ],
+  PUNKS_RELEASE_APPROVERS_JSON: [
+    "publish_promotion/publish_immutable_proofs",
+  ],
+  PUNKS_RELEASE_APPROVERS_ANCHOR_SHA256: [
+    "publish_promotion/publish_immutable_proofs",
+  ],
+  PUNKS_R2_DESTINATIONS_ANCHOR_SHA256: [
+    "publish_promotion/publish_immutable_proofs",
+  ],
   PUNKS_APPLE_CERTIFICATE: ["build/import_apple"],
   PUNKS_APPLE_CERTIFICATE_PASSWORD: ["build/import_apple"],
   PUNKS_APPLE_API_ISSUER: ["build/build_macos"],
@@ -878,7 +906,7 @@ function validateWorkflow(workflow) {
     aggregate.if === "inputs.validation_scope == 'full-candidate'",
     "Apple-only validation can publish a four-platform candidate",
   );
-  same(aggregate.permissions, readPermissions, "aggregate permissions");
+  same(aggregate.permissions, attestPermissions, "aggregate permissions");
   const aggregateDownload = workflowStep(aggregate, "download_attested_legs");
   invariant(
     aggregateDownload.with?.path === "candidate-input/legs",

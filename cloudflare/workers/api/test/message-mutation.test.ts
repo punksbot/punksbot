@@ -136,35 +136,67 @@ async function addWorkspaceMember(
   commandId: string,
   role: SetWorkspaceMemberRoleCommand["payload"]["role"] = "member",
 ) {
-  const command: SetWorkspaceMemberRoleCommand = {
+  const admission: SetWorkspaceMemberRoleCommand = {
     contract: "workspace.member-set-role@1",
-    commandId,
+    commandId:
+      role === "member" || role === "guest" ? commandId : crypto.randomUUID(),
     workspaceId,
     actor: { kind: "punk", punkId: ownerPunkId },
-    payload: { targetPunkId: otherPunkId, role },
+    payload: {
+      targetPunkId: otherPunkId,
+      role: role === "guest" ? "guest" : "member",
+      expectedRevision: 1,
+    },
   };
-  const response = await SELF.fetch(
+  const admissionResponse = await SELF.fetch(
     `https://punks.bot/api/v1/workspaces/${workspaceId}/members/${otherPunkId}`,
     {
       method: "PUT",
       headers: {
         "content-type": "application/json",
         cookie: "__Host-punks_session=session-owner",
-        "idempotency-key": commandId,
+        "idempotency-key": admission.commandId,
       },
-      body: JSON.stringify(command),
+      body: JSON.stringify(admission),
     },
   );
-  expect(response.status).toBe(200);
+  expect(admissionResponse.status).toBe(200);
+  if (role !== "owner" && role !== "moderator") return;
+  const promotion: SetWorkspaceMemberRoleCommand = {
+    ...admission,
+    commandId,
+    payload: {
+      targetPunkId: otherPunkId,
+      role,
+      expectedRevision: 2,
+    },
+  };
+  const promotionResponse = await SELF.fetch(
+    `https://punks.bot/api/v1/workspaces/${workspaceId}/members/${otherPunkId}`,
+    {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json",
+        cookie: "__Host-punks_session=session-owner",
+        "idempotency-key": promotion.commandId,
+      },
+      body: JSON.stringify(promotion),
+    },
+  );
+  expect(promotionResponse.status).toBe(200);
 }
 
-async function removeWorkspaceMember(workspaceId: string, commandId: string) {
+async function removeWorkspaceMember(
+  workspaceId: string,
+  commandId: string,
+  expectedRevision: number,
+) {
   const command: RemoveWorkspaceMemberCommand = {
     contract: "workspace.member-remove@1",
     commandId,
     workspaceId,
     actor: { kind: "punk", punkId: ownerPunkId },
-    payload: { targetPunkId: otherPunkId },
+    payload: { targetPunkId: otherPunkId, expectedRevision },
   };
   const response = await SELF.fetch(
     `https://punks.bot/api/v1/workspaces/${workspaceId}/members/${otherPunkId}`,
@@ -599,6 +631,7 @@ describe("Punks Message mutation API", () => {
     await removeWorkspaceMember(
       workspaceId,
       "256c91b7-1940-44c7-a60a-1860dbd69c5e",
+      2,
     );
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const status = await runInDurableObject(

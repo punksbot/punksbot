@@ -18,6 +18,7 @@ export interface MessageSearchCursorScope {
   punkId: string;
   workspaceId: string;
   conversationId: string;
+  threadRootMessageId: string | null;
   algorithm: typeof MESSAGE_SEARCH_ALGORITHM;
   normalization: typeof MESSAGE_SEARCH_NORMALIZATION;
   /** Domain-separated keyed binding stored only inside the encrypted payload. */
@@ -41,6 +42,7 @@ interface CursorPayload {
   p: string;
   w: string;
   c: string;
+  r: string | null;
   n: typeof MESSAGE_SEARCH_NORMALIZATION;
   a: typeof MESSAGE_SEARCH_ALGORITHM;
   q: string;
@@ -147,6 +149,8 @@ function hasValidScope(value: unknown): value is MessageSearchCursorScope {
     isValidUuid(scope.punkId) &&
     isValidUuid(scope.workspaceId) &&
     isValidUuid(scope.conversationId) &&
+    (scope.threadRootMessageId === null ||
+      isValidUuid(scope.threadRootMessageId)) &&
     scope.algorithm === MESSAGE_SEARCH_ALGORITHM &&
     scope.normalization === MESSAGE_SEARCH_NORMALIZATION &&
     typeof scope.queryBinding === "string" &&
@@ -161,7 +165,7 @@ function isExactScope(value: unknown): value is MessageSearchCursorScope {
   return (
     hasValidScope(value) &&
     Object.keys(value).sort().join(",") ===
-      "algorithm,conversationId,limit,normalization,punkId,queryBinding,workspaceId"
+      "algorithm,conversationId,limit,normalization,punkId,queryBinding,threadRootMessageId,workspaceId"
   );
 }
 
@@ -184,12 +188,13 @@ function isCursorPayload(value: unknown): value is CursorPayload {
   }
   const payload = value as Record<string, unknown>;
   return (
-    Object.keys(payload).sort().join(",") === "a,c,l,n,p,q,t,v,w" &&
+    Object.keys(payload).sort().join(",") === "a,c,l,n,p,q,r,t,v,w" &&
     payload.v === 1 &&
     isExactScope({
       punkId: payload.p,
       workspaceId: payload.w,
       conversationId: payload.c,
+      threadRootMessageId: payload.r,
       algorithm: payload.a,
       normalization: payload.n,
       queryBinding: payload.q,
@@ -248,7 +253,7 @@ export async function encodeMessageSearchCursor(
   if (
     cursor.version !== 1 ||
     Object.keys(cursor).sort().join(",") !==
-      "algorithm,conversationId,limit,normalization,position,punkId,queryBinding,version,workspaceId" ||
+      "algorithm,conversationId,limit,normalization,position,punkId,queryBinding,threadRootMessageId,version,workspaceId" ||
     !hasValidScope(cursor) ||
     !isValidPosition(cursor.position) ||
     cursor.position[1] !== cursor.conversationId
@@ -260,6 +265,7 @@ export async function encodeMessageSearchCursor(
     p: cursor.punkId,
     w: cursor.workspaceId,
     c: cursor.conversationId,
+    r: cursor.threadRootMessageId,
     n: cursor.normalization,
     a: cursor.algorithm,
     q: cursor.queryBinding,
@@ -327,6 +333,7 @@ export async function decodeMessageSearchCursor(
       decoded.p !== expectedScope.punkId ||
       decoded.w !== expectedScope.workspaceId ||
       decoded.c !== expectedScope.conversationId ||
+      decoded.r !== expectedScope.threadRootMessageId ||
       decoded.n !== expectedScope.normalization ||
       decoded.a !== expectedScope.algorithm ||
       decoded.q !== expectedScope.queryBinding ||
@@ -339,6 +346,7 @@ export async function decodeMessageSearchCursor(
       punkId: decoded.p,
       workspaceId: decoded.w,
       conversationId: decoded.c,
+      threadRootMessageId: decoded.r,
       normalization: decoded.n,
       algorithm: decoded.a,
       queryBinding: decoded.q,

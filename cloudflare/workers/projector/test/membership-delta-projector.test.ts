@@ -68,9 +68,11 @@ async function workspaceV2Projection(
       | "workspace.create@1"
       | "workspace.rename@1"
       | "workspace.member-set-role@1"
-      | "workspace.member-remove@1";
+      | "workspace.member-remove@1"
+      | "workspace.transfer-ownership@1";
     transition?: WorkspaceEventContentV2["transition"];
     memberCount?: number;
+    ownerPunkId?: string;
     slug?: string;
   } = {},
 ): Promise<WorkspaceProjectionMessageV2[]> {
@@ -106,7 +108,7 @@ async function workspaceV2Projection(
       name: "Bounded Workspace",
       visibility: "private",
       status: "active",
-      ownerPunkId: "punk_owner",
+      ownerPunkId: options.ownerPunkId ?? "punk_owner",
       memberCount:
         options.memberCount ??
         memberDeltas.filter((delta) => delta.present).length,
@@ -130,7 +132,20 @@ async function workspaceV2Projection(
     content.transition.type === "member-upserted" ||
     content.transition.type === "member-removed"
       ? [["target", "punk", content.transition.targetPunkId]]
-      : [];
+      : content.transition.type === "ownership-transferred"
+        ? [
+            [
+              "previous_owner",
+              "punk",
+              content.transition.memberTransitions[0].targetPunkId,
+            ],
+            [
+              "target",
+              "punk",
+              content.transition.memberTransitions[1].targetPunkId,
+            ],
+          ]
+        : [];
   const event: WorkspaceProjectionMessageV2["event"] = {
     id: "0".repeat(64),
     pubkey: "0".repeat(64),
@@ -370,6 +385,71 @@ describe("membership delta Queue projection", () => {
       .prepare("SELECT COUNT(*) AS count FROM membership_delta_batch")
       .first<{ count: number }>();
     expect(staging).toEqual({ count: 0 });
+  });
+
+  it("projects both bounded member transitions of one ownership transfer", async () => {
+    const projectedWorkspaceId = "00000000-0000-8000-8000-000000000805";
+    const transfer = await workspaceV2Projection(
+      projectedWorkspaceId,
+      2,
+      [
+        { punkId: "punk_owner", present: true, role: "member" },
+        { punkId: "punk_successor", present: true, role: "owner" },
+      ],
+      {
+        kind: 50003,
+        contract: "workspace.transfer-ownership@1",
+        transition: {
+          type: "ownership-transferred",
+          memberTransitions: [
+            {
+              type: "member-upserted",
+              targetPunkId: "punk_owner",
+              previousRole: "owner",
+              role: "member",
+            },
+            {
+              type: "member-upserted",
+              targetPunkId: "punk_successor",
+              previousRole: "moderator",
+              role: "owner",
+            },
+          ],
+        },
+        memberCount: 2,
+        ownerPunkId: "punk_successor",
+      },
+    );
+
+    expect((await consume(transfer)).retryMessages).toEqual([]);
+    const database = projectionDatabase(testEnv, projectedWorkspaceId);
+    const members = await database
+      .prepare(
+        `SELECT punk_id, role, present, last_cursor
+         FROM workspace_member_projection
+         WHERE workspace_id = ? ORDER BY punk_id`,
+      )
+      .bind(projectedWorkspaceId)
+      .all<{
+        punk_id: string;
+        role: string;
+        present: number;
+        last_cursor: number;
+      }>();
+    expect(members.results).toEqual([
+      {
+        punk_id: "punk_owner",
+        role: "member",
+        present: 1,
+        last_cursor: 2,
+      },
+      {
+        punk_id: "punk_successor",
+        role: "owner",
+        present: 1,
+        last_cursor: 2,
+      },
+    ]);
   });
 
   it("stages a 1000-member Conversation invisibly and applies it once complete", async () => {

@@ -361,6 +361,82 @@ test("dist mode accepts an isolated capability chunk not referenced by HTML", ()
   }
 });
 
+test("dist mode accepts isolated Conversation search UI and transport chunks", () => {
+  const root = createSourceFixture();
+  createValidDist(root);
+  write(
+    root,
+    "dist/assets/ConversationSearchControls-a1.js",
+    `export const label = "Search Messages";\n`,
+  );
+  write(
+    root,
+    "dist/assets/punksConversationSearchTauri-a1.js",
+    `export const command = "punks_search_messages";\n`,
+  );
+  try {
+    const result = runChecker(root, "--dist");
+    assert.equal(result.status, 0, result.stderr);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("dist mode rejects Conversation search code in the eager entry", () => {
+  const root = createSourceFixture();
+  createValidDist(root);
+  write(
+    root,
+    "dist/assets/app-a1.js",
+    `console.info("Punks frontend");\nconst command = "punks_search_messages";\nvoid command;\n`,
+  );
+  try {
+    const result = runChecker(root, "--dist");
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /unavailable capability search/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("dist mode accepts isolated Presence UI and transport chunks", () => {
+  const root = createSourceFixture();
+  createValidDist(root);
+  write(
+    root,
+    "dist/assets/punksPresenceTauri-a1.js",
+    `export const command = "punks_hold_presence";\n`,
+  );
+  write(
+    root,
+    "dist/assets/PunksPresenceRuntime-a1.js",
+    `export const marker = "Realtime unavailable";\n`,
+  );
+  try {
+    const result = runChecker(root, "--dist");
+    assert.equal(result.status, 0, result.stderr);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("dist mode rejects Presence transport code in the eager entry", () => {
+  const root = createSourceFixture();
+  createValidDist(root);
+  write(
+    root,
+    "dist/assets/app-a1.js",
+    `console.info("Punks frontend");\nconst command = "punks_hold_presence";\nvoid command;\n`,
+  );
+  try {
+    const result = runChecker(root, "--dist");
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /unavailable capability presence/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("dist mode rejects the social runtime in the eager entry", () => {
   const root = createSourceFixture();
   createValidDist(root);

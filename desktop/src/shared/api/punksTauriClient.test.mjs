@@ -229,16 +229,14 @@ test("identity governance uses only dedicated typed IPC commands", async () => {
     usesRemaining: 1,
   };
   const governance = {
+    contract: "workspace.governance-view@1",
     id: workspaceId,
     slug: "alpha",
     name: "Alpha",
     visibility: "private",
     status: "active",
     ownerPunkId: punkId,
-    members: [
-      { punkId, role: "owner" },
-      { punkId: targetPunkId, role: "member" },
-    ],
+    memberCount: 2,
     revision: 1,
     cursor: 1,
     createdAt: "2026-08-26T00:00:00.000Z",
@@ -270,7 +268,15 @@ test("identity governance uses only dedicated typed IPC commands", async () => {
           replayed: false,
         };
       case "punks_get_workspace_governance":
-        return governance;
+        return {
+          contract: "workspace.governance-response@1",
+          workspace: governance,
+          members: [
+            { punkId, role: "owner" },
+            { punkId: targetPunkId, role: "member" },
+          ],
+          nextCursor: null,
+        };
       case "punks_create_workspace_invitation":
         return {
           contract: "workspace.invite-response@1",
@@ -293,6 +299,34 @@ test("identity governance uses only dedicated typed IPC commands", async () => {
         return {
           contract: "workspace.membership-mutation-response@1",
           workspace: governance,
+          memberDeltas: [
+            {
+              punkId: targetPunkId,
+              present: command === "punks_set_workspace_member_role",
+              role:
+                command === "punks_set_workspace_member_role"
+                  ? "moderator"
+                  : null,
+            },
+          ],
+          replayed: false,
+        };
+      case "punks_transfer_workspace_ownership":
+        return {
+          contract: "workspace.membership-lifecycle-response@1",
+          workspaceId,
+          revision: 2,
+          outcome: "ownership_transferred",
+          role: "member",
+          replayed: false,
+        };
+      case "punks_leave_workspace":
+        return {
+          contract: "workspace.membership-lifecycle-response@1",
+          workspaceId,
+          revision: 3,
+          outcome: "left",
+          role: null,
           replayed: false,
         };
       default:
@@ -305,7 +339,7 @@ test("identity governance uses only dedicated typed IPC commands", async () => {
   await client.getWorkspaceInvitation(code);
   await client.claimWorkspaceInvitation({ code, expectedRevision: 1 });
   const session = await client.openWorkspace(workspaceId);
-  await session.getGovernance();
+  await session.getGovernancePage({ limit: 100, cursor: null });
   await session.createInvitation({
     role: "member",
     expectedRevision: 1,
@@ -317,6 +351,11 @@ test("identity governance uses only dedicated typed IPC commands", async () => {
     expectedRevision: 1,
   });
   await session.removeMember({ targetPunkId, expectedRevision: 1 });
+  await session.transferOwnership({
+    targetPunkId,
+    expectedRevision: 1,
+  });
+  await session.leaveWorkspace();
 
   assert.deepEqual(
     calls.slice(0, 2).map(({ command, args }) => ({ command, args })),
@@ -333,7 +372,10 @@ test("identity governance uses only dedicated typed IPC commands", async () => {
     [
       {
         command: "punks_get_workspace_governance",
-        args: { lease: session.lease },
+        args: {
+          lease: session.lease,
+          input: { limit: 100, cursor: null },
+        },
       },
       {
         command: "punks_create_workspace_invitation",
@@ -362,6 +404,17 @@ test("identity governance uses only dedicated typed IPC commands", async () => {
           lease: session.lease,
           input: { targetPunkId, expectedRevision: 1 },
         },
+      },
+      {
+        command: "punks_transfer_workspace_ownership",
+        args: {
+          lease: session.lease,
+          input: { targetPunkId, expectedRevision: 1 },
+        },
+      },
+      {
+        command: "punks_leave_workspace",
+        args: { lease: session.lease },
       },
     ],
   );

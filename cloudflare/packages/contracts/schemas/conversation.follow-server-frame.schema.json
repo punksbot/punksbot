@@ -6,6 +6,7 @@
   "oneOf": [
     { "$ref": "#/$defs/accepted" },
     { "$ref": "#/$defs/changes" },
+    { "$ref": "#/$defs/typing" },
     { "$ref": "#/$defs/ready" },
     { "$ref": "#/$defs/resyncRequired" },
     { "$ref": "#/$defs/conversationUnavailable" }
@@ -168,6 +169,16 @@
           "maximum": 9007199254740991
         },
         "refreshRequired": { "type": "boolean" }
+      }
+    },
+    "typing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "type", "patch"],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "type": { "const": "typing" },
+        "patch": { "$ref": "schemas/presence.typing.patch.schema.json" }
       }
     },
     "ready": {

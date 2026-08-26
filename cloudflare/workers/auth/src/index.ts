@@ -93,6 +93,12 @@ export type AccountMergeRightsIndexWriterProps = {
   environment: "local" | "staging" | "production";
 };
 
+/** Exact capability allowed to consume a strong Workspace ownership grant. */
+export type WorkspaceOwnershipAuthorizationProps = {
+  role: "punks-workspace-ownership-authorizer";
+  environment: "local" | "staging" | "production";
+};
+
 /** One bounded Workspace membership change for exactly one Punk. */
 export interface WorkspaceMembershipIndexChange
   extends CommitAccountMergeRightsChangeInput {}
@@ -169,6 +175,21 @@ function hasExactAccountMergeRightsIndexWriterProps(
   return (
     Object.keys(props).sort().join(",") === "environment,role" &&
     props.role === "punks-account-merge-rights-index-writer" &&
+    props.environment === environment
+  );
+}
+
+function hasExactWorkspaceOwnershipAuthorizationProps(
+  value: unknown,
+  environment: AuthEnv["ENVIRONMENT"],
+): value is WorkspaceOwnershipAuthorizationProps {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const props = value as Record<string, unknown>;
+  return (
+    Object.keys(props).sort().join(",") === "environment,role" &&
+    props.role === "punks-workspace-ownership-authorizer" &&
     props.environment === environment
   );
 }
@@ -452,6 +473,73 @@ export class PunkSessionService extends WorkerEntrypoint<AuthEnv> {
       currentId = state.mergedInto;
     }
     return null;
+  }
+}
+
+/** Mutation-only capability for one desktop-sealed ownership authorization. */
+export class WorkspaceOwnershipAuthorizationService extends WorkerEntrypoint<
+  AuthEnv,
+  WorkspaceOwnershipAuthorizationProps
+> {
+  override fetch(_request: Request): Response {
+    return privateNotFound();
+  }
+
+  async consume(input: unknown): Promise<boolean> {
+    if (
+      !hasExactWorkspaceOwnershipAuthorizationProps(
+        this.ctx.props,
+        this.env.ENVIRONMENT,
+      ) ||
+      typeof input !== "object" ||
+      input === null ||
+      Array.isArray(input) ||
+      !exactObjectKeys(input, [
+        "authorizationId",
+        "commandId",
+        "punkId",
+        "sessionId",
+      ])
+    ) {
+      return false;
+    }
+    const request = input as Record<string, unknown>;
+    if (
+      typeof request.authorizationId !== "string" ||
+      !uuidPattern.test(request.authorizationId) ||
+      typeof request.commandId !== "string" ||
+      !uuidPattern.test(request.commandId) ||
+      typeof request.punkId !== "string" ||
+      !uuidPattern.test(request.punkId) ||
+      typeof request.sessionId !== "string" ||
+      !opaqueUuidPattern.test(request.sessionId)
+    ) {
+      return false;
+    }
+    try {
+      const session = await this.env.SESSIONS.getByName(
+        request.sessionId,
+      ).get();
+      if (
+        session?.sessionId !== request.sessionId ||
+        session.punkId !== request.punkId ||
+        !(await this.env.PUNKS.getByName(request.punkId).query()).ok
+      ) {
+        return false;
+      }
+      const consumed = await this.env.DESKTOP_REAUTH_GRANTS.getByName(
+        request.authorizationId,
+      ).consume({
+        authorizationId: request.authorizationId,
+        sessionId: request.sessionId,
+        punkId: request.punkId,
+        targetMethod: "transfer_workspace_ownership",
+        flowId: request.commandId,
+      });
+      return consumed.ok;
+    } catch {
+      return false;
+    }
   }
 }
 

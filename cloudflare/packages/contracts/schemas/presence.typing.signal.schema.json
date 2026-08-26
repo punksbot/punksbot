@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/presence.typing.signal@1",
+  "title": "PresenceTypingSignal",
+  "$comment": "Loss-tolerant typing intent on one authorized Conversation. Repetition renews a short TTL; rate-limited or stale signals are omitted without becoming a business failure.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "leaseToken",
+    "sequence",
+    "workspaceId",
+    "conversationId",
+    "active"
+  ],
+  "properties": {
+    "contract": { "const": "presence.typing.signal@1" },
+    "leaseToken": {
+      "type": "string",
+      "pattern": "^pls1\\.[A-Za-z0-9_-]{43}$"
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "workspaceId": { "type": "string", "format": "uuid" },
+    "conversationId": { "type": "string", "format": "uuid" },
+    "active": { "type": "boolean" }
+  }
+}

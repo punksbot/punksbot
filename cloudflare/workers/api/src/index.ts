@@ -9,6 +9,8 @@ export { BotInstallationDO } from "./bot-installation-do";
 export { ConversationDO } from "./conversation-do";
 export { ConversationIdentityDO } from "./conversation-identity-do";
 export { MessageContentDO } from "./message-content-do";
+export { MediaUploadDO } from "./media-upload-do";
+export { PresenceDO } from "./presence-do";
 export { BotActionService } from "./bot-action-service";
 export {
   BotHarnessService,

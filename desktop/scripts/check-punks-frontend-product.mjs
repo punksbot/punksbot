@@ -69,8 +69,12 @@ const LAZY_CAPABILITY_CHUNKS = [
   {
     capability: "identity-governance",
     fileName:
-      /^(?:IdentityGovernanceControls|punksIdentityGovernanceTauri)-[A-Za-z0-9_-]+\.js$/u,
+      /^(?:IdentityGovernanceControls|PunksDialog|PunksIdentityPanels|punksIdentityGovernanceTauri)-[A-Za-z0-9_-]+\.js$/u,
     eagerMarkers: [
+      "punks_get_punk_profile",
+      "punks_update_punk_profile",
+      "punks_get_punk_summaries",
+      "punks_search_punks",
       "punks_get_workspace_governance",
       "punks_create_workspace_invitation",
       "punks_get_workspace_invitation",
@@ -78,8 +82,34 @@ const LAZY_CAPABILITY_CHUNKS = [
       "punks_revoke_workspace_invitation",
       "punks_set_workspace_member_role",
       "punks_remove_workspace_member",
+      "PunksDialogContent",
       "Members and invitations",
       "Accept invitation",
+      "Find Punks",
+    ],
+  },
+  {
+    capability: "search",
+    fileName:
+      /^(?:ConversationSearchControls|punksConversationSearchTauri)-[A-Za-z0-9_-]+\.js$/u,
+    eagerMarkers: [
+      "punks_search_messages",
+      "Search Messages",
+      "index is still catching up",
+    ],
+  },
+  {
+    capability: "presence",
+    fileName:
+      /^(?:PunksPresenceRuntime|punksPresenceTauri)-[A-Za-z0-9_-]+\.js$/u,
+    eagerMarkers: [
+      "punks_hold_presence",
+      "punks_presence_next",
+      "punks_set_presence_status",
+      "punks_signal_presence_typing",
+      "punks_close_presence",
+      "Realtime unavailable",
+      "Optional status",
     ],
   },
 ];

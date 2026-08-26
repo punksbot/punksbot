@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/desktop.presence-delivery@1",
+  "title": "DesktopPresenceDelivery",
+  "$comment": "Renderer-safe volatile IPC delivery. Native lease token, Account Session, cookie, device and heartbeat command sequence are structurally absent.",
+  "oneOf": [
+    { "$ref": "#/$defs/accepted" },
+    { "$ref": "#/$defs/presence" },
+    { "$ref": "#/$defs/realtimeDegraded" }
+  ],
+  "$defs": {
+    "accepted": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "clientGeneration",
+        "leaseGeneration",
+        "heartbeatIntervalMs",
+        "awayAfterMs",
+        "expiresAfterMs",
+        "presences"
+      ],
+      "properties": {
+        "kind": { "const": "accepted" },
+        "clientGeneration": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "leaseGeneration": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "heartbeatIntervalMs": {
+          "type": "integer",
+          "minimum": 5000,
+          "maximum": 30000
+        },
+        "awayAfterMs": {
+          "type": "integer",
+          "minimum": 10000,
+          "maximum": 60000
+        },
+        "expiresAfterMs": {
+          "type": "integer",
+          "minimum": 15000,
+          "maximum": 120000
+        },
+        "presences": {
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": { "$ref": "schemas/presence.view.schema.json" }
+        }
+      }
+    },
+    "presence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "presence"],
+      "properties": {
+        "kind": { "const": "presence" },
+        "presence": { "$ref": "schemas/presence.view.schema.json" }
+      }
+    },
+    "realtimeDegraded": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "reason"],
+      "properties": {
+        "kind": { "const": "realtime_degraded" },
+        "reason": {
+          "enum": ["authorization_unavailable", "capacity_unavailable"]
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/media-upload.grant-create@1",
+  "title": "CreateMediaUploadGrantCommand",
+  "$comment": "The commandId is the immutable upload intention identifier. The runtime binds the grant to the authenticated Punk and current Workspace membership, fixes a fifteen-minute expiry, and rejects a reused commandId with a different integrity tuple.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "commandId", "workspaceId", "actor", "payload"],
+  "properties": {
+    "contract": { "const": "media-upload.grant-create@1" },
+    "commandId": { "type": "string", "format": "uuid" },
+    "workspaceId": { "type": "string", "format": "uuid" },
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "punkId"],
+      "properties": {
+        "kind": { "const": "punk" },
+        "punkId": { "type": "string", "format": "uuid" }
+      }
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["purpose", "byteLength", "contentType", "sha256"],
+      "properties": {
+        "purpose": { "const": "message_attachment" },
+        "byteLength": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 268435456
+        },
+        "contentType": {
+          "enum": [
+            "application/json",
+            "application/pdf",
+            "application/zip",
+            "audio/mpeg",
+            "audio/ogg",
+            "audio/wav",
+            "audio/webm",
+            "image/avif",
+            "image/gif",
+            "image/jpeg",
+            "image/png",
+            "image/webp",
+            "text/csv",
+            "text/markdown",
+            "text/plain",
+            "video/mp4",
+            "video/quicktime",
+            "video/webm"
+          ]
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    }
+  }
+}

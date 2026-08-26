@@ -69,6 +69,7 @@ fn pending_purpose(value: PendingAuthPurpose) -> &'static str {
         PendingAuthPurpose::LinkGoogle => "link_google",
         PendingAuthPurpose::LinkGithub => "link_github",
         PendingAuthPurpose::RegisterPasskey => "register_passkey",
+        PendingAuthPurpose::TransferWorkspaceOwnership => "transfer_workspace_ownership",
     }
 }
 
@@ -83,10 +84,10 @@ fn auth_client(runtime: &NativeAuthenticationRuntime) -> Result<DesktopAuthClien
 
 fn take_authorization(
     store: &KeyringSessionPersistence,
-    target_method: AuthenticationMethod,
+    target_purpose: PendingAuthPurpose,
 ) -> Result<String, ClientFailure> {
     let grant = store
-        .take_reauthorization(target_method)
+        .take_reauthorization(target_purpose)
         .map_err(|_| store_failure())?
         .ok_or_else(|| {
             native_failure(
@@ -457,10 +458,11 @@ async fn complete_pending_authentication(
             let confirmed = auth
                 .confirm(&flow.flow_id, &flow.verifier, &claimed.delivery_id)
                 .await?;
-            let target_method = match claimed.target_method.as_str() {
-                "link_google" => AuthenticationMethod::Google,
-                "link_github" => AuthenticationMethod::Github,
-                "register_passkey" => AuthenticationMethod::Passkey,
+            let target_purpose = match claimed.target_method.as_str() {
+                "link_google" => PendingAuthPurpose::LinkGoogle,
+                "link_github" => PendingAuthPurpose::LinkGithub,
+                "register_passkey" => PendingAuthPurpose::RegisterPasskey,
+                "transfer_workspace_ownership" => PendingAuthPurpose::TransferWorkspaceOwnership,
                 _ => {
                     return Err(native_failure(
                         FailureKind::ContractViolation,
@@ -468,12 +470,19 @@ async fn complete_pending_authentication(
                     ));
                 }
             };
+            if flow.purpose != Some(target_purpose) {
+                return Err(native_failure(
+                    FailureKind::ContractViolation,
+                    "reauthorization target does not match its native intent",
+                ));
+            }
             store
                 .save_reauthorization(&PendingReauthorization {
                     authorization_id: claimed.authorization_id,
                     session_id: claimed.session_id,
                     punk_id: claimed.punk_id,
-                    target_method,
+                    target_method: flow.method,
+                    target_purpose,
                     handoff_id: claimed.handoff_id,
                     expires_at: claimed.expires_at,
                 })
@@ -707,6 +716,7 @@ pub async fn punks_start_reauthentication(
         "link_google" => PendingAuthPurpose::LinkGoogle,
         "link_github" => PendingAuthPurpose::LinkGithub,
         "register_passkey" => PendingAuthPurpose::RegisterPasskey,
+        "transfer_workspace_ownership" => PendingAuthPurpose::TransferWorkspaceOwnership,
         _ => {
             return Err(native_failure(
                 FailureKind::ContractViolation,
@@ -744,7 +754,19 @@ pub async fn punks_start_identity_link(
             ));
         }
     };
-    let authorization_id = take_authorization(&store, method)?;
+    let authorization_id = take_authorization(
+        &store,
+        match method {
+            AuthenticationMethod::Google => PendingAuthPurpose::LinkGoogle,
+            AuthenticationMethod::Github => PendingAuthPurpose::LinkGithub,
+            AuthenticationMethod::Passkey => {
+                return Err(native_failure(
+                    FailureKind::ContractViolation,
+                    "passkey cannot be linked as a provider",
+                ));
+            }
+        },
+    )?;
     start_authentication(
         &app,
         &client,
@@ -764,7 +786,7 @@ pub async fn punks_start_passkey_registration(
     client: tauri::State<'_, PunksDesktopClient>,
     store: tauri::State<'_, Arc<KeyringSessionPersistence>>,
 ) -> Result<CeremonyPhaseView, ClientFailure> {
-    let authorization_id = take_authorization(&store, AuthenticationMethod::Passkey)?;
+    let authorization_id = take_authorization(&store, PendingAuthPurpose::RegisterPasskey)?;
     start_authentication(
         &app,
         &client,

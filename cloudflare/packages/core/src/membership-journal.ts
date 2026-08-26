@@ -161,16 +161,23 @@ function eventHasExactValuesTag(
   );
 }
 
-function workspaceContractForKind(kind: number): string | null {
+function workspaceContractsForEvent(
+  kind: number,
+  transition: WorkspaceEventContentV2["transition"],
+): readonly string[] {
   return kind === PUNKS_EVENT_KINDS.workspaceCreated
-    ? "workspace.create@1"
+    ? ["workspace.create@1"]
     : kind === PUNKS_EVENT_KINDS.workspaceRenamed
-      ? "workspace.rename@1"
+      ? ["workspace.rename@1"]
       : kind === PUNKS_EVENT_KINDS.workspaceMemberRoleSet
-        ? "workspace.member-set-role@1"
+        ? [
+            transition.type === "ownership-transferred"
+              ? "workspace.transfer-ownership@1"
+              : "workspace.member-set-role@1",
+          ]
         : kind === PUNKS_EVENT_KINDS.workspaceMemberRemoved
-          ? "workspace.member-remove@1"
-          : null;
+          ? ["workspace.member-remove@1", "workspace.leave@1"]
+          : [];
 }
 
 async function requireCompleteWorkspaceChunkLot(
@@ -195,7 +202,10 @@ async function requireCompleteWorkspaceChunkLot(
   const content = parsedContent as WorkspaceEventContentV2;
   const commitment = content.membershipCommitment;
   const chunkCount = commitment.chunkCount;
-  const expectedContract = workspaceContractForKind(entry.event.kind);
+  const expectedContracts = workspaceContractsForEvent(
+    entry.event.kind,
+    content.transition,
+  );
   if (
     entry.chunks.length === 0 ||
     entry.chunks.length !== chunkCount ||
@@ -206,12 +216,14 @@ async function requireCompleteWorkspaceChunkLot(
     );
   }
   if (
-    expectedContract === null ||
+    expectedContracts.length === 0 ||
     content.workspace.id !== workspaceId ||
     content.workspace.cursor !== entry.cursor ||
     !eventHasExactTag(entry.event, "workspace", workspaceId) ||
     !eventHasExactTag(entry.event, "cursor", String(entry.cursor)) ||
-    !eventHasExactTag(entry.event, "contract", expectedContract) ||
+    !expectedContracts.some((contract) =>
+      eventHasExactTag(entry.event, "contract", contract),
+    ) ||
     !eventHasExactValuesTag(entry.event, "delta", [
       "sha256",
       commitment.deltaDigest,

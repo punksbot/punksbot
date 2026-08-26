@@ -50,6 +50,8 @@ export default class SearchFixture extends WorkerEntrypoint {
         (candidate) =>
           candidate.workspaceId === input.workspaceId &&
           candidate.conversationId === input.conversationId &&
+          (input.threadRootMessageId === null ||
+            candidate.threadRootMessageId === input.threadRootMessageId) &&
           followsCursor(candidate, input.cursor),
       )
       .sort(
@@ -62,7 +64,11 @@ export default class SearchFixture extends WorkerEntrypoint {
     const last = bounded.at(-1);
     return {
       ok: true,
-      candidates: bounded.map(({ workspaceId: _, ...candidate }) => candidate),
+      indexState: "current",
+      candidates: bounded.map(
+        ({ workspaceId: _, threadRootMessageId: __, ...candidate }) =>
+          candidate,
+      ),
       nextCursor:
         matching.length > input.limit && last !== undefined
           ? [last.createdCursor, last.conversationId, last.messageId]

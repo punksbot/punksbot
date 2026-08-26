@@ -19,6 +19,7 @@ async function installIdentityBoundary(page: Page) {
       otherPunkId,
     }) => {
       const calls: { command: string; args: Record<string, unknown> }[] = [];
+      const preparedCapabilities = [...capabilitySeed, "identity-governance"];
       let generation = 0;
       let profile: Punk = {
         id: punkId,
@@ -45,7 +46,13 @@ async function installIdentityBoundary(page: Page) {
         { punkId, displayName: "Marta", avatarUrl: null },
         { punkId: otherPunkId, displayName: "Marie", avatarUrl: null },
       ];
-      Object.assign(window, { __PUNKS_IDENTITY_CALLS__: calls });
+      Object.assign(window, {
+        __PUNKS_E2E_ENVIRONMENT__: {
+          distribution: "punks",
+          mounted: preparedCapabilities,
+        },
+        __PUNKS_IDENTITY_CALLS__: calls,
+      });
 
       const invoke = async (
         command: string,
@@ -62,7 +69,7 @@ async function installIdentityBoundary(page: Page) {
               minimumClientVersion: "0.6.0",
               environment: "staging",
               origin,
-              capabilities: [...capabilitySeed],
+              capabilities: preparedCapabilities,
             };
           case "punks_get_account_session_state":
             return {
@@ -153,12 +160,24 @@ async function installIdentityBoundary(page: Page) {
                       .startsWith(input.query.value),
                   );
             return {
+              contract: "punk.search-response@1",
+              workspaceId: String(
+                args.lease &&
+                  (args.lease as { workspaceId: string }).workspaceId,
+              ),
               items: structuredClone(items.slice(0, input.limit)),
               nextCursor: null,
             };
           }
           case "punks_get_punk_summaries":
-            return structuredClone(summaries);
+            return {
+              contract: "punk.summary-batch-response@1",
+              workspaceId: String(
+                args.lease &&
+                  (args.lease as { workspaceId: string }).workspaceId,
+              ),
+              items: structuredClone(summaries),
+            };
           default:
             throw new Error(`Unexpected Punks command: ${command}`);
         }
@@ -220,9 +239,7 @@ test("un Punk lit et modifie uniquement son nom et son avatar à la révision co
   await dialog.getByRole("button", { name: "Save profile" }).click();
 
   await expect(dialog.getByRole("status")).toHaveText("Profile saved.");
-  await expect(page.getByTestId("punks-current-punk-name")).toHaveText(
-    "Mélanie",
-  );
+  await expect(dialog.getByLabel("Display name")).toHaveValue("Mélanie");
   const update = (await identityCalls(page)).find(
     ({ command }) => command === "punks_update_punk_profile",
   );

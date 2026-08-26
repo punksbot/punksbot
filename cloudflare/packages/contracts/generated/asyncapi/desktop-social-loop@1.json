@@ -86,6 +86,9 @@
             "$ref": "#/components/schemas/ConversationFollowServerFrameChanges"
           },
           {
+            "$ref": "#/components/schemas/ConversationFollowServerFrameTyping"
+          },
+          {
             "$ref": "#/components/schemas/ConversationFollowServerFrameReady"
           },
           {
@@ -398,6 +401,26 @@
           "lastReplyAt",
           "revision",
           "cursor"
+        ],
+        "type": "object"
+      },
+      "ConversationFollowServerFrameTyping": {
+        "additionalProperties": false,
+        "properties": {
+          "patch": {
+            "$ref": "#/components/schemas/PresenceTypingPatch"
+          },
+          "schemaVersion": {
+            "const": 1
+          },
+          "type": {
+            "const": "typing"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "type",
+          "patch"
         ],
         "type": "object"
       },
@@ -815,6 +838,87 @@
             "type": "object"
           }
         ]
+      },
+      "PresenceTypingPatch": {
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "else": {
+              "properties": {
+                "expiresAt": {
+                  "type": "null"
+                }
+              }
+            },
+            "if": {
+              "properties": {
+                "active": {
+                  "const": true
+                }
+              },
+              "required": [
+                "active"
+              ]
+            },
+            "then": {
+              "properties": {
+                "expiresAt": {
+                  "format": "date-time",
+                  "type": "string"
+                }
+              }
+            }
+          }
+        ],
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "conversationId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "leaseGeneration": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "punkId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sequence": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "workspaceId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspaceId",
+          "conversationId",
+          "punkId",
+          "active",
+          "leaseGeneration",
+          "sequence",
+          "expiresAt"
+        ],
+        "title": "PresenceTypingPatch",
+        "type": "object"
       }
     }
   },

@@ -778,12 +778,16 @@ describe("Punks Bot management API", () => {
     const workspaceId = (
       (await workspace.json()) as { workspace: { id: string } }
     ).workspace.id;
-    const addOwner: SetWorkspaceMemberRoleCommand = {
+    const admitMember: SetWorkspaceMemberRoleCommand = {
       contract: "workspace.member-set-role@1",
       commandId: "52000000-0000-4000-8000-000000000071",
       workspaceId,
       actor: { kind: "punk", punkId: operatorPunkId },
-      payload: { targetPunkId: otherPunkId, role: "owner" },
+      payload: {
+        targetPunkId: otherPunkId,
+        role: "member",
+        expectedRevision: 1,
+      },
     };
     expect(
       (
@@ -794,9 +798,34 @@ describe("Punks Bot management API", () => {
             headers: {
               "content-type": "application/json",
               cookie: "__Host-punks_session=session-owner",
-              "idempotency-key": addOwner.commandId,
+              "idempotency-key": admitMember.commandId,
             },
-            body: JSON.stringify(addOwner),
+            body: JSON.stringify(admitMember),
+          },
+        )
+      ).status,
+    ).toBe(200);
+    const promoteOwner: SetWorkspaceMemberRoleCommand = {
+      ...admitMember,
+      commandId: "52000000-0000-4000-8000-000000000074",
+      payload: {
+        targetPunkId: otherPunkId,
+        role: "owner",
+        expectedRevision: 2,
+      },
+    };
+    expect(
+      (
+        await SELF.fetch(
+          `https://punks.bot/api/v1/workspaces/${workspaceId}/members/${otherPunkId}`,
+          {
+            method: "PUT",
+            headers: {
+              "content-type": "application/json",
+              cookie: "__Host-punks_session=session-owner",
+              "idempotency-key": promoteOwner.commandId,
+            },
+            body: JSON.stringify(promoteOwner),
           },
         )
       ).status,
@@ -850,7 +879,7 @@ describe("Punks Bot management API", () => {
       commandId: "52000000-0000-4000-8000-000000000072",
       workspaceId,
       actor: { kind: "punk", punkId: operatorPunkId },
-      payload: { targetPunkId: otherPunkId },
+      payload: { targetPunkId: otherPunkId, expectedRevision: 3 },
     };
     expect(
       (
@@ -901,9 +930,41 @@ describe("Punks Bot management API", () => {
       (await installed.json()) as { installation: { id: string } }
     ).installation.id;
 
-    const restoreOwner: SetWorkspaceMemberRoleCommand = {
-      ...addOwner,
+    const restoreMember: SetWorkspaceMemberRoleCommand = {
+      contract: "workspace.member-set-role@1",
       commandId: "52000000-0000-4000-8000-000000000073",
+      workspaceId,
+      actor: { kind: "punk", punkId: operatorPunkId },
+      payload: {
+        targetPunkId: otherPunkId,
+        role: "member",
+        expectedRevision: 4,
+      },
+    };
+    expect(
+      (
+        await SELF.fetch(
+          `https://punks.bot/api/v1/workspaces/${workspaceId}/members/${otherPunkId}`,
+          {
+            method: "PUT",
+            headers: {
+              "content-type": "application/json",
+              cookie: "__Host-punks_session=session-owner",
+              "idempotency-key": restoreMember.commandId,
+            },
+            body: JSON.stringify(restoreMember),
+          },
+        )
+      ).status,
+    ).toBe(200);
+    const restoreOwner: SetWorkspaceMemberRoleCommand = {
+      ...restoreMember,
+      commandId: "52000000-0000-4000-8000-000000000075",
+      payload: {
+        targetPunkId: otherPunkId,
+        role: "owner",
+        expectedRevision: 5,
+      },
     };
     expect(
       (
@@ -958,7 +1019,8 @@ describe("Punks Bot management API", () => {
     }
     const removeAgain: RemoveWorkspaceMemberCommand = {
       ...removeOwner,
-      commandId: "52000000-0000-4000-8000-000000000074",
+      commandId: "52000000-0000-4000-8000-000000000076",
+      payload: { targetPunkId: otherPunkId, expectedRevision: 6 },
     };
     expect(
       (

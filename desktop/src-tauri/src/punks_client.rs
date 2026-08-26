@@ -4,9 +4,10 @@ use punks_account_client::ceremony::CompiledPunksEnvironment;
 use punks_account_client::{
     AuthorReference, AuthorSummary, ClientDistribution, ClientFailure, ClientPlatform,
     DesktopCompatibility, FollowCancellation, FollowConnection, FollowDelivery, MessagePage,
-    MessageReplyTarget, MessageView, PunkProfile, PunkPublicSummary, PunkSearchInput,
-    PunkSearchPage, PunksAccountClient, PunksNavigationTarget, ReactionMutationResult,
-    StreamSummary, StreamView, WorkspaceLease, WorkspaceSession, WorkspaceSummary,
+    MessageReplyTarget, MessageView, PresenceCancellation, PresenceConnection, PresenceDelivery,
+    PunkProfile, PunkSearchInput, PunkSearchPage, PunkSummaryPage, PunksAccountClient,
+    PunksNavigationTarget, ReactionMutationResult, StreamSummary, StreamView, WorkspaceLease,
+    WorkspaceSession, WorkspaceSummary,
 };
 use serde::Deserialize;
 use tokio::sync::{Mutex, RwLock};
@@ -21,18 +22,28 @@ pub mod punks_message_lifecycle;
 /// Tauri commands for capability-gated Workspace identity governance.
 pub mod punks_identity_governance;
 
+#[path = "punks_conversation_search.rs"]
+/// Tauri command for capability-gated Conversation and Fil search.
+pub mod punks_conversation_search;
+
 /// Native state for the single Punks Account and mounted Workspace.
 pub struct PunksDesktopClient {
     account: Result<PunksAccountClient, ClientFailure>,
     pub(crate) transitions: RwLock<()>,
     sessions: Mutex<HashMap<u64, WorkspaceSession>>,
     follows: Mutex<HashMap<String, FollowEntry>>,
+    presences: Mutex<HashMap<String, PresenceEntry>>,
     pub(crate) authentication: Mutex<NativeAuthenticationRuntime>,
 }
 
 struct FollowEntry {
     cancellation: FollowCancellation,
     connection: Arc<Mutex<FollowConnection>>,
+}
+
+struct PresenceEntry {
+    cancellation: PresenceCancellation,
+    connection: Arc<PresenceConnection>,
 }
 
 impl PunksDesktopClient {
@@ -62,6 +73,7 @@ impl PunksDesktopClient {
             transitions: RwLock::new(()),
             sessions: Mutex::new(HashMap::new()),
             follows: Mutex::new(HashMap::new()),
+            presences: Mutex::new(HashMap::new()),
             authentication: Mutex::new(NativeAuthenticationRuntime::new(origin)),
         }
     }
@@ -78,6 +90,7 @@ impl PunksDesktopClient {
             transitions: RwLock::new(()),
             sessions: Mutex::new(HashMap::new()),
             follows: Mutex::new(HashMap::new()),
+            presences: Mutex::new(HashMap::new()),
             authentication: Mutex::new(NativeAuthenticationRuntime::new(origin)),
         }
     }
@@ -91,6 +104,7 @@ impl PunksDesktopClient {
     pub(crate) async fn invalidate_workspace_context(&self) -> Result<(), ClientFailure> {
         self.account()?.clear_workspace_session().await;
         self.cancel_follows().await;
+        self.cancel_presences().await;
         self.sessions.lock().await.clear();
         Ok(())
     }
@@ -99,6 +113,7 @@ impl PunksDesktopClient {
     /// can perform any further social I/O.
     pub(crate) async fn invalidate_for_sign_out(&self) -> Result<(), ClientFailure> {
         self.cancel_follows().await;
+        self.cancel_presences().await;
         self.sessions.lock().await.clear();
         self.account()?.clear_account_session().await;
         Ok(())
@@ -109,6 +124,7 @@ impl PunksDesktopClient {
         secret: &punks_account_client::ceremony::SessionSecret,
     ) -> Result<(), ClientFailure> {
         self.cancel_follows().await;
+        self.cancel_presences().await;
         self.sessions.lock().await.clear();
         self.account()?.activate_prepared_session(secret).await
     }
@@ -141,6 +157,20 @@ impl PunksDesktopClient {
         }
     }
 
+    pub(crate) async fn cancel_presences(&self) {
+        let entries = self
+            .presences
+            .lock()
+            .await
+            .drain()
+            .map(|(_, entry)| entry)
+            .collect::<Vec<_>>();
+        for entry in entries {
+            entry.cancellation.cancel();
+            let _ = entry.connection.close().await;
+        }
+    }
+
     async fn follow(
         &self,
         operation_id: &str,
@@ -151,6 +181,15 @@ impl PunksDesktopClient {
             .get(operation_id)
             .map(|entry| Arc::clone(&entry.connection))
             .ok_or_else(|| ClientFailure::cancelled("Punks FOLLOW operation is closed"))
+    }
+
+    async fn presence(&self, operation_id: &str) -> Result<Arc<PresenceConnection>, ClientFailure> {
+        self.presences
+            .lock()
+            .await
+            .get(operation_id)
+            .map(|entry| Arc::clone(&entry.connection))
+            .ok_or_else(|| ClientFailure::cancelled("Punks Presence operation is closed"))
     }
 }
 
@@ -293,10 +332,22 @@ pub async fn punks_close_workspace(
 ) -> Result<(), ClientFailure> {
     client.account()?.cancel_workspace_operations().await;
     let _transition = client.transitions.write().await;
-    let session = client.session(&lease).await?;
-    session.close().await;
+    let session = {
+        let mut sessions = client.sessions.lock().await;
+        if sessions
+            .get(&lease.generation)
+            .is_some_and(|session| session.lease() == &lease)
+        {
+            sessions.remove(&lease.generation)
+        } else {
+            None
+        }
+    };
+    if let Some(session) = session {
+        session.close().await;
+    }
     client.cancel_follows().await;
-    client.sessions.lock().await.remove(&lease.generation);
+    client.cancel_presences().await;
     Ok(())
 }
 
@@ -392,7 +443,7 @@ pub async fn punks_get_punk_summaries(
     client: tauri::State<'_, PunksDesktopClient>,
     lease: WorkspaceLease,
     punk_ids: Vec<String>,
-) -> Result<Vec<PunkPublicSummary>, ClientFailure> {
+) -> Result<PunkSummaryPage, ClientFailure> {
     let _operation = client.transitions.read().await;
     client
         .session(&lease)
@@ -504,6 +555,73 @@ pub async fn punks_close_follow(
     entry.cancellation.cancel();
     let result = entry.connection.lock().await.close().await;
     result
+}
+
+#[tauri::command]
+pub async fn punks_hold_presence(
+    client: tauri::State<'_, PunksDesktopClient>,
+    lease: WorkspaceLease,
+) -> Result<String, ClientFailure> {
+    let _operation = client.transitions.read().await;
+    client.cancel_presences().await;
+    let connection = Arc::new(client.session(&lease).await?.hold_presence().await?);
+    let operation_id = uuid::Uuid::new_v4().to_string();
+    client.presences.lock().await.insert(
+        operation_id.clone(),
+        PresenceEntry {
+            cancellation: connection.cancellation(),
+            connection,
+        },
+    );
+    Ok(operation_id)
+}
+
+#[tauri::command]
+pub async fn punks_presence_next(
+    client: tauri::State<'_, PunksDesktopClient>,
+    operation_id: String,
+) -> Result<PresenceDelivery, ClientFailure> {
+    client.presence(&operation_id).await?.next_delivery().await
+}
+
+#[tauri::command]
+pub async fn punks_set_presence_status(
+    client: tauri::State<'_, PunksDesktopClient>,
+    operation_id: String,
+    status: Option<String>,
+) -> Result<(), ClientFailure> {
+    client
+        .presence(&operation_id)
+        .await?
+        .set_status(status.as_deref())
+        .await
+}
+
+#[tauri::command]
+pub async fn punks_signal_presence_typing(
+    client: tauri::State<'_, PunksDesktopClient>,
+    operation_id: String,
+    conversation_id: String,
+    active: bool,
+) -> Result<(), ClientFailure> {
+    client
+        .presence(&operation_id)
+        .await?
+        .signal_typing(&conversation_id, active)
+        .await
+}
+
+#[tauri::command]
+pub async fn punks_close_presence(
+    client: tauri::State<'_, PunksDesktopClient>,
+    operation_id: String,
+) -> Result<(), ClientFailure> {
+    let entry = client.presences.lock().await.remove(&operation_id);
+    let Some(entry) = entry else {
+        return Ok(());
+    };
+    entry.cancellation.cancel();
+    entry.connection.close().await
 }
 
 /// Payload for posting a root Message or a reply in a Workspace Stream.

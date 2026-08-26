@@ -12,7 +12,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import test from "node:test";
 import {
   canonicalJson,
@@ -114,6 +114,58 @@ function nativeProof(platform) {
   };
 }
 
+function createInstalledEvidence(root, platform) {
+  const evidence = join(root, `evidence-${platform}`);
+  const shaRoot = join(evidence, "sha256");
+  mkdirSync(shaRoot, { recursive: true });
+  const subjectContent = Buffer.from(`transcript:${platform}\n`);
+  const subjectSha256 = createHash("sha256")
+    .update(subjectContent)
+    .digest("hex");
+  const subjectPath = `sha256/${subjectSha256}-driver-transcript.json`;
+  write(join(evidence, subjectPath), subjectContent);
+  const proof = {
+    schema: "punks.promotion-proof.v1",
+    id: `transcript/${platform}`,
+    candidateSha: SOURCE_SHA,
+    stagingDeploymentId: DEPLOYMENT_ID,
+    result: "vert",
+    plateforme: platform,
+    data: { subjectSha256, schema: "punks.installed-social-loop-transcript.v1" },
+  };
+  const proofContent = Buffer.from(`${JSON.stringify(proof)}\n`);
+  const proofSha256 = createHash("sha256").update(proofContent).digest("hex");
+  const proofPath = `sha256/${proofSha256}-transcript-${platform}.json`;
+  write(join(evidence, proofPath), proofContent);
+  write(
+    join(evidence, "index.json"),
+    `${JSON.stringify({
+      schema: "punks.promotion-evidence-index.v1",
+      preuves: [
+        {
+          id: proof.id,
+          chemin: proofPath,
+          sha256: proofSha256,
+          sujet: { chemin: subjectPath, sha256: subjectSha256 },
+        },
+      ],
+    })}\n`,
+  );
+  const networkProof = join(evidence, "network-proof.json");
+  write(
+    networkProof,
+    `${JSON.stringify({
+      schema: "punks.installed-network-proof.v1",
+      platform,
+      candidateSha: SOURCE_SHA,
+      stagingDeploymentId: DEPLOYMENT_ID,
+      transcriptSha256: subjectSha256,
+      network: { requests: [] },
+    })}\n`,
+  );
+  return { evidence, networkProof };
+}
+
 function sigstoreBundle() {
   return {
     mediaType: "application/vnd.dev.sigstore.bundle.v0.3+json",
@@ -174,6 +226,13 @@ function createRacingFakeGh(root, input) {
     const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
     expectedSubjects.add(fileSha256(manifestPath));
     expectedSubjects.add(fileSha256(join(platformRoot, "native-proof.json")));
+    expectedSubjects.add(fileSha256(join(platformRoot, "evidence", "index.json")));
+    expectedSubjects.add(
+      fileSha256(join(platformRoot, "evidence", "network-proof.json")),
+    );
+    for (const evidence of manifest.installedEvidence.files) {
+      expectedSubjects.add(fileSha256(join(platformRoot, evidence.path)));
+    }
     for (const artifact of manifest.artifacts) {
       expectedSubjects.add(fileSha256(join(platformRoot, artifact.path)));
     }
@@ -217,6 +276,7 @@ function collectLeg(root, platform) {
   const proofPath = join(root, "proof-" + platform + ".json");
   write(proofPath, JSON.stringify(nativeProof(platform)));
   const output = join(root, "collected-" + platform);
+  const installed = createInstalledEvidence(root, platform);
   const manifest = collectPlatformLeg({
     platform,
     target: TARGETS[platform],
@@ -224,6 +284,8 @@ function collectLeg(root, platform) {
     stagingDeploymentId: DEPLOYMENT_ID,
     bundle: createBundle(root, platform),
     nativeProof: proofPath,
+    installedProof: installed.evidence,
+    networkProof: installed.networkProof,
     output,
   });
   return { manifest, output };
@@ -278,6 +340,13 @@ test("collect closes each platform layout and hashes every copied artifact", (co
     assert.equal(manifest.sourceSha, SOURCE_SHA);
     assert.equal(manifest.stagingDeploymentId, DEPLOYMENT_ID);
     assert.ok(manifest.artifacts.length >= 3);
+    assert.match(manifest.installedEvidence.index.sha256, /^[0-9a-f]{64}$/);
+    assert.match(manifest.installedEvidence.network.sha256, /^[0-9a-f]{64}$/);
+    assert.ok(
+      readFileSync(
+        join(output, platform, manifest.installedEvidence.index.path),
+      ).length > 0,
+    );
     for (const artifact of manifest.artifacts) {
       assert.match(artifact.sha256, /^[0-9a-f]{64}$/);
       assert.ok(artifact.name.includes(SOURCE_SHA));
@@ -293,6 +362,7 @@ test("collect rejects extra layout entries, identity mismatch and existing outpu
   const bundle = createBundle(root, platform);
   write(join(bundle, "appimage", "unexpected.txt"));
   const proofPath = join(root, "proof.json");
+  const installed = createInstalledEvidence(root, platform);
   write(proofPath, JSON.stringify(nativeProof(platform)));
 
   assert.throws(
@@ -304,6 +374,8 @@ test("collect rejects extra layout entries, identity mismatch and existing outpu
         stagingDeploymentId: DEPLOYMENT_ID,
         bundle,
         nativeProof: proofPath,
+        installedProof: installed.evidence,
+        networkProof: installed.networkProof,
         output: join(root, "output"),
       }),
     /Unexpected artifact layout/,
@@ -317,6 +389,8 @@ test("collect rejects extra layout entries, identity mismatch and existing outpu
         stagingDeploymentId: DEPLOYMENT_ID,
         bundle,
         nativeProof: proofPath,
+        installedProof: installed.evidence,
+        networkProof: installed.networkProof,
         output: join(root, "wrong-target"),
       }),
     /do not match/,
@@ -330,6 +404,8 @@ test("collect rejects extra layout entries, identity mismatch and existing outpu
         stagingDeploymentId: DEPLOYMENT_ID,
         bundle,
         nativeProof: proofPath,
+        installedProof: installed.evidence,
+        networkProof: installed.networkProof,
         output: join(root, "wrong-source"),
       }),
     /40 lowercase hex/,
@@ -343,6 +419,8 @@ test("collect rejects extra layout entries, identity mismatch and existing outpu
         stagingDeploymentId: "sha256:bad",
         bundle,
         nativeProof: proofPath,
+        installedProof: installed.evidence,
+        networkProof: installed.networkProof,
         output: join(root, "wrong-deployment"),
       }),
     /deployment ID/,
@@ -353,6 +431,7 @@ test("collect rejects extra layout entries, identity mismatch and existing outpu
   const collected = collectLeg(validRoot, "macos-arm64");
   const secondInput = join(validRoot, "second-input");
   mkdirSync(secondInput);
+  const secondEvidence = createInstalledEvidence(secondInput, "macos-arm64");
   assert.throws(
     () =>
       collectPlatformLeg({
@@ -362,6 +441,8 @@ test("collect rejects extra layout entries, identity mismatch and existing outpu
         stagingDeploymentId: DEPLOYMENT_ID,
         bundle: createBundle(secondInput, "macos-arm64"),
         nativeProof: join(validRoot, "proof-macos-arm64.json"),
+        installedProof: secondEvidence.evidence,
+        networkProof: secondEvidence.networkProof,
         output: collected.output,
       }),
     /already exists/,
@@ -386,6 +467,8 @@ test("collect refuses a destination created after validation without touching it
           stagingDeploymentId: DEPLOYMENT_ID,
           bundle: createBundle(root, platform),
           nativeProof: proofPath,
+          installedProof: createInstalledEvidence(root, platform).evidence,
+          networkProof: join(root, `evidence-${platform}`, "network-proof.json"),
           output,
         },
         {
@@ -413,6 +496,21 @@ test("aggregate verifies four Sigstore legs and prepares immutable latest.json",
   assert.equal(aggregate.platforms.length, 4);
   assert.equal(aggregate.stagingDeploymentId, DEPLOYMENT_ID);
   assert.match(aggregate.stagingProof.sha256, /^[0-9a-f]{64}$/);
+  assert.match(aggregate.promotionEvidence.platformIndex.sha256, /^[0-9a-f]{64}$/);
+  assert.equal(aggregate.promotionEvidence.network.length, 4);
+  const platformIndex = JSON.parse(
+    readFileSync(
+      join(options.output, aggregate.promotionEvidence.platformIndex.path),
+      "utf8",
+    ),
+  );
+  assert.equal(platformIndex.schema, "punks.promotion-evidence-index.v1");
+  assert.deepEqual(
+    platformIndex.preuves.map(({ id }) => id).sort(),
+    Object.keys(TARGETS)
+      .map((platform) => `transcript/${platform}`)
+      .sort(),
+  );
   assert.deepEqual(
     JSON.parse(
       readFileSync(

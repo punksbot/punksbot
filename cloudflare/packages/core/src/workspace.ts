@@ -1,9 +1,11 @@
 import type {
   ClaimWorkspaceInvitationCommand,
   CreateWorkspaceCommand,
+  LeaveWorkspaceCommand,
   RemoveWorkspaceMemberCommand,
   RenameWorkspaceCommand,
   SetWorkspaceMemberRoleCommand,
+  TransferWorkspaceOwnershipCommand,
   UnsignedNostrEvent,
   Workspace,
   WorkspaceEventContentV2,
@@ -318,10 +320,7 @@ export function decideSetWorkspaceMemberRole(
     command.actor.punkId,
     "members.manage",
   );
-  if (
-    command.payload.expectedRevision !== undefined &&
-    command.payload.expectedRevision !== current.revision
-  ) {
+  if (command.payload.expectedRevision !== current.revision) {
     throw new WorkspaceDomainError(
       "revision_conflict",
       "Workspace revision changed before role assignment",
@@ -331,6 +330,15 @@ export function decideSetWorkspaceMemberRole(
     (member) => member.punkId === command.payload.targetPunkId,
   );
   const existing = current.members[existingIndex];
+  if (
+    existing === undefined &&
+    (command.payload.role === "owner" || command.payload.role === "moderator")
+  ) {
+    throw new WorkspaceDomainError(
+      "invalid_transition",
+      "Punk must be admitted before receiving an elevated Workspace role",
+    );
+  }
   if (existing?.role === command.payload.role) {
     throw new WorkspaceDomainError(
       "invalid_transition",
@@ -540,10 +548,7 @@ export function decideRemoveWorkspaceMember(
     command.actor.punkId,
     "members.manage",
   );
-  if (
-    command.payload.expectedRevision !== undefined &&
-    command.payload.expectedRevision !== current.revision
-  ) {
+  if (command.payload.expectedRevision !== current.revision) {
     throw new WorkspaceDomainError(
       "revision_conflict",
       "Workspace revision changed before member removal",
@@ -627,6 +632,232 @@ export async function decideRemoveWorkspaceMemberV2(
         present: false,
         role: existing.role,
       },
+    ],
+  );
+}
+
+export function decideLeaveWorkspace(
+  current: Workspace | null,
+  command: LeaveWorkspaceCommand,
+  context: WorkspaceDecisionContext,
+): WorkspaceDecision {
+  if (
+    current === null ||
+    current.id !== command.workspaceId ||
+    command.workspaceId !== context.workspaceId
+  ) {
+    throw new WorkspaceDomainError("not_found", "Workspace does not exist");
+  }
+  const existing = current.members.find(
+    (member) => member.punkId === command.actor.punkId,
+  );
+  if (existing === undefined) {
+    throw new WorkspaceDomainError(
+      "invalid_transition",
+      "Punk is not a Workspace member",
+    );
+  }
+  if (command.actor.punkId === current.ownerPunkId) {
+    throw new WorkspaceDomainError(
+      "invalid_transition",
+      "Primary Workspace owner must transfer ownership before leaving",
+    );
+  }
+  const nextState: Workspace = {
+    ...current,
+    members: current.members.filter(
+      (member) => member.punkId !== command.actor.punkId,
+    ) as Workspace["members"],
+    revision: current.revision + 1,
+    cursor: context.cursor,
+    updatedAt: context.now.toISOString(),
+  };
+  return {
+    nextState,
+    event: {
+      created_at: Math.floor(context.now.getTime() / 1000),
+      kind: PUNKS_EVENT_KINDS.workspaceMemberRemoved,
+      tags: [
+        ...eventTags(
+          context.workspaceId,
+          context.cursor,
+          command.commandId,
+          command.contract,
+          command.actor.punkId,
+        ),
+        ["target", "punk", command.actor.punkId],
+      ],
+      content: canonicalJson({
+        previousRole: existing.role,
+        schemaVersion: 1,
+        targetPunkId: command.actor.punkId,
+        workspace: nextState,
+      }),
+    },
+  };
+}
+
+export async function decideLeaveWorkspaceV2(
+  current: Workspace | null,
+  command: LeaveWorkspaceCommand,
+  context: WorkspaceDecisionContext,
+): Promise<WorkspaceDecisionV2> {
+  const existing = current?.members.find(
+    (member) => member.punkId === command.actor.punkId,
+  );
+  const decision = decideLeaveWorkspace(current, command, context);
+  if (existing === undefined) {
+    throw new WorkspaceDomainError(
+      "invalid_transition",
+      "Punk is not a Workspace member",
+    );
+  }
+  return workspaceDecisionV2(
+    decision,
+    context,
+    {
+      type: "member-removed",
+      targetPunkId: command.actor.punkId,
+      previousRole: existing.role,
+    },
+    [
+      {
+        punkId: command.actor.punkId,
+        present: false,
+        role: existing.role,
+      },
+    ],
+  );
+}
+
+export function decideTransferWorkspaceOwnership(
+  current: Workspace | null,
+  command: TransferWorkspaceOwnershipCommand,
+  context: WorkspaceDecisionContext,
+): WorkspaceDecision {
+  if (command.workspaceId !== context.workspaceId) {
+    throw new WorkspaceDomainError("not_found", "Workspace does not exist");
+  }
+  current = requireWorkspacePermission(
+    current,
+    command.workspaceId,
+    command.actor.punkId,
+    "members.manage",
+  );
+  if (command.payload.expectedRevision !== current.revision) {
+    throw new WorkspaceDomainError(
+      "revision_conflict",
+      "Workspace revision changed before ownership transfer",
+    );
+  }
+  if (command.actor.punkId !== current.ownerPunkId) {
+    throw new WorkspaceDomainError(
+      "forbidden",
+      "Only the primary Workspace owner can transfer ownership",
+    );
+  }
+  if (command.payload.targetPunkId === current.ownerPunkId) {
+    throw new WorkspaceDomainError(
+      "invalid_transition",
+      "Punk is already the primary Workspace owner",
+    );
+  }
+  const previousOwnerIndex = current.members.findIndex(
+    (member) => member.punkId === current.ownerPunkId,
+  );
+  const targetIndex = current.members.findIndex(
+    (member) => member.punkId === command.payload.targetPunkId,
+  );
+  const previousOwner = current.members[previousOwnerIndex];
+  const target = current.members[targetIndex];
+  if (previousOwner?.role !== "owner" || target === undefined) {
+    throw new WorkspaceDomainError(
+      "invalid_transition",
+      "Ownership transfer requires a current eligible Workspace member",
+    );
+  }
+  const nextMembers = [...current.members];
+  nextMembers[previousOwnerIndex] = {
+    punkId: previousOwner.punkId,
+    role: "member",
+  };
+  nextMembers[targetIndex] = { punkId: target.punkId, role: "owner" };
+  const nextState: Workspace = {
+    ...current,
+    ownerPunkId: target.punkId,
+    members: nextMembers as Workspace["members"],
+    revision: current.revision + 1,
+    cursor: context.cursor,
+    updatedAt: context.now.toISOString(),
+  };
+  return {
+    nextState,
+    event: {
+      created_at: Math.floor(context.now.getTime() / 1000),
+      kind: PUNKS_EVENT_KINDS.workspaceMemberRoleSet,
+      tags: [
+        ...eventTags(
+          context.workspaceId,
+          context.cursor,
+          command.commandId,
+          command.contract,
+          command.actor.punkId,
+        ),
+        ["previous_owner", "punk", previousOwner.punkId],
+        ["target", "punk", target.punkId],
+      ],
+      content: canonicalJson({
+        previousOwnerPunkId: previousOwner.punkId,
+        previousTargetRole: target.role,
+        schemaVersion: 1,
+        targetPunkId: target.punkId,
+        workspace: nextState,
+      }),
+    },
+  };
+}
+
+export async function decideTransferWorkspaceOwnershipV2(
+  current: Workspace | null,
+  command: TransferWorkspaceOwnershipCommand,
+  context: WorkspaceDecisionContext,
+): Promise<WorkspaceDecisionV2> {
+  const previousOwner = current?.members.find(
+    (member) => member.punkId === current?.ownerPunkId,
+  );
+  const target = current?.members.find(
+    (member) => member.punkId === command.payload.targetPunkId,
+  );
+  const decision = decideTransferWorkspaceOwnership(current, command, context);
+  if (previousOwner?.role !== "owner" || target === undefined) {
+    throw new WorkspaceDomainError(
+      "invalid_transition",
+      "Ownership transfer requires a current eligible Workspace member",
+    );
+  }
+  return workspaceDecisionV2(
+    decision,
+    context,
+    {
+      type: "ownership-transferred",
+      memberTransitions: [
+        {
+          type: "member-upserted",
+          targetPunkId: previousOwner.punkId,
+          previousRole: "owner",
+          role: "member",
+        },
+        {
+          type: "member-upserted",
+          targetPunkId: target.punkId,
+          previousRole: target.role,
+          role: "owner",
+        },
+      ],
+    },
+    [
+      { punkId: previousOwner.punkId, present: true, role: "member" },
+      { punkId: target.punkId, present: true, role: "owner" },
     ],
   );
 }

@@ -99,15 +99,15 @@ describe("Punk profile and private search contracts", () => {
     ).toBe(false);
   });
 
-  it("registers the four semantic operations without claiming full governance", () => {
-    expect(desktopProfile.capabilities).toEqual(
+  it("keeps the four prepared operations behind atomic T4 governance", () => {
+    expect(desktopProfile.capabilities).not.toEqual(
       expect.arrayContaining([
         "punk-profile",
         "bounded-punk-summaries",
         "private-punk-search",
       ]),
     );
-    expect(desktopProfile.operations.map(({ name }) => name)).toEqual(
+    expect(desktopProfile.operations.map(({ name }) => name)).not.toEqual(
       expect.arrayContaining([
         "getPunkProfile",
         "updatePunkProfile",

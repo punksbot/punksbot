@@ -67,6 +67,17 @@ describe("desktop authentication contracts (issue #54)", () => {
         verifierCommitment: COMMITMENT,
       }).valid,
     ).toBe(false);
+
+    expect(
+      validateContract(contract as never, {
+        contract: "desktop-auth.start@1",
+        message: "request",
+        intent: "reauthenticate",
+        method: "passkey",
+        verifierCommitment: COMMITMENT,
+        purpose: "transfer_workspace_ownership",
+      }).valid,
+    ).toBe(true);
   });
 
   it("keeps verifier-bearing retry requests and all public results closed", () => {

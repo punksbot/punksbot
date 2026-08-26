@@ -14,11 +14,13 @@ decisions and `PARITY.md` remains the authority for migration status.
 | Workspace-local Bot Installation, configuration, grants, authority generation, Wake/Turn ledger and budgets, Admissions, JTI ledger and delivery outboxes | `BotInstallationDO(installationId)` SQLite | Installation, grant and Admission projections on the Workspace shard; sealed journal segments and exact create-only terminal Wake receipts in R2 |
 | Private Bot invocation credential | Auth `BotInvocationIssuer` and `BotInvocationVerifier`; no invocation session DO | Short-lived `pbi1` credential only; consumed-JTI authority belongs to the Installation |
 | Conversation metadata, members, cursor, recent journal, Bot Wake subscriptions and candidate outbox | `ConversationDO(conversationId)` SQLite | D1 projection/FTS5 for Conversation state only; sealed R2 journal segments; no Wake projection |
+| Current Punk presence lease, optional status and live typing TTLs | `PresenceDO(workspaceId)` SQLite current rows only | Ephemeral WebSocket presentation patches only; no journal, D1, R2, Queue, search index or receipt |
 | Bot Wake delivery and Turn orchestration | No business authority: Queue transports the exact opaque pair and Workflow coordinates one deterministic Turn | Queue body and Workflow parameters contain only `{installationId, wakeId}`; the Installation remains authoritative |
 | Message Reaction presence, command ledger, counts and visibility | The target `ConversationDO(conversationId)` SQLite | D1 presence, absolute count and visibility projections; never an actor roster |
 | Bot Reaction effect and compact target replay binding | The target `ConversationDO(conversationId)` SQLite | Reaction projections; no action payload, credential or Installation configuration |
 | Direct Conversation participant-set identity | `ConversationIdentityDO(workspaceId, participantSetHash)` SQLite | No eventually consistent security copy |
 | Message content keys and version lifecycle | `MessageContentDO(messageId)` SQLite | AES-GCM ciphertext create-only in R2; no plaintext projection |
+| Media upload intention, multipart part ledger, integrity decision and cleanup fence | `MediaUploadDO(uploadId)` SQLite | Short HMAC grant; raw R2 staging and candidate objects remain private quarantine inputs until T18-B encrypts or purges them |
 | Global Punk identity | `PunkDO(punkId)` SQLite | Deliberately no public identity projection yet |
 | Provider subject and verified e-mail ownership | One opaque `IdentityClaimDO` or `EmailClaimDO` per claim | No eventually consistent security copy |
 | OAuth transaction and Punk session | One `AuthTransactionDO` or `SessionDO` per opaque credential | No KV session authority |
@@ -186,6 +188,40 @@ rechecks access, status and deadline immediately before its synchronous commit.
 The public API always renders the current authoritative Message after the
 write; replay never returns plaintext from a historical command result.
 
+## Media upload grant path (T18-A)
+
+1. `POST /api/v1/workspaces/{workspaceId}/media-uploads` accepts one closed
+   `media-upload.grant-create@1` command after Session and current Workspace
+   authorization. `commandId` is the immutable upload intention; the derived
+   `uploadId` selects exactly one SQLite-backed `MediaUploadDO`.
+2. The authority persists Punk, Workspace, purpose, declared byte length,
+   allowlisted content type, expected SHA-256, fixed 8 MiB layout and fifteen
+   minute expiry before creating an R2 multipart upload. It returns only a
+   deterministic `mug1` HMAC credential and relative operation paths. The HMAC
+   binds the complete immutable tuple and is unusable for another intention.
+3. Each part upload requires the Session and short credential. The authority
+   fixes the first `{partNumber, byteLength, sha256}` identity, safely replays
+   an identical part and rejects a replacement. The API streams through a
+   `FixedLengthStream`; R2 ETags remain private in the authoritative ledger.
+4. Finalization completes only the recorded ETags, re-reads the assembled
+   staging object, verifies exact size and declared type, and computes SHA-256
+   incrementally. Only a matching object is copied create-only to the opaque
+   candidate key with a stored R2 SHA-256 checksum; candidate state is then
+   committed. A lost response is recovered by validating that exact object.
+5. Status is the typed recovery surface for `uploading`, `finalizing`,
+   `candidate`, cleanup and terminal failures. Abandon and expiry invalidate
+   outstanding attempts before R2 cleanup. Alarms abort known multipart
+   uploads and perform a second delayed sweep against races, while candidate
+   state can delete only staging and never the finalized candidate. If an
+   isolate disappears after R2 creates an MPU but before its opaque upload ID
+   can be committed, R2's incomplete-upload lifecycle is the final collector;
+   no retry may guess or assemble that unrecorded upload.
+
+These objects are not yet accepted or deliverable media. T18-B owns quarantine
+validation, application-level encryption, variants, purge receipts and short
+delivery links; T18-C owns exclusive Message attachment. The desktop profile
+therefore does not advertise an attachment capability in this slice.
+
 Authorized Message history is served by the authoritative `ConversationDO`,
 ordered by immutable `createdCursor`. Its HMAC cursor binds Workspace,
 Conversation, optional thread filter, creation high-water, position and
@@ -197,20 +233,26 @@ Message search projects only deterministic HMAC-SHA-256 lexical tokens scoped
 to one Workspace **and one Conversation** under the indivisible
 `hmac-sha256-conversation-v2` algorithm. Query terms go through the same
 normalization. The public surface is a 4 KiB-bounded `POST` body on one already
-authorized Conversation, so neither plaintext query nor continuation cursor is
-placed in the URL. The body is the exact `message.search@1` contract: scope,
-query, explicit nullable cursor and limit are all required, with no transport
-defaults outside the registry. Its AEAD cursor binds the Punk, Workspace,
-Conversation, normalized query, algorithm and public limit. The API calls the private Search
-Worker only after current authorization and sends it opaque tokens rather than
-the Punk, query, cookie or public cursor. D1 FTS5 never stores plaintext or
-precomputed snippets and remains only a candidate source. `ConversationDO`
+authorized Conversation or one explicit Fil inside it, so neither plaintext
+query nor continuation cursor is placed in the URL. The body is the exact
+`message.search@1` contract: Workspace, Conversation, nullable Fil root, query,
+explicit nullable cursor and limit are all required, with no transport defaults
+outside the registry. Its AEAD cursor binds the Punk, Workspace, Conversation,
+nullable Fil root, normalized query, algorithm and public limit. The API calls
+the private Search Worker only after current authorization and sends it opaque
+tokens rather than the Punk, query, cookie or public cursor. D1 FTS5 never
+stores plaintext or precomputed snippets and remains only a candidate source.
+The Search Worker compares the scope's projected `last_cursor` with the
+authoritative Message cursor supplied by `ConversationDO`; lag and D1
+unavailability return a closed partial state and never select another source.
+`ConversationDO`
 decrypts each current version through `MessageContentDO`, rechecks lexical
 matching and authorization, and synchronously stabilizes active `MessageView`
 items before returning a page below one MiB. Retraction removes the active
 tokens, restoration before erasure may recreate them, and erasure prevents
-their regeneration. Search, vault or candidate-integrity failures fail the
-whole page without advancing a public cursor.
+their regeneration. Vault failures still fail the whole page without advancing
+a public cursor; malformed or unavailable index responses become
+`index_unavailable`, while an observed projection lag becomes `index_lagging`.
 
 ## Bot catalogue, Installation, Wake and action path
 
@@ -376,6 +418,34 @@ frame and evicts the socket. A durable pump watchdog is recorded before any
 external RPC. If an isolate restarts in `pumping-*`, its constructor advances
 the watchdog and the alarm normalizes and resumes the exact catch-up or live
 phase without relying on an in-memory socket registry.
+
+## Ephemeral Presence path
+
+`PresenceDO(workspaceId)` coordinates at most one live lease per Punk. The
+native client holds `punks.presence.v1`, heartbeats every fifteen seconds, and
+receives `online`, `away` and `offline` views. The DO derives away after thirty
+seconds and deletes the lease after sixty seconds. Status is bounded and rate
+limited; Conversation-scoped typing expires after five seconds. Excess or
+duplicate signals are omitted without an acknowledgement or business error.
+
+The `pls1` lease token is a socket correlation fence rather than an access
+credential. It stays in Rust and the WebSocket attachment. The renderer-safe
+`desktop.presence-delivery@1` contract contains no token, Session, cookie,
+device, role or historical cursor. Every active signal rechecks Session and
+Workspace access, typing additionally rechecks Conversation access, and every
+recipient is reauthorized before a patch is sent. Workspace removal and leave
+call the idempotent Presence fence after their authoritative commit.
+
+Typing is carried as a cursor-free `typing` variant of Conversation FOLLOW. It
+does not advance `appliedCursor`, require renderer confirmation or produce an
+ACK. Missing patches are repaired only by a later signal or local TTL expiry.
+SQLite rows exist solely so hibernation and the one Durable Object alarm retain
+the current deadlines; expiry, disconnect and revocation delete them. No
+Presence code writes to the journal, D1, R2, Queue or search.
+
+The source remains capability-gated. Until Attention T7 and the distributed T8
+promotion dossier are sealed, `presence` stays unavailable in the active
+desktop profile and no Buzz Presence withdrawal is claimed.
 
 ## Punk authentication path
 

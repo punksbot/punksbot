@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "punks://contracts/presence.view@1",
+  "title": "PresenceView",
+  "$comment": "Current ephemeral presentation only. It carries no Session, device, lease token, roster role or access proof and must be discarded at expiresAt or generation teardown.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "punkId",
+    "state",
+    "status",
+    "leaseGeneration",
+    "sequence",
+    "expiresAt"
+  ],
+  "properties": {
+    "punkId": { "type": "string", "format": "uuid" },
+    "state": { "enum": ["online", "away", "offline"] },
+    "status": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^(?!\\s)(?!.*\\s$)[^\\r\\n\\u2028\\u2029]+$"
+        },
+        { "type": "null" }
+      ]
+    },
+    "leaseGeneration": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "expiresAt": {
+      "anyOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "state": { "const": "offline" } },
+        "required": ["state"]
+      },
+      "then": { "properties": { "expiresAt": { "type": "null" } } },
+      "else": {
+        "properties": {
+          "expiresAt": { "type": "string", "format": "date-time" }
+        }
+      }
+    }
+  ]
+}

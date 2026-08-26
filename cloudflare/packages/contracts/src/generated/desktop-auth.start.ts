@@ -8,7 +8,7 @@ message: "request"
 intent: ("sign_in" | "switch_account" | "reauthenticate" | "link_google" | "link_github" | "register_passkey")
 method: ("google" | "github" | "passkey")
 verifierCommitment: string
-purpose?: ("link_google" | "link_github" | "register_passkey")
+purpose?: ("link_google" | "link_github" | "register_passkey" | "transfer_workspace_ownership")
 authorizationId?: string
 }
 export interface DesktopAuthStartResponse {

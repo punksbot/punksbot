@@ -13,16 +13,21 @@ const punkId = "ad39a29e-5a47-4f4a-a1f8-18e535edb338";
 const workspaceId = "58975ca8-3b75-42c7-a13a-51c9d7306200";
 const conversationId = "e3a92f8d-f013-46b7-9370-5ca1c79b6280";
 const messageId = "2a105f2b-ac75-48ae-a687-e4191715143a";
+const threadRootMessageId = "44444444-4444-4444-8444-444444444444";
 const cursorKey = new TextEncoder().encode("0123456789abcdef0123456789abcdef");
 const firstToken = `h2_${"A".repeat(43)}`;
 const secondToken = `h2_${"-_".repeat(21)}-`;
 const tokens = [firstToken, secondToken];
 
-function scope(queryBinding: string): MessageSearchCursorScope {
+function scope(
+  queryBinding: string,
+  threadRoot: string | null = null,
+): MessageSearchCursorScope {
   return {
     punkId,
     workspaceId,
     conversationId,
+    threadRootMessageId: threadRoot,
     algorithm: "hmac-sha256-conversation-v2",
     normalization: MESSAGE_SEARCH_NORMALIZATION,
     queryBinding,
@@ -138,6 +143,7 @@ describe("opaque Message search cursors", () => {
         ...scope(queryBinding),
         conversationId: "d86a1021-24dd-4e2d-bf0a-5ba340637bbc",
       },
+      scope(queryBinding, threadRootMessageId),
       { ...scope(queryBinding), queryBinding: "B".repeat(43) },
       { ...scope(queryBinding), limit: 26 },
       {
@@ -156,6 +162,36 @@ describe("opaque Message search cursors", () => {
         decodeMessageSearchCursor(encoded, mismatch, cursorKey),
       ).rejects.toThrow("Invalid Message search cursor");
     }
+  });
+
+  it("encrypts the Fil scope and refuses the same cursor at Conversation scope", async () => {
+    const queryBinding = await deriveMessageSearchCursorQueryBinding(
+      {
+        punkId,
+        workspaceId,
+        conversationId,
+        algorithm: "hmac-sha256-conversation-v2",
+        tokens,
+      },
+      cursorKey,
+    );
+    const threadScope = scope(queryBinding, threadRootMessageId);
+    const encoded = await encodeMessageSearchCursor(
+      {
+        version: 1,
+        ...threadScope,
+        position: [73, conversationId, messageId],
+      },
+      cursorKey,
+    );
+
+    expect(encoded).not.toContain(threadRootMessageId);
+    await expect(
+      decodeMessageSearchCursor(encoded, threadScope, cursorKey),
+    ).resolves.toMatchObject({ threadRootMessageId });
+    await expect(
+      decodeMessageSearchCursor(encoded, scope(queryBinding), cursorKey),
+    ).rejects.toThrow("Invalid Message search cursor");
   });
 
   it("fails closed when framing, payload, or signature is altered", async () => {

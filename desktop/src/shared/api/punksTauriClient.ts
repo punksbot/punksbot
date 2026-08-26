@@ -4,19 +4,20 @@ import type {
   ConversationView,
   DesktopCompatibilityResponse,
   MessageHistoryResponse,
+  MessageSearchResponse,
   MessageReactionMutationResponse,
   MessageView,
   Punk,
-  PunkPublicSummary,
-  PunkSearchResponse,
+  PunkSummaryBatchResponse,
   ResolveAuthorsQuery,
   ResolveAuthorsResponse,
   WorkspaceSummary,
   ClaimWorkspaceInvitationResponse,
   CreateWorkspaceInvitationResponse,
   RevokeWorkspaceInvitationResponse,
-  Workspace,
+  WorkspaceGovernanceResponse,
   WorkspaceInvitationView,
+  WorkspaceMembershipLifecycleResponse,
   WorkspaceMembershipMutationResponse,
 } from "@punks/contracts";
 import { PunksDesktopFailure } from "./punksFailure";
@@ -28,8 +29,10 @@ import type {
   EditMessageInput,
   IdentityLinkProvider,
   MessagePageInput,
+  MessageSearchInput,
   PunksAccountClient,
   PunksFollow,
+  PunksPresence,
   PunksNavigationTarget,
   PunksWorkspaceSession,
   PostTextInput,
@@ -42,11 +45,13 @@ import type {
   UpdatePunkProfileInput,
   WorkspaceIdentity,
   WorkspaceLease,
+  WorkspaceGovernancePageInput,
   ClaimWorkspaceInvitationInput,
   CreateWorkspaceInvitationInput,
   RemoveWorkspaceMemberInput,
   RevokeWorkspaceInvitationInput,
   SetWorkspaceMemberRoleInput,
+  TransferWorkspaceOwnershipInput,
 } from "./punksClient";
 
 const authenticationMethods = new Set<AuthenticationMethod>([
@@ -210,11 +215,20 @@ class TauriWorkspaceSession implements PunksWorkspaceSession {
     );
   }
 
-  async getGovernance(): Promise<Workspace> {
+  async searchMessages(
+    input: MessageSearchInput,
+  ): Promise<MessageSearchResponse> {
+    const { searchMessages } = await import("./punksConversationSearchTauri");
+    return searchMessages(this.lease, input);
+  }
+
+  async getGovernancePage(
+    input: WorkspaceGovernancePageInput,
+  ): Promise<WorkspaceGovernanceResponse> {
     const { getWorkspaceGovernance } = await import(
       "./punksIdentityGovernanceTauri"
     );
-    return getWorkspaceGovernance(this.lease);
+    return getWorkspaceGovernance(this.lease, input);
   }
 
   async createInvitation(
@@ -253,6 +267,20 @@ class TauriWorkspaceSession implements PunksWorkspaceSession {
     return removeWorkspaceMember(this.lease, input);
   }
 
+  async leaveWorkspace(): Promise<WorkspaceMembershipLifecycleResponse> {
+    const { leaveWorkspace } = await import("./punksIdentityGovernanceTauri");
+    return leaveWorkspace(this.lease);
+  }
+
+  async transferOwnership(
+    input: TransferWorkspaceOwnershipInput,
+  ): Promise<WorkspaceMembershipLifecycleResponse> {
+    const { transferWorkspaceOwnership } = await import(
+      "./punksIdentityGovernanceTauri"
+    );
+    return transferWorkspaceOwnership(this.lease, input);
+  }
+
   resolveAuthors(
     authors: ResolveAuthorsQuery["authors"],
   ): Promise<ResolveAuthorsResponse["authors"]> {
@@ -262,20 +290,9 @@ class TauriWorkspaceSession implements PunksWorkspaceSession {
     });
   }
 
-  async getPunkSummaries(punkIds: string[]): Promise<PunkPublicSummary[]> {
-    const items = await invokePunks<PunkPublicSummary[]>(
-      "punks_get_punk_summaries",
-      { lease: this.lease, punkIds },
-    );
-    return requireContract<{
-      contract: "punk.summary-batch-response@1";
-      workspaceId: string;
-      items: PunkPublicSummary[];
-    }>("punks://contracts/punk.summary-batch-response@1", {
-      contract: "punk.summary-batch-response@1",
-      workspaceId: this.lease.workspaceId,
-      items,
-    }).items;
+  async getPunkSummaries(punkIds: string[]): Promise<PunkSummaryBatchResponse> {
+    const { getPunkSummaries } = await import("./punksIdentityGovernanceTauri");
+    return getPunkSummaries(this.lease, punkIds);
   }
 
   async searchPunks(input: {
@@ -283,19 +300,8 @@ class TauriWorkspaceSession implements PunksWorkspaceSession {
     limit: number;
     cursor: string | null;
   }): Promise<PunkSearchPage> {
-    const page = await invokePunks<PunkSearchPage>("punks_search_punks", {
-      lease: this.lease,
-      input,
-    });
-    const response = requireContract<PunkSearchResponse>(
-      "punks://contracts/punk.search-response@1",
-      {
-        contract: "punk.search-response@1",
-        workspaceId: this.lease.workspaceId,
-        ...page,
-      },
-    );
-    return { items: response.items, nextCursor: response.nextCursor };
+    const { searchPunks } = await import("./punksIdentityGovernanceTauri");
+    return searchPunks(this.lease, input);
   }
 
   async followConversation(
@@ -321,6 +327,11 @@ class TauriWorkspaceSession implements PunksWorkspaceSession {
         await invokePunks("punks_close_follow", { operationId });
       },
     };
+  }
+
+  async holdPresence(): Promise<PunksPresence> {
+    const { holdPresence } = await import("./punksPresenceTauri");
+    return holdPresence(this.lease);
   }
 
   async postMessage(input: PostTextInput): Promise<MessageView> {
@@ -399,17 +410,15 @@ export class TauriPunksAccountClient implements PunksAccountClient {
   }
 
   async getPunkProfile(): Promise<Punk> {
-    return requireContract<Punk>(
-      "punks://contracts/punk@1",
-      await invokePunks("punks_get_punk_profile"),
-    );
+    const { getPunkProfile } = await import("./punksIdentityGovernanceTauri");
+    return getPunkProfile();
   }
 
   async updatePunkProfile(input: UpdatePunkProfileInput): Promise<Punk> {
-    return requireContract<Punk>(
-      "punks://contracts/punk@1",
-      await invokePunks("punks_update_punk_profile", { input }),
+    const { updatePunkProfile } = await import(
+      "./punksIdentityGovernanceTauri"
     );
+    return updatePunkProfile(input);
   }
 
   async startSignIn(

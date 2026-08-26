@@ -2,6 +2,8 @@ import { Validator } from "@cfworker/json-schema";
 import { describe, expect, it } from "vitest";
 
 import { contractSchemas } from "../src/registry";
+import desktopProfile from "../profiles/desktop-social-loop@1.json";
+import registry from "../registry.json";
 import messageSearchResponseSchema from "../schemas/message.search-response.schema.json";
 import messageSearchSchema from "../schemas/message.search.schema.json";
 import messageViewSchema from "../schemas/message.view.schema.json";
@@ -70,6 +72,7 @@ describe("authorized Message search contracts", () => {
       contract: "message.search@1",
       workspaceId,
       conversationId,
+      threadRootMessageId: null,
       query: "incident response",
       cursor: null,
       limit: 100,
@@ -94,6 +97,21 @@ describe("authorized Message search contracts", () => {
     const withoutConversation: Record<string, unknown> = { ...initialQuery };
     delete withoutConversation.conversationId;
     expect(validates(messageSearchSchema, withoutConversation)).toBe(false);
+    const withoutScope: Record<string, unknown> = { ...initialQuery };
+    delete withoutScope.threadRootMessageId;
+    expect(validates(messageSearchSchema, withoutScope)).toBe(false);
+    expect(
+      validates(messageSearchSchema, {
+        ...initialQuery,
+        threadRootMessageId: messageId,
+      }),
+    ).toBe(true);
+    expect(
+      validates(messageSearchSchema, {
+        ...initialQuery,
+        threadRootMessageId: "not-a-message",
+      }),
+    ).toBe(false);
     expect(validates(messageSearchSchema, { ...initialQuery, limit: 0 })).toBe(
       false,
     );
@@ -127,7 +145,10 @@ describe("authorized Message search contracts", () => {
     const response = {
       workspaceId,
       conversationId,
+      threadRootMessageId: null,
       order: "createdCursor-descending",
+      completeness: "complete",
+      partialReason: null,
       items: [activeMessageView()],
       nextCursor: opaqueCursor,
     };
@@ -168,6 +189,49 @@ describe("authorized Message search contracts", () => {
     ).toBe(false);
   });
 
+  it("represents index unavailability and lag as a closed partial state", () => {
+    const base = {
+      workspaceId,
+      conversationId,
+      threadRootMessageId: messageId,
+      order: "createdCursor-descending",
+      completeness: "partial",
+      partialReason: "index_lagging",
+      items: [activeMessageView()],
+      nextCursor: opaqueCursor,
+    };
+
+    expect(
+      validates(messageSearchResponseSchema, base, [messageViewSchema]),
+    ).toBe(true);
+    expect(
+      validates(
+        messageSearchResponseSchema,
+        { ...base, partialReason: "index_unavailable", items: [] },
+        [messageViewSchema],
+      ),
+    ).toBe(true);
+    expect(
+      validates(
+        messageSearchResponseSchema,
+        { ...base, partialReason: "unknown" },
+        [messageViewSchema],
+      ),
+    ).toBe(false);
+    expect(
+      validates(
+        messageSearchResponseSchema,
+        { ...base, completeness: "complete" },
+        [messageViewSchema],
+      ),
+    ).toBe(false);
+    expect(
+      validates(messageSearchResponseSchema, { ...base, partialReason: null }, [
+        messageViewSchema,
+      ]),
+    ).toBe(false);
+  });
+
   it("bounds each response independently of the one-mebibyte runtime cap", () => {
     const fullPage = Array.from({ length: 100 }, (_, index) =>
       activeMessageView({
@@ -179,7 +243,10 @@ describe("authorized Message search contracts", () => {
     const response = {
       workspaceId,
       conversationId,
+      threadRootMessageId: null,
       order: "createdCursor-descending",
+      completeness: "complete",
+      partialReason: null,
       items: fullPage,
       nextCursor: null,
     };
@@ -241,5 +308,22 @@ describe("authorized Message search contracts", () => {
         "punks://contracts/message.search-response@1",
       ]),
     );
+  });
+
+  it("generates T9 contracts without bypassing its unavailable capability gate", () => {
+    expect(desktopProfile.unavailableCapabilities).toContain("search");
+    expect(desktopProfile.capabilities).not.toContain("search");
+    expect(desktopProfile.operations.map(({ name }) => name)).not.toContain(
+      "searchMessages",
+    );
+    for (const id of [
+      "punks://contracts/message.search@1",
+      "punks://contracts/message.search-response@1",
+    ]) {
+      expect(
+        registry.contracts.find((contract) => contract.id === id)
+          ?.generationTargets,
+      ).toEqual(["typescript", "rust", "dart", "openapi"]);
+    }
   });
 });

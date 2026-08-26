@@ -23,6 +23,10 @@ const authorization = {
 };
 const ownerPunkId = "00000000-0000-8000-8000-000000000001";
 const otherPunkId = "00000000-0000-8000-8000-000000000002";
+const ownerAuthorization = {
+  sessionId: "11111111-1111-8111-8111-111111111111",
+  punkId: ownerPunkId,
+};
 
 interface PendingArchive {
   workspaceId: string;
@@ -337,7 +341,7 @@ describe("WorkspaceDO sealed journal recovery", () => {
         );
       },
     );
-    const committedCursor = await env.WORKSPACES.getByName(reductionWorkspaceId)
+    const committed = await env.WORKSPACES.getByName(reductionWorkspaceId)
       .query({
         contract: "workspace.get@1",
         workspaceId: reductionWorkspaceId,
@@ -346,14 +350,21 @@ describe("WorkspaceDO sealed journal recovery", () => {
         if (!result.ok) {
           throw new Error("Expected committed Workspace");
         }
-        return result.state.cursor;
+        return {
+          cursor: result.state.cursor,
+          revision: result.state.revision,
+        };
       });
     const reduction: SetWorkspaceMemberRoleCommand = {
       contract: "workspace.member-set-role@1",
       commandId: "8a3837bd-6d5b-4f43-b5a5-cd50208a2c53",
       workspaceId: reductionWorkspaceId,
       actor: { kind: "punk", punkId: ownerPunkId },
-      payload: { targetPunkId: otherPunkId, role: "guest" },
+      payload: {
+        targetPunkId: otherPunkId,
+        role: "guest",
+        expectedRevision: committed.revision,
+      },
     };
     await env.ATTESTATION.fetch(
       new Request("https://punks-attestation.invalid/__test/fail-once", {
@@ -363,7 +374,10 @@ describe("WorkspaceDO sealed journal recovery", () => {
       }),
     );
     await expect(
-      env.WORKSPACES.getByName(reductionWorkspaceId).execute(reduction),
+      env.WORKSPACES.getByName(reductionWorkspaceId).executeAuthorized(
+        reduction,
+        ownerAuthorization,
+      ),
     ).resolves.toEqual({ ok: false, code: "attestation_failed" });
     await expect(
       env.WORKSPACES.getByName(reductionWorkspaceId).query({
@@ -393,7 +407,7 @@ describe("WorkspaceDO sealed journal recovery", () => {
       }),
     ).resolves.toEqual({
       ok: true,
-      workspaceCursor: committedCursor,
+      workspaceCursor: committed.cursor,
       role: "guest",
       visibility: "private",
     });

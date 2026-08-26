@@ -16,7 +16,7 @@ use crate::follow::validate_follow_frame;
 use crate::{
     promotion_audit::record_network_request, reduce_follow_frame, validate_uuid, ClientFailure,
     ClientResyncReason, ConversationUnavailableReason, FailureKind, FollowEffect,
-    FollowServerFrame, FollowState, Transport, WorkspaceSession,
+    FollowServerFrame, FollowState, PresenceTypingPatch, Transport, WorkspaceSession,
 };
 
 const FOLLOW_PROTOCOL: &str = "punks.follow.v1";
@@ -40,6 +40,9 @@ pub(crate) fn classify_follow_close(code: u16, reason: &str) -> FailureKind {
 pub enum FollowDelivery {
     ApplyBatch {
         frame: FollowServerFrame,
+    },
+    Typing {
+        patch: PresenceTypingPatch,
     },
     BecameLive,
     Resync {
@@ -258,6 +261,7 @@ impl FollowConnection {
             match reduction.effect {
                 FollowEffect::None => continue,
                 FollowEffect::ApplyBatch(frame) => return Ok(FollowDelivery::ApplyBatch { frame }),
+                FollowEffect::Typing(patch) => return Ok(FollowDelivery::Typing { patch }),
                 FollowEffect::BecameLive => return Ok(FollowDelivery::BecameLive),
                 FollowEffect::Resync {
                     reason,

@@ -1,11 +1,14 @@
 use punks_account_client::{
-    ClaimWorkspaceInvitationResult, ClientFailure, CreateWorkspaceInvitationResult,
-    RevokeWorkspaceInvitationResult, WorkspaceGovernanceView, WorkspaceInvitationRole,
-    WorkspaceInvitationView, WorkspaceLease, WorkspaceMembershipMutationResult, WorkspaceRole,
+    ClaimWorkspaceInvitationResult, ClientFailure, CreateWorkspaceInvitationResult, FailureKind,
+    RevokeWorkspaceInvitationResult, WorkspaceGovernancePage, WorkspaceInvitationRole,
+    WorkspaceInvitationView, WorkspaceLease, WorkspaceMembershipLifecycleResult,
+    WorkspaceMembershipMutationResult, WorkspaceRole,
 };
 use serde::Deserialize;
+use std::sync::Arc;
 
 use crate::punks_client::PunksDesktopClient;
+use crate::punks_session_store::{KeyringSessionPersistence, PendingAuthPurpose};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -88,9 +91,21 @@ pub async fn punks_revoke_workspace_invitation(
 pub async fn punks_get_workspace_governance(
     client: tauri::State<'_, PunksDesktopClient>,
     lease: WorkspaceLease,
-) -> Result<WorkspaceGovernanceView, ClientFailure> {
+    input: GovernancePageInput,
+) -> Result<WorkspaceGovernancePage, ClientFailure> {
     let _operation = client.transitions.read().await;
-    client.session(&lease).await?.get_governance().await
+    client
+        .session(&lease)
+        .await?
+        .get_governance_page(input.limit, input.cursor.as_deref())
+        .await
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GovernancePageInput {
+    limit: u16,
+    cursor: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -133,5 +148,67 @@ pub async fn punks_remove_workspace_member(
         .session(&lease)
         .await?
         .remove_member(&input.target_punk_id, input.expected_revision)
+        .await
+}
+
+#[tauri::command]
+pub async fn punks_leave_workspace(
+    client: tauri::State<'_, PunksDesktopClient>,
+    lease: WorkspaceLease,
+) -> Result<WorkspaceMembershipLifecycleResult, ClientFailure> {
+    let _operation = client.transitions.read().await;
+    let result = client.session(&lease).await?.leave_workspace().await?;
+    client.invalidate_workspace_context().await?;
+    Ok(result)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TransferWorkspaceOwnershipInput {
+    target_punk_id: String,
+    expected_revision: u64,
+}
+
+#[tauri::command]
+pub async fn punks_transfer_workspace_ownership(
+    client: tauri::State<'_, PunksDesktopClient>,
+    store: tauri::State<'_, Arc<KeyringSessionPersistence>>,
+    lease: WorkspaceLease,
+    input: TransferWorkspaceOwnershipInput,
+) -> Result<WorkspaceMembershipLifecycleResult, ClientFailure> {
+    let _operation = client.transitions.read().await;
+    let target = uuid::Uuid::parse_str(&input.target_punk_id).map_err(|_| {
+        ClientFailure::native(
+            FailureKind::ContractViolation,
+            "Punks ownership-transfer target is invalid",
+        )
+    })?;
+    if target.to_string() != input.target_punk_id || input.expected_revision == 0 {
+        return Err(ClientFailure::native(
+            FailureKind::ContractViolation,
+            "Punks ownership-transfer input is invalid",
+        ));
+    }
+    let session = client.session(&lease).await?;
+    let authorization = store
+        .take_reauthorization(PendingAuthPurpose::TransferWorkspaceOwnership)
+        .map_err(|_| {
+            ClientFailure::native(
+                FailureKind::Problem,
+                "Punks strong reauthorization storage is unavailable",
+            )
+        })?
+        .ok_or_else(|| {
+            ClientFailure::native(
+                FailureKind::Problem,
+                "A fresh ownership-transfer reauthorization is required",
+            )
+        })?;
+    session
+        .transfer_ownership(
+            &input.target_punk_id,
+            input.expected_revision,
+            &authorization.authorization_id,
+        )
         .await
 }

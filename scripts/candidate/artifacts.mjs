@@ -38,6 +38,9 @@ const PLATFORM_KEYS = Object.freeze({
   "windows-x64": "windows-x86_64",
 });
 const PLATFORMS = Object.keys(PLATFORM_TARGETS);
+const EVIDENCE_INDEX_SCHEMA = "punks.promotion-evidence-index.v1";
+const PROMOTION_PROOF_SCHEMA = "punks.promotion-proof.v1";
+const NETWORK_PROOF_SCHEMA = "punks.installed-network-proof.v1";
 const PLATFORM_ROLES = Object.freeze({
   "macos-arm64": ["native-dmg", "updater", "updater-signature"],
   "macos-x64": ["native-dmg", "updater", "updater-signature"],
@@ -67,6 +70,8 @@ const COMMAND_OPTIONS = {
     "--staging-deployment-id",
     "--bundle",
     "--native-proof",
+    "--installed-proof",
+    "--network-proof",
     "--output",
   ]),
   aggregate: new Set([
@@ -199,11 +204,151 @@ function loadStagingProof(path, sourceSha, stagingDeploymentId) {
 }
 
 function topEntries(directory) {
-  if (!statSync(directory).isDirectory())
+  const metadata = lstatSync(directory);
+  if (metadata.isSymbolicLink() || !metadata.isDirectory())
     fail(directory + " is not a directory");
   return readdirSync(directory, { withFileTypes: true }).sort((left, right) =>
     left.name.localeCompare(right.name),
   );
+}
+
+function exactObjectKeys(value, keys) {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    JSON.stringify(Object.keys(value).sort()) === JSON.stringify([...keys].sort())
+  );
+}
+
+function evidenceRelativePath(path) {
+  return (
+    typeof path === "string" &&
+    /^sha256\/[0-9a-f]{64}-[A-Za-z0-9._-]+$/u.test(path)
+  );
+}
+
+function loadInstalledEvidence(
+  installedProof,
+  networkProof,
+  platform,
+  sourceSha,
+  stagingDeploymentId,
+) {
+  const root = resolve(installedProof);
+  const expectedNetworkPath = join(root, "network-proof.json");
+  if (resolve(networkProof) !== expectedNetworkPath) {
+    fail("Installed network proof must belong to the exact evidence root");
+  }
+  assertExactEntries(root, ["index.json", "network-proof.json", "sha256"]);
+  const shaRoot = join(root, "sha256");
+  const shaEntries = topEntries(shaRoot);
+  if (shaEntries.length === 0 || shaEntries.some((entry) => !entry.isFile())) {
+    fail("Installed evidence sha256 directory must contain only regular files");
+  }
+
+  const indexFile = readStableFile(join(root, "index.json"), "Installed evidence index");
+  const index = parseJsonContent(indexFile, "Installed evidence index");
+  if (
+    !exactObjectKeys(index, ["schema", "preuves"]) ||
+    index.schema !== EVIDENCE_INDEX_SCHEMA ||
+    !Array.isArray(index.preuves) ||
+    index.preuves.length === 0
+  ) {
+    fail("Installed evidence index is invalid");
+  }
+
+  const referenced = new Map();
+  const proofIds = new Set();
+  for (const reference of index.preuves) {
+    if (
+      !exactObjectKeys(reference, ["id", "chemin", "sha256", "sujet"]) ||
+      typeof reference.id !== "string" ||
+      reference.id.length === 0 ||
+      proofIds.has(reference.id) ||
+      !evidenceRelativePath(reference.chemin) ||
+      !/^[0-9a-f]{64}$/u.test(reference.sha256 ?? "") ||
+      !exactObjectKeys(reference.sujet, ["chemin", "sha256"]) ||
+      !evidenceRelativePath(reference.sujet.chemin) ||
+      !/^[0-9a-f]{64}$/u.test(reference.sujet.sha256 ?? "")
+    ) {
+      fail("Installed evidence reference is invalid or duplicated");
+    }
+    proofIds.add(reference.id);
+    const proofFile = readStableFile(
+      join(root, reference.chemin),
+      `Installed evidence proof ${reference.id}`,
+    );
+    const subjectFile = readStableFile(
+      join(root, reference.sujet.chemin),
+      `Installed evidence subject ${reference.id}`,
+    );
+    const proof = parseJsonContent(
+      proofFile,
+      `Installed evidence proof ${reference.id}`,
+    );
+    if (
+      proofFile.sha256 !== reference.sha256 ||
+      subjectFile.sha256 !== reference.sujet.sha256 ||
+      !exactObjectKeys(proof, [
+        "schema",
+        "id",
+        "candidateSha",
+        "stagingDeploymentId",
+        "result",
+        ...(proof.plateforme === undefined ? [] : ["plateforme"]),
+        "data",
+      ]) ||
+      proof.schema !== PROMOTION_PROOF_SCHEMA ||
+      proof.id !== reference.id ||
+      proof.candidateSha !== sourceSha ||
+      proof.stagingDeploymentId !== stagingDeploymentId ||
+      proof.result !== "vert" ||
+      (proof.plateforme !== undefined && proof.plateforme !== platform) ||
+      proof.data?.subjectSha256 !== subjectFile.sha256
+    ) {
+      fail(`Installed evidence proof ${reference.id} is divergent`);
+    }
+    referenced.set(reference.chemin, proofFile);
+    referenced.set(reference.sujet.chemin, subjectFile);
+  }
+  const actualReferencedPaths = shaEntries.map((entry) => `sha256/${entry.name}`).sort();
+  const expectedReferencedPaths = [...referenced.keys()].sort();
+  if (JSON.stringify(actualReferencedPaths) !== JSON.stringify(expectedReferencedPaths)) {
+    fail("Installed evidence contains unreferenced or missing content-addressed files");
+  }
+
+  const networkFile = readStableFile(expectedNetworkPath, "Installed network proof");
+  const network = parseJsonContent(networkFile, "Installed network proof");
+  const transcriptReference = index.preuves.find(
+    ({ id }) => id === `transcript/${platform}`,
+  );
+  if (
+    !exactObjectKeys(network, [
+      "schema",
+      "platform",
+      "candidateSha",
+      "stagingDeploymentId",
+      "transcriptSha256",
+      "network",
+    ]) ||
+    network.schema !== NETWORK_PROOF_SCHEMA ||
+    network.platform !== platform ||
+    network.candidateSha !== sourceSha ||
+    network.stagingDeploymentId !== stagingDeploymentId ||
+    network.transcriptSha256 !== transcriptReference?.sujet?.sha256 ||
+    network.network === null ||
+    typeof network.network !== "object" ||
+    Array.isArray(network.network)
+  ) {
+    fail("Installed network proof is invalid or divergent");
+  }
+  return {
+    root,
+    indexFile,
+    networkFile,
+    contentFiles: [...referenced.entries()].map(([path, file]) => ({ path, file })),
+  };
 }
 
 function onlyEntry(directory, predicate, expectedType, description) {
@@ -400,6 +545,8 @@ export function collectPlatformLeg(options, testBoundary = {}) {
     stagingDeploymentId,
     bundle,
     nativeProof,
+    installedProof,
+    networkProof,
     output,
   } = options;
   assertCandidateIdentity(sourceSha, stagingDeploymentId);
@@ -416,6 +563,13 @@ export function collectPlatformLeg(options, testBoundary = {}) {
     platform,
   );
   const sourceArtifacts = inspectBundle(platform, bundle);
+  const evidence = loadInstalledEvidence(
+    installedProof,
+    networkProof,
+    platform,
+    sourceSha,
+    stagingDeploymentId,
+  );
   const version = readVersion();
   const prefix = "punks-desktop-" + platform + "-" + sourceSha;
   const artifactFiles = sourceArtifacts.map(({ source, suffix, role }) => ({
@@ -428,8 +582,12 @@ export function collectPlatformLeg(options, testBoundary = {}) {
   createOutputRoot(output, "Platform leg output already exists");
   const platformRoot = join(output, platform);
   const artifactRoot = join(platformRoot, "artifacts");
+  const evidenceRoot = join(platformRoot, "evidence");
+  const evidenceShaRoot = join(evidenceRoot, "sha256");
   mkdirSync(platformRoot, { mode: 0o755 });
   mkdirSync(artifactRoot, { mode: 0o755 });
+  mkdirSync(evidenceRoot, { mode: 0o755 });
+  mkdirSync(evidenceShaRoot, { mode: 0o755 });
 
   const artifacts = artifactFiles.map((file) => {
     const { name, role } = file;
@@ -449,6 +607,23 @@ export function collectPlatformLeg(options, testBoundary = {}) {
     flag: "wx",
     mode: 0o644,
   });
+  writeFileSync(join(evidenceRoot, "index.json"), evidence.indexFile.content, {
+    flag: "wx",
+    mode: 0o644,
+  });
+  writeFileSync(
+    join(evidenceRoot, "network-proof.json"),
+    evidence.networkFile.content,
+    { flag: "wx", mode: 0o644 },
+  );
+  const evidenceFiles = evidence.contentFiles.map(({ path, file }) => {
+    writeFileSync(join(evidenceRoot, path), file.content, {
+      flag: "wx",
+      mode: 0o644,
+    });
+    return { path: `evidence/${path}`, sha256: file.sha256, size: file.size };
+  });
+  evidenceFiles.sort((left, right) => left.path.localeCompare(right.path));
   const manifest = {
     schema: "punks.desktop-platform-leg.v1",
     sourceSha,
@@ -461,6 +636,17 @@ export function collectPlatformLeg(options, testBoundary = {}) {
       sha256: nativeProofFile.sha256,
       identity: proof.identity,
       timestamped: proof.timestamped,
+    },
+    installedEvidence: {
+      index: {
+        path: "evidence/index.json",
+        sha256: evidence.indexFile.sha256,
+      },
+      network: {
+        path: "evidence/network-proof.json",
+        sha256: evidence.networkFile.sha256,
+      },
+      files: evidenceFiles,
     },
     artifacts,
   };
@@ -523,6 +709,33 @@ function verifyLeg(
     parseJsonContent(nativeProofFile, `Native proof for ${platform}`),
     platform,
   );
+  const evidence = loadInstalledEvidence(
+    join(root, "evidence"),
+    join(root, "evidence", "network-proof.json"),
+    platform,
+    sourceSha,
+    stagingDeploymentId,
+  );
+  const expectedEvidenceFiles = evidence.contentFiles
+    .map(({ path, file }) => ({
+      path: `evidence/${path}`,
+      sha256: file.sha256,
+      size: file.size,
+    }))
+    .sort((left, right) => left.path.localeCompare(right.path));
+  if (
+    !exactObjectKeys(manifest.installedEvidence, ["index", "network", "files"]) ||
+    !exactObjectKeys(manifest.installedEvidence.index, ["path", "sha256"]) ||
+    manifest.installedEvidence.index.path !== "evidence/index.json" ||
+    manifest.installedEvidence.index.sha256 !== evidence.indexFile.sha256 ||
+    !exactObjectKeys(manifest.installedEvidence.network, ["path", "sha256"]) ||
+    manifest.installedEvidence.network.path !== "evidence/network-proof.json" ||
+    manifest.installedEvidence.network.sha256 !== evidence.networkFile.sha256 ||
+    JSON.stringify(manifest.installedEvidence.files) !==
+      JSON.stringify(expectedEvidenceFiles)
+  ) {
+    fail("Installed evidence manifest is invalid for " + platform);
+  }
   if (!Array.isArray(manifest.artifacts)) {
     fail("Platform manifest artifacts must be an array");
   }
@@ -542,7 +755,13 @@ function verifyLeg(
   ) {
     fail("Platform manifest does not contain the exact artifact role set");
   }
-  const subjects = [manifestFile, nativeProofFile];
+  const subjects = [
+    manifestFile,
+    nativeProofFile,
+    evidence.indexFile,
+    evidence.networkFile,
+    ...evidence.contentFiles.map(({ file }) => file),
+  ];
   const artifactFiles = new Map();
   for (const artifact of manifest.artifacts) {
     const path = join(root, artifact.path);
@@ -578,6 +797,7 @@ function verifyLeg(
     manifestFile,
     provenanceFile,
     artifactFiles,
+    evidence,
   };
 }
 
@@ -724,6 +944,59 @@ export function aggregateCandidate(options) {
     }))
     .sort((left, right) => left.name.localeCompare(right.name));
   const stagedProofName = "staging-deployment-proof.json";
+  const promotionReferences = [];
+  const promotionProofIds = new Set();
+  const promotionContent = new Map();
+  const promotionNetworks = [];
+  for (const { manifest, evidence } of legs) {
+    const evidenceIndex = parseJsonContent(
+      evidence.indexFile,
+      `Installed evidence index for ${manifest.platform}`,
+    );
+    for (const reference of evidenceIndex.preuves) {
+      if (promotionProofIds.has(reference.id)) {
+        fail("Platform evidence contains duplicate proof IDs");
+      }
+      promotionProofIds.add(reference.id);
+      promotionReferences.push(reference);
+    }
+    for (const { path, file } of evidence.contentFiles) {
+      const previous = promotionContent.get(path);
+      if (previous !== undefined && previous.sha256 !== file.sha256) {
+        fail("Platform evidence path collision is divergent");
+      }
+      promotionContent.set(path, file);
+    }
+    promotionNetworks.push({
+      platform: manifest.platform,
+      path: `promotion-evidence/network/${manifest.platform}.json`,
+      sha256: evidence.networkFile.sha256,
+      content: evidence.networkFile.content,
+    });
+  }
+  promotionReferences.sort((left, right) => left.id.localeCompare(right.id));
+  promotionNetworks.sort((left, right) =>
+    left.platform.localeCompare(right.platform),
+  );
+  const platformIndexContent = jsonContent({
+    schema: EVIDENCE_INDEX_SCHEMA,
+    preuves: promotionReferences,
+  });
+  const promotionEvidence = {
+    platformIndex: {
+      path: "promotion-evidence/platform-index.json",
+      sha256: createHash("sha256").update(platformIndexContent).digest("hex"),
+    },
+    stagingProof: {
+      path: "promotion-evidence/staging-deployment-proof.json",
+      sha256: staging.file.sha256,
+    },
+    network: promotionNetworks.map(({ platform, path, sha256 }) => ({
+      platform,
+      path,
+      sha256,
+    })),
+  };
   const aggregate = {
     schema: "punks.desktop-candidate-aggregate.v1",
     sourceSha,
@@ -735,6 +1008,7 @@ export function aggregateCandidate(options) {
       path: stagedProofName,
       sha256: staging.file.sha256,
     },
+    promotionEvidence,
     platforms: PLATFORMS.map((platform) => {
       const leg = legs.find(({ manifest }) => manifest.platform === platform);
       return {
@@ -753,7 +1027,13 @@ export function aggregateCandidate(options) {
 
   createOutputRoot(output, "Candidate aggregate output already exists");
   const releaseAssets = join(output, "release-assets");
+  const promotionRoot = join(output, "promotion-evidence");
+  const promotionShaRoot = join(promotionRoot, "sha256");
+  const promotionNetworkRoot = join(promotionRoot, "network");
   mkdirSync(releaseAssets, { mode: 0o755 });
+  mkdirSync(promotionRoot, { mode: 0o755 });
+  mkdirSync(promotionShaRoot, { mode: 0o755 });
+  mkdirSync(promotionNetworkRoot, { mode: 0o755 });
   for (const { name, content } of releaseAssetFiles) {
     writeFileSync(join(releaseAssets, name), content, {
       flag: "wx",
@@ -764,6 +1044,27 @@ export function aggregateCandidate(options) {
     flag: "wx",
     mode: 0o644,
   });
+  writeFileSync(
+    join(promotionRoot, "staging-deployment-proof.json"),
+    staging.file.content,
+    { flag: "wx", mode: 0o644 },
+  );
+  writeFileSync(join(promotionRoot, "platform-index.json"), platformIndexContent, {
+    flag: "wx",
+    mode: 0o644,
+  });
+  for (const [path, file] of promotionContent) {
+    writeFileSync(join(promotionRoot, path), file.content, {
+      flag: "wx",
+      mode: 0o644,
+    });
+  }
+  for (const network of promotionNetworks) {
+    writeFileSync(join(output, network.path), network.content, {
+      flag: "wx",
+      mode: 0o644,
+    });
+  }
   writeJsonExclusive(join(output, "aggregate-manifest.json"), aggregate);
   return { aggregate, latest };
 }
@@ -778,6 +1079,8 @@ export function run(argv = process.argv.slice(2)) {
       stagingDeploymentId: required(values, "staging-deployment-id"),
       bundle: resolve(required(values, "bundle")),
       nativeProof: resolve(required(values, "native-proof")),
+      installedProof: resolve(required(values, "installed-proof")),
+      networkProof: resolve(required(values, "network-proof")),
       output: resolve(required(values, "output")),
     });
   }
