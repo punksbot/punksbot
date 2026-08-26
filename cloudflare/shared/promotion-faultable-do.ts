@@ -157,6 +157,17 @@ export class PromotionFaultableDurableObject<Env> extends DurableObject<Env> {
     return (this.env as { ENVIRONMENT?: string }).ENVIRONMENT === "staging";
   }
 
+  private canFinalizePromotionPitr(): boolean {
+    const env = this.env as {
+      ENVIRONMENT?: string;
+      PROMOTION_FAULTS_ENABLED?: string;
+    };
+    return (
+      env.ENVIRONMENT === "staging" ||
+      (env.ENVIRONMENT === "local" && env.PROMOTION_FAULTS_ENABLED === "true")
+    );
+  }
+
   private async currentRecoveryBookmark(): Promise<string> {
     try {
       return await this.ctx.storage.getCurrentBookmark();
@@ -354,7 +365,7 @@ export class PromotionFaultableDurableObject<Env> extends DurableObject<Env> {
     expectedStateFingerprint: string,
   ): Promise<PromotionAuthorityFaultState> {
     if (
-      !this.isStaging() ||
+      !this.canFinalizePromotionPitr() ||
       !validIdentity(input) ||
       input.proof !== "recu-resistant-pitr" ||
       input.authority === "auth-session" ||

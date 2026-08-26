@@ -29,6 +29,45 @@ const candidateRoot = mkdtempSync(
 );
 const candidateEvidence = join(candidateRoot, "operational-budget-sources");
 mkdirSync(candidateEvidence);
+const candidateProvenance = join(
+  candidateRoot,
+  "operational-budget-provenance",
+);
+mkdirSync(candidateProvenance);
+const provenanceBundle = Buffer.from(
+  `${JSON.stringify({
+    mediaType: "application/vnd.dev.sigstore.bundle.v0.3+json",
+    dsseEnvelope: {
+      payload: Buffer.from("budget provenance").toString("base64"),
+      signatures: [{ sig: Buffer.from("signature").toString("base64") }],
+    },
+    verificationMaterial: {},
+  })}\n`,
+);
+const provenanceBundleSha256 = createHash("sha256")
+  .update(provenanceBundle)
+  .digest("hex");
+writeFileSync(
+  join(candidateProvenance, `${provenanceBundleSha256}.sigstore.json`),
+  provenanceBundle,
+);
+writeFileSync(
+  join(candidateRoot, "operational-budget-provenance.json"),
+  `${JSON.stringify({
+    schema: "punks.operational-budget-provenance.v1",
+    sourceSha,
+    stagingDeploymentId,
+    repository: "punksbot/punksbot",
+    sourceRef: "refs/heads/staging",
+    signerWorkflow:
+      "github.com/punksbot/punksbot/.github/workflows/punks-desktop-candidate.yml",
+    bundle: {
+      path: `operational-budget-provenance/${provenanceBundleSha256}.sigstore.json`,
+      sha256: provenanceBundleSha256,
+    },
+  })}\n`,
+);
+const verifyProviderSubject = () => [{ verified: true }];
 after(() => {
   rmSync(budgetExportRoot, { recursive: true, force: true });
   rmSync(candidateRoot, { recursive: true, force: true });
@@ -133,7 +172,7 @@ function budgetObservation() {
           ? { occurrences: 0, total: sampleCount }
           : { histogram: [{ value: 0, count: sampleCount }] };
     const source = {
-      schema: "punks.operational-metric-source.v1",
+      schema: "punks.operational-metric-source.v2",
       sourceSha,
       stagingDeploymentId,
       metric: budget.nom,
@@ -141,11 +180,6 @@ function budgetObservation() {
       unit: budget.unite,
       observer: "github-attested-installed-candidate",
       querySha256: canonicalSha256({ metric: budget.nom, dimension, query: 1 }),
-      attestationSha256: canonicalSha256({
-        metric: budget.nom,
-        dimension,
-        attestation: 1,
-      }),
       observedAt: "2026-08-26T20:19:57.000Z",
       samples,
     };
@@ -317,6 +351,7 @@ test("materializes signed expansion and active executions before Latest", async 
     budgetExportRoot,
     candidateRoot,
     approbation,
+    verifyProviderSubject,
   });
   assert.deepEqual(
     head.transitions.map(({ programme }) => programme),
@@ -358,6 +393,7 @@ test("refuses activation when one ordered operational step is absent", async () 
     budgetExportRoot,
     candidateRoot,
     approbation,
+    verifyProviderSubject,
   });
   head.transitions[1].steps.pop();
   const { sha256: _prior, ...content } = head;
@@ -386,6 +422,7 @@ test("refuses a cadence observation altered after the exact Actions read", async
       budgetExportRoot,
       candidateRoot,
       approbation,
+      verifyProviderSubject,
     });
 
   const mismatchedTimestamp = cadenceObservation(input, publicationResult);
@@ -418,6 +455,7 @@ test("publishes the operational head create-only to the draft and both Punks buc
     budgetExportRoot,
     candidateRoot,
     approbation,
+    verifyProviderSubject,
   });
   const writes = [];
   const r2 = [

@@ -326,15 +326,22 @@ function clientCloudflare({
         );
       }
       const enveloppe = await reponse.json();
+      const cleRequise =
+        typeof destination.cle === "string" && destination.cle.length > 0
+          ? destination.cle
+          : "releases/";
       const actif =
         enveloppe?.success === true &&
         Array.isArray(enveloppe?.result?.rules) &&
-        enveloppe.result.rules.some(
-          (regle) =>
+        enveloppe.result.rules.some((regle) => {
+          const prefixe = regle?.prefix ?? "";
+          return (
             regle?.enabled === true &&
             regle?.condition?.type === "Indefinite" &&
-            ["", "releases/"].includes(regle?.prefix ?? ""),
-        );
+            typeof prefixe === "string" &&
+            (prefixe === "" || cleRequise.startsWith(prefixe))
+          );
+        });
       return { mode: "compliance", actif };
     },
     async lireObjet(destination) {

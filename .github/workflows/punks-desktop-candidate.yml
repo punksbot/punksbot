@@ -1911,6 +1911,7 @@ jobs:
     timeout-minutes: 30
     permissions:
       actions: read
+      attestations: read
       contents: write
     env:
       SOURCE_SHA: ${{ inputs.source_sha }}

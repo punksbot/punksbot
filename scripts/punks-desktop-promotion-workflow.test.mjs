@@ -196,6 +196,11 @@ test("the aggregate validates, publishes and only then activates the exact draft
     "immutable publication must wait for the final attested candidate",
   );
   assert.equal(publish.environment, "punks-staging-promotion");
+  assert.equal(
+    publish.permissions?.attestations,
+    "read",
+    "the publisher must verify every operational metric Sigstore subject",
+  );
   const download = step("publish_promotion", "download_final_candidate");
   assert.equal(
     download.uses,

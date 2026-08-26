@@ -36,6 +36,7 @@ const runAttempt = 2;
 const publicationResult = {
   objets: [{ sorte: "recu", sha256: "ef".repeat(32) }],
 };
+const verifyProviderSubject = () => [{ verified: true }];
 
 const bindings = [
   [
@@ -140,6 +141,36 @@ function githubObservation() {
 function prepareCandidateRoot(candidateRoot) {
   const sources = join(candidateRoot, "operational-budget-sources");
   mkdirSync(sources, { recursive: true });
+  const provenanceRoot = join(candidateRoot, "operational-budget-provenance");
+  mkdirSync(provenanceRoot);
+  const bundle = Buffer.from(
+    `${JSON.stringify({
+      mediaType: "application/vnd.dev.sigstore.bundle.v0.3+json",
+      dsseEnvelope: {
+        payload: Buffer.from("budget provenance").toString("base64"),
+        signatures: [{ sig: Buffer.from("signature").toString("base64") }],
+      },
+      verificationMaterial: {},
+    })}\n`,
+  );
+  const bundleSha256 = createHash("sha256").update(bundle).digest("hex");
+  writeFileSync(join(provenanceRoot, `${bundleSha256}.sigstore.json`), bundle);
+  writeFileSync(
+    join(candidateRoot, "operational-budget-provenance.json"),
+    `${JSON.stringify({
+      schema: "punks.operational-budget-provenance.v1",
+      sourceSha,
+      stagingDeploymentId,
+      repository,
+      sourceRef: "refs/heads/staging",
+      signerWorkflow:
+        "github.com/punksbot/punksbot/.github/workflows/punks-desktop-candidate.yml",
+      bundle: {
+        path: `operational-budget-provenance/${bundleSha256}.sigstore.json`,
+        sha256: bundleSha256,
+      },
+    })}\n`,
+  );
   return sources;
 }
 
@@ -191,7 +222,7 @@ function budgetObservation(exportRoot, candidateRoot) {
           ? { occurrences: 0, total: sampleCount }
           : { histogram: [{ value: 0, count: sampleCount }] };
     const source = {
-      schema: "punks.operational-metric-source.v1",
+      schema: "punks.operational-metric-source.v2",
       sourceSha,
       stagingDeploymentId,
       metric: budget.nom,
@@ -199,11 +230,6 @@ function budgetObservation(exportRoot, candidateRoot) {
       unit: budget.unite,
       observer: "cloudflare-analytics",
       querySha256: canonicalSha256({ metric: budget.nom, dimension, query: 1 }),
-      attestationSha256: canonicalSha256({
-        metric: budget.nom,
-        dimension,
-        attestation: 1,
-      }),
       observedAt: "2026-08-26T20:19:57.000Z",
       samples,
     };
@@ -347,6 +373,7 @@ test("observes ten successful cadence steps from the exact current Actions run",
         },
       },
       now: () => new Date("2026-08-26T20:20:00Z"),
+      verifyProviderSubject,
     },
   );
 
@@ -444,6 +471,7 @@ test("observes ten successful cadence steps from the exact current Actions run",
         proofDigests: evidence,
         budgetExportRoot,
         candidateRoot,
+        verifyProviderSubject,
       }),
     /raw export digest diverges|unexpected shape/i,
   );
@@ -558,6 +586,7 @@ test("the CLI writes one create-only observation from the current run boundary",
         },
       },
       now: () => new Date("2026-08-26T20:20:00Z"),
+      verifyProviderSubject,
     },
   );
   assert.deepEqual(JSON.parse(readFileSync(output, "utf8")), observation);
@@ -599,6 +628,7 @@ test("the CLI writes one create-only observation from the current run boundary",
           },
         },
         now: () => new Date("2026-08-26T20:20:00Z"),
+        verifyProviderSubject,
       },
     ),
     /EEXIST|exist/i,

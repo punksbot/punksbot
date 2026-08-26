@@ -170,6 +170,7 @@ interface FaultRow extends Record<string, SqlStorageValue> {
   target_kind: "aggregate" | "service";
   target_id: string;
   target_probe_json: string;
+  authority_state_fingerprint: string | null;
   phase: "injected" | "recovering" | "recovered";
   injected_at: string;
   updated_at: string;
@@ -185,6 +186,7 @@ export type PromotionFaultProbeResult =
   | { status: "missing" }
   | ({
       status: "injected" | "recovering" | "recovered";
+      authorityStateFingerprint: string | null;
     } & PromotionFaultIdentity);
 
 function sameIdentity(row: FaultRow, input: PromotionFaultIdentity): boolean {
@@ -214,6 +216,7 @@ export class PromotionFaultDO extends DurableObject<ApiEnv> {
           target_kind TEXT NOT NULL,
           target_id TEXT NOT NULL,
           target_probe_json TEXT NOT NULL,
+          authority_state_fingerprint TEXT,
           phase TEXT NOT NULL,
           injected_at TEXT NOT NULL,
           updated_at TEXT NOT NULL
@@ -231,6 +234,11 @@ export class PromotionFaultDO extends DurableObject<ApiEnv> {
       if (!columns.includes("target_probe_json")) {
         this.ctx.storage.sql.exec(
           "ALTER TABLE promotion_fault ADD COLUMN target_probe_json TEXT NOT NULL DEFAULT '{}'",
+        );
+      }
+      if (!columns.includes("authority_state_fingerprint")) {
+        this.ctx.storage.sql.exec(
+          "ALTER TABLE promotion_fault ADD COLUMN authority_state_fingerprint TEXT",
         );
       }
     });
@@ -308,6 +316,35 @@ export class PromotionFaultDO extends DurableObject<ApiEnv> {
     return this.receipt(row, null, 1, observedAt, false);
   }
 
+  async recordAuthorityStateFingerprint(
+    input: PromotionFaultIdentity,
+    fingerprint: string,
+  ): Promise<void> {
+    if (
+      parsePromotionFaultIdentity(input) === null ||
+      !/^[0-9a-f]{64}$/u.test(fingerprint)
+    ) {
+      throw new Error("invalid promotion authority state fingerprint");
+    }
+    const row = this.row();
+    if (row === null || !sameIdentity(row, input)) {
+      throw new Error("promotion fault fingerprint has no matching injection");
+    }
+    if (
+      row.authority_state_fingerprint !== null &&
+      row.authority_state_fingerprint !== fingerprint
+    ) {
+      throw new Error("promotion authority state fingerprint diverged");
+    }
+    if (row.authority_state_fingerprint === null) {
+      this.ctx.storage.sql.exec(
+        "UPDATE promotion_fault SET authority_state_fingerprint = ? WHERE execution_id = ?",
+        fingerprint,
+        input.executionId,
+      );
+    }
+  }
+
   async recover(
     input: PromotionFaultRecoverInput,
   ): Promise<PromotionFaultReceipt> {
@@ -372,6 +409,7 @@ export class PromotionFaultDO extends DurableObject<ApiEnv> {
     if (row === null) return { status: "missing" };
     return {
       status: row.phase,
+      authorityStateFingerprint: row.authority_state_fingerprint,
       executionId: row.execution_id,
       candidateSha: row.candidate_sha,
       stagingDeploymentId: row.staging_deployment_id,

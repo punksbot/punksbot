@@ -71,6 +71,14 @@ test("assigns every fault-authority coordinate to exactly one platform", () => {
   assert.deepEqual(assignedResilienceScenarios("macos-x64", AUTHORITIES), []);
 });
 
+test("schedules destructive Session loss strictly after every reusable Session scenario", () => {
+  const linux = assignedResilienceScenarios("linux-x64", AUTHORITIES);
+  assert.deepEqual(linux.at(-1), {
+    type: "perte-autorite",
+    authority: "auth-session",
+  });
+});
+
 test("accepts only complete observed recovery scenarios for one installed leg", () => {
   const platform = "linux-x64";
   const value = observation(platform);

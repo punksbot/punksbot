@@ -182,6 +182,13 @@ test("les frontières réelles appliquent les identités, rôles et écritures c
     await frontieres.cloudflare.lireVerrouillage(DESTINATIONS[0]),
     { mode: "compliance", actif: true },
   );
+  assert.deepEqual(
+    await frontieres.cloudflare.lireVerrouillage({
+      ...DESTINATIONS[0],
+      cle: "operational-observations/tranche:1/source/deployment/manifest.json",
+    }),
+    { mode: "compliance", actif: false },
+  );
   assert.equal(
     await frontieres.cloudflare.lireObjet({
       ...DESTINATIONS[1],

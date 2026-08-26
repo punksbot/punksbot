@@ -38,7 +38,7 @@ function materials() {
           ? { occurrences: 0, total: sampleCount }
           : { histogram: [{ value: 0, count: sampleCount }] };
     const source = {
-      schema: "punks.operational-metric-source.v1",
+      schema: "punks.operational-metric-source.v2",
       sourceSha,
       stagingDeploymentId,
       metric: budget.nom,
@@ -46,11 +46,6 @@ function materials() {
       unit: budget.unite,
       observer: "cloudflare-analytics",
       querySha256: canonicalSha256({ metric: budget.nom, dimension, query: 1 }),
-      attestationSha256: canonicalSha256({
-        metric: budget.nom,
-        dimension,
-        attestation: 1,
-      }),
       observedAt: "2026-08-26T20:19:57.000Z",
       samples,
     };
@@ -157,13 +152,32 @@ function materials() {
     sha256: sha256(observationBytes),
   };
   objects.set(observationKey, observationBytes);
+  const provenanceBytes = bytes({
+    mediaType: "application/vnd.dev.sigstore.bundle.v0.3+json",
+    dsseEnvelope: {
+      payload: Buffer.from("operational budget provenance").toString("base64"),
+      signatures: [{ sig: Buffer.from("signature").toString("base64") }],
+    },
+    verificationMaterial: {},
+  });
+  const provenanceDigest = sha256(provenanceBytes);
+  const provenance = {
+    key: `${prefix}provenance/${provenanceDigest}.sigstore.json`,
+    sha256: provenanceDigest,
+    repository: "punksbot/punksbot",
+    sourceRef: "refs/heads/staging",
+    signerWorkflow:
+      "github.com/punksbot/punksbot/.github/workflows/punks-desktop-candidate.yml",
+  };
+  objects.set(provenance.key, provenanceBytes);
   const manifestContent = {
-    schema: "punks.operational-budget-r2-manifest.v1",
+    schema: "punks.operational-budget-r2-manifest.v2",
     sourceSha,
     stagingDeploymentId,
     observation: observationReference,
     exports,
     sources,
+    provenance,
     createdAt: "2026-08-26T20:20:00.000Z",
   };
   const manifest = {
@@ -173,7 +187,7 @@ function materials() {
   const manifestBytes = bytes(manifest);
   const manifestKey = `${prefix}manifest.json`;
   objects.set(manifestKey, manifestBytes);
-  return { objects, manifestBytes, observation };
+  return { objects, manifest, manifestBytes, observation };
 }
 
 test("downloads identical locked raw sources and recomputes every verdict", async (t) => {
@@ -184,6 +198,7 @@ test("downloads identical locked raw sources and recomputes every verdict", asyn
   const output = join(candidateRoot, "operational-budget-observation.json");
   const exportsOutput = join(candidateRoot, "operational-budget-exports");
   const material = materials();
+  let verifiedSubjects = 0;
   const destinations = [
     { role: "primaire", compte: "1".repeat(32), bucket: "primary" },
     { role: "secondaire", compte: "2".repeat(32), bucket: "recovery" },
@@ -201,13 +216,34 @@ test("downloads identical locked raw sources and recomputes every verdict", asyn
     {
       frontieres: {
         cloudflare: {
-          async lireVerrouillage() {
-            return { mode: "compliance", actif: true };
+          async lireVerrouillage({ cle }) {
+            return {
+              mode: "compliance",
+              actif: cle === prefix,
+            };
           },
           async lireObjet({ cle }) {
             return material.objects.get(cle) ?? null;
           },
         },
+      },
+      verifyProviderSubject({
+        artifactContent,
+        repository,
+        sourceSha: verifiedSourceSha,
+        sourceRef,
+        signerWorkflow,
+      }) {
+        verifiedSubjects += 1;
+        assert.equal(JSON.parse(artifactContent).sourceSha, sourceSha);
+        assert.equal(repository, "punksbot/punksbot");
+        assert.equal(verifiedSourceSha, sourceSha);
+        assert.equal(sourceRef, "refs/heads/staging");
+        assert.equal(
+          signerWorkflow,
+          "github.com/punksbot/punksbot/.github/workflows/punks-desktop-candidate.yml",
+        );
+        return [{ verified: true }];
       },
     },
   );
@@ -216,4 +252,50 @@ test("downloads identical locked raw sources and recomputes every verdict", asyn
     result.observation,
   );
   assert.equal(result.observation.verdicts.length, 36);
+  assert.equal(verifiedSubjects, material.manifest.sources.length);
+});
+
+test("rejects every metric source when its GitHub OIDC subject cannot be verified", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "punks-budget-unverified-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const candidateRoot = join(root, "candidate");
+  mkdirSync(candidateRoot);
+  const material = materials();
+  const destinations = [
+    { role: "primaire", compte: "1".repeat(32), bucket: "primary" },
+    { role: "secondaire", compte: "2".repeat(32), bucket: "recovery" },
+  ];
+
+  await assert.rejects(
+    fetchOperationalBudgetEvidence(
+      {
+        sourceSha,
+        stagingDeploymentId,
+        manifestSha256: sha256(material.manifestBytes),
+        candidateRoot,
+        destinations,
+        output: join(candidateRoot, "operational-budget-observation.json"),
+        exportsOutput: join(candidateRoot, "operational-budget-exports"),
+      },
+      {
+        frontieres: {
+          cloudflare: {
+            async lireVerrouillage({ cle }) {
+              return {
+                mode: "compliance",
+                actif: cle === prefix,
+              };
+            },
+            async lireObjet({ cle }) {
+              return material.objects.get(cle) ?? null;
+            },
+          },
+        },
+        verifyProviderSubject() {
+          throw new Error("GitHub OIDC subject rejected");
+        },
+      },
+    ),
+    /GitHub OIDC subject rejected/,
+  );
 });

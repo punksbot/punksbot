@@ -200,7 +200,12 @@ function actionStep(input, jobs, binding) {
   };
 }
 
-function validateBudgetObservation(value, expected, budgetExportRoot) {
+function validateBudgetObservation(
+  value,
+  expected,
+  budgetExportRoot,
+  verifyProviderSubject,
+) {
   if (
     !exactKeys(value, [
       "schema",
@@ -259,6 +264,7 @@ function validateBudgetObservation(value, expected, budgetExportRoot) {
       candidateRoot: expected.candidateRoot,
       sourceSha: expected.sourceSha,
       stagingDeploymentId: expected.stagingDeploymentId,
+      verifyProviderSubject,
     });
   } catch (error) {
     fail(error instanceof Error ? error.message : String(error));
@@ -278,6 +284,7 @@ export function validateGithubCadenceObservation(
     proofDigests,
     budgetExportRoot,
     candidateRoot,
+    verifyProviderSubject,
   },
 ) {
   if (
@@ -342,6 +349,7 @@ export function validateGithubCadenceObservation(
       candidateRoot,
     },
     budgetExportRoot,
+    verifyProviderSubject,
   );
   if (Date.parse(observation.budgets.observedAt) > observedAt.milliseconds) {
     fail("budget observation is newer than the GitHub cadence observation");
@@ -513,7 +521,10 @@ export function createGithubActionsBoundary({
  * Reads the current GitHub Actions run and turns only completed remote steps
  * into the ten ordered promotion observations consumed by the signed head.
  */
-export async function observeGithubCadence(input, { github, now }) {
+export async function observeGithubCadence(
+  input,
+  { github, now, verifyProviderSubject },
+) {
   if (
     input?.repository !== REPOSITORY ||
     !SHA1_RE.test(input?.sourceSha ?? "") ||
@@ -557,6 +568,7 @@ export async function observeGithubCadence(input, { github, now }) {
       candidateRoot: input.candidateRoot,
     },
     input.budgetExportRoot,
+    verifyProviderSubject,
   );
   const budgetsSha256 = canonicalSha256(budgets);
   const samples = sampleCounts(input.dossier, input.publicationResult);
@@ -619,6 +631,7 @@ export async function observeGithubCadence(input, { github, now }) {
     proofDigests: evidence,
     budgetExportRoot: input.budgetExportRoot,
     candidateRoot: input.candidateRoot,
+    verifyProviderSubject,
   });
 }
 
@@ -683,6 +696,7 @@ export async function run(
       token: process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN,
     }),
     now = () => new Date(),
+    verifyProviderSubject,
   } = {},
 ) {
   const required = parseArguments(argv);
@@ -711,7 +725,7 @@ export async function run(
         "remote operational topology observation",
       ),
     },
-    { github, now },
+    { github, now, verifyProviderSubject },
   );
   writeFileSync(
     resolve(required("--output")),

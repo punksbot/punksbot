@@ -287,6 +287,9 @@ export async function routePromotionFault(
       ) {
         throw new Error("promotion authority rejected the injected fault");
       }
+      await env.PROMOTION_FAULTS.getByName(
+        input.executionId,
+      ).recordAuthorityStateFingerprint(input, authorityState.stateFingerprint);
       return json({ receipt, authorityState }, receipt.replayed ? 200 : 201, {
         "cache-control": "no-store",
       });
@@ -327,21 +330,34 @@ export async function routePromotionFault(
       proof: value.proof,
     };
     try {
-      const receipt = await env.PROMOTION_FAULTS.getByName(
-        input.executionId,
-      ).recover(input);
-      const authorityState = await recoverPromotionAuthorityFault(env, input);
-      const controllerState =
-        input.proof === "recu-resistant-pitr"
-          ? await env.PROMOTION_FAULTS.getByName(input.executionId).probe()
-          : null;
+      const controller = env.PROMOTION_FAULTS.getByName(input.executionId);
+      const receipt = await controller.recover(input);
+      const controllerState = await controller.probe();
+      const expectedStateFingerprint =
+        controllerState.status === "missing"
+          ? null
+          : controllerState.authorityStateFingerprint;
+      if (
+        controllerState.status === "missing" ||
+        typeof expectedStateFingerprint !== "string" ||
+        !/^[0-9a-f]{64}$/u.test(expectedStateFingerprint)
+      ) {
+        throw new Error(
+          "promotion controller authority fingerprint is unavailable",
+        );
+      }
+      const authorityState = await recoverPromotionAuthorityFault(
+        env,
+        input,
+        expectedStateFingerprint,
+      );
       if (
         !sameAuthorityState(input, authorityState) ||
         authorityState.proof !== input.proof ||
         authorityState.sequence !== receipt.sequence ||
         authorityState.phase !== receipt.phase ||
         (input.proof === "recu-resistant-pitr" &&
-          (controllerState?.status !== "recovered" ||
+          (controllerState.status !== "recovered" ||
             controllerState.executionId !== input.executionId ||
             controllerState.candidateSha !== input.candidateSha ||
             controllerState.stagingDeploymentId !== input.stagingDeploymentId))

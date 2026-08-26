@@ -312,13 +312,40 @@ export async function injectPromotionAuthorityFault(
 export async function recoverPromotionAuthorityFault(
   env: ApiEnv,
   input: PromotionAuthorityFaultRecovery,
+  expectedStateFingerprint: string,
 ): Promise<PromotionAuthorityBoundaryState> {
+  if (!/^[0-9a-f]{64}$/u.test(expectedStateFingerprint)) {
+    throw new Error("promotion authority recovery fingerprint is unavailable");
+  }
   const selected = target(env, input);
   const beforeRecovery = await selected.stub.probePromotionFault(
     input.executionId,
   );
   if (beforeRecovery === null) {
+    if (
+      input.proof === "recu-resistant-pitr" &&
+      input.authority !== "auth-session"
+    ) {
+      const finalized = await selected.stub.finalizePromotionAuthorityAfterPitr(
+        input,
+        expectedStateFingerprint,
+      );
+      if (
+        finalized.phase !== "recovered" ||
+        finalized.proof !== "recu-resistant-pitr" ||
+        finalized.stateFingerprint !== expectedStateFingerprint
+      ) {
+        throw new Error("promotion authority diverged during PITR resumption");
+      }
+      return observed(selected, finalized);
+    }
     throw new Error("promotion authority recovery has no injected state");
+  }
+  if (
+    input.authority !== "auth-session" &&
+    beforeRecovery.stateFingerprint !== expectedStateFingerprint
+  ) {
+    throw new Error("promotion authority recovery fingerprint diverged");
   }
   let recovered: PromotionAuthorityFaultState;
   try {
@@ -336,12 +363,12 @@ export async function recoverPromotionAuthorityFault(
     }
     const beforePitr = await selected.stub.finalizePromotionAuthorityAfterPitr(
       input,
-      beforeRecovery.stateFingerprint,
+      expectedStateFingerprint,
     );
     if (
       beforePitr.phase !== "recovered" ||
       beforePitr.proof !== "recu-resistant-pitr" ||
-      beforePitr.stateFingerprint !== beforeRecovery.stateFingerprint
+      beforePitr.stateFingerprint !== expectedStateFingerprint
     ) {
       throw new Error("promotion authority diverged after PITR finalization");
     }
@@ -351,18 +378,21 @@ export async function recoverPromotionAuthorityFault(
     input.proof === "recu-resistant-pitr" &&
     input.authority !== "auth-session"
   ) {
+    if (recovered.stateFingerprint !== expectedStateFingerprint) {
+      throw new Error("promotion authority changed before PITR restoration");
+    }
     let restored = await selected.stub.probePromotionFault(input.executionId);
     if (restored === null) {
       restored = await selected.stub.finalizePromotionAuthorityAfterPitr(
         input,
-        recovered.stateFingerprint,
+        expectedStateFingerprint,
       );
     }
     if (
       restored === null ||
       restored.phase !== "recovered" ||
       restored.proof !== "recu-resistant-pitr" ||
-      restored.stateFingerprint !== recovered.stateFingerprint
+      restored.stateFingerprint !== expectedStateFingerprint
     ) {
       throw new Error("promotion authority resurrected after PITR");
     }

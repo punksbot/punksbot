@@ -4,7 +4,10 @@ import { basename, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { canonicalSha256 } from "../migration-manifest-lib.mjs";
-import { validateOperationalBudgetEvidence } from "./operational-budget-evidence.mjs";
+import {
+  OPERATIONAL_BUDGET_PROVENANCE,
+  validateOperationalBudgetEvidence,
+} from "./operational-budget-evidence.mjs";
 
 const SHA1_RE = /^[0-9a-f]{40}$/u;
 const SHA256_RE = /^[0-9a-f]{64}$/u;
@@ -50,6 +53,10 @@ function manifestKey(sourceSha, stagingDeploymentId) {
   return `operational-observations/tranche:1/${sourceSha}/${stagingDeploymentId.slice(7)}/manifest.json`;
 }
 
+function manifestPrefix(sourceSha, stagingDeploymentId) {
+  return `operational-observations/tranche:1/${sourceSha}/${stagingDeploymentId.slice(7)}/`;
+}
+
 function validateManifest(value, expected) {
   exact(
     value,
@@ -60,6 +67,7 @@ function validateManifest(value, expected) {
       "observation",
       "exports",
       "sources",
+      "provenance",
       "createdAt",
       "sha256",
     ],
@@ -67,7 +75,7 @@ function validateManifest(value, expected) {
   );
   const { sha256, ...content } = value;
   if (
-    value.schema !== "punks.operational-budget-r2-manifest.v1" ||
+    value.schema !== "punks.operational-budget-r2-manifest.v2" ||
     value.sourceSha !== expected.sourceSha ||
     value.stagingDeploymentId !== expected.stagingDeploymentId ||
     canonicalSha256(content) !== sha256 ||
@@ -80,6 +88,22 @@ function validateManifest(value, expected) {
     fail("operational budget manifest identity or digest diverges");
   }
   const prefix = `operational-observations/tranche:1/${expected.sourceSha}/${expected.stagingDeploymentId.slice(7)}/`;
+  exact(
+    value.provenance,
+    ["key", "sha256", "repository", "sourceRef", "signerWorkflow"],
+    "operational budget provenance",
+  );
+  if (
+    value.provenance.repository !== OPERATIONAL_BUDGET_PROVENANCE.repository ||
+    value.provenance.sourceRef !== OPERATIONAL_BUDGET_PROVENANCE.sourceRef ||
+    value.provenance.signerWorkflow !==
+      OPERATIONAL_BUDGET_PROVENANCE.signerWorkflow ||
+    value.provenance.key !==
+      `${prefix}provenance/${value.provenance.sha256}.sigstore.json` ||
+    !SHA256_RE.test(value.provenance.sha256 ?? "")
+  ) {
+    fail("operational budget provenance identity is invalid");
+  }
   const references = [value.observation, ...value.exports, ...value.sources];
   for (const [index, reference] of references.entries()) {
     exact(reference, ["key", "sha256"], `budget object ${index}`);
@@ -122,7 +146,10 @@ async function readRedundant(frontieres, destinations, reference, label) {
   return Buffer.from(values[0]);
 }
 
-export async function fetchOperationalBudgetEvidence(input, { frontieres }) {
+export async function fetchOperationalBudgetEvidence(
+  input,
+  { frontieres, verifyProviderSubject },
+) {
   if (
     !SHA1_RE.test(input?.sourceSha ?? "") ||
     !DEPLOYMENT_RE.test(input?.stagingDeploymentId ?? "") ||
@@ -133,13 +160,20 @@ export async function fetchOperationalBudgetEvidence(input, { frontieres }) {
   ) {
     fail("exact candidate and redundant Punks R2 destinations are required");
   }
+  const key = manifestKey(input.sourceSha, input.stagingDeploymentId);
+  const lockedPrefix = manifestPrefix(
+    input.sourceSha,
+    input.stagingDeploymentId,
+  );
   for (const target of input.destinations) {
-    const lock = await frontieres.cloudflare.lireVerrouillage(target);
+    const lock = await frontieres.cloudflare.lireVerrouillage({
+      ...target,
+      cle: lockedPrefix,
+    });
     if (lock?.mode !== "compliance" || lock.actif !== true) {
       fail(`${target.role} operational observation bucket is not locked`);
     }
   }
-  const key = manifestKey(input.sourceSha, input.stagingDeploymentId);
   const manifestBytes = await readRedundant(
     frontieres,
     input.destinations,
@@ -176,14 +210,29 @@ export async function fetchOperationalBudgetEvidence(input, { frontieres }) {
       ),
     ),
   );
+  const provenanceBytes = await readRedundant(
+    frontieres,
+    input.destinations,
+    manifest.provenance,
+    "operational budget Sigstore provenance",
+  );
   const output = resolve(input.output);
   const exportsRoot = resolve(input.exportsOutput);
   const sourcesRoot = resolve(
     input.candidateRoot,
     "operational-budget-sources",
   );
+  const provenanceRoot = resolve(
+    input.candidateRoot,
+    "operational-budget-provenance",
+  );
+  const provenanceDescriptor = resolve(
+    input.candidateRoot,
+    "operational-budget-provenance.json",
+  );
   mkdirSync(exportsRoot, { mode: 0o700 });
   mkdirSync(sourcesRoot, { mode: 0o700 });
+  mkdirSync(provenanceRoot, { mode: 0o700 });
   try {
     for (const [index, reference] of manifest.exports.entries()) {
       writeFileSync(
@@ -199,6 +248,27 @@ export async function fetchOperationalBudgetEvidence(input, { frontieres }) {
         { flag: "wx", mode: 0o600 },
       );
     }
+    const provenanceName = `${manifest.provenance.sha256}.sigstore.json`;
+    writeFileSync(resolve(provenanceRoot, provenanceName), provenanceBytes, {
+      flag: "wx",
+      mode: 0o600,
+    });
+    writeFileSync(
+      provenanceDescriptor,
+      `${JSON.stringify({
+        schema: "punks.operational-budget-provenance.v1",
+        sourceSha: input.sourceSha,
+        stagingDeploymentId: input.stagingDeploymentId,
+        repository: manifest.provenance.repository,
+        sourceRef: manifest.provenance.sourceRef,
+        signerWorkflow: manifest.provenance.signerWorkflow,
+        bundle: {
+          path: `operational-budget-provenance/${provenanceName}`,
+          sha256: manifest.provenance.sha256,
+        },
+      })}\n`,
+      { flag: "wx", mode: 0o600 },
+    );
     writeFileSync(output, observationBytes, { flag: "wx", mode: 0o600 });
     const observation = parseJson(
       observationBytes,
@@ -210,11 +280,14 @@ export async function fetchOperationalBudgetEvidence(input, { frontieres }) {
       candidateRoot: input.candidateRoot,
       sourceSha: input.sourceSha,
       stagingDeploymentId: input.stagingDeploymentId,
+      verifyProviderSubject,
     });
     return { manifest, observation };
   } catch (error) {
     rmSync(exportsRoot, { recursive: true, force: true });
     rmSync(sourcesRoot, { recursive: true, force: true });
+    rmSync(provenanceRoot, { recursive: true, force: true });
+    rmSync(provenanceDescriptor, { force: true });
     rmSync(output, { force: true });
     throw error;
   }

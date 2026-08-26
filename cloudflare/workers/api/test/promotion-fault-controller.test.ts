@@ -1,4 +1,9 @@
-import { SELF, env, runDurableObjectAlarm } from "cloudflare:test";
+import {
+  SELF,
+  env,
+  runDurableObjectAlarm,
+  runInDurableObject,
+} from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 
 const EXECUTION_ID = "919191919191:linux-x64:coupure:api-conversation";
@@ -269,6 +274,70 @@ describe("promotion fault controller", () => {
     await expect(recoveredProbe.json()).resolves.toMatchObject({
       status: "recovered",
       executionId: EXECUTION_ID,
+    });
+  });
+
+  it("resumes after the controller committed the PITR Receipt but the caller was interrupted", async () => {
+    const target = await prepareTargets();
+    const identity = {
+      executionId: "929292929292:linux-x64:coupure:api-conversation",
+      candidateSha: CANDIDATE_SHA,
+      stagingDeploymentId: DEPLOYMENT_ID,
+      type: "coupure" as const,
+      authority: "api-conversation",
+      target: {
+        kind: "aggregate" as const,
+        id: target.conversationId,
+        probe: businessProbe(target),
+      },
+    };
+    expect(
+      (
+        await command("/api/internal/v1/promotion/faults/inject", {
+          contract: "promotion.fault-inject@1",
+          ...identity,
+        })
+      ).status,
+    ).toBe(201);
+    for (const proof of [
+      "roll-forward",
+      "rpo-logique-nul",
+      "session-non-restauree",
+    ]) {
+      expect(
+        (
+          await command("/api/internal/v1/promotion/faults/recover", {
+            contract: "promotion.fault-recover@1",
+            ...identity,
+            proof,
+          })
+        ).status,
+      ).toBe(200);
+    }
+
+    const terminal = { ...identity, proof: "recu-resistant-pitr" as const };
+    await expect(
+      env.PROMOTION_FAULTS.getByName(identity.executionId).recover(terminal),
+    ).resolves.toMatchObject({ phase: "recovered", proof: terminal.proof });
+    await runInDurableObject(
+      env.CONVERSATIONS.getByName(target.conversationId),
+      async (_instance, state) => {
+        await state.storage.delete("__punks_promotion_authority_fault_v1");
+      },
+    );
+
+    const resumed = await command("/api/internal/v1/promotion/faults/recover", {
+      contract: "promotion.fault-recover@1",
+      ...terminal,
+    });
+    expect(resumed.status).toBe(200);
+    await expect(resumed.json()).resolves.toMatchObject({
+      receipt: { replayed: true, phase: "recovered" },
+      authorityState: {
+        phase: "recovered",
+        proof: "recu-resistant-pitr",
+        authority: identity.authority,
+      },
     });
   });
 

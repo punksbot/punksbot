@@ -236,6 +236,7 @@ export async function buildOperationalReleaseHead({
   budgetExportRoot,
   candidateRoot,
   approbation,
+  verifyProviderSubject,
 }) {
   const sourceSha = dossier?.candidat?.sha;
   const stagingDeploymentId = dossier?.liaison?.staging?.deploiement;
@@ -254,6 +255,7 @@ export async function buildOperationalReleaseHead({
       proofDigests: evidence,
       budgetExportRoot,
       candidateRoot,
+      verifyProviderSubject,
     });
   } catch (error) {
     fail(error instanceof Error ? error.message : String(error));

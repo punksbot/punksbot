@@ -70,13 +70,23 @@ export function assignedResilienceScenarios(platform, authorities) {
   const observerPlatforms = ["linux-x64", "windows-x64"];
   const platformIndex = observerPlatforms.indexOf(platform);
   if (platformIndex < 0) return [];
-  return TYPES_FAUTE.flatMap((type, typeIndex) =>
+  const assigned = TYPES_FAUTE.flatMap((type, typeIndex) =>
     authorities.flatMap((authority, authorityIndex) =>
       (typeIndex + authorityIndex) % observerPlatforms.length === platformIndex
         ? [{ type, authority }]
         : [],
     ),
   );
+  return [
+    ...assigned.filter(
+      ({ type, authority }) =>
+        type !== "perte-autorite" || authority !== "auth-session",
+    ),
+    ...assigned.filter(
+      ({ type, authority }) =>
+        type === "perte-autorite" && authority === "auth-session",
+    ),
+  ];
 }
 
 /**
@@ -121,7 +131,7 @@ export function validateResilienceObservation(
     fail("resilience scenario set is incomplete");
   }
   const seen = new Set();
-  for (const scenario of observation.scenarios) {
+  for (const [scenarioIndex, scenario] of observation.scenarios.entries()) {
     exactKeys(
       scenario,
       ["type", "authority", "executionId", "injection", "recoveries"],
@@ -133,6 +143,8 @@ export function validateResilienceObservation(
         ({ type, authority }) =>
           type === scenario.type && authority === scenario.authority,
       ) ||
+      expected[scenarioIndex]?.type !== scenario.type ||
+      expected[scenarioIndex]?.authority !== scenario.authority ||
       seen.has(coordinate) ||
       !EXECUTION_RE.test(scenario.executionId ?? "")
     ) {
