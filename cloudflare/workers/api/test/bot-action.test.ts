@@ -307,6 +307,7 @@ function requireAdmissionResult(value: unknown): {
 async function terminalReceiptFixture(
   prefix: number,
   outcome: "succeeded" | "failed" = "succeeded",
+  holdReceiptArchive = false,
 ) {
   const coordinates = await fixture();
   const stub = env.BOT_INSTALLATIONS.getByName(coordinates.installationId);
@@ -382,16 +383,28 @@ async function terminalReceiptFixture(
     "punks.bot-action-completion-command.v1",
     `${admitted.admissionId}\u0000${outcome}`,
   );
+  const completion = {
+    workspaceId: coordinates.workspaceId,
+    installationId: coordinates.installationId,
+    admissionId: admitted.admissionId,
+    actionId,
+    actionDigest: admitted.admission.actionDigest,
+    outcome,
+    completionCommandId,
+  } as const;
   await expect(
-    stub.completeBotAction({
-      workspaceId: coordinates.workspaceId,
-      installationId: coordinates.installationId,
-      admissionId: admitted.admissionId,
-      actionId,
-      actionDigest: admitted.admission.actionDigest,
-      outcome,
-      completionCommandId,
-    }),
+    holdReceiptArchive
+      ? runInDurableObject(stub, async (instance, state) => {
+          const result = await instance.completeBotAction(completion);
+          const alarmScheduling = Reflect.get(
+            instance,
+            "alarmScheduling",
+          ) as Promise<void>;
+          await alarmScheduling;
+          await state.storage.deleteAlarm();
+          return result;
+        })
+      : stub.completeBotAction(completion),
   ).resolves.toEqual({ ok: true, replayed: false });
   return {
     ...coordinates,
@@ -1526,7 +1539,7 @@ describe("private Punks Bot Reaction vertical slice", () => {
       [0x92, "wrong-admission-proof"],
       [0x93, "wrong-completion-proof"],
     ] as const) {
-      const receipt = await terminalReceiptFixture(prefix);
+      const receipt = await terminalReceiptFixture(prefix, "succeeded", true);
       const pending = await runInDurableObject(
         receipt.stub,
         (_instance, state) =>
@@ -1545,20 +1558,21 @@ describe("private Punks Bot Reaction vertical slice", () => {
         corruption === "substituted" ||
         corruption === "wrong-admission-proof" ||
         corruption === "wrong-completion-proof"
-          ? await terminalReceiptFixture(prefix + 0x10).then((donor) =>
-              runInDurableObject(
-                donor.stub,
-                (_instance, state) =>
-                  JSON.parse(
-                    state.storage.sql
-                      .exec<{ archive_json: string }>(
-                        `SELECT archive_json FROM receipt_archive_outbox
+          ? await terminalReceiptFixture(prefix + 0x10, "succeeded", true).then(
+              (donor) =>
+                runInDurableObject(
+                  donor.stub,
+                  (_instance, state) =>
+                    JSON.parse(
+                      state.storage.sql
+                        .exec<{ archive_json: string }>(
+                          `SELECT archive_json FROM receipt_archive_outbox
                        WHERE action_id = ?`,
-                        donor.actionId,
-                      )
-                      .one().archive_json,
-                  ) as BotActionReceiptArchive,
-              ),
+                          donor.actionId,
+                        )
+                        .one().archive_json,
+                    ) as BotActionReceiptArchive,
+                ),
             )
           : null;
       const parts = pending.object_key.split("/");

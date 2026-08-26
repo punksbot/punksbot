@@ -651,6 +651,8 @@ describe("Punks Workspace invitations", () => {
     await expect(outsider.json()).resolves.toMatchObject({ code: "forbidden" });
   });
 
+  // This scenario deliberately commits 101 authority revisions serially.
+  // Keep its cold-run allowance local instead of weakening the global timeout.
   it("serves a stable authority-bound roster in pages of at most one hundred", async () => {
     const workspaceId = await createWorkspace(`pages-${crypto.randomUUID()}`);
     const authority = env.WORKSPACES.getByName(workspaceId);
@@ -752,7 +754,7 @@ describe("Punks Workspace invitations", () => {
     await expect(stale.json()).resolves.toMatchObject({
       code: "revision_conflict",
     });
-  });
+  }, 45_000);
 
   it("admits at most one Punk when two claims race on one revision", async () => {
     const workspaceId = await createWorkspace(`race-${crypto.randomUUID()}`);
