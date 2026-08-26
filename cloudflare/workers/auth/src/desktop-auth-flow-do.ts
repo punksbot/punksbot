@@ -124,6 +124,23 @@ export interface CreateDesktopAuthFlow
     | "expiresAt"
   > {}
 
+/** Redacted terminal facts proving one real desktop provider ceremony. */
+export interface DesktopPromotionAuthProof {
+  flowId: string;
+  method: DesktopAuthMethod;
+  intent: DesktopAuthIntent;
+  environment: "local" | "staging" | "production";
+  outcomeCode: DesktopAuthOutcomeCode;
+  punkId: string;
+  sessionId: string;
+  browserCompletedAt: string;
+  confirmedAt: string;
+  browserBindingHash: string;
+  oauthStateHash: string;
+  providerPkceHash: string;
+  nativeVerifierCommitment: string;
+}
+
 export type BrowserLaunchResult =
   | {
       ok: true;
@@ -288,6 +305,42 @@ export class DesktopAuthFlowDO extends DurableObject<AuthEnv> {
   /** Internal Worker RPC; never exposed as a public flow-status response. */
   async browserMetadata(): Promise<DesktopAuthFlowRecord | null> {
     return this.current();
+  }
+
+  /** Returns no secrets and only a fully confirmed staging OAuth ceremony. */
+  async promotionProof(): Promise<DesktopPromotionAuthProof | null> {
+    const flow = await this.read();
+    if (
+      flow === null ||
+      flow.phase !== "confirmed" ||
+      flow.result !== "success" ||
+      flow.method === "passkey" ||
+      flow.outcomeCode === null ||
+      flow.punkId === null ||
+      flow.sessionId === null ||
+      flow.browserCompletedAt === null ||
+      flow.confirmedAt === null ||
+      flow.browserBindingHash === null ||
+      flow.oauthState === null ||
+      flow.codeVerifier === null
+    ) {
+      return null;
+    }
+    return {
+      flowId: flow.flowId,
+      method: flow.method,
+      intent: flow.intent,
+      environment: flow.environment,
+      outcomeCode: flow.outcomeCode,
+      punkId: flow.punkId,
+      sessionId: flow.sessionId,
+      browserCompletedAt: flow.browserCompletedAt,
+      confirmedAt: flow.confirmedAt,
+      browserBindingHash: flow.browserBindingHash,
+      oauthStateHash: await hash(flow.oauthState),
+      providerPkceHash: await hash(flow.codeVerifier),
+      nativeVerifierCommitment: flow.verifierCommitment,
+    };
   }
 
   async setPasskeyChallenge(input: {

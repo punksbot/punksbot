@@ -14,9 +14,112 @@ The workflow has two explicit dispatch scopes:
 
 Only one green `full-candidate` run that exercises every installed artifact,
 assembles and validates the complete dossier, publishes every immutable proof
-and activates the exact verified draft can unblock the ticket sequence. An
-Apple-only run is never evidence that Windows signing or a complete
+and activates the exact verified draft as the non-prerelease GitHub `Latest`
+release can unblock the ticket sequence. That final state is what makes the
+configured `/releases/latest/download/latest.json` updater endpoint observable.
+An Apple-only run is never evidence that Windows signing or a complete
 four-platform candidate passed.
+
+## Protected staging fixture and installed driver
+
+The full candidate additionally requires two protected environment secrets.
+They are never exposed to the renderer or copied into a proof:
+
+- `PUNKS_PROMOTION_SESSION` — one fresh JSON bundle for the dedicated staging
+  Compte Punks, containing its `__Host-punks_session` cookie, bounded metadata
+  and revoke-only capability in the closed shape accepted by
+  `punks-promotion-session`. The Auth Worker issues it only through the
+  operator-protected staging endpoint and binds it to the exact candidate in
+  `source_sha`;
+- `PUNKS_OPERATOR_PROVISIONING_TOKEN` — the narrow operator credential used
+  only to create or replay the source-bound promotion Workspace and drive the
+  operator-only authority fault boundary.
+
+The workflow snapshots both values into create-once runner files (`0600` where
+the host supports POSIX modes), immediately unsets their environment variables,
+installs the Session in the operating-system credential store, and creates the
+bounded fixture through public staging contracts. It deletes the Session bundle
+before starting the installed driver and attempts the same deletion plus
+credential cleanup again on every exit. The resulting fixture contains
+coordinates only:
+one Workspace, one topic-required Stream, 52 root Messages and one Reply. It
+is safe to include in the driver input and contains neither cookie nor operator
+credential; the driver and installed application inherit neither raw secret.
+The operator file remains readable only by the outer driver process until its
+installed observer closes, then is deleted. It never enters Tauri's environment.
+The subsequent evidence-sealing step is a separate process boundary: only that
+step receives the read-only Cloudflare token needed to reobserve the seven
+deployed Worker versions after the installed transcript has closed.
+
+After the installed run, `installed-artifact-scan.mjs` reads the exact native
+executable, updater artifact, complete extracted installation and embedded
+runtime-asset manifest with the closed legacy-marker policy. Its raw report
+becomes a content-addressed subject for that platform; the aggregate scan cites
+all four reports, and the final dossier recomputes their hashes against the
+candidate manifest instead of accepting a platform/hash/size declaration.
+
+`exercise-installed-social-loop.mjs` accepts no transcript, driver path,
+remote adapter or skip flag. The reviewed platform driver must install and
+exercise the exact updater artifact, emit UI/IPC/public-contract observations,
+and produce its assigned fault/recovery observations. The macOS adapter builds
+its reviewed XCTest bundle and then runs it with `test-without-building`
+against the extracted `.app`; Linux and Windows use `tauri-driver` against the
+installed native executable. Each adapter starts the platform's real screen
+reader (VoiceOver, Orca or the SHA-256-verified portable NVDA) around the whole
+installed action and requires a create-only raw log that names the Punks
+application. The installed drivers then launch a second independent
+Tauri-driver or XCTest process over the same installed bytes, with a fresh
+native screen-reader process and separate IPC, network, asset and interaction
+logs. That process repeats native Tab focus traversal, the compiled 200% text
+zoom ceiling, runtime reduced-motion rules, axe/XCTest trees and contrast
+captures. Its `manual` observations cite the exact artifact and all five
+second-pass log hashes; the platform leg is then covered by GitHub OIDC
+provenance. An external human review remains additive when it exists, but
+cannot replace or reattribute this independent exact-byte pass.
+
+The startup FOLLOW corpus remains a lower diagnostic only. Promotion consumes
+a separate IPC record: the exact Rust client captures real Accepted, Changes,
+Ready and post-ready frames received from staging, then derives all ten
+adversarial verdicts inside the installed binary. Duplicate, gap, divergence
+and crash-before/after-ACK controls use the real captured cursor and payload,
+not an embedded fixture. Distributed Session revocation/reconnect remains an
+independent live observation. The installed trace is restricted to one native
+`operationId`, so concurrent subscriptions cannot be spliced together.
+
+The promotion Session is delivered by the same real Google/GitHub system
+browser flow used for the live Auth proof; the helper stores that exact Session
+in the operating-system credential store before launch. The proof is read from
+the terminal `DesktopAuthFlowDO` and binds provider callback, returned OAuth
+state, browser binding, provider PKCE, native verifier, Punk and Session to the
+exact Auth Worker version, source SHA and staging deployment. The live Worker
+also performs wrong-state, wrong-browser-binding and wrong-native-PKCE probes.
+The compiled ceremony matrix remains diagnostic and cannot replace this proof.
+
+The promotion fault receipt controller remains operator-only for injection and
+recovery, but it does not synthesize an authority failure. The T1 matrix contains
+only authorities addressed by the installed story; OAuth-internal claims and
+transactions are covered by the live Auth proof. Injection is written through
+the named binding into the exact Punk, Session, revocation, Workspace, slug,
+Conversation or Message-content aggregate from the staging fixture, or into the
+Worker-level Erasure/Attestation service target.
+The separate Session-authenticated native command then calls that authority RPC;
+while the fault is active, the RPC fails from inside the named authority. The
+operator token is never inherited by Tauri or its WebView. Each fault remains
+closed through the three intermediate recovery receipts and the authority RPC
+reopens only after its terminal recovery state. Every recovery recomputes the
+real aggregate-state fingerprint and rejects any RPO drift. Every evidence
+record includes target, fingerprint, Worker, binding and class. The partition covers
+every fault/authority coordinate exactly once across Linux and Windows, while
+both macOS legs remain dedicated to their architecture-specific XCTest and
+VoiceOver evidence.
+
+After the immutable promotion pair is published, but before the draft can
+become `Latest`, `punks.operational-release-head.v1` materializes two signed
+executions. Expansion closes `E0…E4`; activation closes `A0…A4`. Every positive
+segment, step Reçu, `etape-fermee`, `phase-fermee` and transition Reçu is
+chained, content-addressed and signed by both anchored Ed25519 approvers. The
+head is published create-only with the draft and in both locked Punks R2
+buckets; a missing or reordered step keeps the draft inactive.
 
 Never paste a private key, certificate password or API token into an issue,
 commit, workflow input or terminal transcript. Feed values directly to

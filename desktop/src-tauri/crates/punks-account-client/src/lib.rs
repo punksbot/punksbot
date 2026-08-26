@@ -39,6 +39,8 @@ mod presence;
 mod presence_connection;
 mod profiles;
 mod promotion_audit;
+mod promotion_conformance;
+mod promotion_fault;
 mod semantic_trace;
 mod session;
 mod social_validation;
@@ -51,6 +53,7 @@ pub use failure::{ClientFailure, FailureKind};
 pub use follow::{
     confirm_follow_batch, reduce_follow_frame, ClientResyncReason, ConversationUnavailableReason,
     FollowConfirmation, FollowEffect, FollowPhase, FollowReduction, FollowServerFrame, FollowState,
+    ServerResyncReason,
 };
 pub use follow_connection::{FollowCancellation, FollowConnection, FollowDelivery};
 pub use message_mutations::MessageReplyTarget;
@@ -65,6 +68,14 @@ pub use presence::{
 pub use presence_connection::{PresenceCancellation, PresenceConnection};
 pub use profiles::{
     PunkProfile, PunkPublicSummary, PunkSearchInput, PunkSearchPage, PunkSummaryPage,
+};
+pub use promotion_audit::promotion_live_follow_conformance;
+pub use promotion_conformance::{
+    promotion_auth_conformance, promotion_follow_conformance, PromotionAuthScenario,
+    PromotionFollowScenario,
+};
+pub use promotion_fault::{
+    PromotionFaultObservation, PromotionFaultObservationInput, PromotionFaultTarget,
 };
 pub use semantic_trace::{
     normalize_semantic_trace, run_semantic_scenario, SemanticEvent, SemanticObservation,

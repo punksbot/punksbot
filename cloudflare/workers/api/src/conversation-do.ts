@@ -94,7 +94,7 @@ import {
   type PreparedMessageContent,
   type ThreadCounterDelta,
 } from "@punks/core";
-import { DurableObject } from "cloudflare:workers";
+import { PromotionFaultableDurableObject } from "../../../shared/promotion-faultable-do";
 
 import type {
   ApiEnv,
@@ -469,7 +469,14 @@ const commandContracts = {
   "conversation.update@1": "punks://contracts/conversation.update@1",
 } as const;
 
-export class ConversationDO extends DurableObject<ApiEnv> {
+export class ConversationDO extends PromotionFaultableDurableObject<ApiEnv> {
+  protected override async promotionRecoveryFingerprint(): Promise<string> {
+    const current = this.effectiveState();
+    if (current === null)
+      throw new Error("promotion Conversation target is missing");
+    return sha256Hex(canonicalJson(current));
+  }
+
   private alarmScheduling: Promise<void> = Promise.resolve();
   private legacyRequiredOriginalContentCommitment = false;
   private readonly typingDeliveryFences = new Map<

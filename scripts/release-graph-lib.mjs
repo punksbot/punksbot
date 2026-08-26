@@ -14,13 +14,16 @@
  *   - le registre peut préparer les lignes de retrait dans le candidat source,
  *     mais aucun candidat ne quitte l'état « preparation » sans les preuves
  *     obligatoires ET le retrait associé rattachés au même SHA ;
+ *   - les étapes E/P/A restent ordonnées et signées mais portent zéro heure
+ *     d'attente minimale : les preuves peuvent fermer la promotion dans le
+ *     même run ;
  *   - deux tranches actives consécutives matérialisent N/N−1 pendant au moins
  *     90 jours ; la contraction exige moins de 1 % d'usage pendant 14 jours ;
  *   - l'attestation contient le SHA, le checkpoint de baseline, les versions
  *     et hashes des registres, les identifiants de staging et les résultats
  *     des gates ;
  *   - attestations et Reçus sont immuables, publiés avec la release et dans
- *     le stockage R2 prévu (create-only, verrouillage d'objet, deux comptes) ;
+ *     deux buckets R2 du compte Punks (create-only, verrouillage d'objet) ;
  *   - le roll-forward scelle un nouveau graphe et repart à E0 ; un retour à
  *     une version Punks antérieure recalcule les treize contrôles exacts et un
  *     nouveau Reçu à l'instant du retour ; Buzz reste hors vocabulaire.
@@ -62,129 +65,138 @@ export const SEUIL_USAGE_CONTRACTION = 1;
 export const FENETRE_CONTRACTION_JOURS = 14;
 export const JOUR_MS = 86400000;
 export const HEURE_MS = 3600000;
+export const MODE_CADENCE_PROMOTION = "preuves-immediates";
+export const DUREE_MINIMALE_PROMOTION_HEURES = 0;
 
-/** Cadences fermées de la décision #16, dans leur ordre obligatoire. */
+/**
+ * Étapes fermées de la décision #16, dans leur ordre obligatoire.
+ *
+ * Leur durée minimale est nulle : la promotion est gouvernée par les preuves
+ * et peut être fermée dans le même run. Les segments restent strictement
+ * positifs et les événements strictement ordonnés afin de conserver une chaîne
+ * observable sans réintroduire une attente calendaire.
+ */
 export const CADENCES_OPERATIONNELLES = Object.freeze({
   expansion: Object.freeze([
-    Object.freeze({ etape: "E0", exposition: "workers:0%", heures: 1 }),
-    Object.freeze({ etape: "E1", exposition: "workers:1%", heures: 2 }),
-    Object.freeze({ etape: "E2", exposition: "workers:10%", heures: 6 }),
-    Object.freeze({ etape: "E3", exposition: "workers:50%", heures: 24 }),
-    Object.freeze({ etape: "E4", exposition: "workers:100%", heures: 48 }),
+    Object.freeze({ etape: "E0", exposition: "workers:0%", heures: 0 }),
+    Object.freeze({ etape: "E1", exposition: "workers:1%", heures: 0 }),
+    Object.freeze({ etape: "E2", exposition: "workers:10%", heures: 0 }),
+    Object.freeze({ etape: "E3", exposition: "workers:50%", heures: 0 }),
+    Object.freeze({ etape: "E4", exposition: "workers:100%", heures: 0 }),
   ]),
   "expansion-stateful": Object.freeze([
     Object.freeze({
       etape: "P0",
       exposition: "stateful:preparation-lecture",
-      heures: 24,
+      heures: 0,
     }),
     Object.freeze({
       etape: "E4",
       exposition: "workers:100%-stateful",
-      heures: 48,
+      heures: 0,
     }),
   ]),
   active: Object.freeze([
     Object.freeze({
       etape: "A0",
       exposition: "desktop:pilote-signe",
-      heures: 48,
+      heures: 0,
     }),
     Object.freeze({
       etape: "A1",
       exposition: "desktop:canal-prerelease",
-      heures: 168,
+      heures: 0,
     }),
     Object.freeze({
       etape: "A2",
       exposition: "desktop:stable-10%",
-      heures: 24,
+      heures: 0,
     }),
     Object.freeze({
       etape: "A3",
       exposition: "desktop:stable-50%",
-      heures: 48,
+      heures: 0,
     }),
     Object.freeze({
       etape: "A4",
       exposition: "desktop:stable-100%",
-      heures: 168,
+      heures: 0,
     }),
   ]),
   contraction: Object.freeze([
     Object.freeze({
       etape: "E4",
       exposition: "workers:100%-contraction",
-      heures: 48,
+      heures: 0,
     }),
   ]),
   "roll-forward": Object.freeze([
-    Object.freeze({ etape: "E0", exposition: "workers:0%", heures: 1 }),
-    Object.freeze({ etape: "E1", exposition: "workers:1%", heures: 2 }),
-    Object.freeze({ etape: "E2", exposition: "workers:10%", heures: 6 }),
-    Object.freeze({ etape: "E3", exposition: "workers:50%", heures: 24 }),
-    Object.freeze({ etape: "E4", exposition: "workers:100%", heures: 48 }),
+    Object.freeze({ etape: "E0", exposition: "workers:0%", heures: 0 }),
+    Object.freeze({ etape: "E1", exposition: "workers:1%", heures: 0 }),
+    Object.freeze({ etape: "E2", exposition: "workers:10%", heures: 0 }),
+    Object.freeze({ etape: "E3", exposition: "workers:50%", heures: 0 }),
+    Object.freeze({ etape: "E4", exposition: "workers:100%", heures: 0 }),
     Object.freeze({
       etape: "A0",
       exposition: "desktop:pilote-signe",
-      heures: 48,
+      heures: 0,
     }),
     Object.freeze({
       etape: "A1",
       exposition: "desktop:canal-prerelease",
-      heures: 168,
+      heures: 0,
     }),
     Object.freeze({
       etape: "A2",
       exposition: "desktop:stable-10%",
-      heures: 24,
+      heures: 0,
     }),
     Object.freeze({
       etape: "A3",
       exposition: "desktop:stable-50%",
-      heures: 48,
+      heures: 0,
     }),
     Object.freeze({
       etape: "A4",
       exposition: "desktop:stable-100%",
-      heures: 168,
+      heures: 0,
     }),
   ]),
   "roll-forward-stateful": Object.freeze([
     Object.freeze({
       etape: "P0",
       exposition: "stateful:preparation-lecture",
-      heures: 24,
+      heures: 0,
     }),
     Object.freeze({
       etape: "E4",
       exposition: "workers:100%-stateful",
-      heures: 48,
+      heures: 0,
     }),
     Object.freeze({
       etape: "A0",
       exposition: "desktop:pilote-signe",
-      heures: 48,
+      heures: 0,
     }),
     Object.freeze({
       etape: "A1",
       exposition: "desktop:canal-prerelease",
-      heures: 168,
+      heures: 0,
     }),
     Object.freeze({
       etape: "A2",
       exposition: "desktop:stable-10%",
-      heures: 24,
+      heures: 0,
     }),
     Object.freeze({
       etape: "A3",
       exposition: "desktop:stable-50%",
-      heures: 48,
+      heures: 0,
     }),
     Object.freeze({
       etape: "A4",
       exposition: "desktop:stable-100%",
-      heures: 168,
+      heures: 0,
     }),
   ]),
 });
@@ -192,14 +204,16 @@ export const CADENCES_OPERATIONNELLES = Object.freeze({
 export const PUBLICATION = ["release", "r2"];
 export const ECRITURE_IMMUABLE = "create-only";
 export const VERROUILLAGE_OBJET = "compliance";
-export const COMPTES_R2 = 2;
+export const BUCKETS_R2 = 2;
+export const PUNKS_CLOUDFLARE_ACCOUNT_ID = "3a391620584c792dbbd8cfa148d7634a";
 
 /**
  * Racine de confiance du registre opérateur. Toute rotation ajoute les clés au
  * graphe et met à jour cet ancrage dans une modification de code distinctement
  * revue ; le document de release ne peut donc pas s'auto-approuver.
  */
-export const ANCRAGE_APPROBATEURS_RELEASE = canonicalSha256([]);
+export const ANCRAGE_APPROBATEURS_RELEASE =
+  "b4dbbbdcf4074cd95063e1296afb2883de01a01fbf3e3ca5fe1c9b4f7a45805e";
 
 export const RECUPERATION_NORMALE = "roll-forward";
 export const RETOUR_PUNKS = "certificat-compatibilite-exige";
@@ -820,6 +834,7 @@ function validerPolitique(politique, push) {
   }
   if (
     !listeEgale(Object.keys(politique).sort(), [
+      "cadence-promotion",
       "fenetre-mesure-contraction-jours",
       "fenetre-support-jours",
       "immuabilite",
@@ -829,6 +844,23 @@ function validerPolitique(politique, push) {
     ])
   ) {
     push("politique : schéma fermé exigé");
+  }
+  const cadencePromotion = politique["cadence-promotion"];
+  if (
+    !cadencePromotion ||
+    typeof cadencePromotion !== "object" ||
+    Array.isArray(cadencePromotion) ||
+    !listeEgale(Object.keys(cadencePromotion).sort(), [
+      "duree-minimale-heures-par-etape",
+      "mode",
+    ]) ||
+    cadencePromotion.mode !== MODE_CADENCE_PROMOTION ||
+    cadencePromotion["duree-minimale-heures-par-etape"] !==
+      DUREE_MINIMALE_PROMOTION_HEURES
+  ) {
+    push(
+      "politique : cadence-promotion doit imposer les preuves immédiates et zéro heure d'attente minimale par étape",
+    );
   }
   if (politique["fenetre-support-jours"] !== FENETRE_SUPPORT_JOURS) {
     push(
@@ -919,7 +951,7 @@ function validerPolitique(politique, push) {
     }
     if (
       !listeEgale(Object.keys(regles).sort(), [
-        "comptes-r2",
+        "buckets-r2",
         "ecriture",
         "publication",
         "verrouillage-objet",
@@ -942,9 +974,9 @@ function validerPolitique(politique, push) {
         `politique : immuabilite.${sorte}.verrouillage-objet doit être ${VERROUILLAGE_OBJET}`,
       );
     }
-    if (regles["comptes-r2"] !== COMPTES_R2) {
+    if (regles["buckets-r2"] !== BUCKETS_R2) {
       push(
-        `politique : immuabilite.${sorte}.comptes-r2 doit être ${COMPTES_R2} (contenus R2 critiques sur deux comptes)`,
+        `politique : immuabilite.${sorte}.buckets-r2 doit être ${BUCKETS_R2} (contenus critiques dans deux buckets R2 Punks distincts)`,
       );
     }
   }
@@ -1064,15 +1096,14 @@ function validerPublication(publication, releases, push) {
     : false;
   if (
     !Array.isArray(destinations) ||
-    (scellee && destinations.length !== COMPTES_R2) ||
-    (!scellee && ![0, COMPTES_R2].includes(destinations.length))
+    (scellee && destinations.length !== BUCKETS_R2) ||
+    (!scellee && ![0, BUCKETS_R2].includes(destinations.length))
   ) {
     push(
-      `publication : exactement ${COMPTES_R2} destinations R2 ancrées sont exigées avant tout scellement`,
+      `publication : exactement ${BUCKETS_R2} destinations R2 ancrées sont exigées avant tout scellement`,
     );
     return;
   }
-  const comptes = new Set();
   const buckets = new Set();
   for (const [index, destination] of destinations.entries()) {
     const role = index === 0 ? "primaire" : "secondaire";
@@ -1087,20 +1118,18 @@ function validerPublication(publication, releases, push) {
         "verrouillage-objet",
       ]) ||
       destination.role !== role ||
-      !/^[0-9a-f]{32}$/.test(destination.compte ?? "") ||
+      destination.compte !== PUNKS_CLOUDFLARE_ACCOUNT_ID ||
       typeof destination.bucket !== "string" ||
       destination.bucket.trim() !== destination.bucket ||
       destination.bucket === "" ||
       destination.bucket.includes("/") ||
       destination["verrouillage-objet"] !== VERROUILLAGE_OBJET ||
-      comptes.has(destination.compte) ||
       buckets.has(destination.bucket)
     ) {
       push(
-        `publication : destination R2 ${role} canonique, distincte et verrouillée compliance exigée`,
+        `publication : destination R2 ${role} canonique dans le compte Cloudflare Punks, distincte et verrouillée compliance exigée`,
       );
     }
-    comptes.add(destination?.compte);
     buckets.add(destination?.bucket);
   }
 }

@@ -17,6 +17,34 @@ export const REQUIRED_STORIES = Object.freeze([
   "reactions",
 ]);
 
+export const FOLLOW_SCENARIO_OUTCOMES = Object.freeze({
+  snapshot: "vert",
+  "pagination-concurrente": "vert",
+  "changements-avant-ready": "vert",
+  "doublon-exact": "ignore",
+  trou: "resync",
+  divergence: "resync",
+  "crash-avant-ack": "rejoue",
+  "crash-apres-ack": "ne-rejoue-pas",
+  resync: "vert",
+  terminal: "vert",
+});
+
+export const AUTHENTICATION_SCENARIO_OUTCOMES = Object.freeze({
+  "google-succes": "vert",
+  "github-succes": "vert",
+  "passkey-succes": "vert",
+  "google-annulation": "vert",
+  "github-annulation": "vert",
+  "passkey-annulation": "vert",
+  "mauvaise-origine": "refuse",
+  "deeplink-rejoue": "refuse",
+  expiration: "expire",
+  "crash-livraison-avant-confirmation": "reprenable",
+  renouvellement: "borne",
+  "deconnexion-hors-ligne": "mise-en-file",
+});
+
 export const VERIFICATIONS_ARTEFACT = Object.freeze([
   "signature",
   "identite-application",
@@ -83,6 +111,8 @@ export function validateInstalledTranscript(
       "verifications",
       "stories",
       "accessibility",
+      "authentication",
+      "rawEvidence",
       "network",
     ],
     "driver transcript",
@@ -101,6 +131,26 @@ export function validateInstalledTranscript(
     refuser(
       "driver transcript identity or result does not match the candidate",
     );
+  }
+
+  clesExactes(
+    transcript.authentication,
+    ["contour", "proof"],
+    "installed authentication",
+  );
+  const liveAuth = transcript.authentication.proof;
+  if (
+    transcript.authentication.contour !== "navigateur-systeme-provider-reel" ||
+    liveAuth?.schema !== "punks.live-staging-auth-proof.v1" ||
+    liveAuth?.sourceSha !== candidateSha ||
+    liveAuth?.stagingDeploymentId !== stagingDeploymentId ||
+    !["github", "google"].includes(liveAuth?.flow?.method) ||
+    liveAuth?.flow?.environment !== "staging" ||
+    liveAuth?.negative?.wrongOauthState !== "refused" ||
+    liveAuth?.negative?.wrongBrowserBinding !== "refused" ||
+    liveAuth?.negative?.wrongNativePkceVerifier !== "refused"
+  ) {
+    refuser("one real system-browser provider proof is required");
   }
   const expectedDriver = platform.startsWith("macos-")
     ? "xctest"
@@ -130,6 +180,19 @@ export function validateInstalledTranscript(
     transcript.installed.launched !== true
   ) {
     refuser("installed application identity or artifact digest is divergent");
+  }
+
+  clesExactes(
+    transcript.rawEvidence,
+    ["indexSha256", "files"],
+    "installed raw evidence",
+  );
+  if (
+    !SHA256_RE.test(transcript.rawEvidence.indexSha256 ?? "") ||
+    !Number.isSafeInteger(transcript.rawEvidence.files) ||
+    transcript.rawEvidence.files < 1
+  ) {
+    refuser("installed raw evidence is missing or invalid");
   }
 
   clesExactes(

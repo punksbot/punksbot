@@ -116,6 +116,7 @@ describe("role-separated private Auth RPC entrypoints", () => {
         "constructor",
         "fetch",
         "getPunkProfile",
+        "issuePromotionSession",
         "punkExists",
         "resolvePunkSummary",
         "resolveSessionCookie",

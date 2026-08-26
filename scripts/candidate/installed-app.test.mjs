@@ -25,7 +25,12 @@ import {
   REQUIRED_STORIES,
   run,
 } from "./installed-app.mjs";
-import { preuveFollowFixture } from "../promotion-test-fixtures.mjs";
+import {
+  contenuScanArtefactInstalleFixture,
+  preuveFollowFixture,
+} from "../promotion-test-fixtures.mjs";
+import { PREUVES_RECUPERATION } from "../promotion-resilience-lib.mjs";
+import { assignedResilienceScenarios } from "./resilience-observation.mjs";
 
 const SOURCE_SHA = "4a".repeat(20);
 const STAGING_PROOF_MATERIAL = {
@@ -59,6 +64,12 @@ const ACCESSIBILITY_CRITERIA = [
   "lecteur-ecran",
 ];
 const ACCESSIBILITY_METHODS = ["automatique", "manuelle"];
+const AUTHORITIES = JSON.parse(
+  readFileSync(
+    new URL("../../cloudflare/promotion-profiles.json", import.meta.url),
+    "utf8",
+  ),
+).profiles[0].authorities.map(({ id }) => id);
 
 function screenReader(platform) {
   if (platform.startsWith("macos-")) return "VoiceOver";
@@ -135,6 +146,31 @@ function fixture(platform = "linux-x64") {
   const signature = join(root, signatureName);
   writeFileSync(artifact, "exact signed installer\n");
   writeFileSync(signature, "exact updater signature\n");
+  const rawEvidencePath = join(root, "raw-evidence");
+  mkdirSync(rawEvidencePath);
+  writeFileSync(join(rawEvidencePath, "driver.log"), "installed observed\n");
+  const rawFiles = [
+    {
+      path: "driver.log",
+      size: Buffer.byteLength("installed observed\n"),
+      sha256: sha256(Buffer.from("installed observed\n")),
+    },
+  ];
+  const rawIndexContent = Buffer.from(
+    `${JSON.stringify(
+      {
+        schema: "punks.installed-raw-evidence-index.v1",
+        platform,
+        candidateSha: SOURCE_SHA,
+        stagingDeploymentId: DEPLOYMENT_ID,
+        artifactSha256: sha256(artifact),
+        files: rawFiles,
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  writeFileSync(join(rawEvidencePath, "index.json"), rawIndexContent);
   const transcript = {
     schema: "punks.installed-social-loop-transcript.v1",
     candidateSha: SOURCE_SHA,
@@ -176,6 +212,24 @@ function fixture(platform = "linux-x64") {
         },
       ]),
     ),
+    authentication: {
+      contour: "navigateur-systeme-provider-reel",
+      proof: {
+        schema: "punks.live-staging-auth-proof.v1",
+        sourceSha: SOURCE_SHA,
+        stagingDeploymentId: DEPLOYMENT_ID,
+        flow: { method: "github", environment: "staging" },
+        negative: {
+          wrongOauthState: "refused",
+          wrongBrowserBinding: "refused",
+          wrongNativePkceVerifier: "refused",
+        },
+      },
+    },
+    rawEvidence: {
+      indexSha256: sha256(rawIndexContent),
+      files: rawFiles.length,
+    },
     network: {
       deployment: {
         transport: "https",
@@ -204,6 +258,53 @@ function fixture(platform = "linux-x64") {
   };
   const transcriptPath = join(root, "transcript.json");
   writeFileSync(transcriptPath, `${JSON.stringify(transcript)}\n`);
+  const resiliencePath = join(root, "resilience.json");
+  writeFileSync(
+    resiliencePath,
+    `${JSON.stringify({
+      schema: "punks.installed-resilience-observation.v1",
+      platform,
+      candidateSha: SOURCE_SHA,
+      stagingDeploymentId: DEPLOYMENT_ID,
+      artifactSha256: sha256(artifact),
+      scenarios: assignedResilienceScenarios(platform, AUTHORITIES).map(
+        ({ type, authority }, index) => ({
+          type,
+          authority,
+          executionId: `${platform}-${type}-${authority}`,
+          injection: {
+            startedAt: `2026-08-26T12:${String(index).padStart(2, "0")}:00.000Z`,
+            observedAt: `2026-08-26T12:${String(index).padStart(2, "0")}:01.000Z`,
+            operation: "installed-public-contract",
+            failureKind: type === "revocation" ? "problem" : "transport",
+            observations: [`${type}/${authority} failed closed`],
+          },
+          recoveries: Object.fromEntries(
+            PREUVES_RECUPERATION.map((proof) => [
+              proof,
+              {
+                observedAt: `2026-08-26T12:${String(index).padStart(2, "0")}:02.000Z`,
+                observations: [`${proof} recovered ${type}/${authority}`],
+              },
+            ]),
+          ),
+        }),
+      ),
+    })}\n`,
+  );
+  const artifactScanPath = join(root, "artifact-scan.json");
+  writeFileSync(
+    artifactScanPath,
+    contenuScanArtefactInstalleFixture({
+      plateforme: platform,
+      candidateSha: SOURCE_SHA,
+      nomArtefact: artifactName,
+      tailleArtefact: readFileSync(artifact).length,
+      sha256Artefact: sha256(artifact),
+      sha256Natif: "7c".repeat(32),
+      tailleNatif: 123,
+    }),
+  );
   const stagingDeploymentProof = join(root, "staging-deployment-proof.json");
   writeFileSync(
     stagingDeploymentProof,
@@ -222,6 +323,9 @@ function fixture(platform = "linux-x64") {
     signature,
     transcript,
     transcriptPath,
+    resiliencePath,
+    artifactScanPath,
+    rawEvidencePath,
     stagingDeploymentProof,
   };
 }
@@ -239,13 +343,24 @@ test("emits only content-addressed evidence tied to the installed artifact", asy
       artifact: input.artifact,
       signature: input.signature,
       transcript: input.transcriptPath,
+      resilience: input.resiliencePath,
+      artifactScan: input.artifactScanPath,
+      rawEvidence: input.rawEvidencePath,
       output,
       networkOutput,
     },
     { remoteBoundary: remoteBoundary() },
   );
 
-  assert.equal(result.references.length, 4 + 5 + REQUIRED_STORIES.length + 7);
+  assert.equal(
+    result.references.length,
+    6 +
+      5 +
+      REQUIRED_STORIES.length +
+      7 +
+      assignedResilienceScenarios("linux-x64", AUTHORITIES).length *
+        (1 + PREUVES_RECUPERATION.length),
+  );
   const networkProof = JSON.parse(readFileSync(networkOutput, "utf8"));
   assert.deepEqual(networkProof, {
     schema: "punks.installed-network-proof.v1",
@@ -271,6 +386,42 @@ test("emits only content-addressed evidence tied to the installed artifact", asy
   );
   assert.equal(bundleProof.data.subjectSha256, sha256(input.artifact));
   assert.equal(bundleProof.data.bundleId, "bot.punks.desktop.staging");
+  const scanReference = index.preuves.find(
+    ({ id }) => id === "scan/artefact/linux-x64",
+  );
+  const scanProof = JSON.parse(
+    readFileSync(join(output, scanReference.chemin), "utf8"),
+  );
+  const scanObservation = JSON.parse(
+    readFileSync(input.artifactScanPath, "utf8"),
+  );
+  assert.equal(scanProof.data.sha256Artefact, sha256(input.artifact));
+  assert.equal(
+    scanProof.data.installationSha256,
+    scanObservation.installation.sha256,
+  );
+  assert.equal(
+    scanProof.data.fichiersInstallation,
+    scanObservation.installation.files.length,
+  );
+  assert.equal(scanReference.sujet.sha256, sha256(input.artifactScanPath));
+
+  const rawReference = index.preuves.find(({ id }) => id === "brut/linux-x64");
+  const rawProof = JSON.parse(
+    readFileSync(join(output, rawReference.chemin), "utf8"),
+  );
+  const rawArchive = JSON.parse(
+    readFileSync(join(output, rawReference.sujet.chemin), "utf8"),
+  );
+  assert.equal(
+    rawProof.data.indexSha256,
+    input.transcript.rawEvidence.indexSha256,
+  );
+  assert.equal(rawArchive.schema, "punks.installed-raw-evidence-archive.v1");
+  assert.equal(
+    Buffer.from(rawArchive.files[0].contentBase64, "base64").toString("utf8"),
+    "installed observed\n",
+  );
 
   const transcriptReference = index.preuves.find(
     ({ id }) => id === "transcript/linux-x64",
@@ -345,6 +496,9 @@ test("rejects missing stories, false UI claims, legacy traffic and tampering", a
           artifact: input.artifact,
           signature: input.signature,
           transcript: input.transcriptPath,
+          resilience: input.resiliencePath,
+          artifactScan: input.artifactScanPath,
+          rawEvidence: input.rawEvidencePath,
           output: join(input.root, "evidence"),
         },
         { remoteBoundary: remoteBoundary() },
@@ -368,6 +522,9 @@ test("rejects missing stories, false UI claims, legacy traffic and tampering", a
         artifact: tampered.artifact,
         signature: tampered.signature,
         transcript: tampered.transcriptPath,
+        resilience: tampered.resiliencePath,
+        artifactScan: tampered.artifactScanPath,
+        rawEvidence: tampered.rawEvidencePath,
         output: join(tampered.root, "evidence"),
       },
       { remoteBoundary: remoteBoundary() },
@@ -414,6 +571,9 @@ test("requires automated and manual evidence with the native screen reader", asy
           artifact: input.artifact,
           signature: input.signature,
           transcript: input.transcriptPath,
+          resilience: input.resiliencePath,
+          artifactScan: input.artifactScanPath,
+          rawEvidence: input.rawEvidencePath,
           output: join(input.root, "evidence"),
         },
         { remoteBoundary: remoteBoundary() },
@@ -438,6 +598,9 @@ test("refuses to overwrite or merge an existing evidence directory", async (t) =
         artifact: input.artifact,
         signature: input.signature,
         transcript: input.transcriptPath,
+        resilience: input.resiliencePath,
+        artifactScan: input.artifactScanPath,
+        rawEvidence: input.rawEvidencePath,
         output,
       },
       { remoteBoundary: remoteBoundary() },
@@ -468,6 +631,9 @@ test("atomically refuses a destination created during remote reobservation", asy
         artifact: input.artifact,
         signature: input.signature,
         transcript: input.transcriptPath,
+        resilience: input.resiliencePath,
+        artifactScan: input.artifactScanPath,
+        rawEvidence: input.rawEvidencePath,
         output,
       },
       { remoteBoundary: boundary },
@@ -493,6 +659,9 @@ test("rejects a forged staging deployment even when every declaration repeats it
         artifact: input.artifact,
         signature: input.signature,
         transcript: input.transcriptPath,
+        resilience: input.resiliencePath,
+        artifactScan: input.artifactScanPath,
+        rawEvidence: input.rawEvidencePath,
         output: join(input.root, "evidence"),
       },
       { remoteBoundary: remoteBoundary() },
@@ -525,6 +694,9 @@ test("reobserves Cloudflare after the transcript and writes nothing on aggregate
         artifact: input.artifact,
         signature: input.signature,
         transcript: input.transcriptPath,
+        resilience: input.resiliencePath,
+        artifactScan: input.artifactScanPath,
+        rawEvidence: input.rawEvidencePath,
         output,
       },
       { remoteBoundary: boundary },
@@ -555,6 +727,9 @@ test("keeps the transcript snapshot read before Cloudflare reobservation", async
       artifact: input.artifact,
       signature: input.signature,
       transcript: input.transcriptPath,
+      resilience: input.resiliencePath,
+      artifactScan: input.artifactScanPath,
+      rawEvidence: input.rawEvidencePath,
       output,
     },
     { remoteBoundary: boundary },
@@ -584,6 +759,13 @@ test("refuses a release asset attributed to another platform", async (t) => {
   writeFileSync(signature, readFileSync(input.signature));
   input.transcript.installed.artifactSha256 = sha256(artifact);
   writeFileSync(input.transcriptPath, `${JSON.stringify(input.transcript)}\n`);
+  const artifactScan = JSON.parse(readFileSync(input.artifactScanPath, "utf8"));
+  artifactScan.artifact = {
+    name: foreign[0],
+    size: readFileSync(artifact).length,
+    sha256: sha256(artifact),
+  };
+  writeFileSync(input.artifactScanPath, `${JSON.stringify(artifactScan)}\n`);
 
   await assert.rejects(
     emitInstalledAppEvidence(
@@ -594,6 +776,9 @@ test("refuses a release asset attributed to another platform", async (t) => {
         artifact,
         signature,
         transcript: input.transcriptPath,
+        resilience: input.resiliencePath,
+        artifactScan: input.artifactScanPath,
+        rawEvidence: input.rawEvidencePath,
         output: join(input.root, "evidence"),
       },
       { remoteBoundary: remoteBoundary() },
@@ -619,6 +804,12 @@ test("the real CLI exposes no post-proof or remote-boundary bypass", async (t) =
       input.signature,
       "--driver-transcript",
       input.transcriptPath,
+      "--resilience-observation",
+      input.resiliencePath,
+      "--artifact-scan",
+      input.artifactScanPath,
+      "--raw-evidence",
+      input.rawEvidencePath,
       "--proof-output",
       join(input.root, "evidence"),
       "--network-output",

@@ -148,7 +148,7 @@ describe("DesktopAuthFlow protocol (issue #54)", () => {
     ).toBe(201);
   });
 
-  it("pose le browser-binding dans le navigateur et consomme state une seule fois", async () => {
+  it("reprend le callback desktop lié au state quand le cookie SameSite manque", async () => {
     const subject = `desktop-state-${crypto.randomUUID()}`;
     await provisionIdentity(subject);
     const { started } = await startDesktop();
@@ -162,17 +162,46 @@ describe("DesktopAuthFlow protocol (issue #54)", () => {
       authEnv,
       providerFixture(subject),
     );
-    expect(withoutBinding.status).toBe(400);
+    expect(withoutBinding.status).toBe(303);
+    const delivered = await claim(started);
+    expect(delivered.status).toBe(200);
+    const delivery = (await delivered.json()) as { deliveryId: string };
+    expect((await confirm(started, delivery.deliveryId)).status).toBe(200);
+    const proofStub = authEnv.DESKTOP_AUTH_FLOWS.getByName(started.flowId);
+    const metadata = await proofStub.browserMetadata();
+    expect({
+      phase: metadata?.phase,
+      result: metadata?.result,
+      hasPunk: metadata !== null && metadata.punkId !== null,
+      hasSession: metadata !== null && metadata.sessionId !== null,
+      hasBrowserCompleted:
+        metadata !== null && metadata.browserCompletedAt !== null,
+      hasConfirmed: metadata !== null && metadata.confirmedAt !== null,
+      hasBrowserBinding:
+        metadata !== null && metadata.browserBindingHash !== null,
+      hasOauthState: metadata !== null && metadata.oauthState !== null,
+      hasProviderPkce: metadata !== null && metadata.codeVerifier !== null,
+    }).toEqual({
+      phase: "confirmed",
+      result: "success",
+      hasPunk: true,
+      hasSession: true,
+      hasBrowserCompleted: true,
+      hasConfirmed: true,
+      hasBrowserBinding: true,
+      hasOauthState: true,
+      hasProviderPkce: true,
+    });
+    const proof = await proofStub.promotionProof();
+    expect(proof).toMatchObject({
+      flowId: started.flowId,
+      method: "google",
+      browserBindingHash: expect.stringMatching(/^[0-9a-f]{64}$/),
+      oauthStateHash: expect.stringMatching(/^[0-9a-f]{64}$/),
+      providerPkceHash: expect.stringMatching(/^[0-9a-f]{64}$/),
+      nativeVerifierCommitment: started.commitment,
+    });
     const callbackUrl = `${origin}/api/auth/v1/oauth/google/callback?state=${launched.state}&code=x`;
-    expect(
-      (
-        await route(
-          new Request(callbackUrl, { headers: { cookie: launched.cookie } }),
-          authEnv,
-          providerFixture(subject),
-        )
-      ).status,
-    ).toBe(303);
     expect(
       (
         await route(
@@ -300,19 +329,101 @@ describe("DesktopAuthFlow protocol (issue #54)", () => {
     const subject = `desktop-create-${crypto.randomUUID()}`;
     const { started } = await startDesktop();
     if (started === null) throw new Error("desktop start absent");
-    const completed = await completeOAuth(started, subject);
-    expect(completed.response.status).toBe(200);
-    expect(await completed.response.text()).toContain("Créer mon Compte Punks");
+    const launched = await launchOAuth(started);
+    const completed = await finishOAuth(launched, subject);
+    expect(completed.status).toBe(200);
+    const page = await completed.text();
+    expect(page).toContain("Créer mon Compte Punks");
+    expect(page).toContain(`name="state" value="${launched.state}"`);
+    const capability = page.match(
+      /name="capability" value="([A-Za-z0-9_-]{43})"/,
+    )?.[1];
+    expect(capability).toBeTypeOf("string");
+    if (capability === undefined) throw new Error("capability absente");
     expect(await (await status(started)).json()).toMatchObject({
       phase: "browser_complete",
       result: "human_action_required",
     });
+
+    const reopened = await route(
+      new Request(started.browserUrl, {
+        headers: { cookie: launched.cookie },
+      }),
+      authEnv,
+    );
+    expect(reopened.status).toBe(200);
+    expect(await reopened.text()).toContain(
+      `name="state" value="${launched.state}"`,
+    );
+
+    const resumed = await route(
+      new Request(
+        `${origin}/api/auth/v1/desktop/browser/oauth/resume?flow=${started.flowId}`,
+        { headers: { cookie: launched.cookie } },
+      ),
+      authEnv,
+    );
+    expect(resumed.status).toBe(200);
+    expect(await resumed.text()).toContain(
+      `name="state" value="${launched.state}"`,
+    );
+    expect(
+      (
+        await route(
+          new Request(
+            `${origin}/api/auth/v1/desktop/browser/oauth/resume?flow=${started.flowId}`,
+          ),
+          authEnv,
+        )
+      ).status,
+    ).toBe(400);
+
+    const forged = new FormData();
+    forged.set("flow", started.flowId);
+    forged.set("state", "A".repeat(43));
+    forged.set("capability", capability);
+    expect(
+      (
+        await route(
+          new Request(`${origin}/api/auth/v1/desktop/browser/oauth/confirm`, {
+            method: "POST",
+            headers: {
+              origin: "https://github.com",
+            },
+            body: forged,
+          }),
+          authEnv,
+        )
+      ).status,
+    ).toBe(403);
+
+    const forgedCapability = new FormData();
+    forgedCapability.set("flow", started.flowId);
+    forgedCapability.set("state", launched.state);
+    forgedCapability.set("capability", "A".repeat(43));
+    expect(
+      (
+        await route(
+          new Request(`${origin}/api/auth/v1/desktop/browser/oauth/confirm`, {
+            method: "POST",
+            headers: { origin: "https://github.com" },
+            body: forgedCapability,
+          }),
+          authEnv,
+        )
+      ).status,
+    ).toBe(403);
+
     const form = new FormData();
     form.set("flow", started.flowId);
+    form.set("state", launched.state);
+    form.set("capability", capability);
     const confirmed = await route(
       new Request(`${origin}/api/auth/v1/desktop/browser/oauth/confirm`, {
         method: "POST",
-        headers: { origin, cookie: completed.browserCookie },
+        headers: {
+          origin: "https://github.com",
+        },
         body: form,
       }),
       authEnv,

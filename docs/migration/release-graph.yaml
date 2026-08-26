@@ -36,9 +36,20 @@
 #     Punks antérieure exige les treize contrôles recalculés à l'instant UTC
 #     exact, une cible déjà activée et un nouveau Reçu signé ; aucun retour vers
 #     Buzz n’existe.
+#   - E0…E4, A0…A4 et P0 restent des étapes ordonnées, signées et obligatoires,
+#     mais leur durée minimale est zéro heure. Elles peuvent être fermées dans
+#     le même run lorsque leurs segments observés sont positifs, suffisamment
+#     échantillonnés et verts ; tout changement de graphe impose leur rejeu.
+#   - Bootstrap T1 : ce fichier du commit candidat reste en preparation avec
+#     sha: null pour éviter toute auto-référence. La tête active est matérialisée
+#     dans le même run par le dossier, l'attestation et le Reçu immuables publiés
+#     avant activation. punks.operational-release-head.v1 ferme et signe E0…E4,
+#     A0…A4, etape-fermee, phase-fermee et les deux transitions avant Latest,
+#     puis cette tête est recopiée append-only dans le registre source.
 #   - Attestations et Reçus sont immuables : écriture create-only,
-#     verrouillage d’objet, deux comptes R2, publication avec la release ET
-#     dans le stockage R2 prévu. Les signatures Ed25519 sont vérifiées contre
+#     verrouillage d’objet, deux buckets R2 distincts dans le compte Punks,
+#     publication avec la release ET dans le stockage R2 prévu. Les signatures
+#     Ed25519 sont vérifiées contre
 #     le registre de clés approuvées et un Reçu de promotion lie toujours le
 #     hash canonique de l'attestation finale.
 #   - Le candidat en preparation porte les hashes vivants recalculés par le
@@ -63,6 +74,9 @@ references:
     - docs/adr/0060-graphe-de-release-expansion-activation-contraction.md
 
 politique:
+  cadence-promotion:
+    mode: preuves-immediates
+    duree-minimale-heures-par-etape: 0
   fenetre-support-jours: 90
   seuil-usage-contraction: 1
   fenetre-mesure-contraction-jours: 14
@@ -79,12 +93,12 @@ politique:
       publication: [release, r2]
       ecriture: create-only
       verrouillage-objet: compliance
-      comptes-r2: 2
+      buckets-r2: 2
     recus:
       publication: [release, r2]
       ecriture: create-only
       verrouillage-objet: compliance
-      comptes-r2: 2
+      buckets-r2: 2
 
 etats: [preparation, expansion, active, contraction, contractee]
 
@@ -129,10 +143,15 @@ plateformes: [macos-arm64, macos-x64, linux-x64, windows-x64]
 
 publication:
   r2:
-    # À remplir avec deux comptes Cloudflare distincts avant le premier
-    # scellement. Le gate refuse toute release scellée tant que cette liste est
-    # vide, et le publisher compare ensuite les destinations octet pour octet.
-    destinations: []
+    destinations:
+      - role: primaire
+        compte: 3a391620584c792dbbd8cfa148d7634a
+        bucket: punks-promotion-primary
+        verrouillage-objet: compliance
+      - role: secondaire
+        compte: 3a391620584c792dbbd8cfa148d7634a
+        bucket: punks-promotion-recovery
+        verrouillage-objet: compliance
     layout:
       attestations: releases/{canal}/{id}/attestations/{attestation-sha256}.json
       recus: releases/{canal}/{id}/recus/{recu-sha256}.json
@@ -140,8 +159,11 @@ publication:
 # Registre append-only des identités autorisées à approuver les Reçus. Une
 # release scellée exige deux signatures Ed25519 valides dont les clés SPKI
 # correspondent exactement à deux entrées distinctes de ce registre.
-# Vide tant que le graphe ne contient qu'un candidat en préparation.
-approbateurs-release: []
+approbateurs-release:
+  - id: punks-release-approver-primary
+    cle-publique-spki: MCowBQYDK2VwAyEAfy+QCAihkOfxvNezUNvoGjlU7cP/xOWsipTH7TnbuTc=
+  - id: punks-release-approver-secondary
+    cle-publique-spki: MCowBQYDK2VwAyEAEQctpigFjCAV2+cUBl43oyz4E4ohjs8YAsWaHJ07gN0=
 
 # Journal append-only des attestations supersédées ou révoquées. Chaque entrée
 # lie l'attestation originale, son éventuelle remplaçante et un Reçu signé ;
@@ -195,8 +217,9 @@ releases:
     journal: []
 
 # Tentatives promotionnelles scellées avant E0 et leurs événements signés.
-# Une cadence complète rejoint le journal de la release ; les préfixes, pauses,
-# échecs et quarantaines restent ici de façon append-only et récupérable.
+# Une cadence complète rejoint le journal de la release dans le même run ; les
+# préfixes, pauses, échecs et quarantaines restent ici de façon append-only et
+# récupérable.
 executions: []
 
 # Chronologie client indépendante. Chaque intervalle scellé contient id,

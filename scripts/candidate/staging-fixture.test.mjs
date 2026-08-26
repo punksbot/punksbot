@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   deterministicUuid,
+  parsePromotionSessionBundle,
   prepareStagingFixture,
 } from "./staging-fixture.mjs";
 
@@ -13,6 +14,7 @@ const operatorToken = "operator-secret-never-output-000000000000";
 const punkId = "00000000-0000-8000-8000-000000000001";
 const workspaceId = "00000000-0000-8000-8000-000000000002";
 const conversationId = "00000000-0000-8000-8000-000000000003";
+const sessionId = "00000000-0000-8000-8000-000000000004";
 
 function response(status, body) {
   return new Response(JSON.stringify(body), {
@@ -31,6 +33,29 @@ test("deterministic UUIDs remain source-bound canonical UUIDs", () => {
   assert.notEqual(first, deterministicUuid("conversation", sourceSha));
 });
 
+test("accepts only a promotion Session issued for the exact candidate", () => {
+  const bundle = {
+    source_sha: sourceSha,
+    cookie,
+    metadata: {
+      session_id: "70000000-0000-8000-8000-000000000058",
+      punk_id: punkId,
+      expires_at_seconds: 4_102_444_800,
+      last_renewed_at_seconds: null,
+    },
+    revoke_capability: "r".repeat(64),
+    revoke_expires_at_seconds: 4_102_444_800,
+  };
+  assert.equal(
+    parsePromotionSessionBundle(JSON.stringify(bundle), sourceSha).cookie,
+    cookie,
+  );
+  assert.throws(
+    () => parsePromotionSessionBundle(JSON.stringify(bundle), "34".repeat(20)),
+    /another source SHA/,
+  );
+});
+
 test("prepares one idempotent paginated staging fixture without leaking authority", async () => {
   const calls = [];
   const fakeFetch = async (url, init = {}) => {
@@ -39,7 +64,7 @@ test("prepares one idempotent paginated staging fixture without leaking authorit
     if (path === "/api/auth/v1/session") {
       return response(200, {
         session: {
-          sessionId: "session-proof",
+          sessionId,
           punkId,
           expiresAt: "2026-09-24T00:00:00Z",
           punk: { id: punkId, displayName: "Proof Punk", avatarUrl: null },
@@ -75,12 +100,19 @@ test("prepares one idempotent paginated staging fixture without leaking authorit
   });
 
   assert.equal(fixture.sourceSha, sourceSha);
+  assert.equal(fixture.sessionId, sessionId);
   assert.equal(fixture.workspaceId, workspaceId);
   assert.equal(fixture.conversationId, conversationId);
   assert.equal(fixture.seedMessageIds.length, 52);
+  assert.match(fixture.replyMessageId, /^[0-9a-f-]{36}$/);
   assert.equal(fixture.topicRequired, true);
   assert.doesNotMatch(JSON.stringify(fixture), /operator-secret|punks_session/);
-  assert.equal(calls.length, 55);
+  assert.equal(calls.length, 56);
+  const replyCall = calls.at(-1);
+  assert.equal(
+    JSON.parse(replyCall.init.body).payload.replyToMessageId,
+    fixture.seedMessageIds.at(-1),
+  );
 
   const workspaceCall = calls[1];
   assert.equal(
@@ -125,7 +157,7 @@ test("fails closed on wrong origin, bad session and partial fixture writes", asy
         new URL(url).pathname === "/api/auth/v1/session"
           ? response(200, {
               session: {
-                sessionId: "session-proof",
+                sessionId,
                 punkId,
                 expiresAt: "2026-09-24T00:00:00Z",
                 punk: {

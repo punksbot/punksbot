@@ -20,7 +20,10 @@ import {
   observeStagingDeployment,
   validateStagingDeploymentProof,
 } from "../../cloudflare/scripts/staging-deployment-proof.mjs";
-import { validateInstalledReleaseNames } from "../promotion-materials-lib.mjs";
+import {
+  validateInstalledReleaseNames,
+  validatePromotionProfilesContent,
+} from "../promotion-materials-lib.mjs";
 import {
   MATRICE_ACCESSIBILITE as ACCESSIBILITY,
   METHODES_ACCESSIBILITE,
@@ -28,6 +31,13 @@ import {
   VERIFICATIONS_ARTEFACT as VERIFICATIONS,
   validateInstalledTranscript,
 } from "../promotion-installed-transcript-lib.mjs";
+import { PREUVES_RECUPERATION } from "../promotion-resilience-lib.mjs";
+import { validateInstalledArtifactScan } from "./installed-artifact-scan.mjs";
+import { validateResilienceObservation } from "./resilience-observation.mjs";
+import {
+  buildRawEvidenceArchive,
+  validateInstalledRawEvidence,
+} from "./raw-evidence.mjs";
 
 export { REQUIRED_STORIES };
 
@@ -161,6 +171,9 @@ export async function emitInstalledAppEvidence(
     artifact,
     signature,
     transcript,
+    resilience,
+    artifactScan,
+    rawEvidence,
     output,
     networkOutput = join(resolve(output), "network-proof.json"),
   },
@@ -178,6 +191,38 @@ export async function emitInstalledAppEvidence(
   const artifactDigest = sha256(artifactFile.content);
   const signatureDigest = sha256(signatureFile.content);
   const parsed = parseTranscript(transcript);
+  const resilienceFile = stableFile(resilience, "resilience observation");
+  const artifactScanFile = stableFile(artifactScan, "installed artifact scan");
+  let artifactScanObservation;
+  let resilienceObservation;
+  let promotionProfile;
+  try {
+    resilienceObservation = JSON.parse(resilienceFile.content.toString("utf8"));
+    promotionProfile = validatePromotionProfilesContent(
+      stableFile(
+        fileURLToPath(
+          new URL("../../cloudflare/promotion-profiles.json", import.meta.url),
+        ),
+        "promotion profile material",
+      ).content,
+      { tranche: 1 },
+    );
+    validateResilienceObservation(resilienceObservation, {
+      platform,
+      candidateSha,
+      stagingDeploymentId,
+      artifactSha256: artifactDigest,
+      authorities: promotionProfile.authorities.map(({ id }) => id),
+    });
+    artifactScanObservation = validateInstalledArtifactScan(
+      JSON.parse(artifactScanFile.content.toString("utf8")),
+      { platform, candidateSha, artifactSha256: artifactDigest },
+    );
+  } catch (error) {
+    fail(
+      `installed observation is invalid: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
   validateInstalledReleaseNames({
     platform,
     candidateSha,
@@ -201,6 +246,27 @@ export async function emitInstalledAppEvidence(
     });
   } catch (error) {
     fail(error instanceof Error ? error.message : String(error));
+  }
+  if (
+    artifactScanObservation.native.sha256 !==
+    parsed.transcript.installed.binarySha256
+  ) {
+    fail("installed native scan diverges from the driver-observed executable");
+  }
+  let validatedRawEvidence;
+  try {
+    validatedRawEvidence = validateInstalledRawEvidence({
+      reference: parsed.transcript.rawEvidence,
+      root: rawEvidence,
+      platform,
+      candidateSha,
+      stagingDeploymentId,
+      artifactSha256: artifactDigest,
+    });
+  } catch (error) {
+    fail(
+      `installed raw evidence is invalid: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
   const { stories, accessibility } = transcriptValide;
   const outputPath = resolve(output);
@@ -273,6 +339,17 @@ export async function emitInstalledAppEvidence(
     postStagingContent,
     "staging-post-exercise.json",
   );
+  const artifactScanSubject = writeSubject(
+    outputPath,
+    artifactScanFile.content,
+    "installed-artifact-scan.json",
+  );
+  const rawEvidenceArchive = buildRawEvidenceArchive(validatedRawEvidence);
+  const rawEvidenceSubject = writeSubject(
+    outputPath,
+    rawEvidenceArchive,
+    "installed-raw-evidence-archive.json",
+  );
   const values = [
     proof({
       ...common,
@@ -322,6 +399,31 @@ export async function emitInstalledAppEvidence(
           }),
         ),
         sequence: ["transcript-installed", "cloudflare-reobserved"],
+      },
+    }),
+    proof({
+      ...common,
+      id: `scan/artefact/${platform}`,
+      data: {
+        sha256Artefact: artifactDigest,
+        nativeSha256: artifactScanObservation.native.sha256,
+        installationSha256: artifactScanObservation.installation.sha256,
+        fichiersInstallation: artifactScanObservation.installation.files.length,
+        frontendSha256: artifactScanObservation.frontend.sha256,
+        fichiersFrontend: artifactScanObservation.frontend.files.length,
+        marqueursInterdits: artifactScanObservation.forbiddenMarkers,
+        transcriptSha256: transcriptDigest,
+        subjectSha256: artifactScanSubject.sha256,
+      },
+    }),
+    proof({
+      ...common,
+      id: `brut/${platform}`,
+      data: {
+        indexSha256: validatedRawEvidence.indexFile.sha256,
+        files: validatedRawEvidence.index.files.length,
+        transcriptSha256: transcriptDigest,
+        subjectSha256: rawEvidenceSubject.sha256,
       },
     }),
   ];
@@ -397,9 +499,100 @@ export async function emitInstalledAppEvidence(
           ? signatureSubject
           : value.id === `staging/reobservation/${platform}`
             ? postStagingSubject
-            : transcriptSubject;
+            : value.id === `scan/artefact/${platform}`
+              ? artifactScanSubject
+              : value.id === `brut/${platform}`
+                ? rawEvidenceSubject
+                : transcriptSubject;
     return writeProof(outputPath, value, sujet);
   });
+  for (const scenario of resilienceObservation.scenarios) {
+    const coordinate = `${scenario.type}-${scenario.authority}`;
+    const captureContent = Buffer.from(
+      `${JSON.stringify(
+        {
+          schema: "punks.installed-fault-capture.v1",
+          platform,
+          candidateSha,
+          stagingDeploymentId,
+          type: scenario.type,
+          authority: scenario.authority,
+          executionId: scenario.executionId,
+          injection: scenario.injection,
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    const captureSubject = writeSubject(
+      outputPath,
+      captureContent,
+      `fault-${coordinate.replaceAll(/[^a-z0-9.-]/giu, "-")}.json`,
+    );
+    const faultReference = writeProof(
+      outputPath,
+      proof({
+        ...common,
+        id: `faute/${scenario.type}/${scenario.authority}`,
+        data: {
+          autorite: scenario.authority,
+          plateforme: platform,
+          executionId: scenario.executionId,
+          sha256Artefact: artifactDigest,
+          transcriptSha256: transcriptDigest,
+          captureSha256: captureSubject.sha256,
+          subjectSha256: captureSubject.sha256,
+        },
+      }),
+      captureSubject,
+    );
+    references.push(faultReference);
+    for (const recoveryName of PREUVES_RECUPERATION) {
+      const recovery = scenario.recoveries[recoveryName];
+      const recoveryContent = Buffer.from(
+        `${JSON.stringify(
+          {
+            schema: "punks.installed-recovery-observation.v1",
+            platform,
+            candidateSha,
+            stagingDeploymentId,
+            type: scenario.type,
+            authority: scenario.authority,
+            executionId: scenario.executionId,
+            recovery: recoveryName,
+            observation: recovery,
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      const recoverySubject = writeSubject(
+        outputPath,
+        recoveryContent,
+        `recovery-${recoveryName}-${coordinate.replaceAll(/[^a-z0-9.-]/giu, "-")}.json`,
+      );
+      references.push(
+        writeProof(
+          outputPath,
+          proof({
+            ...common,
+            id: `recuperation/${recoveryName}/${scenario.type}/${scenario.authority}`,
+            data: {
+              type: scenario.type,
+              autorite: scenario.authority,
+              plateforme: platform,
+              executionId: scenario.executionId,
+              fauteSha256: faultReference.sha256,
+              sha256Artefact: artifactDigest,
+              captureSha256: captureSubject.sha256,
+              subjectSha256: recoverySubject.sha256,
+            },
+          }),
+          recoverySubject,
+        ),
+      );
+    }
+  }
   references.sort((left, right) => left.id.localeCompare(right.id));
   writeFileSync(
     join(outputPath, "index.json"),
@@ -421,6 +614,9 @@ function options(argv) {
     "--installed-artifact",
     "--updater-signature",
     "--driver-transcript",
+    "--resilience-observation",
+    "--artifact-scan",
+    "--raw-evidence",
     "--proof-output",
     "--network-output",
   ]);
@@ -456,6 +652,9 @@ export async function run(argv = process.argv.slice(2)) {
     artifact: required("--installed-artifact"),
     signature: required("--updater-signature"),
     transcript: required("--driver-transcript"),
+    resilience: required("--resilience-observation"),
+    artifactScan: required("--artifact-scan"),
+    rawEvidence: required("--raw-evidence"),
     output: required("--proof-output"),
     networkOutput: required("--network-output"),
   });

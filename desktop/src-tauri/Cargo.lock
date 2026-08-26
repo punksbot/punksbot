@@ -2362,7 +2362,7 @@ dependencies = [
 
 [[package]]
 name = "desktop-shell"
-version = "0.5.17"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "arboard",

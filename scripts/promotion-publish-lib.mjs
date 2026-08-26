@@ -296,9 +296,6 @@ function validerDestinationsR2(destinations, confiance) {
       }
     }
   }
-  if (destinations[0]?.compte === destinations[1]?.compte) {
-    throw new Error("deux comptes R2 distincts sont exigés");
-  }
   if (destinations[0]?.bucket === destinations[1]?.bucket) {
     throw new Error("deux buckets R2 distincts sont exigés");
   }

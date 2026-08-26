@@ -5,9 +5,10 @@ const PLATFORMS = ["macos", "linux", "windows"];
 const EXPECTED_PRODUCT_NAME = "Punks Bot Staging";
 const EXPECTED_MAIN_BINARY_NAME = "punks-bot-staging";
 const EXPECTED_IDENTIFIER = "bot.punks.desktop.staging";
+const EXPECTED_VERSION = "0.6.0";
 const EXPECTED_DEEP_LINK_SCHEME = "punks-staging";
 const EXPECTED_UPDATER_ENDPOINT =
-  "https://github.com/mabzadev/punksbot/releases/latest/download/latest.json";
+  "https://github.com/punksbot/punksbot/releases/latest/download/latest.json";
 const EXPECTED_UPDATER_PUBLIC_KEY =
   "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQ2MTFCOEFFQTQyRjBDQTUKUldTbERDK2tycmdSMXJINFZUSWt3bkFWS3o4Y1EyazRrazBCbXV1M2FSSUY4M1dqSDZBUlIrKzYK";
 const EXPECTED_PUNKS_BUILD =
@@ -124,6 +125,9 @@ function assertCandidate(config, platform) {
       `${platform}: the candidate CSP must not retain a Buzz scheme`,
     );
   }
+  if (config?.version !== EXPECTED_VERSION) {
+    throw new Error(`${platform}: version must satisfy the staging minimum`);
+  }
 }
 
 function assertEnvironmentIsolation(configRoot, stagingPatch) {
@@ -150,6 +154,7 @@ function assertEnvironmentIsolation(configRoot, stagingPatch) {
       config?.build?.beforeBuildCommand !== EXPECTED_PUNKS_BUILD ||
       config?.app?.security?.capabilities?.length !== 1 ||
       config.app.security.capabilities[0] !== "punks" ||
+      config?.version !== EXPECTED_VERSION ||
       config?.bundle?.externalBin?.length !== 0
     ) {
       throw new Error(

@@ -23,41 +23,6 @@
           "className": "PunkDO"
         },
         {
-          "id": "auth-identity-claim",
-          "kind": "durable-object",
-          "worker": "punks-auth-staging",
-          "binding": "IDENTITY_CLAIMS",
-          "className": "IdentityClaimDO"
-        },
-        {
-          "id": "auth-email-claim",
-          "kind": "durable-object",
-          "worker": "punks-auth-staging",
-          "binding": "EMAIL_CLAIMS",
-          "className": "EmailClaimDO"
-        },
-        {
-          "id": "auth-transaction",
-          "kind": "durable-object",
-          "worker": "punks-auth-staging",
-          "binding": "AUTH_TRANSACTIONS",
-          "className": "AuthTransactionDO"
-        },
-        {
-          "id": "auth-desktop-flow",
-          "kind": "durable-object",
-          "worker": "punks-auth-staging",
-          "binding": "DESKTOP_AUTH_FLOWS",
-          "className": "DesktopAuthFlowDO"
-        },
-        {
-          "id": "auth-desktop-reauthorization",
-          "kind": "durable-object",
-          "worker": "punks-auth-staging",
-          "binding": "DESKTOP_REAUTH_GRANTS",
-          "className": "DesktopReauthGrantDO"
-        },
-        {
           "id": "auth-session-revocation",
           "kind": "durable-object",
           "worker": "punks-auth-staging",
@@ -65,32 +30,11 @@
           "className": "SessionRevocationDO"
         },
         {
-          "id": "auth-session-rotation",
-          "kind": "durable-object",
-          "worker": "punks-auth-staging",
-          "binding": "SESSION_ROTATIONS",
-          "className": "SessionRotationDO"
-        },
-        {
           "id": "auth-session",
           "kind": "durable-object",
           "worker": "punks-auth-staging",
           "binding": "SESSIONS",
           "className": "SessionDO"
-        },
-        {
-          "id": "auth-passkey-ceremony",
-          "kind": "durable-object",
-          "worker": "punks-auth-staging",
-          "binding": "PASSKEY_CEREMONIES",
-          "className": "PasskeyCeremonyDO"
-        },
-        {
-          "id": "auth-passkey-credential",
-          "kind": "durable-object",
-          "worker": "punks-auth-staging",
-          "binding": "PASSKEY_CREDENTIALS",
-          "className": "PasskeyCredentialDO"
         },
         {
           "id": "api-workspace",

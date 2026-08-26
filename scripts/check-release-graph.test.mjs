@@ -415,9 +415,11 @@ function cadenceScellee({
     : phase;
   const politique = CADENCES_OPERATIONNELLES[clePolitique];
   assert.ok(politique, `cadence de test absente pour ${phase}`);
+  const dureeEtapeMs = (etape) =>
+    etape.heures === 0 ? 1_000 : etape.heures * 3_600_000;
   let curseur =
     Date.parse(instant) -
-    politique.reduce((total, etape) => total + etape.heures, 0) * 3600000;
+    politique.reduce((total, etape) => total + dureeEtapeMs(etape), 0);
   let precedentEtapeSha256 = null;
   const recus = [];
   const preuvesPourEtape = (attendu) => {
@@ -541,7 +543,7 @@ function cadenceScellee({
   };
   for (const attendu of politique) {
     const debut = new Date(curseur).toISOString().replace(".000Z", "Z");
-    curseur += attendu.heures * 3600000;
+    curseur += dureeEtapeMs(attendu);
     const fin = new Date(curseur).toISOString().replace(".000Z", "Z");
     const id = `recu-etape-${phase}-${attendu.etape}-${grapheSha256}`;
     const verdictsEtape = verdicts.map((verdict) => ({
@@ -672,7 +674,11 @@ function instantScellementCadence(phase, instantTerminal, topologie = null) {
   assert.ok(politique, `cadence de scellement absente pour ${phase}`);
   return new Date(
     Date.parse(instantTerminal) -
-      politique.reduce((total, etape) => total + etape.heures, 0) * 3600000,
+      politique.reduce(
+        (total, etape) =>
+          total + (etape.heures === 0 ? 1_000 : etape.heures * 3_600_000),
+        0,
+      ),
   )
     .toISOString()
     .replace(".000Z", "Z");
@@ -1339,7 +1345,6 @@ function executionExpansionPartielle({
   sha = "31".repeat(20),
   instantGraphe = "2026-08-06T14:00:00Z",
   instantDemarrage = "2026-08-06T14:30:00Z",
-  instantCadence = "2026-08-10T00:00:00Z",
   instantEtat = "2026-08-06T17:00:00Z",
   natureTerminale = "echec",
   precedent = null,
@@ -1397,6 +1402,12 @@ function executionExpansionPartielle({
       approbateurs: ["ops:alice", "ops:bob"],
     },
   });
+  const instantCadence = new Date(
+    Date.parse(instantDemarrage) +
+      CADENCES_OPERATIONNELLES.expansion.length * 1_000,
+  )
+    .toISOString()
+    .replace(".000Z", "Z");
   const cadence = cadenceScellee({
     phase: "expansion",
     instant: instantCadence,
@@ -2131,6 +2142,10 @@ function graphValide(surcharges = {}) {
     "baseline-buzz": BASELINE_BUZZ,
     canal: "punks-desktop",
     politique: {
+      "cadence-promotion": {
+        mode: "preuves-immediates",
+        "duree-minimale-heures-par-etape": 0,
+      },
       "fenetre-support-jours": 90,
       "seuil-usage-contraction": 1,
       "fenetre-mesure-contraction-jours": 14,
@@ -2149,13 +2164,13 @@ function graphValide(surcharges = {}) {
           publication: ["release", "r2"],
           ecriture: "create-only",
           "verrouillage-objet": "compliance",
-          "comptes-r2": 2,
+          "buckets-r2": 2,
         },
         recus: {
           publication: ["release", "r2"],
           ecriture: "create-only",
           "verrouillage-objet": "compliance",
-          "comptes-r2": 2,
+          "buckets-r2": 2,
         },
       },
     },
@@ -2177,13 +2192,13 @@ function graphValide(surcharges = {}) {
         destinations: [
           {
             role: "primaire",
-            compte: "10".repeat(16),
+            compte: STAGING_IDS.compte,
             bucket: "punks-release-proofs-primary",
             "verrouillage-objet": "compliance",
           },
           {
             role: "secondaire",
-            compte: "20".repeat(16),
+            compte: STAGING_IDS.compte,
             bucket: "punks-release-proofs-recovery",
             "verrouillage-objet": "compliance",
           },
@@ -2359,6 +2374,20 @@ test("la politique ne peut pas dériver des décisions closes", () => {
   attendu(erreurs(extensionBuzz), "arête implicite interdite");
 });
 
+test("la politique de promotion est explicitement immédiate et fondée sur les preuves", () => {
+  const graph = graphValide();
+  graph.politique["cadence-promotion"] = {
+    mode: "preuves-immediates",
+    "duree-minimale-heures-par-etape": 0,
+  };
+  assert.deepEqual(erreurs(graph), []);
+
+  graph.politique["cadence-promotion"][
+    "duree-minimale-heures-par-etape"
+  ] = 1;
+  attendu(erreurs(graph), "zéro heure");
+});
+
 test("l'immuabilité R2 est verrouillée pour attestations et Reçus", () => {
   const variantes = [
     [
@@ -2373,7 +2402,7 @@ test("l'immuabilité R2 est verrouillée pour attestations et Reçus", () => {
       (regles) => (regles["verrouillage-objet"] = "none"),
       "verrouillage-objet doit être compliance",
     ],
-    [(regles) => (regles["comptes-r2"] = 1), "comptes-r2 doit être 2"],
+    [(regles) => (regles["buckets-r2"] = 1), "buckets-r2 doit être 2"],
   ];
   for (const sorte of ["attestations", "recus"]) {
     for (const [muter, message] of variantes) {
@@ -2452,10 +2481,10 @@ test("le layout R2 est fermé et identique à celui du publisher", () => {
   });
   sansDestinations.publication.r2.destinations = [];
   attendu(erreurs(sansDestinations), "destinations R2 ancrées");
-  const memeCompte = graphValide();
-  memeCompte.publication.r2.destinations[1].compte =
-    memeCompte.publication.r2.destinations[0].compte;
-  attendu(erreurs(memeCompte), "destination R2 secondaire canonique");
+  assert.deepEqual(erreurs(graphValide()), []);
+  const horsPunks = graphValide();
+  horsPunks.publication.r2.destinations[1].compte = "20".repeat(16);
+  attendu(erreurs(horsPunks), "compte Cloudflare Punks");
 });
 
 test("au moins un candidat doit être relié", () => {
@@ -3269,6 +3298,31 @@ test("chaque Reçu post-promotion porte le minimum opérationnel fermé de la d�
   attendu(erreurs(graphValide({ releases: [dlqNonVide] })), "état DLQ");
 });
 
+test("la promotion exécute toutes ses étapes sans attente calendaire", () => {
+  assert.deepEqual(
+    Object.fromEntries(
+      Object.entries(CADENCES_OPERATIONNELLES).map(([programme, etapes]) => [
+        programme,
+        etapes.map(({ heures }) => heures),
+      ]),
+    ),
+    {
+      expansion: [0, 0, 0, 0, 0],
+      "expansion-stateful": [0, 0],
+      active: [0, 0, 0, 0, 0],
+      contraction: [0],
+      "roll-forward": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      "roll-forward-stateful": [0, 0, 0, 0, 0, 0, 0],
+    },
+  );
+
+  const release = releaseScellee({
+    etat: "active",
+    dates: ["2026-08-26", "2026-08-26"],
+  });
+  assert.deepEqual(erreurs(graphValide({ releases: [release] })), []);
+});
+
 test("chaque étape possède ses propres budgets et N−1 impose une baseline", () => {
   const release = releaseScellee({ etat: "expansion" });
   const recu = release.recus.find(
@@ -3471,7 +3525,7 @@ test("les snapshots active et contraction exigent une exposition Workers à 100 
   }
 });
 
-test("une migration stateful non splittable suit P0 24 h puis E4 48 h sans E1 à E3", () => {
+test("une migration stateful non splittable suit P0 puis E4 immédiatement sans E1 à E3", () => {
   const release = releaseScellee({
     etat: "expansion",
     migrationStatefulParPhase: {
@@ -3536,7 +3590,7 @@ function grapheContraction({
   const activeLe = "2026-01-11";
   const msActive = Date.parse(`${activeLe}T00:00:00Z`);
   const msDebutContraction = msActive + joursAvantContraction * 86400000;
-  const msContraction = msDebutContraction + 48 * 3600000;
+  const msContraction = msDebutContraction;
   const contractionLe = new Date(msContraction).toISOString().slice(0, 10);
   const ancienne = releaseScellee({
     id: "tranche:1",
@@ -3687,7 +3741,7 @@ test("une contraction historique reste valide quand son successeur avance", () =
     dates: ["2025-12-22", "2026-01-11", "2026-09-01"],
   });
   successeur.successeur = "tranche:3";
-  const contractionLe = Date.parse("2026-08-30T00:00:00Z");
+  const contractionLe = Date.parse("2026-09-01T00:00:00Z");
   scellerUsageContraction(
     successeur,
     Array.from({ length: 14 }, (_, i) => ({
@@ -4109,7 +4163,6 @@ test("une pause conserve le créneau d'expansion jusqu'à sa consommation explic
     sha: "33".repeat(20),
     instantGraphe: "2026-08-07T14:00:00Z",
     instantDemarrage: "2026-08-07T14:30:00Z",
-    instantCadence: "2026-08-11T00:00:00Z",
     instantEtat: "2026-08-07T17:00:00Z",
     precedent,
   });
@@ -4140,7 +4193,6 @@ test("une exécution ne peut citer une tête future ni contourner un arrêt term
     sha: "34".repeat(20),
     instantGraphe: "2026-08-06T15:30:00Z",
     instantDemarrage: "2026-08-06T16:00:00Z",
-    instantCadence: "2026-08-10T00:00:00Z",
     instantEtat: "2026-08-06T19:00:00Z",
     precedent,
   });
@@ -4160,7 +4212,6 @@ test("une exécution ne peut citer une tête future ni contourner un arrêt term
     sha: "35".repeat(20),
     instantGraphe: "2026-08-07T14:00:00Z",
     instantDemarrage: "2026-08-07T14:30:00Z",
-    instantCadence: "2026-08-11T00:00:00Z",
     instantEtat: "2026-08-07T17:00:00Z",
     precedent,
   });
@@ -4537,7 +4588,7 @@ test("un engagement de récupération ne peut pas être signé après le retour 
   scellerUsageContraction(
     cible,
     Array.from({ length: 14 }, (_, index) => ({
-      date: new Date(Date.parse("2026-05-16T00:00:00Z") + index * 86400000)
+      date: new Date(Date.parse("2026-05-18T00:00:00Z") + index * 86400000)
         .toISOString()
         .slice(0, 10),
       pourcentage: 0.2,
@@ -4559,7 +4610,6 @@ test("un engagement de récupération ne peut pas être signé après le retour 
     suffixe: "engagement-futur",
     instantGraphe: "2026-06-10T08:00:00Z",
     instantDemarrage: "2026-06-10T08:30:00Z",
-    instantCadence: "2026-06-13T18:00:00Z",
     instantEtat: "2026-06-10T11:00:00Z",
     natureTerminale: "quarantaine",
     precedent,
@@ -4834,7 +4884,7 @@ test("un retour Punks antérieur exige un certificat de compatibilité exact", (
   scellerUsageContraction(
     graph.releases[0],
     Array.from({ length: 14 }, (_, i) => ({
-      date: new Date(Date.parse("2026-05-16T00:00:00Z") + i * 86400000)
+      date: new Date(Date.parse("2026-05-18T00:00:00Z") + i * 86400000)
         .toISOString()
         .slice(0, 10),
       pourcentage: 0.2,
@@ -4939,7 +4989,7 @@ test("le certificat recalcule les treize contrôles obligatoires et produit un n
   scellerUsageContraction(
     cible,
     Array.from({ length: 14 }, (_, i) => ({
-      date: new Date(Date.parse("2026-05-16T00:00:00Z") + i * 86400000)
+      date: new Date(Date.parse("2026-05-18T00:00:00Z") + i * 86400000)
         .toISOString()
         .slice(0, 10),
       pourcentage: 0.2,
@@ -5132,7 +5182,7 @@ test("une invalidation future ne réécrit pas rétroactivement un certificat an
   scellerUsageContraction(
     cible,
     Array.from({ length: 14 }, (_, index) => ({
-      date: new Date(Date.parse("2026-05-16T00:00:00Z") + index * 86400000)
+      date: new Date(Date.parse("2026-05-18T00:00:00Z") + index * 86400000)
         .toISOString()
         .slice(0, 10),
       pourcentage: 0.2,
@@ -5182,7 +5232,7 @@ test("la release active de référence est évaluée à l'instant du retour", ()
   scellerUsageContraction(
     cible,
     Array.from({ length: 14 }, (_, i) => ({
-      date: new Date(Date.parse("2026-05-16T00:00:00Z") + i * 86400000)
+      date: new Date(Date.parse("2026-05-18T00:00:00Z") + i * 86400000)
         .toISOString()
         .slice(0, 10),
       pourcentage: 0.2,
@@ -5198,7 +5248,7 @@ test("la release active de référence est évaluée à l'instant du retour", ()
   scellerUsageContraction(
     reference,
     Array.from({ length: 14 }, (_, i) => ({
-      date: new Date(Date.parse("2027-03-18T00:00:00Z") + i * 86400000)
+      date: new Date(Date.parse("2027-03-20T00:00:00Z") + i * 86400000)
         .toISOString()
         .slice(0, 10),
       pourcentage: 0.2,
@@ -5338,7 +5388,7 @@ test("les profils clients supportés restent indépendants de l'éligibilité ba
   scellerUsageContraction(
     cible,
     Array.from({ length: 14 }, (_, index) => ({
-      date: new Date(Date.parse("2026-05-16T00:00:00Z") + index * 86400000)
+      date: new Date(Date.parse("2026-05-18T00:00:00Z") + index * 86400000)
         .toISOString()
         .slice(0, 10),
       pourcentage: 0.2,
@@ -5392,7 +5442,7 @@ test("la chronologie conserve le profil de toute activation historique", () => {
   scellerUsageContraction(
     ancienne,
     Array.from({ length: 14 }, (_, index) => ({
-      date: new Date(Date.parse("2026-05-16T00:00:00Z") + index * 86400000)
+      date: new Date(Date.parse("2026-05-18T00:00:00Z") + index * 86400000)
         .toISOString()
         .slice(0, 10),
       pourcentage: 0.2,
@@ -5438,7 +5488,7 @@ test("le profil actif historique vient du snapshot active et couvre jusqu'à la 
   scellerUsageContraction(
     ancienne,
     Array.from({ length: 14 }, (_, index) => ({
-      date: new Date(Date.parse("2026-05-16T00:00:00Z") + index * 86400000)
+      date: new Date(Date.parse("2026-05-18T00:00:00Z") + index * 86400000)
         .toISOString()
         .slice(0, 10),
       pourcentage: 0.2,
@@ -5472,7 +5522,7 @@ test("la référence historique utilise l'instant exact même le jour d'une acti
   scellerUsageContraction(
     cible,
     Array.from({ length: 14 }, (_, index) => ({
-      date: new Date(Date.parse("2026-07-16T00:00:00Z") + index * 86400000)
+      date: new Date(Date.parse("2026-07-18T00:00:00Z") + index * 86400000)
         .toISOString()
         .slice(0, 10),
       pourcentage: 0.2,

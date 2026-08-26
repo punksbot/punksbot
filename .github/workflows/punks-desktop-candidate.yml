@@ -144,25 +144,70 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          gate_log="$RUNNER_TEMP/punks-secretless-gates.log"
+          node --input-type=module - "$gate_log" <<'NODE'
+          import { writeFileSync } from "node:fs";
+          writeFileSync(process.argv[2], "", { flag: "wx", mode: 0o600 });
+          NODE
+          mark_gate() {
+            printf '::punks-gate::%s::%s\n' "$1" "$2" | tee -a "$gate_log"
+          }
+          mark_gate workflow-contracts start
           node --test \
             scripts/punks-desktop-candidate-workflow.test.mjs \
-            scripts/candidate/*.test.mjs
-          pnpm migration:check
-          pnpm cloudflare:check
-          pnpm --filter buzz check
-          pnpm --dir desktop check:punks-candidate
-          pnpm --dir desktop check:punks-product
-          pnpm --dir desktop test:e2e:punks-capabilities
-          node scripts/check-punks-rust.mjs
+            scripts/candidate/*.test.mjs 2>&1 | tee -a "$gate_log"
+          mark_gate workflow-contracts pass
+          mark_gate migration-check start
+          pnpm migration:check 2>&1 | tee -a "$gate_log"
+          mark_gate migration-check pass
+          mark_gate cloudflare-check start
+          pnpm cloudflare:check 2>&1 | tee -a "$gate_log"
+          mark_gate cloudflare-check pass
+          mark_gate workspace-check start
+          pnpm --filter buzz check 2>&1 | tee -a "$gate_log"
+          mark_gate workspace-check pass
+          mark_gate candidate-config start
+          pnpm --dir desktop check:punks-candidate 2>&1 | tee -a "$gate_log"
+          mark_gate candidate-config pass
+          mark_gate frontend-source start
+          pnpm --dir desktop check:punks-product 2>&1 | tee -a "$gate_log"
+          mark_gate frontend-source pass
+          mark_gate playwright-capabilities start
+          pnpm --dir desktop test:e2e:punks-capabilities 2>&1 | tee -a "$gate_log"
+          mark_gate playwright-capabilities pass
+          mark_gate rust-graph start
+          node scripts/check-punks-rust.mjs 2>&1 | tee -a "$gate_log"
+          mark_gate rust-graph pass
+          mark_gate tauri-config start
           tauri_config="$(jq -c . desktop/src-tauri/tauri.punks.conf.json)"
           export TAURI_CONFIG="$tauri_config"
-          node -e 'const c=JSON.parse(process.env.TAURI_CONFIG); if (!Array.isArray(c.bundle?.externalBin) || c.bundle.externalBin.length !== 0) process.exit(1)'
+          node -e 'const c=JSON.parse(process.env.TAURI_CONFIG); if (!Array.isArray(c.bundle?.externalBin) || c.bundle.externalBin.length !== 0) process.exit(1)' \
+            2>&1 | tee -a "$gate_log"
+          mark_gate tauri-config pass
+          mark_gate cargo-check start
           cargo check \
             --locked \
             --manifest-path desktop/src-tauri/Cargo.toml \
             --package desktop-shell \
             --no-default-features \
-            --features punks-desktop-social-loop
+            --features punks-desktop-social-loop 2>&1 | tee -a "$gate_log"
+          mark_gate cargo-check pass
+          node scripts/candidate/secretless-gates-report.mjs \
+            --source-sha "$SOURCE_SHA" \
+            --staging-deployment-id "$STAGING_DEPLOYMENT_ID" \
+            --log "$gate_log" \
+            --output "$RUNNER_TEMP/punks-secretless-gates-report.json"
+
+      - name: Upload the exact secretless gate report
+        id: upload_gate_report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: punks-secretless-gates-${{ inputs.source_sha }}
+          path: |
+            ${{ runner.temp }}/punks-secretless-gates.log
+            ${{ runner.temp }}/punks-secretless-gates-report.json
+          if-no-files-found: error
+          retention-days: 1
 
   verify_staging:
     name: Bind the exact remote staging deployment
@@ -183,6 +228,24 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 1
           persist-credentials: false
+
+      - name: Set up pnpm for live staging proof
+        id: setup_pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        with:
+          version: 11.4.0
+
+      - name: Set up Node for live staging proof
+        id: setup_node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24.14.1
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install immutable live-proof dependencies
+        id: install
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Reobserve all seven Workers through the Cloudflare API
         id: observe_staging
@@ -219,12 +282,45 @@ jobs:
           }
           NODE
 
+      - name: Prove distributed FOLLOW against the exact staging
+        id: prove_live_staging_follow
+        shell: bash
+        env:
+          PUNKS_OPERATOR_TOKEN: ${{ secrets.PUNKS_OPERATOR_PROVISIONING_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$PUNKS_OPERATOR_TOKEN"
+          node scripts/candidate/live-staging-follow-proof.mjs \
+            --source-sha "$SOURCE_SHA" \
+            --staging-deployment-id "$STAGING_DEPLOYMENT_ID" \
+            --output live-staging-follow-proof.json
+
+      - name: Prove real provider authentication against the exact Auth Worker
+        id: prove_live_staging_auth
+        shell: bash
+        env:
+          PUNKS_OPERATOR_TOKEN: ${{ secrets.PUNKS_OPERATOR_PROVISIONING_TOKEN }}
+          PUNKS_LIVE_AUTH_FLOW_ID: ${{ secrets.PUNKS_LIVE_AUTH_FLOW_ID }}
+        run: |
+          set -euo pipefail
+          test -n "$PUNKS_OPERATOR_TOKEN"
+          test -n "$PUNKS_LIVE_AUTH_FLOW_ID"
+          node scripts/candidate/live-staging-auth-proof.mjs \
+            --source-sha "$SOURCE_SHA" \
+            --staging-deployment-id "$STAGING_DEPLOYMENT_ID" \
+            --flow-id "$PUNKS_LIVE_AUTH_FLOW_ID" \
+            --staging-proof staging-deployment-proof.json \
+            --output live-staging-auth-proof.json
+
       - name: Upload the exact remote staging proof
         id: upload_staging_proof
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: punks-staging-deployment-proof-${{ inputs.source_sha }}
-          path: staging-deployment-proof.json
+          path: |
+            staging-deployment-proof.json
+            live-staging-auth-proof.json
+            live-staging-follow-proof.json
           if-no-files-found: error
           retention-days: 1
 
@@ -267,6 +363,13 @@ jobs:
           name: punks-staging-deployment-proof-${{ inputs.source_sha }}
           path: ${{ runner.temp }}/punks-staging-proof
 
+      - name: Download the exact source-bound gate report for the installed leg
+        id: download_gate_report_for_leg
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: punks-secretless-gates-${{ inputs.source_sha }}
+          path: ${{ runner.temp }}/punks-secretless-gates
+
       - name: Require clean source before dependency installation
         id: clean_source
         shell: bash
@@ -303,7 +406,8 @@ jobs:
             build-essential curl desktop-file-utils file gnupg \
             libasound2-dev libayatana-appindicator3-dev libgtk-3-dev \
             librsvg2-dev libssl-dev libwebkit2gtk-4.1-dev libxdo-dev \
-            minisign patchelf pkg-config squashfs-tools xdg-utils
+            minisign orca patchelf pkg-config squashfs-tools \
+            webkit2gtk-driver xdg-utils xvfb
           validator="$RUNNER_TEMP/validate-x86_64.AppImage"
           curl --fail --location --proto '=https' --tlsv1.2 \
             --output "$validator" \
@@ -320,7 +424,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          brew install minisign
+          brew install cmake minisign
+          cmake --version
           minisign -v
 
       - name: Install Windows signature verifier
@@ -331,10 +436,42 @@ jobs:
           $ErrorActionPreference = "Stop"
           choco install minisign --yes --no-progress
           minisign -v
+          $nvdaInstaller = Join-Path $env:RUNNER_TEMP "nvda_2026.1.1.exe"
+          $downloadParameters = @{
+            Uri = "https://download.nvaccess.org/releases/2026.1.1/nvda_2026.1.1.exe"
+            OutFile = $nvdaInstaller
+          }
+          Invoke-WebRequest @downloadParameters
+          $nvdaDigest = (Get-FileHash -Algorithm SHA256 $nvdaInstaller).Hash.ToLowerInvariant()
+          if ($nvdaDigest -ne "6e0289eb5a3aa076eb97ea99c5d5465cb48b5ecc6a3257dc3d811f881a1747c9") {
+            throw "NVDA installer digest mismatch"
+          }
+          $nvdaRoot = Join-Path $env:RUNNER_TEMP "punks-nvda-2026.1.1"
+          & $nvdaInstaller --create-portable-silent --portable-path=$nvdaRoot
+          if ($LASTEXITCODE -ne 0) { throw "NVDA portable creation failed" }
+          $nvda = Join-Path $nvdaRoot "nvda.exe"
+          if (-not (Test-Path -LiteralPath $nvda -PathType Leaf)) {
+            throw "NVDA portable binary is missing"
+          }
+          "nvda_binary=$nvda" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
       - name: Install immutable dependencies without lifecycle scripts
         id: install
         run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Resolve the native Edge WebDriver
+        id: windows_webdriver
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $manager = Resolve-Path "node_modules/.pnpm/selenium-webdriver@4.34.0/node_modules/selenium-webdriver/bin/windows/selenium-manager.exe"
+          $result = & $manager --browser edge --driver msedgedriver --output JSON | ConvertFrom-Json
+          $driver = $result.result.driver_path
+          if (-not (Test-Path -LiteralPath $driver -PathType Leaf)) {
+            throw "Selenium Manager did not resolve msedgedriver.exe"
+          }
+          Split-Path -Parent $driver | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Install the exact Rust target
         id: rust_target
@@ -343,6 +480,15 @@ jobs:
           set -euo pipefail
           rustup show active-toolchain
           rustup target add "$TARGET"
+
+      - name: Install the reviewed Tauri WebDriver bridge
+        id: install_tauri_driver
+        if: runner.os != 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo install tauri-driver --version 2.0.6 --locked
+          tauri-driver --version
 
       - name: Recheck the Punks-only Tauri flavor
         id: verify_flavor
@@ -1051,14 +1197,18 @@ jobs:
         if: inputs.validation_scope == 'full-candidate'
         shell: bash
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.PUNKS_CLOUDFLARE_API_TOKEN }}
           PUNKS_PROMOTION_SESSION: ${{ secrets.PUNKS_PROMOTION_SESSION }}
+          PUNKS_OPERATOR_PROVISIONING_TOKEN: ${{ secrets.PUNKS_OPERATOR_PROVISIONING_TOKEN }}
         run: |
           set -euo pipefail
-          test -n "$CLOUDFLARE_API_TOKEN"
           test -n "$PUNKS_PROMOTION_SESSION"
+          test -n "$PUNKS_OPERATOR_PROVISIONING_TOKEN"
           staging_proof="$RUNNER_TEMP/punks-staging-proof/staging-deployment-proof.json"
+          live_auth_proof="$RUNNER_TEMP/punks-staging-proof/live-staging-auth-proof.json"
+          live_follow_proof="$RUNNER_TEMP/punks-staging-proof/live-staging-follow-proof.json"
           test -f "$staging_proof"
+          test -f "$live_auth_proof"
+          test -f "$live_follow_proof"
           cargo build \
             --locked \
             --release \
@@ -1067,9 +1217,52 @@ jobs:
             --package punks-promotion-session
           helper="desktop/src-tauri/target/$TARGET/release/punks-promotion-session"
           if [[ "$PLATFORM" == "windows-x64" ]]; then helper="${helper}.exe"; fi
-          printf '%s' "$PUNKS_PROMOTION_SESSION" | "$helper"
-          cleanup_session() { "$helper" --destroy; }
+          session_bundle="$RUNNER_TEMP/punks-promotion-session.json"
+          operator_token_file="$RUNNER_TEMP/punks-operator-token"
+          manual_review_file="$RUNNER_TEMP/punks-manual-accessibility-review.json"
+          remove_secret_files() {
+            node --input-type=module - "$session_bundle" "$operator_token_file" "$manual_review_file" <<'NODE'
+          import { rmSync } from "node:fs";
+          for (const path of process.argv.slice(2)) rmSync(path, { force: true });
+          NODE
+          }
+          cleanup_session() {
+            local main_status=$?
+            trap - EXIT
+            local cleanup_status=0
+            "$helper" --destroy || cleanup_status=$?
+            remove_secret_files || cleanup_status=$?
+            if [[ "$main_status" -ne 0 ]]; then
+              exit "$main_status"
+            fi
+            exit "$cleanup_status"
+          }
           trap cleanup_session EXIT
+          node --input-type=module - "$session_bundle" "$operator_token_file" <<'NODE'
+          import { writeFileSync } from "node:fs";
+          const materials = [
+            [process.argv[2], process.env.PUNKS_PROMOTION_SESSION],
+            [process.argv[3], process.env.PUNKS_OPERATOR_PROVISIONING_TOKEN],
+          ];
+          for (const [path, value] of materials) {
+            if (typeof value !== "string" || value.length === 0) process.exit(1);
+            writeFileSync(path, value, { flag: "wx", mode: 0o600 });
+          }
+          NODE
+          unset PUNKS_PROMOTION_SESSION PUNKS_OPERATOR_PROVISIONING_TOKEN
+          "$helper" --source-sha "$SOURCE_SHA" < "$session_bundle"
+          staging_fixture="$RUNNER_TEMP/punks-staging-fixture.json"
+          node scripts/candidate/staging-fixture.mjs \
+            --source-sha "$SOURCE_SHA" \
+            --origin "https://staging.punks.bot" \
+            --session-file "$session_bundle" \
+            --operator-token-file "$operator_token_file" \
+            --output "$staging_fixture"
+          node --input-type=module - "$session_bundle" <<'NODE'
+          import { rmSync } from "node:fs";
+          rmSync(process.argv[2], { force: true });
+          NODE
+          test ! -e "$session_bundle"
 
           bundle="desktop/src-tauri/target/$TARGET/release/bundle"
           case "$PLATFORM" in
@@ -1097,17 +1290,151 @@ jobs:
           updater_signature="${installed_artifact}.sig"
           cp "$installed_source" "$installed_artifact"
           cp "$signature_source" "$updater_signature"
-          network_log="$RUNNER_TEMP/punks-network-${PLATFORM}.jsonl"
+          fault_observation="$RUNNER_TEMP/punks-fault-observation-${PLATFORM}.json"
+          raw_evidence="$RUNNER_TEMP/punks-raw-evidence-${PLATFORM}"
+          case "$PLATFORM" in
+            macos-*)
+              installed_root="$RUNNER_TEMP/punks-macos-install-${PLATFORM}"
+              mkdir "$installed_root"
+              tar -xzf "$installed_artifact" -C "$installed_root"
+              native_binary="$(find "$installed_root" -type f -path '*/Contents/MacOS/punks-bot-staging')"
+              test "$(find "$installed_root" -type f -path '*/Contents/MacOS/punks-bot-staging' | wc -l | tr -d ' ')" = "1"
+              ;;
+            linux-x64)
+              extract_root="$RUNNER_TEMP/punks-appimage-install-${PLATFORM}"
+              mkdir "$extract_root"
+              chmod +x "$installed_artifact"
+              (cd "$extract_root" && "$installed_artifact" --appimage-extract >/dev/null)
+              installed_root="$extract_root/squashfs-root"
+              native_binary="$(find "$installed_root" -type f -name 'punks-bot-staging')"
+              test "$(find "$installed_root" -type f -name 'punks-bot-staging' | wc -l | tr -d ' ')" = "1"
+              ;;
+            windows-x64)
+              installed_root="$RUNNER_TEMP/punks-nsis-install"
+              native_binary="$(find "$installed_root" -type f -name 'punks-bot-staging.exe')"
+              test "$(find "$installed_root" -type f -name 'punks-bot-staging.exe' | wc -l | tr -d ' ')" = "1"
+              ;;
+            *) echo "Unsupported platform: $PLATFORM" >&2; exit 1 ;;
+          esac
+          test -f "$native_binary"
+          case "$PLATFORM" in
+            macos-*)
+              screen_reader_binary="/System/Library/CoreServices/VoiceOver.app/Contents/MacOS/VoiceOver"
+              ;;
+            linux-x64)
+              screen_reader_binary="$(command -v orca)"
+              ;;
+            windows-x64)
+              screen_reader_binary="${{ steps.windows_dependencies.outputs.nvda_binary }}"
+              ;;
+            *) echo "Unsupported platform: $PLATFORM" >&2; exit 1 ;;
+          esac
+          network_log="$raw_evidence/network.jsonl"
           driver_transcript="$RUNNER_TEMP/punks-transcript-${PLATFORM}.json"
-          PUNKS_PROMOTION_NETWORK_LOG="$network_log" \
-            node scripts/candidate/exercise-installed-social-loop.mjs \
+          resilience_observation="$RUNNER_TEMP/punks-resilience-${PLATFORM}.json"
+          driver_command=(node)
+          if [[ "$PLATFORM" == "linux-x64" ]]; then
+            driver_command=(xvfb-run --auto-servernum node)
+          fi
+          "${driver_command[@]}" scripts/candidate/exercise-installed-social-loop.mjs \
               --platform "$PLATFORM" \
               --source-sha "$SOURCE_SHA" \
               --staging-deployment-proof "$staging_proof" \
+              --live-auth-proof "$live_auth_proof" \
+              --live-follow-proof "$live_follow_proof" \
+              --staging-fixture "$staging_fixture" \
               --bundle "$bundle" \
+              --installed-root "$installed_root" \
               --installed-artifact "$installed_artifact" \
+              --native-binary "$native_binary" \
+              --native-proof "$RUNNER_TEMP/native-proof.json" \
+              --fault-observation "$fault_observation" \
+              --operator-token-file "$operator_token_file" \
+              --manual-review-file "$manual_review_file" \
+              --gate-report "$RUNNER_TEMP/punks-secretless-gates/punks-secretless-gates-report.json" \
+              --gate-log "$RUNNER_TEMP/punks-secretless-gates/punks-secretless-gates.log" \
+              --screen-reader-binary "$screen_reader_binary" \
               --network-log "$network_log" \
-              --output "$driver_transcript"
+              --output "$driver_transcript" \
+              --resilience-output "$resilience_observation" \
+              --raw-evidence-output "$raw_evidence"
+          remove_secret_files
+
+      - name: Upload source-bound material for independent accessibility review
+        id: upload_accessibility_review_material
+        if: failure() && inputs.validation_scope == 'full-candidate'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: punks-accessibility-review-${{ matrix.platform }}-${{ inputs.source_sha }}
+          path: |
+            ${{ runner.temp }}/punks-raw-evidence-${{ matrix.platform }}
+            ${{ runner.temp }}/punks-desktop-${{ matrix.platform }}-*
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Scan the exact updater inputs after the installed run
+        id: scan_installed_candidate
+        if: inputs.validation_scope == 'full-candidate'
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$PLATFORM" in
+            macos-*)
+              suffix='.app.tar.gz'
+              installed_root="$RUNNER_TEMP/punks-macos-install-${PLATFORM}"
+              native_binary="$(find "$installed_root" -type f -path '*/Contents/MacOS/punks-bot-staging')"
+              ;;
+            linux-x64)
+              suffix='.AppImage'
+              installed_root="$RUNNER_TEMP/punks-appimage-install-${PLATFORM}/squashfs-root"
+              native_binary="$(find "$installed_root" -type f -name 'punks-bot-staging')"
+              ;;
+            windows-x64)
+              suffix='.exe'
+              installed_root="$RUNNER_TEMP/punks-nsis-install"
+              native_binary="$(find "$installed_root" -type f -name 'punks-bot-staging.exe')"
+              ;;
+            *) echo "Unsupported platform: $PLATFORM" >&2; exit 1 ;;
+          esac
+          installed_artifact="$RUNNER_TEMP/punks-desktop-${PLATFORM}-${SOURCE_SHA}${suffix}"
+          test -f "$native_binary"
+          node scripts/candidate/installed-artifact-scan.mjs \
+            --platform "$PLATFORM" \
+            --source-sha "$SOURCE_SHA" \
+            --native-binary "$native_binary" \
+            --installed-artifact "$installed_artifact" \
+            --installed-root "$installed_root" \
+            --embedded-assets "$RUNNER_TEMP/punks-raw-evidence-${PLATFORM}/embedded-assets.json" \
+            --output "$RUNNER_TEMP/punks-artifact-scan-${PLATFORM}.json"
+
+      - name: Reobserve staging and seal the installed evidence
+        id: seal_installed_candidate
+        if: inputs.validation_scope == 'full-candidate'
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.PUNKS_CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_API_TOKEN"
+          case "$PLATFORM" in
+            macos-*) suffix='.app.tar.gz' ;;
+            linux-x64) suffix='.AppImage' ;;
+            windows-x64) suffix='.exe' ;;
+            *) echo "Unsupported platform: $PLATFORM" >&2; exit 1 ;;
+          esac
+          installed_artifact="$RUNNER_TEMP/punks-desktop-${PLATFORM}-${SOURCE_SHA}${suffix}"
+          updater_signature="${installed_artifact}.sig"
+          raw_evidence="$RUNNER_TEMP/punks-raw-evidence-${PLATFORM}"
+          driver_transcript="$RUNNER_TEMP/punks-transcript-${PLATFORM}.json"
+          resilience_observation="$RUNNER_TEMP/punks-resilience-${PLATFORM}.json"
+          artifact_scan="$RUNNER_TEMP/punks-artifact-scan-${PLATFORM}.json"
+          test -f "$installed_artifact"
+          test -f "$updater_signature"
+          test -f "$driver_transcript"
+          test -f "$resilience_observation"
+          test -f "$artifact_scan"
+          staging_proof="$RUNNER_TEMP/punks-staging-proof/staging-deployment-proof.json"
+          test -f "$staging_proof"
           node scripts/candidate/installed-app.mjs \
             --platform "$PLATFORM" \
             --source-sha "$SOURCE_SHA" \
@@ -1115,6 +1442,9 @@ jobs:
             --installed-artifact "$installed_artifact" \
             --updater-signature "$updater_signature" \
             --driver-transcript "$driver_transcript" \
+            --resilience-observation "$resilience_observation" \
+            --artifact-scan "$artifact_scan" \
+            --raw-evidence "$raw_evidence" \
             --proof-output "$RUNNER_TEMP/punks-installed-proof-${PLATFORM}" \
             --network-output "$RUNNER_TEMP/punks-installed-proof-${PLATFORM}/network-proof.json"
 
@@ -1211,7 +1541,7 @@ jobs:
     needs: attest_legs
     if: inputs.validation_scope == 'full-candidate'
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 45
     permissions:
       artifact-metadata: write
       contents: read
@@ -1244,6 +1574,13 @@ jobs:
           name: punks-staging-deployment-proof-${{ inputs.source_sha }}
           path: candidate-input/staging
 
+      - name: Download the exact secretless gate report
+        id: download_gate_report
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: punks-secretless-gates-${{ inputs.source_sha }}
+          path: candidate-input/gates
+
       - name: Build closed aggregate and immutable staging latest.json
         id: aggregate_candidate
         shell: bash
@@ -1261,28 +1598,34 @@ jobs:
             --release-tag "punks-staging-${SOURCE_SHA}" \
             --source-ref "$GITHUB_REF" \
             --signer-workflow "github.com/$GITHUB_REPOSITORY/.github/workflows/punks-desktop-candidate.yml"
+          cp candidate-input/staging/live-staging-follow-proof.json \
+            candidate/live-staging-follow-proof.json
+          cp candidate-input/staging/live-staging-auth-proof.json \
+            candidate/live-staging-auth-proof.json
 
-      - name: Attest the exact pre-dossier aggregate
-        id: attest_pre_dossier_candidate
+      - name: Attest the exact production aggregate
+        id: attest_production_candidate
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: |
             candidate/release-assets/*
             candidate/aggregate-manifest.json
             candidate/staging-deployment-proof.json
+            candidate/live-staging-auth-proof.json
+            candidate/live-staging-follow-proof.json
             candidate/promotion-evidence/**/*
 
-      - name: Verify the pre-dossier aggregate provenance
-        id: verify_pre_dossier_candidate
+      - name: Verify the production aggregate provenance
+        id: verify_production_candidate
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          ATTESTATION_BUNDLE: ${{ steps.attest_pre_dossier_candidate.outputs.bundle-path }}
+          ATTESTATION_BUNDLE: ${{ steps.attest_production_candidate.outputs.bundle-path }}
         run: |
           set -euo pipefail
-          mkdir -p candidate/promotion-evidence/provenance-verification
+          mkdir -p "$RUNNER_TEMP/production-verification"
           while IFS= read -r -d '' subject; do
-            output="candidate/promotion-evidence/provenance-verification/$(printf '%s' "$subject" | sha256sum | cut -d ' ' -f 1).json"
+            output="$RUNNER_TEMP/production-verification/$(printf '%s' "$subject" | sha256sum | cut -d ' ' -f 1).json"
             gh attestation verify "$subject" \
               --repo "$GITHUB_REPOSITORY" \
               --signer-workflow "github.com/$GITHUB_REPOSITORY/.github/workflows/punks-desktop-candidate.yml" \
@@ -1293,8 +1636,26 @@ jobs:
               --format json > "$output"
             test -s "$output"
           done < <(find candidate/release-assets candidate/promotion-evidence \
-            -type f -print0; printf '%s\0' candidate/aggregate-manifest.json candidate/staging-deployment-proof.json)
-          cp "$ATTESTATION_BUNDLE" candidate/promotion-evidence/pre-dossier-provenance.sigstore.json
+            -type f -print0; printf '%s\0' candidate/aggregate-manifest.json candidate/staging-deployment-proof.json candidate/live-staging-auth-proof.json candidate/live-staging-follow-proof.json)
+          cp "$ATTESTATION_BUNDLE" candidate/promotion-evidence/production-aggregate-provenance.sigstore.json
+
+      - name: Build gate and withdrawal fragments from observed subjects
+        id: build_observed_evidence_fragments
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/candidate/observed-evidence-fragments.mjs \
+            --candidate candidate \
+            --source-sha "$SOURCE_SHA" \
+            --staging-deployment-id "$STAGING_DEPLOYMENT_ID" \
+            --gate-report candidate-input/gates/punks-secretless-gates-report.json \
+            --gate-log candidate-input/gates/punks-secretless-gates.log \
+            --promotion-profile cloudflare/promotion-profiles.json \
+            --staging-material cloudflare/staging.resources.json \
+            --release-graph docs/migration/release-graph.yaml \
+            --withdrawal-inventory docs/migration/withdrawal-inventory.yaml \
+            --goldens docs/migration/goldens-ledger.yaml \
+            --provenance-bundle candidate/promotion-evidence/production-aggregate-provenance.sigstore.json
 
       - name: Complete the content-addressed promotion evidence
         id: complete_promotion_evidence
@@ -1310,8 +1671,44 @@ jobs:
             --release-graph docs/migration/release-graph.yaml \
             --withdrawal-inventory docs/migration/withdrawal-inventory.yaml \
             --goldens docs/migration/goldens-ledger.yaml \
-            --provenance-bundle candidate/promotion-evidence/pre-dossier-provenance.sigstore.json \
+            --provenance-bundle candidate/promotion-evidence/production-aggregate-provenance.sigstore.json \
             --output candidate/promotion-evidence/index.json
+
+      - name: Attest the complete pre-dossier evidence
+        id: attest_complete_evidence
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            candidate/release-assets/*
+            candidate/aggregate-manifest.json
+            candidate/staging-deployment-proof.json
+            candidate/live-staging-auth-proof.json
+            candidate/live-staging-follow-proof.json
+            candidate/promotion-evidence/**/*
+
+      - name: Verify the complete pre-dossier evidence
+        id: verify_complete_evidence
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ATTESTATION_BUNDLE: ${{ steps.attest_complete_evidence.outputs.bundle-path }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/pre-dossier-verification"
+          while IFS= read -r -d '' subject; do
+            output="$RUNNER_TEMP/pre-dossier-verification/$(printf '%s' "$subject" | sha256sum | cut -d ' ' -f 1).json"
+            gh attestation verify "$subject" \
+              --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "github.com/$GITHUB_REPOSITORY/.github/workflows/punks-desktop-candidate.yml" \
+              --source-digest "$SOURCE_SHA" \
+              --source-ref "$GITHUB_REF" \
+              --deny-self-hosted-runners \
+              --bundle "$ATTESTATION_BUNDLE" \
+              --format json > "$output"
+            test -s "$output"
+          done < <(find candidate/release-assets candidate/promotion-evidence \
+            -type f -print0; printf '%s\0' candidate/aggregate-manifest.json candidate/staging-deployment-proof.json candidate/live-staging-auth-proof.json candidate/live-staging-follow-proof.json)
+          cp "$ATTESTATION_BUNDLE" candidate/promotion-evidence/pre-dossier-provenance.sigstore.json
 
       - name: Assemble the exact promotion dossier
         id: assemble_promotion_dossier
@@ -1437,6 +1834,8 @@ jobs:
             candidate/release-assets/*
             candidate/aggregate-manifest.json
             candidate/staging-deployment-proof.json
+            candidate/live-staging-auth-proof.json
+            candidate/live-staging-follow-proof.json
             candidate/punks-candidate-aggregate.sigstore.json
             candidate/punks-candidate-attestation-url.txt
           )
@@ -1473,6 +1872,8 @@ jobs:
             punks-candidate-attestation-url.txt \
             aggregate-manifest.json \
             staging-deployment-proof.json \
+            live-staging-auth-proof.json \
+            live-staging-follow-proof.json \
             >> "$expected_assets"
           LC_ALL=C sort -o "$expected_assets" "$expected_assets"
           jq -r '.assets[].name' "$release_json" | LC_ALL=C sort > "$actual_assets"
@@ -1499,6 +1900,7 @@ jobs:
       contents: write
     env:
       SOURCE_SHA: ${{ inputs.source_sha }}
+      STAGING_DEPLOYMENT_ID: ${{ inputs.staging_deployment_id }}
       PUNKS_R2_PRIMARY_DESTINATION: ${{ vars.PUNKS_R2_PRIMARY_DESTINATION }}
       PUNKS_R2_RECOVERY_DESTINATION: ${{ vars.PUNKS_R2_RECOVERY_DESTINATION }}
     steps:
@@ -1509,6 +1911,24 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 1
           persist-credentials: false
+
+      - name: Set up pnpm for the immutable publisher
+        id: setup_pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        with:
+          version: 11.4.0
+
+      - name: Set up Node for the immutable publisher
+        id: setup_node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24.14.1
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install immutable publisher dependencies
+        id: install
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Download the final attested candidate
         id: download_final_candidate
@@ -1549,7 +1969,48 @@ jobs:
             --r2-primaire "$PUNKS_R2_PRIMARY_DESTINATION" \
             --r2-secondaire "$PUNKS_R2_RECOVERY_DESTINATION" \
             --bootstrap-r2 \
-            --frontieres scripts/promotion-frontiers.mjs
+            --frontieres scripts/promotion-frontiers.mjs \
+            > "$RUNNER_TEMP/promotion-publication.json"
+          jq -e '.statut == "publiee" or .statut == "reprise" or .statut == "deja-publiee"' \
+            "$RUNNER_TEMP/promotion-publication.json" >/dev/null
+
+      - name: Materialize signed expansion and active execution heads
+        id: materialize_operational_head
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PUNKS_R2_PRIMARY_API_TOKEN: ${{ secrets.PUNKS_R2_PRIMARY_API_TOKEN }}
+          PUNKS_R2_PRIMARY_ACCESS_KEY_ID: ${{ secrets.PUNKS_R2_PRIMARY_ACCESS_KEY_ID }}
+          PUNKS_R2_PRIMARY_SECRET_ACCESS_KEY: ${{ secrets.PUNKS_R2_PRIMARY_SECRET_ACCESS_KEY }}
+          PUNKS_R2_RECOVERY_API_TOKEN: ${{ secrets.PUNKS_R2_RECOVERY_API_TOKEN }}
+          PUNKS_R2_RECOVERY_ACCESS_KEY_ID: ${{ secrets.PUNKS_R2_RECOVERY_ACCESS_KEY_ID }}
+          PUNKS_R2_RECOVERY_SECRET_ACCESS_KEY: ${{ secrets.PUNKS_R2_RECOVERY_SECRET_ACCESS_KEY }}
+          PUNKS_RELEASE_APPROVERS_JSON: ${{ secrets.PUNKS_RELEASE_APPROVERS_JSON }}
+          PUNKS_RELEASE_APPROVERS_ANCHOR_SHA256: ${{ secrets.PUNKS_RELEASE_APPROVERS_ANCHOR_SHA256 }}
+          PUNKS_R2_DESTINATIONS_ANCHOR_SHA256: ${{ secrets.PUNKS_R2_DESTINATIONS_ANCHOR_SHA256 }}
+        run: |
+          set -euo pipefail
+          node scripts/candidate/operational-release-head.mjs \
+            --dossier candidate/promotion-dossier.json \
+            --publication-result "$RUNNER_TEMP/promotion-publication.json" \
+            --depot "$GITHUB_REPOSITORY" \
+            --tag "punks-staging-${SOURCE_SHA}" \
+            --r2-primaire "$PUNKS_R2_PRIMARY_DESTINATION" \
+            --r2-secondaire "$PUNKS_R2_RECOVERY_DESTINATION" \
+            --frontieres scripts/promotion-frontiers.mjs \
+            --output candidate/operational-release-head.json
+          node --input-type=module - "$SOURCE_SHA" "$STAGING_DEPLOYMENT_ID" <<'NODE'
+          import { readFileSync } from "node:fs";
+          import { canonicalSha256 } from "./scripts/migration-manifest-lib.mjs";
+          import { validateOperationalReleaseHead } from "./scripts/candidate/operational-release-head.mjs";
+          const dossier = JSON.parse(readFileSync("candidate/promotion-dossier.json", "utf8"));
+          const head = JSON.parse(readFileSync("candidate/operational-release-head.json", "utf8"));
+          validateOperationalReleaseHead(head, {
+            sourceSha: process.argv[2],
+            stagingDeploymentId: process.argv[3],
+            dossierSha256: canonicalSha256(dossier),
+          });
+          NODE
 
       - name: Activate the exact verified draft
         id: activate_verified_draft
@@ -1558,6 +2019,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          test -s candidate/operational-release-head.json
+          jq -e --arg sha "$SOURCE_SHA" '
+            .schema == "punks.operational-release-head.v1" and
+            .state == "active" and
+            .sourceSha == $sha and
+            [.transitions[].programme] == ["expansion", "active"] and
+            ([.transitions[].steps[].step] == ["E0", "E1", "E2", "E3", "E4", "A0", "A1", "A2", "A3", "A4"])
+          ' candidate/operational-release-head.json >/dev/null
           release_tag="punks-staging-${SOURCE_SHA}"
           before="$RUNNER_TEMP/release-before.json"
           gh release view "$release_tag" \
@@ -1572,9 +2041,9 @@ jobs:
           gh release edit "$release_tag" \
             --repo "$GITHUB_REPOSITORY" \
             --draft=false \
-            --prerelease
+            --latest
           gh release view "$release_tag" \
             --repo "$GITHUB_REPOSITORY" \
             --json isDraft,isPrerelease,targetCommitish,tagName \
-            --jq ".isDraft == false and .isPrerelease == true and .targetCommitish == \"${SOURCE_SHA}\" and .tagName == \"${release_tag}\"" \
+            --jq ".isDraft == false and .isPrerelease == false and .targetCommitish == \"${SOURCE_SHA}\" and .tagName == \"${release_tag}\"" \
             | grep -Fx true >/dev/null

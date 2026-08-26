@@ -1,5 +1,25 @@
 # Sceller le graphe de release expansion → activation → contraction
 
+Amendement du 26 août 2026 : les attentes calendaires de la promotion sont
+supprimées. Les étapes restent obligatoires, ordonnées et signées, mais elles
+peuvent toutes être observées et fermées dans le même run dès que leurs preuves
+réelles sont disponibles.
+
+Pour le bootstrap de la première tranche, le graphe versionné dans le commit
+candidat reste nécessairement un gabarit `preparation` avec `sha: null` : lui
+demander de contenir le SHA du commit qui le contient créerait une
+auto-référence cryptographique insoluble. Dans le run protégé, le dossier final,
+l'attestation publiée et son Reçu signé forment la tête opérationnelle
+`expansion → active`, content-addressée et publiée avant l'activation de la
+release. La synchronisation ultérieure du registre source recopie cette tête
+immuable sans changer le SHA du candidat ni réécrire son historique.
+Cette tête est matérialisée par `punks.operational-release-head.v1`, publié
+create-only : deux exécutions signées contiennent leurs Reçus de démarrage, les
+dix Reçus d'étape `E0…E4` puis `A0…A4`, chaque événement `etape-fermee`, les
+deux `phase-fermee` et les Reçus de transition. Le passage de la draft à
+`Latest` relit et refuse toute tête incomplète, réordonnée ou liée à un autre
+dossier ou déploiement.
+
 Les décisions closes par les issues #13 (preuves et seuils de retrait), #14
 (ordre des tranches), #16 (promotion, observation, récupération) et #47
 (§13 « Retrait, promotion et récupération ») sont matérialisées par un graphe
@@ -95,15 +115,20 @@ Aucune transition ni aucun roll-forward ne peut être ajouté au journal sans
 l'exécution réussie correspondante, intégralement chaînée jusqu'à ce Reçu
 terminal.
 
-Les durées fermées sont `E0=1 h`, `E1=2 h`, `E2=6 h`, `E3=24 h`, `E4=48 h`,
-puis `A0=48 h`, `A1=168 h`, `A2=24 h`, `A3=48 h`, `A4=168 h`. Une migration
-stateful non splittable remplace `E0…E3` par `P0=24 h` avant `E4`; la
-contraction réobserve `E4=48 h`. Chaque Reçu d'étape lie exactement les
+Il n'existe plus de durée calendaire minimale pour la promotion : `E0…E4`,
+`A0…A4` et `P0` portent tous `duree-minimale-heures: 0`. Une migration stateful
+non splittable remplace toujours `E0…E3` par `P0` avant `E4`; la contraction
+réobserve toujours `E4`. Chaque étape doit néanmoins posséder un segment UTC
+strictement positif, des échantillons suffisants et un verdict vert, et les
+événements restent strictement ordonnés. Cela permet une exécution complète
+dans le même run sans transformer l'absence d'attente en absence de preuve.
+Chaque Reçu d'étape lie exactement les
 versions et pourcentages Workers, les versions Workflows, la génération de
 compatibilité, les hashes desktop distribués, les bookmarks, DLQ, outboxes,
 incidents et les dix surfaces de topologie Cloudflare. Toute modification de
-topologie change le hash du snapshot et remet les durées à zéro : aucune durée
-acquise sur une autre configuration ne peut être réutilisée.
+topologie change le hash du snapshot et impose de rejouer les étapes depuis le
+début : aucune preuve acquise sur une autre configuration ne peut être
+réutilisée.
 
 Les verdicts couvrent exactement les 36 budgets de production décidés, avec
 leurs unités et maxima fermés. Pour un taux, le gate recalcule la borne
@@ -182,10 +207,10 @@ outre le digest du graphe, les versions et pourcentages Workers, les versions
 Workflows, la génération de compatibilité, les hashes desktop, les heures de
 début/fin, les approbateurs, les verdicts métriques, les bookmarks, les états
 DLQ/outboxes et les incidents. Les
-attestations et les Reçus sont publiés avec la release et dans le stockage R2
-prévu, en écriture create-only, avec verrouillage d'objet et deux comptes R2
-pour les contenus critiques ; le gate refuse toute dérive de ces règles
-d'immuabilité comme toute régression du journal.
+attestations et les Reçus sont publiés avec la release et dans deux buckets R2
+distincts du compte Cloudflare Punks, en écriture create-only et avec
+verrouillage d'objet pour les contenus critiques ; le gate refuse tout autre
+compte, toute dérive de ces règles d'immuabilité et toute régression du journal.
 
 Une attestation déjà publiée n'est jamais supprimée ni réécrite. Le registre
 append-only `invalidations-attestations` peut seulement lui associer un Reçu

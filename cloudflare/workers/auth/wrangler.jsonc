@@ -9,6 +9,7 @@
   "version_metadata": { "binding": "CF_VERSION_METADATA" },
   "vars": {
     "ENVIRONMENT": "local",
+    "PROMOTION_SESSION_ISSUANCE_ENABLED": "false",
     "BOT_INVOCATION_CURRENT_KID": "local-v1",
     "AUTH_BASE_URL": "http://localhost:1420",
     "SESSION_TTL_SECONDS": "2592000",
@@ -112,6 +113,7 @@
       ],
       "vars": {
         "ENVIRONMENT": "staging",
+        "PROMOTION_SESSION_ISSUANCE_ENABLED": "true",
         "BOT_INVOCATION_CURRENT_KID": "staging-v1",
         "AUTH_BASE_URL": "https://staging.punks.bot",
         "SESSION_TTL_SECONDS": "2592000",

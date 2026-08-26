@@ -21,7 +21,9 @@ import {
   sourceShaAnnotation,
   STAGING_DEPLOYMENT_PROOF_SCHEMA,
 } from "../../cloudflare/scripts/staging-deployment-proof.mjs";
+import { PREUVES_RECUPERATION } from "../promotion-resilience-lib.mjs";
 import { aggregateCandidate, collectPlatformLeg, run } from "./artifacts.mjs";
+import { assignedResilienceScenarios } from "./resilience-observation.mjs";
 
 const SOURCE_SHA = "a".repeat(40);
 const STAGING_PROOF_MATERIAL = {
@@ -40,6 +42,16 @@ const STAGING_PROOF_MATERIAL = {
 const DEPLOYMENT_ID = `sha256:${createHash("sha256")
   .update(canonicalJson(STAGING_PROOF_MATERIAL), "utf8")
   .digest("hex")}`;
+const AUTHORITIES = JSON.parse(
+  readFileSync(
+    new URL("../../cloudflare/promotion-profiles.json", import.meta.url),
+    "utf8",
+  ),
+).profiles[0].authorities.map(({ id }) => id);
+
+function sha256(content) {
+  return createHash("sha256").update(content).digest("hex");
+}
 const REPOSITORY = "mabzadev/punksbot";
 const SOURCE_REF = "refs/heads/main";
 const SIGNER_WORKFLOW =
@@ -114,7 +126,7 @@ function nativeProof(platform) {
   };
 }
 
-function createInstalledEvidence(root, platform) {
+function createInstalledEvidence(root, platform, withRecovery = false) {
   const evidence = join(root, `evidence-${platform}`);
   const shaRoot = join(evidence, "sha256");
   mkdirSync(shaRoot, { recursive: true });
@@ -131,24 +143,94 @@ function createInstalledEvidence(root, platform) {
     stagingDeploymentId: DEPLOYMENT_ID,
     result: "vert",
     plateforme: platform,
-    data: { subjectSha256, schema: "punks.installed-social-loop-transcript.v1" },
+    data: {
+      subjectSha256,
+      schema: "punks.installed-social-loop-transcript.v1",
+    },
   };
   const proofContent = Buffer.from(`${JSON.stringify(proof)}\n`);
   const proofSha256 = createHash("sha256").update(proofContent).digest("hex");
   const proofPath = `sha256/${proofSha256}-transcript-${platform}.json`;
   write(join(evidence, proofPath), proofContent);
+  const references = [
+    {
+      id: proof.id,
+      chemin: proofPath,
+      sha256: proofSha256,
+      sujet: { chemin: subjectPath, sha256: subjectSha256 },
+    },
+  ];
+  if (withRecovery) {
+    const add = (id, data, subject) => {
+      const digest = sha256(subject);
+      const safe = id.replaceAll(/[^a-z0-9.-]/giu, "-");
+      const observedPath = `sha256/${digest}-${safe}-subject.json`;
+      write(join(evidence, observedPath), subject);
+      const document = Buffer.from(
+        `${JSON.stringify({
+          schema: "punks.promotion-proof.v1",
+          id,
+          candidateSha: SOURCE_SHA,
+          stagingDeploymentId: DEPLOYMENT_ID,
+          result: "vert",
+          plateforme: platform,
+          data: { ...data, subjectSha256: digest },
+        })}\n`,
+      );
+      const documentDigest = sha256(document);
+      const documentPath = `sha256/${documentDigest}-${safe}.json`;
+      write(join(evidence, documentPath), document);
+      const reference = {
+        id,
+        chemin: documentPath,
+        sha256: documentDigest,
+        sujet: { chemin: observedPath, sha256: digest },
+      };
+      references.push(reference);
+      return reference;
+    };
+    for (const { type, authority } of assignedResilienceScenarios(
+      platform,
+      AUTHORITIES,
+    )) {
+      const capture = Buffer.from(`fault:${type}:${platform}:${authority}\n`);
+      const fault = add(
+        `faute/${type}/${authority}`,
+        {
+          autorite: authority,
+          plateforme: platform,
+          executionId: `fault-${type}-${platform}-${authority}`,
+          sha256Artefact: "aa".repeat(32),
+          transcriptSha256: subjectSha256,
+          captureSha256: sha256(capture),
+        },
+        capture,
+      );
+      for (const recovery of PREUVES_RECUPERATION) {
+        const observed = Buffer.from(
+          `recovery:${recovery}:${type}:${platform}:${authority}\n`,
+        );
+        add(
+          `recuperation/${recovery}/${type}/${authority}`,
+          {
+            type,
+            autorite: authority,
+            plateforme: platform,
+            executionId: `fault-${type}-${platform}-${authority}`,
+            fauteSha256: fault.sha256,
+            sha256Artefact: "aa".repeat(32),
+            captureSha256: sha256(capture),
+          },
+          observed,
+        );
+      }
+    }
+  }
   write(
     join(evidence, "index.json"),
     `${JSON.stringify({
       schema: "punks.promotion-evidence-index.v1",
-      preuves: [
-        {
-          id: proof.id,
-          chemin: proofPath,
-          sha256: proofSha256,
-          sujet: { chemin: subjectPath, sha256: subjectSha256 },
-        },
-      ],
+      preuves: references,
     })}\n`,
   );
   const networkProof = join(evidence, "network-proof.json");
@@ -226,7 +308,9 @@ function createRacingFakeGh(root, input) {
     const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
     expectedSubjects.add(fileSha256(manifestPath));
     expectedSubjects.add(fileSha256(join(platformRoot, "native-proof.json")));
-    expectedSubjects.add(fileSha256(join(platformRoot, "evidence", "index.json")));
+    expectedSubjects.add(
+      fileSha256(join(platformRoot, "evidence", "index.json")),
+    );
     expectedSubjects.add(
       fileSha256(join(platformRoot, "evidence", "network-proof.json")),
     );
@@ -272,11 +356,11 @@ function createRacingFakeGh(root, input) {
   return { path, firstArtifactPath, firstManifest };
 }
 
-function collectLeg(root, platform) {
+function collectLeg(root, platform, withRecovery = false) {
   const proofPath = join(root, "proof-" + platform + ".json");
   write(proofPath, JSON.stringify(nativeProof(platform)));
   const output = join(root, "collected-" + platform);
-  const installed = createInstalledEvidence(root, platform);
+  const installed = createInstalledEvidence(root, platform, withRecovery);
   const manifest = collectPlatformLeg({
     platform,
     target: TARGETS[platform],
@@ -291,11 +375,11 @@ function collectLeg(root, platform) {
   return { manifest, output };
 }
 
-function createAggregateFixture(root) {
+function createAggregateFixture(root, withRecovery = false) {
   const input = join(root, "legs");
   mkdirSync(input);
   for (const platform of Object.keys(TARGETS)) {
-    const { output } = collectLeg(root, platform);
+    const { output } = collectLeg(root, platform, withRecovery);
     cpSync(join(output, platform), join(input, platform), {
       recursive: true,
       errorOnExist: true,
@@ -309,8 +393,8 @@ function createAggregateFixture(root) {
   return { input, output };
 }
 
-function aggregateOptions(root, overrides = {}) {
-  const fixture = createAggregateFixture(root);
+function aggregateOptions(root, overrides = {}, withRecovery = false) {
+  const fixture = createAggregateFixture(root, withRecovery);
   const stagingProof = join(root, "staging-deployment-proof.json");
   write(
     stagingProof,
@@ -468,7 +552,11 @@ test("collect refuses a destination created after validation without touching it
           bundle: createBundle(root, platform),
           nativeProof: proofPath,
           installedProof: createInstalledEvidence(root, platform).evidence,
-          networkProof: join(root, `evidence-${platform}`, "network-proof.json"),
+          networkProof: join(
+            root,
+            `evidence-${platform}`,
+            "network-proof.json",
+          ),
           output,
         },
         {
@@ -496,7 +584,10 @@ test("aggregate verifies four Sigstore legs and prepares immutable latest.json",
   assert.equal(aggregate.platforms.length, 4);
   assert.equal(aggregate.stagingDeploymentId, DEPLOYMENT_ID);
   assert.match(aggregate.stagingProof.sha256, /^[0-9a-f]{64}$/);
-  assert.match(aggregate.promotionEvidence.platformIndex.sha256, /^[0-9a-f]{64}$/);
+  assert.match(
+    aggregate.promotionEvidence.platformIndex.sha256,
+    /^[0-9a-f]{64}$/,
+  );
   assert.equal(aggregate.promotionEvidence.network.length, 4);
   const platformIndex = JSON.parse(
     readFileSync(
@@ -542,6 +633,45 @@ test("aggregate verifies four Sigstore legs and prepares immutable latest.json",
     ),
   );
   assert.throws(() => aggregateCandidate(options), /already exists/);
+});
+
+test("aggregate separates observed recovery proofs and closes their captures", (context) => {
+  const root = mkdtempSync(join(tmpdir(), "punks-aggregate-recovery-"));
+  context.after(() => rmSync(root, { force: true, recursive: true }));
+  const options = aggregateOptions(root, {}, true);
+
+  aggregateCandidate(options);
+
+  const recovery = JSON.parse(
+    readFileSync(
+      join(options.output, "promotion-evidence", "recovery-index.json"),
+      "utf8",
+    ),
+  );
+  const ids = recovery.preuves.map(({ id }) => id);
+  assert.equal(
+    ids.filter((id) => id.startsWith("faute/")).length,
+    AUTHORITIES.length * 3,
+  );
+  assert.equal(
+    ids.filter((id) => id.startsWith("recuperation/")).length,
+    AUTHORITIES.length * 3 * PREUVES_RECUPERATION.length + 1,
+  );
+  assert.ok(ids.includes("recuperation/captures"));
+  assert.ok(ids.includes("gate/fautes-injectees"));
+
+  const platform = JSON.parse(
+    readFileSync(
+      join(options.output, "promotion-evidence", "platform-index.json"),
+      "utf8",
+    ),
+  );
+  assert.equal(
+    platform.preuves.some(
+      ({ id }) => id.startsWith("faute/") || id.startsWith("recuperation/"),
+    ),
+    false,
+  );
 });
 
 test("aggregate verifies and copies the exact bytes read before gh can replace inputs", (context) => {

@@ -1,4 +1,5 @@
-import { DurableObject } from "cloudflare:workers";
+import { PromotionFaultableDurableObject } from "../../../shared/promotion-faultable-do";
+import { canonicalJson, sha256Hex } from "@punks/core";
 
 import type { AuthEnv } from "./env";
 
@@ -14,7 +15,15 @@ const RECORD_KEY = "desktop_session_revocation_v1";
  * Opaque revoke-only authority. Possession can only revoke one Session; it
  * cannot authenticate, inspect identity, renew, or access a Workspace.
  */
-export class SessionRevocationDO extends DurableObject<AuthEnv> {
+export class SessionRevocationDO extends PromotionFaultableDurableObject<AuthEnv> {
+  protected override async promotionRecoveryFingerprint(): Promise<string> {
+    const current = await this.read();
+    if (current === null) {
+      throw new Error("promotion Session revocation target is missing");
+    }
+    return sha256Hex(canonicalJson(current));
+  }
+
   async create(input: {
     sessionId: string;
     expiresAt: string;

@@ -3,8 +3,9 @@ use std::{collections::HashMap, sync::Arc};
 use punks_account_client::ceremony::CompiledPunksEnvironment;
 use punks_account_client::{
     AuthorReference, AuthorSummary, ClientDistribution, ClientFailure, ClientPlatform,
-    DesktopCompatibility, FollowCancellation, FollowConnection, FollowDelivery, MessagePage,
-    MessageReplyTarget, MessageView, PresenceCancellation, PresenceConnection, PunksAccountClient,
+    DesktopCompatibility, FollowCancellation, FollowConnection, FollowDelivery, FollowServerFrame,
+    MessagePage, MessageReplyTarget, MessageView, PresenceCancellation, PresenceConnection,
+    PromotionFaultObservation, PromotionFaultObservationInput, PunksAccountClient,
     PunksNavigationTarget, ReactionMutationResult, StreamSummary, StreamView, WorkspaceLease,
     WorkspaceSession, WorkspaceSummary,
 };
@@ -15,7 +16,10 @@ use punks_account_client::{
 use serde::Deserialize;
 use tokio::sync::{Mutex, RwLock};
 
-use crate::punks_auth_state::NativeAuthenticationRuntime;
+use crate::{
+    punks_auth_state::NativeAuthenticationRuntime,
+    punks_promotion_audit::{observe_result, record_ipc_coordinates},
+};
 
 #[cfg(test)]
 #[path = "punks_message_lifecycle.rs"]
@@ -240,7 +244,31 @@ pub async fn punks_check_compatibility(
     client: tauri::State<'_, PunksDesktopClient>,
 ) -> Result<DesktopCompatibility, ClientFailure> {
     let _transition = client.transitions.write().await;
-    client.account()?.check_compatibility().await
+    let result = client.account()?.check_compatibility().await;
+    observe_result(
+        "punks_check_compatibility",
+        "desktop.compatibility-response@1",
+        result,
+    )
+}
+
+#[tauri::command]
+/// Observes the fault state bound to one protected staging promotion run.
+///
+/// This command is unavailable outside the compiled staging distribution and
+/// returns only the closed public observation contract, never operator
+/// credentials or controller internals.
+pub async fn punks_observe_promotion_fault(
+    client: tauri::State<'_, PunksDesktopClient>,
+    input: PromotionFaultObservationInput,
+) -> Result<PromotionFaultObservation, ClientFailure> {
+    let _operation = client.transitions.read().await;
+    let result = client.account()?.observe_promotion_fault(input).await;
+    observe_result(
+        "punks_observe_promotion_fault",
+        "promotion.fault-observe@1",
+        result,
+    )
 }
 
 /// Native navigation envelope.  The expected origin comes from the compiled
@@ -259,7 +287,8 @@ pub async fn punks_list_workspaces(
     client: tauri::State<'_, PunksDesktopClient>,
 ) -> Result<Vec<WorkspaceSummary>, ClientFailure> {
     let _transition = client.transitions.write().await;
-    client.account()?.list_workspaces().await
+    let result = client.account()?.list_workspaces().await;
+    observe_result("punks_list_workspaces", "workspace.summary[]@1", result)
 }
 
 #[cfg(test)]
@@ -339,15 +368,19 @@ pub async fn punks_open_workspace(
     client: tauri::State<'_, PunksDesktopClient>,
     workspace_id: String,
 ) -> Result<WorkspaceLease, ClientFailure> {
-    client.account()?.cancel_workspace_operations().await;
-    let _transition = client.transitions.write().await;
-    client.cancel_follows().await;
-    client.sessions.lock().await.clear();
-    let session = client.account()?.open_workspace(&workspace_id).await?;
-    let lease = session.lease().clone();
-    let mut sessions = client.sessions.lock().await;
-    sessions.insert(lease.generation, session);
-    Ok(lease)
+    let result = async {
+        client.account()?.cancel_workspace_operations().await;
+        let _transition = client.transitions.write().await;
+        client.cancel_follows().await;
+        client.sessions.lock().await.clear();
+        let session = client.account()?.open_workspace(&workspace_id).await?;
+        let lease = session.lease().clone();
+        let mut sessions = client.sessions.lock().await;
+        sessions.insert(lease.generation, session);
+        Ok(lease)
+    }
+    .await;
+    observe_result("punks_open_workspace", "workspace.lease@1", result)
 }
 
 #[tauri::command]
@@ -382,7 +415,8 @@ pub async fn punks_list_streams(
     lease: WorkspaceLease,
 ) -> Result<Vec<StreamSummary>, ClientFailure> {
     let _operation = client.transitions.read().await;
-    client.session(&lease).await?.list_streams().await
+    let result = client.session(&lease).await?.list_streams().await;
+    observe_result("punks_list_streams", "conversation.summary[]@1", result)
 }
 
 #[tauri::command]
@@ -414,11 +448,12 @@ pub async fn punks_get_timeline(
     input: MessagePageInput,
 ) -> Result<MessagePage, ClientFailure> {
     let _operation = client.transitions.read().await;
-    client
+    let result = client
         .session(&lease)
         .await?
         .get_timeline(&input.conversation_id, input.limit, input.cursor.as_deref())
-        .await
+        .await;
+    observe_result("punks_get_timeline", "message.history-response@1", result)
 }
 
 #[derive(Debug, Deserialize)]
@@ -437,7 +472,7 @@ pub async fn punks_get_thread(
     input: ThreadPageInput,
 ) -> Result<MessagePage, ClientFailure> {
     let _operation = client.transitions.read().await;
-    client
+    let result = client
         .session(&lease)
         .await?
         .get_thread(
@@ -446,7 +481,8 @@ pub async fn punks_get_thread(
             input.limit,
             input.cursor.as_deref(),
         )
-        .await
+        .await;
+    observe_result("punks_get_thread", "message.history-response@1", result)
 }
 
 #[tauri::command]
@@ -526,21 +562,37 @@ pub async fn punks_follow_conversation(
     conversation_id: String,
     after_cursor: u64,
 ) -> Result<String, ClientFailure> {
-    let _operation = client.transitions.read().await;
-    let connection = client
-        .session(&lease)
-        .await?
-        .follow_conversation(&conversation_id, after_cursor)
-        .await?;
-    let operation_id = uuid::Uuid::new_v4().to_string();
-    client.follows.lock().await.insert(
-        operation_id.clone(),
-        FollowEntry {
-            cancellation: connection.cancellation(),
-            connection: Arc::new(Mutex::new(connection)),
-        },
+    let result = async {
+        let _operation = client.transitions.read().await;
+        let connection = client
+            .session(&lease)
+            .await?
+            .follow_conversation(&conversation_id, after_cursor)
+            .await?;
+        let operation_id = uuid::Uuid::new_v4().to_string();
+        client.follows.lock().await.insert(
+            operation_id.clone(),
+            FollowEntry {
+                cancellation: connection.cancellation(),
+                connection: Arc::new(Mutex::new(connection)),
+            },
+        );
+        Ok(operation_id)
+    }
+    .await;
+    let coordinates = match &result {
+        Ok(operation_id) => {
+            serde_json::json!({ "operationId": operation_id, "afterCursor": after_cursor })
+        }
+        Err(_) => serde_json::json!({ "afterCursor": after_cursor }),
+    };
+    record_ipc_coordinates(
+        "punks_follow_conversation",
+        "follow.operation@1",
+        result.is_ok(),
+        &coordinates,
     );
-    Ok(operation_id)
+    result
 }
 
 #[tauri::command]
@@ -548,13 +600,63 @@ pub async fn punks_follow_next(
     client: tauri::State<'_, PunksDesktopClient>,
     operation_id: String,
 ) -> Result<FollowDelivery, ClientFailure> {
-    client
+    let result = client
         .follow(&operation_id)
         .await?
         .lock()
         .await
         .next_delivery()
-        .await
+        .await;
+    let coordinates = match &result {
+        Ok(FollowDelivery::ApplyBatch {
+            frame:
+                FollowServerFrame::Changes {
+                    from_exclusive_cursor,
+                    through_cursor,
+                    ..
+                },
+        }) => serde_json::json!({
+            "operationId": operation_id,
+            "kind": "apply_batch",
+            "fromExclusiveCursor": from_exclusive_cursor,
+            "throughCursor": through_cursor,
+        }),
+        Ok(FollowDelivery::BecameLive) => {
+            serde_json::json!({ "operationId": operation_id, "kind": "became_live" })
+        }
+        Ok(FollowDelivery::Resync {
+            reason,
+            after_cursor,
+            high_water_cursor,
+        }) => serde_json::json!({
+            "operationId": operation_id,
+            "kind": "resync",
+            "reason": reason,
+            "afterCursor": after_cursor,
+            "highWaterCursor": high_water_cursor,
+        }),
+        Ok(FollowDelivery::Terminal { reason, cursor }) => serde_json::json!({
+            "operationId": operation_id,
+            "kind": "terminal",
+            "reason": reason,
+            "cursor": cursor,
+        }),
+        Ok(FollowDelivery::Typing { .. }) => {
+            serde_json::json!({ "operationId": operation_id, "kind": "typing" })
+        }
+        Ok(FollowDelivery::ApplyBatch { .. }) => {
+            serde_json::json!({ "operationId": operation_id, "kind": "unexpected_batch" })
+        }
+        Err(_) => serde_json::json!({ "operationId": operation_id }),
+    };
+    record_ipc_coordinates(
+        "punks_follow_next",
+        "follow.delivery@1",
+        result.is_ok(),
+        &coordinates,
+    );
+    crate::punks_promotion_audit::record_live_follow_conformance_if_ready();
+    result
 }
 
 #[tauri::command]
@@ -563,13 +665,24 @@ pub async fn punks_confirm_follow_batch(
     operation_id: String,
     through_cursor: u64,
 ) -> Result<(), ClientFailure> {
-    client
+    let result = client
         .follow(&operation_id)
         .await?
         .lock()
         .await
         .confirm_batch(through_cursor)
-        .await
+        .await;
+    record_ipc_coordinates(
+        "punks_confirm_follow_batch",
+        "follow.acknowledgement@1",
+        result.is_ok(),
+        &serde_json::json!({
+            "operationId": operation_id,
+            "throughCursor": through_cursor,
+        }),
+    );
+    crate::punks_promotion_audit::record_live_follow_conformance_if_ready();
+    result
 }
 
 #[tauri::command]
@@ -579,10 +692,28 @@ pub async fn punks_close_follow(
 ) -> Result<(), ClientFailure> {
     let entry = client.follows.lock().await.remove(&operation_id);
     let Some(entry) = entry else {
+        record_ipc_coordinates(
+            "punks_close_follow",
+            "follow.terminal@1",
+            true,
+            &serde_json::json!({
+                "operationId": operation_id,
+                "alreadyClosed": true,
+            }),
+        );
         return Ok(());
     };
     entry.cancellation.cancel();
     let result = entry.connection.lock().await.close().await;
+    record_ipc_coordinates(
+        "punks_close_follow",
+        "follow.terminal@1",
+        result.is_ok(),
+        &serde_json::json!({
+            "operationId": operation_id,
+            "alreadyClosed": false,
+        }),
+    );
     result
 }
 
@@ -676,7 +807,7 @@ pub async fn punks_post_message(
     input: PostTextInput,
 ) -> Result<MessageView, ClientFailure> {
     let _operation = client.transitions.read().await;
-    client
+    let result = client
         .session(&lease)
         .await?
         .post_text(
@@ -685,7 +816,22 @@ pub async fn punks_post_message(
             input.topic.as_deref(),
             input.reply_target.as_ref(),
         )
-        .await
+        .await;
+    let coordinates = match &result {
+        Ok(message) => serde_json::json!({
+            "messageId": message.id,
+            "topicPresent": message.topic.is_some(),
+            "threadDepth": message.thread_depth,
+        }),
+        Err(_) => serde_json::json!({}),
+    };
+    record_ipc_coordinates(
+        "punks_post_message",
+        "message.view@1",
+        result.is_ok(),
+        &coordinates,
+    );
+    result
 }
 
 #[derive(Debug, Deserialize)]
@@ -703,11 +849,21 @@ pub async fn punks_add_reaction(
     input: ReactionInput,
 ) -> Result<ReactionMutationResult, ClientFailure> {
     let _operation = client.transitions.read().await;
-    client
+    let result = client
         .session(&lease)
         .await?
         .add_reaction(&input.conversation_id, &input.message_id, &input.reaction)
-        .await
+        .await;
+    record_ipc_coordinates(
+        "punks_add_reaction",
+        "message.reaction-mutation-response@1",
+        result.is_ok(),
+        &serde_json::json!({
+            "messageId": input.message_id,
+            "reaction": input.reaction,
+        }),
+    );
+    result
 }
 
 #[tauri::command]

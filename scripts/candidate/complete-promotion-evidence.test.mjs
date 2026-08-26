@@ -60,6 +60,20 @@ function fixture() {
   const evidence = join(candidate, "promotion-evidence");
   const content = join(evidence, "sha256");
   mkdirSync(content, { recursive: true });
+  const network = join(evidence, "network");
+  mkdirSync(network);
+  for (const platform of PLATEFORMES) {
+    writeFileSync(
+      join(network, `${platform}.json`),
+      `${JSON.stringify({
+        schema: "punks.installed-network-proof.v1",
+        platform,
+        candidateSha: SOURCE_SHA,
+        stagingDeploymentId: DEPLOYMENT_ID,
+        network: { requests: [{ transport: "https" }, { transport: "wss" }] },
+      })}\n`,
+    );
+  }
   const aggregateContent = `${JSON.stringify({
     schema: "punks.desktop-candidate-aggregate.v1",
     sourceSha: SOURCE_SHA,
@@ -139,6 +153,8 @@ function requiredIdsByFragment() {
     "staging/deploiement",
     "production/bundle",
     "production/manifeste",
+    "production/evidence/platform-index",
+    "production/evidence/recovery-index",
     ...REQUIRED_GATES.map((gate) => `gate/${gate}`),
     "scan/sources",
     "scan/dependances",
@@ -152,11 +168,14 @@ function requiredIdsByFragment() {
     "retrait/verdicts",
   ];
   for (const target of PLATEFORMES) {
+    gates.push(`production/evidence/network/${target}`);
     platform.push(
       `transcript/${target}`,
+      `brut/${target}`,
       `staging/reobservation/${target}`,
       `artefact/${target}/bundle`,
       `artefact/${target}/signature`,
+      `scan/artefact/${target}`,
       ...VERIFICATIONS_ARTEFACT.map(
         (verification) => `artefact/${target}/verification/${verification}`,
       ),
@@ -190,6 +209,30 @@ function proofMaterial(input, id) {
     "production/manifeste": input.contents.aggregate,
   }[id];
   const data = {};
+  if (id === "production/evidence/platform-index") {
+    data.path = "promotion-evidence/platform-index.json";
+    return {
+      subject: readFileSync(join(input.evidence, "platform-index.json")),
+      data,
+    };
+  }
+  if (id === "production/evidence/recovery-index") {
+    data.path = "promotion-evidence/recovery-index.json";
+    return {
+      subject: readFileSync(join(input.evidence, "recovery-index.json")),
+      data,
+    };
+  }
+  const network = /^production\/evidence\/network\/(.+)$/u.exec(id);
+  if (network) {
+    data.path = `promotion-evidence/network/${network[1]}.json`;
+    return {
+      subject: readFileSync(
+        join(input.evidence, "network", `${network[1]}.json`),
+      ),
+      data,
+    };
+  }
   if (id === "registres") {
     data.materials = {
       releaseGraphSha256: sha256(input.contents.releaseGraph),
@@ -245,8 +288,11 @@ function addFragment(input, fragment, ids) {
 
 function addCompleteFragments(input, omitted = null) {
   const fragments = requiredIdsByFragment();
-  for (const [name, ids] of Object.entries(fragments)) {
-    if (name !== omitted) addFragment(input, name, ids);
+  for (const name of ["platform", "recovery", "gates", "withdrawal"]) {
+    addFragment(input, name, fragments[name]);
+  }
+  if (omitted !== null) {
+    rmSync(join(input.evidence, `${omitted}-index.json`));
   }
   return fragments;
 }

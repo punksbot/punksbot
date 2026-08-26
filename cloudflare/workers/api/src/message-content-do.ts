@@ -1,8 +1,9 @@
-import { DurableObject } from "cloudflare:workers";
+import { PromotionFaultableDurableObject } from "../../../shared/promotion-faultable-do";
 import {
   canonicalJson,
   encodeMessageContentEnvelope,
   MESSAGE_CONTENT_ENVELOPE_MAX_BYTES,
+  sha256Hex,
 } from "@punks/core";
 
 import type { ApiEnv, ErasureTombstone } from "./env";
@@ -231,7 +232,18 @@ type ErasureDecision =
  * lookup so a tombstone always wins over restored local state. Plaintext and
  * AES keys are never logged, sent to the registry, or written to R2.
  */
-export class MessageContentDO extends DurableObject<ApiEnv> {
+export class MessageContentDO extends PromotionFaultableDurableObject<ApiEnv> {
+  protected override async promotionRecoveryFingerprint(): Promise<string> {
+    const rows = this.ctx.storage.sql
+      .exec<Record<string, SqlStorageValue>>(
+        "SELECT * FROM content_versions ORDER BY version, content_key_id",
+      )
+      .toArray();
+    if (rows.length === 0)
+      throw new Error("promotion Message content target is missing");
+    return sha256Hex(canonicalJson(rows));
+  }
+
   constructor(ctx: DurableObjectState, env: ApiEnv) {
     super(ctx, env);
     this.ctx.blockConcurrencyWhile(async () => {

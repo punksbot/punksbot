@@ -23,6 +23,7 @@ export default defineConfig({
           GOOGLE_OAUTH_CLIENT_SECRET: "google-secret-test",
           GITHUB_OAUTH_CLIENT_ID: "github-client-test",
           GITHUB_OAUTH_CLIENT_SECRET: "github-secret-test",
+          PROMOTION_SESSION_ISSUANCE_ENABLED: "true",
           SESSION_TTL_SECONDS: "3600",
           WEBAUTHN_RP_ID: "auth.punks.test",
           WEBAUTHN_RP_NAME: "Punks Bot",

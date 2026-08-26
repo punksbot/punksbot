@@ -11,7 +11,7 @@ members = [
 
 [package]
 name = "desktop-shell"
-version = "0.5.17"
+version = "0.6.0"
 description = "Desktop application shell"
 authors = ["Desktop Contributors"]
 edition = "2021"
@@ -103,7 +103,7 @@ mesh-llm = ["buzz-desktop", "dep:iroh", "dep:mesh-llm-sdk", "dep:mesh-llm-host-r
 # OS keyring backing for desktop secret storage (nsec private keys). When
 # disabled, secrets fall back to 0o600 files. On by default for real builds.
 system-keyring = ["dep:keyring"]
-punks-desktop-social-loop = ["dep:keyring", "dep:punks-account-client"]
+punks-desktop-social-loop = ["dep:keyring", "dep:punks-account-client", "dep:sha2"]
 
 [build-dependencies]
 base64 = "0.22"

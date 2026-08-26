@@ -155,7 +155,7 @@ test("does not let a runtime star mask a separate type-only RPC export", async (
 test("validates every local and staging Worker service binding", async () => {
   await assert.doesNotReject(async () => {
     const result = await validateWorkerBindings(repositoryRoot);
-    assert.deepEqual(result, { workerCount: 8, bindingCount: 45 });
+    assert.deepEqual(result, { workerCount: 8, bindingCount: 53 });
   });
 });
 

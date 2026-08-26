@@ -26,6 +26,7 @@ import {
   verifyGithubSubject,
 } from "./github-attestation-lib.mjs";
 import { canonicalSha256 } from "./migration-manifest-lib.mjs";
+import { validateInstalledArtifactScan } from "./candidate/installed-artifact-scan.mjs";
 import { validateInstalledTranscript } from "./promotion-installed-transcript-lib.mjs";
 import {
   validateCandidateAggregateContent,
@@ -33,6 +34,7 @@ import {
   validatePromotionProfilesContent,
   validateStagingMaterialContent,
 } from "./promotion-materials-lib.mjs";
+import { PLATEFORMES } from "./release-graph-lib.mjs";
 
 const SHA256_RE = /^[0-9a-f]{64}$/;
 const SHA1_RE = /^[0-9a-f]{40}$/;
@@ -594,6 +596,96 @@ export function validerSujetPreuve(
     }
     return;
   }
+  const installedArtifactScan = /^scan\/artefact\/([^/]+)$/.exec(identifiant);
+  if (installedArtifactScan) {
+    const plateforme = installedArtifactScan[1];
+    const artefact = dossier.liaison?.artefacts?.find(
+      (candidate) => candidate?.plateforme === plateforme,
+    );
+    try {
+      const scan = validateInstalledArtifactScan(
+        JSON.parse(sujetLocal.contenu.toString("utf8")),
+        {
+          platform: plateforme,
+          candidateSha: dossier.candidat?.sha,
+          artifactSha256: artefact?.sha256,
+        },
+      );
+      if (
+        sujetLocal.sha256 !== artefact?.scanSha256 ||
+        document.data.sha256Artefact !== artefact?.sha256 ||
+        document.data.transcriptSha256 !== artefact?.transcriptSha256 ||
+        document.data.nativeSha256 !== scan.native.sha256 ||
+        document.data.frontendSha256 !== scan.frontend.sha256 ||
+        document.data.fichiersFrontend !== scan.frontend.files.length ||
+        !memesDonneesJson(
+          document.data.marqueursInterdits,
+          scan.forbiddenMarkers,
+        )
+      ) {
+        throw new Error("scan projection or digest is divergent");
+      }
+    } catch (erreur) {
+      push(
+        `preuves : preuve « ${identifiant} » — scan installé invalide (${erreur instanceof Error ? erreur.message : String(erreur)})`,
+      );
+    }
+    return;
+  }
+  const evidenceIndex =
+    /^production\/evidence\/(platform-index|recovery-index)$/.exec(identifiant);
+  if (evidenceIndex) {
+    const key =
+      evidenceIndex[1] === "platform-index" ? "platformIndex" : "recoveryIndex";
+    const expectedPath = `promotion-evidence/${evidenceIndex[1]}.json`;
+    const expectedDigest =
+      dossier.liaison?.["digests-preuves-promotion"]?.[key];
+    try {
+      const index = JSON.parse(sujetLocal.contenu.toString("utf8"));
+      if (
+        document.data.path !== expectedPath ||
+        sujetLocal.sha256 !== expectedDigest ||
+        index?.schema !== "punks.promotion-evidence-index.v1" ||
+        !Array.isArray(index.preuves) ||
+        index.preuves.length === 0
+      ) {
+        throw new Error("index, path or digest is divergent");
+      }
+    } catch (erreur) {
+      push(
+        `preuves : preuve « ${identifiant} » — index de promotion brut invalide (${erreur instanceof Error ? erreur.message : String(erreur)})`,
+      );
+    }
+    return;
+  }
+  const evidenceNetwork = /^production\/evidence\/network\/([^/]+)$/.exec(
+    identifiant,
+  );
+  if (evidenceNetwork) {
+    const plateforme = evidenceNetwork[1];
+    const expectedPath = `promotion-evidence/network/${plateforme}.json`;
+    const expectedDigest =
+      dossier.liaison?.["digests-preuves-promotion"]?.network?.[plateforme];
+    try {
+      const network = JSON.parse(sujetLocal.contenu.toString("utf8"));
+      if (
+        !PLATEFORMES.includes(plateforme) ||
+        document.data.path !== expectedPath ||
+        sujetLocal.sha256 !== expectedDigest ||
+        network?.schema !== "punks.installed-network-proof.v1" ||
+        network.platform !== plateforme ||
+        network.candidateSha !== dossier.candidat?.sha ||
+        network.stagingDeploymentId !== dossier.liaison?.staging?.deploiement
+      ) {
+        throw new Error("network evidence, path or digest is divergent");
+      }
+    } catch (erreur) {
+      push(
+        `preuves : preuve « ${identifiant} » — réseau de promotion brut invalide (${erreur instanceof Error ? erreur.message : String(erreur)})`,
+      );
+    }
+    return;
+  }
   if (identifiant === "production/manifeste") {
     try {
       validateCandidateAggregateContent(sujetLocal.contenu, {
@@ -601,6 +693,8 @@ export function validerSujetPreuve(
         stagingDeploymentId: dossier.liaison?.staging?.deploiement,
         stagingProofSha256:
           dossier.liaison?.staging?.["deploiement-preuve-sha256"],
+        promotionEvidenceDigests:
+          dossier.liaison?.["digests-preuves-promotion"],
         repository: dossier.provenance?.repository,
         artifacts: dossier.liaison?.artefacts,
       });

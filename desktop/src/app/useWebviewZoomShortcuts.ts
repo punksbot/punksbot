@@ -6,9 +6,9 @@ import { hasPrimaryShortcutModifier } from "@/shared/lib/platform";
 
 const DEFAULT_ZOOM_FACTOR = 1;
 const MIN_ZOOM_FACTOR = 0.75;
-const MAX_ZOOM_FACTOR = 1.5;
+export const MAX_ZOOM_FACTOR = 2;
 const ZOOM_STEP = 0.1;
-const TEXT_SCALE_STORAGE_KEY = "buzz:text-scale";
+const TEXT_SCALE_STORAGE_KEY = "punks:text-scale";
 
 type ZoomAction = "increase" | "decrease" | "reset";
 
@@ -49,7 +49,7 @@ function getZoomAction(event: KeyboardEvent): ZoomAction | null {
   return null;
 }
 
-function getNextZoomFactor(action: ZoomAction, zoomFactor: number) {
+export function getNextZoomFactor(action: ZoomAction, zoomFactor: number) {
   if (action === "reset") {
     return DEFAULT_ZOOM_FACTOR;
   }

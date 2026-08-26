@@ -26,6 +26,18 @@ test("the Punks candidate flavor removes every Buzz distribution edge", () => {
   );
 });
 
+test("the signed staging candidate is accepted by its backend and official updater", () => {
+  const candidate = JSON.parse(readFileSync(flavor, "utf8"));
+  assert.equal(
+    candidate.version,
+    "0.6.0",
+    "the exact Tauri version must satisfy the staging minimum",
+  );
+  assert.deepEqual(candidate.plugins?.updater?.endpoints, [
+    "https://github.com/punksbot/punksbot/releases/latest/download/latest.json",
+  ]);
+});
+
 test("local, staging and production own distinct app and protocol identities", () => {
   assert.doesNotThrow(() => runChecker("--base", base, "--config", flavor));
   for (const name of [

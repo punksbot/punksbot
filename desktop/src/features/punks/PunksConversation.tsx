@@ -761,6 +761,7 @@ export function PunksConversation({
                   : "Subject (optional)"}
               </label>
               <input
+                aria-label="Message subject"
                 className="w-full rounded-md border border-border bg-background p-2 text-sm outline-none focus:ring-2 focus:ring-primary"
                 data-testid="punks-message-topic"
                 disabled={!canCompose}
@@ -775,6 +776,7 @@ export function PunksConversation({
             Message
           </label>
           <textarea
+            aria-label="Message composer"
             className="min-h-20 w-full resize-y rounded-md border border-border bg-background p-2 text-message outline-none focus:ring-2 focus:ring-primary"
             data-testid="punks-message-composer"
             disabled={!canCompose}
@@ -789,6 +791,7 @@ export function PunksConversation({
             <ConversationStatusBanner status={followStatus} />
             <button
               className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-50"
+              data-testid="punks-send-message"
               disabled={
                 !canCompose ||
                 !topicValid ||

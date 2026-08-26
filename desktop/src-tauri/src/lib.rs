@@ -74,6 +74,8 @@ mod punks_auth_state;
 #[cfg(feature = "punks-desktop-social-loop")]
 mod punks_client;
 #[cfg(feature = "punks-desktop-social-loop")]
+mod punks_promotion_audit;
+#[cfg(feature = "punks-desktop-social-loop")]
 mod punks_runtime;
 #[cfg(feature = "punks-desktop-social-loop")]
 mod punks_session_store;

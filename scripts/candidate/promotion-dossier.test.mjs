@@ -29,6 +29,7 @@ import {
 import {
   bundleSigstoreFixture,
   contenuManifesteCandidatFixture,
+  contenuScanArtefactInstalleFixture,
   contenuTranscriptInstalleFixture,
   nomsReleaseInstallee,
 } from "../promotion-test-fixtures.mjs";
@@ -115,6 +116,36 @@ function sha256(contenu) {
 }
 
 const CONTENU_BUNDLE_PRODUCTION = `${JSON.stringify(bundleSigstoreFixture())}\n`;
+const CONTENU_INDEX_PLATEFORME = `${JSON.stringify({
+  schema: "punks.promotion-evidence-index.v1",
+  preuves: [{ id: "transcript/macos-arm64" }],
+})}\n`;
+const CONTENU_INDEX_RECUPERATION = `${JSON.stringify({
+  schema: "punks.promotion-evidence-index.v1",
+  preuves: [{ id: "faute/coupure/auth-punk" }],
+})}\n`;
+const CONTENUS_RESEAU = Object.fromEntries(
+  PLATEFORMES.map((plateforme) => [
+    plateforme,
+    `${JSON.stringify({
+      schema: "punks.installed-network-proof.v1",
+      platform: plateforme,
+      candidateSha: SHA_CANDIDAT,
+      stagingDeploymentId: DEPLOIEMENT,
+      network: { requests: [{ transport: "https" }, { transport: "wss" }] },
+    })}\n`,
+  ]),
+);
+const DIGESTS_PREUVES_PROMOTION = {
+  platformIndex: sha256(CONTENU_INDEX_PLATEFORME),
+  recoveryIndex: sha256(CONTENU_INDEX_RECUPERATION),
+  network: Object.fromEntries(
+    PLATEFORMES.map((plateforme) => [
+      plateforme,
+      sha256(CONTENUS_RESEAU[plateforme]),
+    ]),
+  ),
+};
 const ARTEFACTS_PRODUCTION = PLATEFORMES.map((plateforme) => {
   const [nom, signatureNom] = nomsReleaseInstallee(plateforme, SHA_CANDIDAT);
   return {
@@ -133,6 +164,7 @@ const CONTENU_MANIFESTE_PRODUCTION = contenuManifesteCandidatFixture({
   repository: DEPOT,
   plateformes: PLATEFORMES,
   artefacts: ARTEFACTS_PRODUCTION,
+  promotionEvidenceDigests: DIGESTS_PREUVES_PROMOTION,
 });
 const DIGESTS_PRODUCTION = {
   bundle: sha256(CONTENU_BUNDLE_PRODUCTION),
@@ -271,6 +303,27 @@ function creerJeuDePreuves() {
       { plateforme },
       transcript,
     );
+    const rawEvidence = JSON.parse(transcript).rawEvidence;
+    const rawArchive = `${JSON.stringify({
+      schema: "punks.installed-raw-evidence-archive.v1",
+      indexSha256: rawEvidence.indexSha256,
+      files: Array.from({ length: rawEvidence.files }, (_, index) => ({
+        path: `observed-${index}.json`,
+        size: 2,
+        sha256: String(index + 1).repeat(64),
+        contentBase64: "e30=",
+      })),
+    })}\n`;
+    ajouter(
+      `brut/${plateforme}`,
+      {
+        indexSha256: rawEvidence.indexSha256,
+        files: rawEvidence.files,
+        transcriptSha256,
+      },
+      { plateforme },
+      rawArchive,
+    );
     ajouter(
       `staging/reobservation/${plateforme}`,
       {
@@ -301,6 +354,34 @@ function creerJeuDePreuves() {
       `bundle:${plateforme}`,
     );
     bundles.set(plateforme, sha256(`bundle:${plateforme}`));
+    const scanContenu = contenuScanArtefactInstalleFixture({
+      plateforme,
+      candidateSha: SHA_CANDIDAT,
+      nomArtefact,
+      tailleArtefact: Buffer.byteLength(`bundle:${plateforme}`),
+      sha256Artefact: bundles.get(plateforme),
+    });
+    const scanDocument = JSON.parse(scanContenu);
+    ajouter(
+      `scan/artefact/${plateforme}`,
+      {
+        sha256Artefact: bundles.get(plateforme),
+        nativeSha256: "b".repeat(64),
+        frontendSha256: scanDocument.frontend.sha256,
+        fichiersFrontend: scanDocument.frontend.files.length,
+        marqueursInterdits: [
+          "buzz-media",
+          "native_websocket",
+          "buzz",
+          "nostr",
+          "relay",
+          "huddle",
+        ],
+        transcriptSha256,
+      },
+      { plateforme },
+      scanContenu,
+    );
     ajouter(
       `artefact/${plateforme}/signature`,
       {
@@ -361,6 +442,26 @@ function creerJeuDePreuves() {
   }
   ajouter("production/bundle", {}, {}, CONTENU_BUNDLE_PRODUCTION);
   ajouter("production/manifeste", {}, {}, CONTENU_MANIFESTE_PRODUCTION);
+  ajouter(
+    "production/evidence/platform-index",
+    { path: "promotion-evidence/platform-index.json" },
+    {},
+    CONTENU_INDEX_PLATEFORME,
+  );
+  ajouter(
+    "production/evidence/recovery-index",
+    { path: "promotion-evidence/recovery-index.json" },
+    {},
+    CONTENU_INDEX_RECUPERATION,
+  );
+  for (const plateforme of PLATEFORMES) {
+    ajouter(
+      `production/evidence/network/${plateforme}`,
+      { path: `promotion-evidence/network/${plateforme}.json` },
+      {},
+      CONTENUS_RESEAU[plateforme],
+    );
+  }
 
   const captures = [];
   TYPES_FAUTE.forEach((type, typeIndex) => {
@@ -508,6 +609,24 @@ function remplacerPreuve(fixture, id, modifier) {
   reecrireIndex(fixture);
 }
 
+function remplacerSujet(fixture, id, contenuSujet) {
+  const entree = fixture.parId.get(id);
+  const octets = Buffer.from(contenuSujet);
+  const empreinte = sha256(octets);
+  const chemin = join(
+    "sha256",
+    `${empreinte}-${id.replaceAll(/[^a-z0-9.-]/gi, "-")}-subject.bin`,
+  );
+  const absolu = join(fixture.racine, chemin);
+  writeFileSync(absolu, octets, { flag: "wx" });
+  unlinkSync(entree.sujetAbsolu);
+  Object.assign(entree.reference.sujet, { chemin, sha256: empreinte });
+  Object.assign(entree, { sujetAbsolu: absolu, contenuSujet: octets });
+  remplacerPreuve(fixture, id, (preuve) => {
+    preuve.data.subjectSha256 = empreinte;
+  });
+}
+
 test("assemble un dossier complet uniquement depuis les preuves réelles", (t) => {
   const fixture = creerJeuDePreuves();
   t.after(() => rmSync(fixture.racine, { recursive: true, force: true }));
@@ -550,6 +669,24 @@ test("assemble un dossier complet uniquement depuis les preuves réelles", (t) =
     JSON.parse(
       readFileSync(fixture.parId.get("gate/cloudflare-check").absolu, "utf8"),
     ).result,
+  );
+});
+
+test("refuse un digest de matériau promotion réattribué dans le manifeste", (t) => {
+  const fixture = creerJeuDePreuves();
+  t.after(() => rmSync(fixture.racine, { recursive: true, force: true }));
+  remplacerSujet(
+    fixture,
+    "production/evidence/platform-index",
+    `${JSON.stringify({
+      schema: "punks.promotion-evidence-index.v1",
+      preuves: [{ id: "transcript/windows-x64" }],
+    })}\n`,
+  );
+
+  assert.throws(
+    () => assembler(fixture),
+    /promotion evidence platformIndex digest|agrégat original divergent/i,
   );
 });
 

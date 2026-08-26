@@ -10,6 +10,8 @@
   "vars": {
     "DESKTOP_SOCIAL_LOOP_ENABLED": "false",
     "ENVIRONMENT": "local",
+    "PROMOTION_FAULTS_ENABLED": "false",
+    "PROMOTION_SESSION_ISSUANCE_ENABLED": "false",
     "JOURNAL_HOT_EVENTS": "1000",
     "JOURNAL_SEGMENT_EVENTS": "250"
   },
@@ -45,7 +47,8 @@
       },
       { "name": "MESSAGE_CONTENT", "class_name": "MessageContentDO" },
       { "name": "MEDIA_UPLOADS", "class_name": "MediaUploadDO" },
-      { "name": "PRESENCE", "class_name": "PresenceDO" }
+      { "name": "PRESENCE", "class_name": "PresenceDO" },
+      { "name": "PROMOTION_FAULTS", "class_name": "PromotionFaultDO" }
     ]
   },
   "migrations": [
@@ -72,6 +75,10 @@
     {
       "tag": "v6",
       "new_sqlite_classes": ["MediaUploadDO", "PresenceDO"]
+    },
+    {
+      "tag": "v7",
+      "new_sqlite_classes": ["PromotionFaultDO"]
     }
   ],
   "services": [
@@ -110,6 +117,26 @@
       "binding": "AUTH_SERVICE",
       "service": "punks-auth",
       "entrypoint": "PunkSessionService"
+    },
+    {
+      "binding": "AUTH_PROMOTION_FAULTS",
+      "service": "punks-auth",
+      "entrypoint": "PromotionAuthorityFaultService"
+    },
+    {
+      "binding": "AUTH_PROMOTION_PROOFS",
+      "service": "punks-auth",
+      "entrypoint": "PromotionAuthProofService"
+    },
+    {
+      "binding": "ERASURE_PROMOTION_FAULTS",
+      "service": "punks-erasure",
+      "entrypoint": "PromotionAuthorityFaultService"
+    },
+    {
+      "binding": "ATTESTATION_PROMOTION_FAULTS",
+      "service": "punks-attestation",
+      "entrypoint": "PromotionAuthorityFaultService"
     },
     {
       "binding": "WORKSPACE_OWNERSHIP_AUTHORITY",
@@ -172,6 +199,8 @@
       "vars": {
         "DESKTOP_SOCIAL_LOOP_ENABLED": "true",
         "ENVIRONMENT": "staging",
+        "PROMOTION_FAULTS_ENABLED": "true",
+        "PROMOTION_SESSION_ISSUANCE_ENABLED": "true",
         "JOURNAL_HOT_EVENTS": "1000",
         "JOURNAL_SEGMENT_EVENTS": "250"
       },
@@ -207,7 +236,8 @@
           },
           { "name": "MESSAGE_CONTENT", "class_name": "MessageContentDO" },
           { "name": "MEDIA_UPLOADS", "class_name": "MediaUploadDO" },
-          { "name": "PRESENCE", "class_name": "PresenceDO" }
+          { "name": "PRESENCE", "class_name": "PresenceDO" },
+          { "name": "PROMOTION_FAULTS", "class_name": "PromotionFaultDO" }
         ]
       },
       "services": [
@@ -246,6 +276,26 @@
           "binding": "AUTH_SERVICE",
           "service": "punks-auth-staging",
           "entrypoint": "PunkSessionService"
+        },
+        {
+          "binding": "AUTH_PROMOTION_FAULTS",
+          "service": "punks-auth-staging",
+          "entrypoint": "PromotionAuthorityFaultService"
+        },
+        {
+          "binding": "AUTH_PROMOTION_PROOFS",
+          "service": "punks-auth-staging",
+          "entrypoint": "PromotionAuthProofService"
+        },
+        {
+          "binding": "ERASURE_PROMOTION_FAULTS",
+          "service": "punks-erasure-staging",
+          "entrypoint": "PromotionAuthorityFaultService"
+        },
+        {
+          "binding": "ATTESTATION_PROMOTION_FAULTS",
+          "service": "punks-attestation-staging",
+          "entrypoint": "PromotionAuthorityFaultService"
         },
         {
           "binding": "WORKSPACE_OWNERSHIP_AUTHORITY",

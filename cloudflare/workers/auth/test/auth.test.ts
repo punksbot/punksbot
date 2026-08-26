@@ -473,6 +473,15 @@ describe("Punks Auth Worker", () => {
       email: "wrong-browser@example.com",
       name: "Wrong Browser",
     });
+    const missing = await route(
+      new Request(
+        `${origin}/api/auth/v1/oauth/google/callback?state=${started.state}&code=fixture-code`,
+      ),
+      authEnv,
+      fixture.fetch,
+    );
+    expect(missing.status).toBe(400);
+    expect(fixture.calls).toHaveLength(0);
     const response = await route(
       new Request(
         `${origin}/api/auth/v1/oauth/google/callback?state=${started.state}&code=fixture-code`,

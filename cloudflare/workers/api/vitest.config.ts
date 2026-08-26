@@ -26,6 +26,8 @@ export default defineConfig({
         bindings: {
           OPERATOR_PROVISIONING_TOKEN:
             "operator-test-token-00000000000000000000000000000000000000000000",
+          PROMOTION_FAULTS_ENABLED: "true",
+          PROMOTION_SESSION_ISSUANCE_ENABLED: "true",
           MESSAGE_SEARCH_MASTER_KEY:
             "message-search-test-key-000000000000000000000000000000000000",
           MESSAGE_SEARCH_CURSOR_KEY:

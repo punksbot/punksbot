@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import type { AuthEnv } from "../src/env";
 import type { SessionRecord } from "../src/rpc";
+import type { SessionDO } from "../src/session-do";
 
 const authEnv = env as AuthEnv;
 
@@ -187,7 +188,9 @@ describe("PunkSessionService session-id reauthentication", () => {
     });
 
     await expect(
-      runInDurableObject(session, async (instance) => instance.get()),
+      runInDurableObject(session, async (instance) =>
+        (instance as SessionDO).get(),
+      ),
     ).resolves.toBeNull();
 
     await expect(

@@ -1,3 +1,9 @@
+import type {
+  PromotionAuthorityFaultIdentity,
+  PromotionAuthorityFaultRecovery,
+  PromotionAuthorityFaultState,
+} from "../../../shared/promotion-faultable-do";
+
 export interface ErasureScope {
   workspaceId: string;
   conversationId: string;
@@ -155,6 +161,21 @@ export interface RuntimeIdentityService {
   runtimeVersion(): Promise<{ versionId: string }>;
 }
 
+interface PromotionAuthorityFaultBinding extends Fetcher {
+  injectPromotionFault(
+    input: PromotionAuthorityFaultIdentity,
+  ): Promise<PromotionAuthorityFaultState>;
+  recoverPromotionFault(
+    input: PromotionAuthorityFaultRecovery,
+  ): Promise<PromotionAuthorityFaultState>;
+  probePromotionFault(
+    input: PromotionAuthorityFaultIdentity,
+  ): Promise<PromotionAuthorityFaultState | null>;
+  observePromotionFault(
+    input: PromotionAuthorityFaultIdentity,
+  ): Promise<PromotionAuthorityFaultState>;
+}
+
 export interface ApiEnv extends CloudflareBindings {
   BOT_WAKE_QUEUE: Queue<import("@punks/contracts").BotWakeQueueBody>;
   OPERATOR_PROVISIONING_TOKEN: string;
@@ -200,6 +221,18 @@ export interface ApiEnv extends CloudflareBindings {
     abortWorkspaceMembershipChange(input: unknown): Promise<boolean>;
   };
   AUTH_SERVICE: CloudflareBindings["AUTH_SERVICE"] & {
+    issuePromotionSession(input: unknown): Promise<{
+      source_sha: string;
+      cookie: string;
+      metadata: {
+        session_id: string;
+        punk_id: string;
+        expires_at_seconds: number;
+        last_renewed_at_seconds: number | null;
+      };
+      revoke_capability: string;
+      revoke_expires_at_seconds: number;
+    } | null>;
     resolveSessionCookie(
       cookie: string,
     ): Promise<import("@punks/contracts").AuthSession | null>;
@@ -222,6 +255,12 @@ export interface ApiEnv extends CloudflareBindings {
       command: unknown,
     ): Promise<PunkProfileUpdateResult>;
   };
+  AUTH_PROMOTION_FAULTS: PromotionAuthorityFaultBinding;
+  AUTH_PROMOTION_PROOFS: Fetcher & {
+    attest(input: unknown): Promise<unknown | null>;
+  };
+  ERASURE_PROMOTION_FAULTS: PromotionAuthorityFaultBinding;
+  ATTESTATION_PROMOTION_FAULTS: PromotionAuthorityFaultBinding;
   BOT_INVOCATION_VERIFIER: CloudflareBindings["BOT_INVOCATION_VERIFIER"] & {
     verifyBotInvocation(
       input: unknown,

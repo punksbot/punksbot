@@ -24,6 +24,7 @@ import {
 } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 
+import type { BotInstallationDO } from "../src/bot-installation-do";
 import type { ConversationDO } from "../src/conversation-do";
 
 const punkId = "00000000-0000-8000-8000-000000000001";
@@ -356,31 +357,60 @@ describe("ConversationDO storage bounds", () => {
     const conversation = env.CONVERSATIONS.getByName(
       coordinates.conversationId,
     );
-    const add = await admitReaction(
-      coordinates,
-      "message.reaction-add@1",
-      "🔥",
+    const installation = env.BOT_INSTALLATIONS.getByName(
+      coordinates.installationId,
     );
-    const firstResult = await conversation.executeBotReaction(add);
-    expect(firstResult, JSON.stringify(firstResult)).toMatchObject({
-      ok: true,
-    });
-    await runInDurableObject(conversation, (instance: ConversationDO) =>
-      instance.alarm(),
-    );
-    const remove = await admitReaction(
-      coordinates,
-      "message.reaction-remove@1",
-      "🔥",
-    );
-    const blockedAdd = await admitReaction(
-      coordinates,
-      "message.reaction-add@1",
-      "🔥",
-    );
-
+    let deliveryNamespaceSnapshot: BindingSnapshot | undefined;
     let queueSnapshot: BindingSnapshot | undefined;
     try {
+      await runInDurableObject(installation, (instance: BotInstallationDO) => {
+        const bindings = Reflect.get(instance, "env") as Record<
+          string,
+          unknown
+        >;
+        const conversations = Reflect.get(bindings, "CONVERSATIONS") as {
+          getByName(name: string): object;
+        };
+        deliveryNamespaceSnapshot = replaceBinding(bindings, "CONVERSATIONS", {
+          getByName: (name: string) => {
+            const stub = conversations.getByName(name);
+            return name === coordinates.conversationId
+              ? new Proxy(stub, {
+                  get: (target, property, receiver) =>
+                    property === "executeBotReaction"
+                      ? async () => {
+                          throw new Error(
+                            "automatic Bot Reaction delivery suppressed by storage-boundary test",
+                          );
+                        }
+                      : Reflect.get(target, property, receiver),
+                })
+              : stub;
+          },
+        });
+      });
+      const add = await admitReaction(
+        coordinates,
+        "message.reaction-add@1",
+        "🔥",
+      );
+      const firstResult = await conversation.executeBotReaction(add);
+      expect(firstResult, JSON.stringify(firstResult)).toMatchObject({
+        ok: true,
+      });
+      await runInDurableObject(conversation, (instance: ConversationDO) =>
+        instance.alarm(),
+      );
+      const remove = await admitReaction(
+        coordinates,
+        "message.reaction-remove@1",
+        "🔥",
+      );
+      const blockedAdd = await admitReaction(
+        coordinates,
+        "message.reaction-add@1",
+        "🔥",
+      );
       await runInDurableObject(
         conversation,
         (instance: ConversationDO, state) => {
@@ -483,6 +513,19 @@ describe("ConversationDO storage bounds", () => {
           >;
           restoreBinding(bindings, "PROJECTION_QUEUE", snapshot);
         });
+      }
+      const deliverySnapshot = deliveryNamespaceSnapshot;
+      if (deliverySnapshot !== undefined) {
+        await runInDurableObject(
+          installation,
+          (instance: BotInstallationDO) => {
+            const bindings = Reflect.get(instance, "env") as Record<
+              string,
+              unknown
+            >;
+            restoreBinding(bindings, "CONVERSATIONS", deliverySnapshot);
+          },
+        );
       }
     }
   });

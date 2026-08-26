@@ -15,6 +15,16 @@ import {
 const SHA = "a".repeat(40);
 const DEPLOYMENT = `sha256:${"b".repeat(64)}`;
 const STAGING_PROOF_SHA256 = "c".repeat(64);
+const PROMOTION_EVIDENCE_DIGESTS = {
+  platformIndex: "a".repeat(64),
+  recoveryIndex: "b".repeat(64),
+  network: {
+    "macos-arm64": "c".repeat(64),
+    "macos-x64": "d".repeat(64),
+    "linux-x64": "e".repeat(64),
+    "windows-x64": "f".repeat(64),
+  },
+};
 const ARTIFACTS = [
   {
     plateforme: "linux-x64",
@@ -47,16 +57,8 @@ test("le profil T1 ferme les récits et les autorités métier sans les confondr
     profile.authorities.map(({ className }) => className).filter(Boolean),
     [
       "PunkDO",
-      "IdentityClaimDO",
-      "EmailClaimDO",
-      "AuthTransactionDO",
-      "DesktopAuthFlowDO",
-      "DesktopReauthGrantDO",
       "SessionRevocationDO",
-      "SessionRotationDO",
       "SessionDO",
-      "PasskeyCeremonyDO",
-      "PasskeyCredentialDO",
       "WorkspaceDO",
       "WorkspaceSlugDO",
       "ConversationDO",
@@ -91,6 +93,27 @@ test("le manifeste agrégé doit contenir les octets installés et leurs signatu
     stagingProof: {
       path: "staging-deployment-proof.json",
       sha256: STAGING_PROOF_SHA256,
+    },
+    promotionEvidence: {
+      platformIndex: {
+        path: "promotion-evidence/platform-index.json",
+        sha256: "a".repeat(64),
+      },
+      recoveryIndex: {
+        path: "promotion-evidence/recovery-index.json",
+        sha256: "b".repeat(64),
+      },
+      stagingProof: {
+        path: "promotion-evidence/staging-deployment-proof.json",
+        sha256: STAGING_PROOF_SHA256,
+      },
+      network: ["macos-arm64", "macos-x64", "linux-x64", "windows-x64"].map(
+        (platform, index) => ({
+          platform,
+          path: `promotion-evidence/network/${platform}.json`,
+          sha256: String.fromCharCode(99 + index).repeat(64),
+        }),
+      ),
     },
     platforms: [
       ["macos-arm64", "aarch64-apple-darwin"],
@@ -131,6 +154,7 @@ test("le manifeste agrégé doit contenir les octets installés et leurs signatu
       candidateSha: SHA,
       stagingDeploymentId: DEPLOYMENT,
       stagingProofSha256: STAGING_PROOF_SHA256,
+      promotionEvidenceDigests: PROMOTION_EVIDENCE_DIGESTS,
       repository: "punksbot/punksbot",
       artifacts: ARTIFACTS,
     }),
@@ -143,12 +167,29 @@ test("le manifeste agrégé doit contenir les octets installés et leurs signatu
         candidateSha: SHA,
         stagingDeploymentId: DEPLOYMENT,
         stagingProofSha256: STAGING_PROOF_SHA256,
+        promotionEvidenceDigests: PROMOTION_EVIDENCE_DIGESTS,
         repository: "punksbot/punksbot",
         artifacts: ARTIFACTS,
       }),
     /latest/i,
   );
   manifest.releaseAssets.push(latest);
+
+  manifest.promotionEvidence.platformIndex.sha256 = "0".repeat(64);
+  assert.throws(
+    () =>
+      validateCandidateAggregateContent(Buffer.from(JSON.stringify(manifest)), {
+        candidateSha: SHA,
+        stagingDeploymentId: DEPLOYMENT,
+        stagingProofSha256: STAGING_PROOF_SHA256,
+        promotionEvidenceDigests: PROMOTION_EVIDENCE_DIGESTS,
+        repository: "punksbot/punksbot",
+        artifacts: ARTIFACTS,
+      }),
+    /promotion evidence.*digest|platform index/i,
+  );
+  manifest.promotionEvidence.platformIndex.sha256 =
+    PROMOTION_EVIDENCE_DIGESTS.platformIndex;
 
   manifest.releaseAssets[0].sha256 = "0".repeat(64);
   assert.throws(
@@ -157,6 +198,7 @@ test("le manifeste agrégé doit contenir les octets installés et leurs signatu
         candidateSha: SHA,
         stagingDeploymentId: DEPLOYMENT,
         stagingProofSha256: STAGING_PROOF_SHA256,
+        promotionEvidenceDigests: PROMOTION_EVIDENCE_DIGESTS,
         repository: "punksbot/punksbot",
         artifacts: ARTIFACTS,
       }),
@@ -259,10 +301,47 @@ test("le trafic installé lie l'en-tête brut aux sept versions distantes exacte
         resync: "vert",
         terminal: "vert",
       },
+      distributed: {
+        proofSha256: "ab".repeat(32),
+        observedAt: "2026-08-26T17:11:41.455Z",
+        catchUpFrames: 53,
+        cursors: {
+          initial: 54,
+          live: 55,
+          crashBeforeAck: 56,
+          replay: 56,
+        },
+        scenarios: {
+          catchUpAckReady: "vert",
+          liveChangeAck: "vert",
+          crashBeforeAckReplay: "vert",
+          afterAckNoReplay: "vert",
+          revokedSessionRejected: "vert",
+        },
+      },
     },
   };
   assert.doesNotThrow(() =>
     validateInstalledNetworkBinding(network, { deployedWorkers }),
+  );
+  const liveThenChanged = structuredClone(network);
+  liveThenChanged.follow.trace = [
+    { state: "accepted", cursor: "cursor-0" },
+    { state: "ready", cursor: "cursor-0" },
+    { state: "live", cursor: "cursor-0" },
+    {
+      state: "changes",
+      previousCursor: "cursor-0",
+      cursor: "cursor-1",
+      batchId: "batch-live-1",
+      atomic: true,
+    },
+    { state: "renderer-confirmed", cursor: "cursor-1" },
+    { state: "ack", cursor: "cursor-1" },
+    { state: "terminal", cursor: "cursor-1" },
+  ];
+  assert.doesNotThrow(() =>
+    validateInstalledNetworkBinding(liveThenChanged, { deployedWorkers }),
   );
 
   for (const mutate of [

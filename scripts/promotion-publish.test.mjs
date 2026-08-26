@@ -101,10 +101,14 @@ const CLE_ATTESTATION = `releases/punks-desktop/tranche:1/attestations/${SHA_ATT
 const CLE_RECU = `releases/punks-desktop/tranche:1/recus/${SHA_RECU_FINAL}.json`;
 
 const DESTINATIONS_R2 = [
-  { role: "primaire", compte: "11".repeat(16), bucket: "punks-promotion-a" },
+  {
+    role: "primaire",
+    compte: "3a391620584c792dbbd8cfa148d7634a",
+    bucket: "punks-promotion-a",
+  },
   {
     role: "secondaire",
-    compte: "22".repeat(16),
+    compte: "3a391620584c792dbbd8cfa148d7634a",
     bucket: "punks-promotion-b",
   },
 ];
@@ -203,7 +207,7 @@ function optionsPublication(surcharge = {}) {
   };
 }
 
-test("publie l'attestation et le Reçu sur la draft exacte et deux comptes R2 compliance", async () => {
+test("publie l'attestation et le Reçu dans deux buckets R2 Punks verrouillés", async () => {
   const frontieres = creerFrontieres();
 
   const resultat = await publierPromotion(optionsPublication(), frontieres);
@@ -562,33 +566,35 @@ test("refuse deux vraies clés non membres de l'ancrage opérateur", async () =>
   assert.equal(signatureDemandee, false);
 });
 
-test("refuse deux destinations dans le même compte R2 avant toute écriture", async () => {
-  const frontieres = creerFrontieres();
+test("refuse une destination hors du compte Punks avant toute écriture", async () => {
+  const journal = [];
   const r2 = DESTINATIONS_R2.map((destination) => ({ ...destination }));
-  r2[1].compte = r2[0].compte;
+  r2[1].compte = "22".repeat(16);
+  const frontieres = creerFrontieres();
+  frontieres.confiance = {
+    ...CONFIANCE,
+    ancrageDestinationsR2: canonicalSha256(r2),
+  };
+  const graphe = structuredClone(GRAPHE_PUBLICATION);
+  graphe.publication.r2.destinations = r2.map((destination) => ({
+    ...destination,
+    "verrouillage-objet": "compliance",
+  }));
 
   await assert.rejects(
-    publierPromotion(optionsPublication({ r2 }), frontieres),
-    /deux comptes R2 distincts/s,
+    publierPromotion(
+      optionsPublication({
+        graphe: Buffer.from(`${canonicalJson(graphe)}\n`),
+        r2,
+      }),
+      frontieres,
+    ),
+    /compte Cloudflare Punks/,
   );
-
-  assert.equal(
-    await frontieres.cloudflare.lireObjet({
-      ...r2[0],
-      cle: CLE_ATTESTATION,
-    }),
-    null,
-  );
-  assert.equal(
-    await frontieres.github.lireAsset({
-      releaseId: 58,
-      nom: NOM_ATTESTATION,
-    }),
-    null,
-  );
+  assert.deepEqual(journal, []);
 });
 
-test("refuse le même bucket logique dans les deux comptes avant toute écriture", async () => {
+test("refuse le même bucket logique pour les deux rôles avant toute écriture", async () => {
   const frontieres = creerFrontieres();
   const r2 = DESTINATIONS_R2.map((destination) => ({ ...destination }));
   r2[1].bucket = r2[0].bucket;

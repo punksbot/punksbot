@@ -10,9 +10,10 @@
  *   - les lignes retraits-par-tranche du registre des goldens et les verdicts
  *     tranche:N du manifeste de retrait sont rattachés à un candidat scellé,
  *     et le retrait physique est prouvé absent des fichiers suivis ;
- *   - la politique (90 jours, < 1 % pendant 14 jours, roll-forward,
- *     certificat de compatibilité, interdiction de retour Buzz, immuabilité
- *     R2) ne peut pas dériver des décisions closes ;
+ *   - la politique (promotion immédiate fondée sur les preuves, 90 jours,
+ *     < 1 % pendant 14 jours, roll-forward, certificat de compatibilité,
+ *     interdiction de retour Buzz, immuabilité R2) ne peut pas dériver des
+ *     décisions closes ;
  *   - chaque candidat scellé porte preuves, retrait, attestation complète et
  *     Reçus publiés avec la release et dans le stockage R2 prévu.
  *
@@ -276,7 +277,7 @@ export function main() {
   const releases = graph.releases ?? [];
   const scellees = releases.filter((r) => r.etat !== "preparation").length;
   console.log(
-    `✓ graphe de release : ${releases.length} candidat(s) relié(s), ${scellees} scellé(s), politique 90 j / < 1 % / 14 j et interdiction de retour Buzz vérifiées`,
+    `✓ graphe de release : ${releases.length} candidat(s) relié(s), ${scellees} scellé(s), promotion immédiate par preuves, politique 90 j / < 1 % / 14 j et interdiction de retour Buzz vérifiées`,
   );
   if (process.argv.includes("--hashes")) {
     console.log(

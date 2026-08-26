@@ -11,6 +11,7 @@ export { ConversationIdentityDO } from "./conversation-identity-do";
 export { MessageContentDO } from "./message-content-do";
 export { MediaUploadDO } from "./media-upload-do";
 export { PresenceDO } from "./presence-do";
+export { PromotionFaultDO } from "./promotion-fault-do";
 export { BotActionService } from "./bot-action-service";
 export {
   BotHarnessService,

@@ -84,6 +84,7 @@ function WorkspaceSidebar({
         <div className="space-y-1">
           {account.workspaces.map((candidate) => (
             <button
+              aria-label={`Workspace ${candidate.slug}`}
               className={`w-full rounded-md px-2 py-1.5 text-left text-sm ${
                 candidate.id === workspace.workspace.id
                   ? "bg-accent font-medium"
@@ -111,6 +112,7 @@ function WorkspaceSidebar({
         <div className="space-y-1">
           {streams.map((stream) => (
             <button
+              aria-label={`Stream ${stream.id}`}
               className={`w-full rounded-md px-2 py-1.5 text-left text-sm ${
                 selectedConversationId === stream.id
                   ? "bg-accent font-medium"

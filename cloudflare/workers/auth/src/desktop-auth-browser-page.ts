@@ -20,6 +20,8 @@ function browserHtml(body: string): Response {
 
 export function confirmationPage(
   flowId: string,
+  state: string,
+  capability: string,
   displayName: string,
 ): Response {
   const escapedName = displayName
@@ -34,6 +36,8 @@ export function confirmationPage(
 <main><h1>Créer mon Compte Punks</h1><p>Continuer comme ${escapedName}</p>
 <form method="post" action="/api/auth/v1/desktop/browser/oauth/confirm">
 <input type="hidden" name="flow" value="${flowId}">
+<input type="hidden" name="state" value="${state}">
+<input type="hidden" name="capability" value="${capability}">
 <button type="submit">Créer mon Compte Punks</button></form></main>`);
 }
 

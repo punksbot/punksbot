@@ -36,7 +36,10 @@ import {
   VERIFICATIONS_ARTEFACT,
   construireAttestation,
 } from "./promotion-dossier-lib.mjs";
-import { contenuTranscriptInstalleFixture } from "./promotion-test-fixtures.mjs";
+import {
+  contenuScanArtefactInstalleFixture,
+  contenuTranscriptInstalleFixture,
+} from "./promotion-test-fixtures.mjs";
 
 export const SHA_CANDIDAT = "21".repeat(20);
 const WORKERS = [...CANONICAL_STAGING_WORKER_NAMES];
@@ -212,6 +215,25 @@ function contenuManifesteProduction(dossier, stagingProofSha256) {
       path: "staging-deployment-proof.json",
       sha256: stagingProofSha256,
     },
+    promotionEvidence: {
+      platformIndex: {
+        path: "promotion-evidence/platform-index.json",
+        sha256: dossier.liaison["digests-preuves-promotion"].platformIndex,
+      },
+      recoveryIndex: {
+        path: "promotion-evidence/recovery-index.json",
+        sha256: dossier.liaison["digests-preuves-promotion"].recoveryIndex,
+      },
+      stagingProof: {
+        path: "promotion-evidence/staging-deployment-proof.json",
+        sha256: stagingProofSha256,
+      },
+      network: PLATEFORMES.map((platform) => ({
+        platform,
+        path: `promotion-evidence/network/${platform}.json`,
+        sha256: dossier.liaison["digests-preuves-promotion"].network[platform],
+      })),
+    },
     platforms: PLATEFORMES.map((platform, index) => ({
       platform,
       target: `target-${platform}`,
@@ -360,12 +382,32 @@ export function preuvesPourDossier(dossier) {
   });
 
   for (const artefact of dossier.liaison.artefacts) {
+    const transcriptContenu = transcriptPour(artefact.plateforme);
     ajouter(`transcript/${artefact.plateforme}`, {
       plateforme: artefact.plateforme,
-      contenuSujet: transcriptPour(artefact.plateforme),
+      contenuSujet: transcriptContenu,
       data: {
         schema: "punks.installed-social-loop-transcript.v1",
         plateforme: artefact.plateforme,
+      },
+    });
+    const rawEvidence = JSON.parse(transcriptContenu).rawEvidence;
+    ajouter(`brut/${artefact.plateforme}`, {
+      plateforme: artefact.plateforme,
+      contenuSujet: `${JSON.stringify({
+        schema: "punks.installed-raw-evidence-archive.v1",
+        indexSha256: rawEvidence.indexSha256,
+        files: Array.from({ length: rawEvidence.files }, (_, index) => ({
+          path: `observed-${index}.json`,
+          size: 2,
+          sha256: String(index + 1).repeat(64),
+          contentBase64: "e30=",
+        })),
+      })}\n`,
+      data: {
+        indexSha256: rawEvidence.indexSha256,
+        files: rawEvidence.files,
+        transcriptSha256: artefact.transcriptSha256,
       },
     });
     ajouter(`artefact/${artefact.plateforme}/bundle`, {
@@ -378,6 +420,34 @@ export function preuvesPourDossier(dossier) {
         transcriptSha256: artefact.transcriptSha256,
       },
     });
+    const scanContenu = contenuScanArtefactInstalleFixture({
+      plateforme: artefact.plateforme,
+      candidateSha: dossier.candidat.sha,
+      nomArtefact: artefact.nom,
+      tailleArtefact: artefact.taille,
+      sha256Artefact: artefact.sha256,
+    });
+    const scanDocument = JSON.parse(scanContenu);
+    const scan = ajouter(`scan/artefact/${artefact.plateforme}`, {
+      plateforme: artefact.plateforme,
+      contenuSujet: scanContenu,
+      data: {
+        sha256Artefact: artefact.sha256,
+        nativeSha256: "b".repeat(64),
+        frontendSha256: scanDocument.frontend.sha256,
+        fichiersFrontend: scanDocument.frontend.files.length,
+        marqueursInterdits: [
+          "buzz-media",
+          "native_websocket",
+          "buzz",
+          "nostr",
+          "relay",
+          "huddle",
+        ],
+        transcriptSha256: artefact.transcriptSha256,
+      },
+    });
+    artefact.scanSha256 = scan.subjectSha256;
     ajouter(`artefact/${artefact.plateforme}/signature`, {
       plateforme: artefact.plateforme,
       contenuSujet: contenuSignature(artefact.plateforme),
@@ -454,6 +524,36 @@ export function preuvesPourDossier(dossier) {
       },
     });
   }
+  const indexPlateforme = `${JSON.stringify({
+    schema: "punks.promotion-evidence-index.v1",
+    preuves: [{ id: "transcript/macos-arm64" }],
+  })}\n`;
+  const indexRecuperation = `${JSON.stringify({
+    schema: "punks.promotion-evidence-index.v1",
+    preuves: [{ id: "faute/coupure/auth-punk" }],
+  })}\n`;
+  const reseaux = Object.fromEntries(
+    PLATEFORMES.map((plateforme) => [
+      plateforme,
+      `${JSON.stringify({
+        schema: "punks.installed-network-proof.v1",
+        platform: plateforme,
+        candidateSha: dossier.candidat.sha,
+        stagingDeploymentId: dossier.liaison.staging.deploiement,
+        network: { requests: [{ transport: "https" }, { transport: "wss" }] },
+      })}\n`,
+    ]),
+  );
+  dossier.liaison["digests-preuves-promotion"] = {
+    platformIndex: sha256Octets(indexPlateforme),
+    recoveryIndex: sha256Octets(indexRecuperation),
+    network: Object.fromEntries(
+      PLATEFORMES.map((plateforme) => [
+        plateforme,
+        sha256Octets(reseaux[plateforme]),
+      ]),
+    ),
+  };
   const bundleProduction = contenuBundleProduction();
   const manifesteProduction = contenuManifesteProduction(
     dossier,
@@ -471,6 +571,20 @@ export function preuvesPourDossier(dossier) {
   );
   for (const [nom, contenuSujet] of Object.entries(production)) {
     ajouter(`production/${nom}`, { contenuSujet });
+  }
+  ajouter("production/evidence/platform-index", {
+    contenuSujet: indexPlateforme,
+    data: { path: "promotion-evidence/platform-index.json" },
+  });
+  ajouter("production/evidence/recovery-index", {
+    contenuSujet: indexRecuperation,
+    data: { path: "promotion-evidence/recovery-index.json" },
+  });
+  for (const plateforme of PLATEFORMES) {
+    ajouter(`production/evidence/network/${plateforme}`, {
+      contenuSujet: reseaux[plateforme],
+      data: { path: `promotion-evidence/network/${plateforme}.json` },
+    });
   }
   for (const scenario of dossier.fautes) {
     const artefactLie = dossier.liaison.artefacts.find(

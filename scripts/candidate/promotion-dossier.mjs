@@ -40,6 +40,7 @@ import {
   referenceFichierDansRacine,
 } from "./promotion-evidence-io.mjs";
 import { runPromotionDossierCli } from "./promotion-dossier-cli.mjs";
+import { validateInstalledArtifactScan } from "./installed-artifact-scan.mjs";
 
 const INDEX_SCHEMA = "punks.promotion-evidence-index.v1";
 const PREUVE_SCHEMA = "punks.promotion-proof.v1";
@@ -457,6 +458,32 @@ function construireDossier({
       `production/bundle n'est pas un bundle Sigstore valide : ${erreur instanceof Error ? erreur.message : String(erreur)}`,
     );
   }
+  const citerEvidenceProduction = (id, path) => {
+    const entree = citer(id);
+    if (entree.preuve.data.path !== path) {
+      refuser(`preuve « ${id} » liée au mauvais matériau de promotion`);
+    }
+    return entree.sujet.sha256;
+  };
+  const promotionEvidenceDigests = {
+    platformIndex: citerEvidenceProduction(
+      "production/evidence/platform-index",
+      "promotion-evidence/platform-index.json",
+    ),
+    recoveryIndex: citerEvidenceProduction(
+      "production/evidence/recovery-index",
+      "promotion-evidence/recovery-index.json",
+    ),
+    network: Object.fromEntries(
+      PLATEFORMES.map((plateforme) => [
+        plateforme,
+        citerEvidenceProduction(
+          `production/evidence/network/${plateforme}`,
+          `promotion-evidence/network/${plateforme}.json`,
+        ),
+      ]),
+    ),
+  };
 
   const artefacts = [];
   const bundles = new Map();
@@ -511,10 +538,16 @@ function construireDossier({
     }
     const bundleId = `artefact/${plateforme}/bundle`;
     const signatureId = `artefact/${plateforme}/signature`;
+    const rawId = `brut/${plateforme}`;
     const bundle = citer(bundleId);
     const signature = citer(signatureId);
+    const raw = citer(rawId);
+    const scanId = `scan/artefact/${plateforme}`;
+    const scan = citer(scanId);
     exigerPlateforme(bundle.preuve, plateforme, bundleId);
     exigerPlateforme(signature.preuve, plateforme, signatureId);
+    exigerPlateforme(raw.preuve, plateforme, rawId);
+    exigerPlateforme(scan.preuve, plateforme, scanId);
     const verifications = {};
     for (const verification of VERIFICATIONS_ARTEFACT) {
       const id = `artefact/${plateforme}/verification/${verification}`;
@@ -570,6 +603,52 @@ function construireDossier({
     if (signature.preuve.data.transcriptSha256 !== transcript.sujet.sha256) {
       refuser(`preuve « ${signatureId} » divergente du transcript installé`);
     }
+    let scanValide;
+    try {
+      scanValide = validateInstalledArtifactScan(
+        parserJson(scan.sujet.contenu, `la preuve « ${scanId} »`),
+        {
+          platform: plateforme,
+          candidateSha: candidat.candidateSha,
+          artifactSha256: bundle.preuve.data.subjectSha256,
+        },
+      );
+    } catch (erreur) {
+      refuser(
+        `preuve « ${scanId} » avec scan installé invalide : ${erreur instanceof Error ? erreur.message : String(erreur)}`,
+      );
+    }
+    const transcriptInstalle = parserJson(
+      transcript.sujet.contenu,
+      `la preuve « ${transcriptId} »`,
+    );
+    const archiveBrute = parserJson(
+      raw.sujet.contenu,
+      `la preuve « ${rawId} »`,
+    );
+    if (
+      archiveBrute?.schema !== "punks.installed-raw-evidence-archive.v1" ||
+      archiveBrute.indexSha256 !==
+        transcriptInstalle?.rawEvidence?.indexSha256 ||
+      !Array.isArray(archiveBrute.files) ||
+      archiveBrute.files.length !== transcriptInstalle?.rawEvidence?.files ||
+      raw.preuve.data.indexSha256 !== archiveBrute.indexSha256 ||
+      raw.preuve.data.files !== archiveBrute.files.length ||
+      raw.preuve.data.transcriptSha256 !== transcript.sujet.sha256 ||
+      raw.preuve.data.subjectSha256 !== raw.sujet.sha256
+    ) {
+      refuser(
+        `preuve « ${rawId} » divergente des observations brutes installées`,
+      );
+    }
+    if (
+      scan.preuve.data.sha256Artefact !== bundle.preuve.data.subjectSha256 ||
+      scan.preuve.data.subjectSha256 !== scan.sujet.sha256 ||
+      scan.preuve.data.transcriptSha256 !== transcript.sujet.sha256 ||
+      scanValide.native.sha256 !== transcriptInstalle?.installed?.binarySha256
+    ) {
+      refuser(`preuve « ${scanId} » divergente de l'artefact installé`);
+    }
     bundles.set(plateforme, bundle.preuve.data.subjectSha256);
     artefacts.push({
       plateforme,
@@ -580,6 +659,7 @@ function construireDossier({
       signature: signature.preuve.data.subjectSha256,
       signatureTaille: signature.sujet.contenu.length,
       transcriptSha256: bundle.preuve.data.transcriptSha256,
+      scanSha256: scan.sujet.sha256,
       identite: {
         bundleId: bundle.preuve.data.bundleId,
         verifications,
@@ -592,6 +672,7 @@ function construireDossier({
       candidateSha: candidat.candidateSha,
       stagingDeploymentId: deploiementId,
       stagingProofSha256: stagingDeploiement.sujet.sha256,
+      promotionEvidenceDigests,
       repository,
       artifacts: artefacts,
     });
@@ -880,6 +961,7 @@ function construireDossier({
         autorites,
       },
       "digests-production": digestsProduction,
+      "digests-preuves-promotion": promotionEvidenceDigests,
       registres,
     },
     parcours: {

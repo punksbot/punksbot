@@ -11,6 +11,17 @@
   "vars": {
     "ENVIRONMENT": "local"
   },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "PROMOTION_AUTHORITY_FAULTS",
+        "class_name": "PromotionAuthorityFaultDO"
+      }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["PromotionAuthorityFaultDO"] }
+  ],
   "r2_buckets": [
     {
       "binding": "ERASURE_TOMBSTONES",
@@ -29,6 +40,14 @@
       "vars": {
         "ENVIRONMENT": "local"
       },
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "PROMOTION_AUTHORITY_FAULTS",
+            "class_name": "PromotionAuthorityFaultDO"
+          }
+        ]
+      },
       "r2_buckets": [
         {
           "binding": "ERASURE_TOMBSTONES",
@@ -43,6 +62,14 @@
       "version_metadata": { "binding": "CF_VERSION_METADATA" },
       "vars": {
         "ENVIRONMENT": "staging"
+      },
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "PROMOTION_AUTHORITY_FAULTS",
+            "class_name": "PromotionAuthorityFaultDO"
+          }
+        ]
       },
       "r2_buckets": [
         {

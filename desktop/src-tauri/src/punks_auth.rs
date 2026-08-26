@@ -22,6 +22,7 @@ use tauri_plugin_opener::OpenerExt;
 use crate::punks_auth_state::NativeAuthenticationRuntime;
 pub use crate::punks_auth_state::{AccountSessionStateView, CeremonyPhaseView};
 use crate::punks_client::PunksDesktopClient;
+use crate::punks_promotion_audit;
 use crate::punks_session_store::{
     KeyringSessionPersistence, PendingAuthFlow, PendingAuthPurpose, PendingReauthorization,
     PendingRenewal, QueuedRevocation, StagedActivation,
@@ -636,7 +637,34 @@ pub async fn punks_get_account_session_state(
         });
     }
     let phase = client.authentication.lock().await.last_phase.clone();
-    account_state_from_store(&client, &store, phase).await
+    let result = account_state_from_store(&client, &store, phase).await;
+    match &result {
+        Ok(AccountSessionStateView::Authenticated { session, .. }) => {
+            punks_promotion_audit::record_ipc_coordinates(
+                "punks_get_account_session_state",
+                "desktop-session.state@1",
+                true,
+                &serde_json::json!({
+                    "state": "authenticated",
+                    "punkId": session.punk_id,
+                }),
+            );
+        }
+        Ok(AccountSessionStateView::SignedOut { .. }) => {
+            punks_promotion_audit::record_ipc_coordinates(
+                "punks_get_account_session_state",
+                "desktop-session.state@1",
+                true,
+                &serde_json::json!({ "state": "signed_out" }),
+            );
+        }
+        Err(_) => punks_promotion_audit::record_ipc(
+            "punks_get_account_session_state",
+            "desktop-session.state@1",
+            false,
+        ),
+    }
+    result
 }
 
 /// Starts an explicit sign-in in the system browser.

@@ -13,12 +13,12 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 
-const SOURCE_FILES = [
+export const PUNKS_FRONTEND_SOURCE_FILES = Object.freeze([
   "punks-product/index.html",
   "punks-product/main.tsx",
   "src/punks-main.tsx",
   "vite.config.ts",
-];
+]);
 const FORBIDDEN_DIST_MARKERS = [
   "buzz-media",
   "native_websocket",
@@ -603,7 +603,7 @@ function createProof(mode, files) {
 
 export function verifyPunksFrontendProduct({ root, dist = false }) {
   const files = new Map(
-    SOURCE_FILES.map((relativePath) => [
+    PUNKS_FRONTEND_SOURCE_FILES.map((relativePath) => [
       relativePath,
       readRequiredFile(root, relativePath),
     ]),

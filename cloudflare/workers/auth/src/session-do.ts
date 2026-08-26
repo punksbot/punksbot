@@ -1,4 +1,5 @@
-import { DurableObject } from "cloudflare:workers";
+import { PromotionFaultableDurableObject } from "../../../shared/promotion-faultable-do";
+import { canonicalJson, sha256Hex } from "@punks/core";
 
 import type { AuthEnv } from "./env";
 import type { SessionRecord } from "./rpc";
@@ -27,7 +28,14 @@ interface AccountMergeReauthentication {
 
 type AccountMergeClaimRow = Record<"intent_id" | "account_role", string>;
 
-export class SessionDO extends DurableObject<AuthEnv> {
+export class SessionDO extends PromotionFaultableDurableObject<AuthEnv> {
+  protected override async promotionRecoveryFingerprint(): Promise<string> {
+    const current = this.get();
+    if (current === null)
+      throw new Error("promotion Session target is missing");
+    return sha256Hex(canonicalJson(current));
+  }
+
   constructor(ctx: DurableObjectState, env: AuthEnv) {
     super(ctx, env);
     this.ctx.storage.sql.exec(`

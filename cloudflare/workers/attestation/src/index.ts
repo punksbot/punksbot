@@ -6,10 +6,17 @@ import type {
 import { validateContract } from "@punks/contracts";
 import { WorkerEntrypoint } from "cloudflare:workers";
 
+import {
+  PromotionFaultableDurableObject,
+  type PromotionAuthorityFaultIdentity,
+  type PromotionAuthorityFaultRecovery,
+  type PromotionAuthorityFaultState,
+} from "../../../shared/promotion-faultable-do";
 import { attestNostrEvent } from "./nostr";
 
 interface AttestationEnv extends CloudflareBindings {
   ATTESTATION_PRIVATE_KEY: string;
+  PROMOTION_AUTHORITY_FAULTS: DurableObjectNamespace<PromotionAuthorityFaultDO>;
 }
 
 /** Dedicated private probe for the version executing this Attestation Worker. */
@@ -23,6 +30,48 @@ export class RuntimeIdentityService extends WorkerEntrypoint<AttestationEnv> {
 
   runtimeVersion(): { versionId: string } {
     return { versionId: this.env.CF_VERSION_METADATA.id };
+  }
+}
+
+/** Worker-local Durable Object that carries an injected Attestation fault. */
+export class PromotionAuthorityFaultDO extends PromotionFaultableDurableObject<AttestationEnv> {}
+
+/** Private service binding for faulting the Attestation authority itself. */
+export class PromotionAuthorityFaultService extends WorkerEntrypoint<AttestationEnv> {
+  override fetch(): Response {
+    return new Response(null, { status: 404 });
+  }
+
+  async injectPromotionFault(
+    input: PromotionAuthorityFaultIdentity,
+  ): Promise<PromotionAuthorityFaultState> {
+    return this.env.PROMOTION_AUTHORITY_FAULTS.getByName(
+      input.target.id,
+    ).injectPromotionFault(input);
+  }
+
+  async recoverPromotionFault(
+    input: PromotionAuthorityFaultRecovery,
+  ): Promise<PromotionAuthorityFaultState> {
+    return this.env.PROMOTION_AUTHORITY_FAULTS.getByName(
+      input.target.id,
+    ).recoverPromotionFault(input);
+  }
+
+  async probePromotionFault(
+    input: PromotionAuthorityFaultIdentity,
+  ): Promise<PromotionAuthorityFaultState | null> {
+    return this.env.PROMOTION_AUTHORITY_FAULTS.getByName(
+      input.target.id,
+    ).probePromotionFault(input.executionId);
+  }
+
+  async observePromotionFault(
+    input: PromotionAuthorityFaultIdentity,
+  ): Promise<PromotionAuthorityFaultState> {
+    return this.env.PROMOTION_AUTHORITY_FAULTS.getByName(
+      input.target.id,
+    ).observePromotionFault(input.executionId);
   }
 }
 

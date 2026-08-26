@@ -146,6 +146,15 @@ function browserBinding(
   return parseCookies(request).get(oauthCookieName(flow.oauthState)) ?? null;
 }
 
+async function accountConfirmationCapability(
+  flow: DesktopAuthFlowRecord,
+): Promise<string | null> {
+  if (flow.oauthState === null || flow.browserBinding === null) return null;
+  return pkceChallenge(
+    `punks.desktop-oauth-confirmation.v1\n${flow.flowId}\n${flow.oauthState}\n${flow.browserBinding}`,
+  );
+}
+
 export async function identityInput(
   profile: AuthProviderProfile,
 ): Promise<IdentityInput> {
@@ -295,7 +304,15 @@ export async function launchDesktopBrowser(
   if (!validFlowId(flowId)) {
     return problem(404, "not_found", "Desktop auth flow is unavailable");
   }
-  const launched = await flowStub(env, flowId).browserLaunch();
+  const stub = flowStub(env, flowId);
+  const current = await stub.browserMetadata();
+  if (
+    current?.phase === "browser_complete" &&
+    current.outcomeCode === "account_creation_confirmation_required"
+  ) {
+    return resumeDesktopOAuthAccount(request, env);
+  }
+  const launched = await stub.browserLaunch();
   if (!launched.ok) {
     return problem(410, "not_found", "Desktop auth flow is unavailable");
   }
@@ -334,6 +351,7 @@ export async function launchDesktopBrowser(
       createdAt: launched.flow.createdAt,
       expiresAt: launched.flow.expiresAt,
       desktop: { flowId },
+      returnedStateHash: await hash(launched.state),
     };
     const transactionId = await aggregateName("transaction", launched.state);
     if (
@@ -776,8 +794,24 @@ export async function completeDesktopOAuth(input: {
     pendingIdentity: pending,
     outcomeCode: "account_creation_confirmation_required",
   });
+  if (flow.oauthState === null) {
+    return problem(400, "invalid_input", "Desktop OAuth state is unavailable");
+  }
+  const capability = await accountConfirmationCapability(flow);
+  if (capability === null) {
+    return problem(
+      400,
+      "invalid_input",
+      "Desktop OAuth confirmation is unavailable",
+    );
+  }
   return recorded.ok
-    ? confirmationPage(flow.flowId, pending.profile.displayName)
+    ? confirmationPage(
+        flow.flowId,
+        flow.oauthState,
+        capability,
+        pending.profile.displayName,
+      )
     : problem(400, "invalid_input", "Desktop OAuth completion is invalid");
 }
 
@@ -799,15 +833,15 @@ export async function failDesktopOAuth(input: {
     : failAndComplete(input.env, flow, input.browserBindingHash, input.code);
 }
 
-export async function confirmDesktopOAuthAccount(
+/**
+ * Restores the pending account-creation page from the browser-bound OAuth
+ * aggregate without replaying the consumed provider callback.
+ */
+export async function resumeDesktopOAuthAccount(
   request: Request,
   env: AuthEnv,
 ): Promise<Response> {
-  if (!sameOrigin(request, env)) {
-    return problem(403, "forbidden", "Same-origin confirmation is required");
-  }
-  const form = await request.formData();
-  const flowId = String(form.get("flow") ?? "");
+  const flowId = new URL(request.url).searchParams.get("flow");
   if (!validFlowId(flowId)) {
     return problem(400, "invalid_input", "Desktop flow is invalid");
   }
@@ -824,12 +858,70 @@ export async function confirmDesktopOAuthAccount(
   if (!pending.ok) {
     return problem(400, "invalid_input", "Account confirmation is invalid");
   }
+  const capability = await accountConfirmationCapability(flow);
+  if (capability === null) {
+    return problem(400, "invalid_input", "Account confirmation is invalid");
+  }
+  return confirmationPage(
+    flow.flowId,
+    flow.oauthState,
+    capability,
+    pending.identity.profile.displayName,
+  );
+}
+
+export async function confirmDesktopOAuthAccount(
+  request: Request,
+  env: AuthEnv,
+): Promise<Response> {
+  const form = await request.formData();
+  const flowId = String(form.get("flow") ?? "");
+  const state = String(form.get("state") ?? "");
+  const capability = String(form.get("capability") ?? "");
+  if (!validFlowId(flowId)) {
+    return problem(400, "invalid_input", "Desktop flow is invalid");
+  }
+  const stub = flowStub(env, flowId);
+  const flow = await stub.browserMetadata();
+  if (flow === null || flow.oauthState === null) {
+    return problem(400, "invalid_input", "Desktop flow is unavailable");
+  }
+  if (state !== flow.oauthState) {
+    return problem(403, "forbidden", "OAuth confirmation state is invalid");
+  }
+  const expectedCapability = await accountConfirmationCapability(flow);
+  if (
+    !/^[A-Za-z0-9_-]{43}$/.test(capability) ||
+    capability !== expectedCapability
+  ) {
+    return problem(
+      403,
+      "forbidden",
+      "OAuth confirmation capability is invalid",
+    );
+  }
+  const binding = browserBinding(flow, request);
+  if (
+    binding !== null &&
+    (flow.browserBindingHash === null ||
+      (await hash(binding)) !== flow.browserBindingHash)
+  ) {
+    return problem(403, "forbidden", "Browser binding is invalid");
+  }
+  const browserBindingHash = flow.browserBindingHash;
+  if (browserBindingHash === null) {
+    return problem(400, "invalid_input", "Browser binding is unavailable");
+  }
+  const pending = await stub.pendingIdentity(browserBindingHash);
+  if (!pending.ok) {
+    return problem(400, "invalid_input", "Account confirmation is invalid");
+  }
   const provisioned = await provisionIdentity(env, pending.identity);
   if (!provisioned.ok) {
     return failAndComplete(
       env,
       pending.flow,
-      await hash(binding),
+      browserBindingHash,
       provisioned.code,
     );
   }

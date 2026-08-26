@@ -13,9 +13,73 @@ const SHA_RE = /^[0-9a-f]{40}$/;
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const COOKIE_RE = /^__Host-punks_session=[^;\s]{32,4096}$/;
+const CAPABILITY_RE = /^[A-Za-z0-9_-]{43,128}$/;
 
 function invariant(condition, message) {
   if (!condition) throw new Error(message);
+}
+
+export function parsePromotionSessionBundle(raw, sourceSha) {
+  invariant(SHA_RE.test(sourceSha), "exact 40-character source SHA required");
+  let bundle;
+  try {
+    bundle = JSON.parse(raw);
+  } catch {
+    throw new Error("promotion Session bundle is invalid JSON");
+  }
+  invariant(
+    bundle !== null &&
+      typeof bundle === "object" &&
+      !Array.isArray(bundle) &&
+      JSON.stringify(Object.keys(bundle).sort()) ===
+        JSON.stringify(
+          [
+            "source_sha",
+            "cookie",
+            "metadata",
+            "revoke_capability",
+            "revoke_expires_at_seconds",
+          ].sort(),
+        ),
+    "promotion Session bundle has an unexpected shape",
+  );
+  invariant(
+    bundle.source_sha === sourceSha,
+    "promotion Session belongs to another source SHA",
+  );
+  invariant(
+    COOKIE_RE.test(bundle.cookie),
+    "valid staging session cookie required",
+  );
+  const metadata = bundle.metadata;
+  invariant(
+    metadata !== null &&
+      typeof metadata === "object" &&
+      !Array.isArray(metadata) &&
+      JSON.stringify(Object.keys(metadata).sort()) ===
+        JSON.stringify(
+          [
+            "session_id",
+            "punk_id",
+            "expires_at_seconds",
+            "last_renewed_at_seconds",
+          ].sort(),
+        ) &&
+      UUID_RE.test(metadata.session_id ?? "") &&
+      UUID_RE.test(metadata.punk_id ?? "") &&
+      Number.isSafeInteger(metadata.expires_at_seconds) &&
+      metadata.expires_at_seconds > Math.floor(Date.now() / 1_000) + 300 &&
+      (metadata.last_renewed_at_seconds === null ||
+        (Number.isSafeInteger(metadata.last_renewed_at_seconds) &&
+          metadata.last_renewed_at_seconds <= metadata.expires_at_seconds)),
+    "promotion Session metadata is invalid",
+  );
+  invariant(
+    CAPABILITY_RE.test(bundle.revoke_capability ?? "") &&
+      bundle.revoke_expires_at_seconds === metadata.expires_at_seconds,
+    "promotion Session revoke capability is invalid",
+  );
+  return bundle;
 }
 
 /** Deterministic RFC 9562 UUIDv8 used only for replay-safe fixture commands. */
@@ -39,7 +103,10 @@ async function requestJson(fetchImpl, url, init, label, acceptedStatuses) {
     throw new Error(`${label} failed with HTTP ${response.status}`);
   }
   const contentType = response.headers.get("content-type") ?? "";
-  invariant(contentType.includes("application/json"), `${label} returned non-JSON`);
+  invariant(
+    contentType.includes("application/json"),
+    `${label} returned non-JSON`,
+  );
   return response.json();
 }
 
@@ -87,7 +154,10 @@ export async function prepareStagingFixture({
     typeof operatorToken === "string" &&
       operatorToken.length >= 32 &&
       operatorToken.length <= 4096 &&
-      !/[\s\u0000-\u001f]/.test(operatorToken),
+      ![...operatorToken].some(
+        (character) =>
+          /\s/u.test(character) || character.codePointAt(0) <= 0x1f,
+      ),
     "bounded operator token required",
   );
   invariant(
@@ -103,7 +173,11 @@ export async function prepareStagingFixture({
     [200],
   );
   const punkId = sessionEnvelope?.session?.punkId;
-  invariant(UUID_RE.test(punkId ?? ""), "staging session returned no canonical Punk ID");
+  const sessionId = sessionEnvelope?.session?.sessionId;
+  invariant(
+    UUID_RE.test(punkId ?? "") && UUID_RE.test(sessionId ?? ""),
+    "staging session returned no canonical Session/Punk ID",
+  );
 
   const workspaceCommandId = deterministicUuid("workspace", sourceSha);
   const slug = `promotion-${sourceSha.slice(0, 12)}`;
@@ -133,7 +207,10 @@ export async function prepareStagingFixture({
     [200, 201],
   );
   const workspaceId = workspaceEnvelope?.workspace?.id;
-  invariant(UUID_RE.test(workspaceId ?? ""), "workspace response has no canonical ID");
+  invariant(
+    UUID_RE.test(workspaceId ?? ""),
+    "workspace response has no canonical ID",
+  );
 
   const conversationCommandId = deterministicUuid("conversation", sourceSha);
   const conversationCommand = {
@@ -200,20 +277,57 @@ export async function prepareStagingFixture({
       [200, 201],
     );
     const messageId = messageEnvelope?.message?.id;
-    invariant(UUID_RE.test(messageId ?? ""), "Message response has no canonical ID");
+    invariant(
+      UUID_RE.test(messageId ?? ""),
+      "Message response has no canonical ID",
+    );
     seedMessageIds.push(messageId);
   }
+
+  const replyCommandId = deterministicUuid("history-reply", sourceSha);
+  const replyEnvelope = await requestJson(
+    fetchImpl,
+    `${canonicalOrigin}/api/v1/workspaces/${workspaceId}/conversations/${conversationId}/messages`,
+    {
+      method: "POST",
+      headers: authenticatedHeaders(canonicalOrigin, cookie, replyCommandId),
+      body: JSON.stringify({
+        contract: "message.post@1",
+        commandId: replyCommandId,
+        workspaceId,
+        conversationId,
+        actor: { kind: "punk", punkId },
+        payload: {
+          content: `Promotion seeded reply · ${sourceSha}`,
+          topic: null,
+          replyToMessageId: seedMessageIds.at(-1),
+          broadcast: false,
+          mentionedPunkIds: [],
+          mediaIds: [],
+        },
+      }),
+    },
+    "history Reply",
+    [200, 201],
+  );
+  const replyMessageId = replyEnvelope?.message?.id;
+  invariant(
+    UUID_RE.test(replyMessageId ?? ""),
+    "Reply response has no canonical ID",
+  );
 
   return {
     schema: "punks.staging-promotion-fixture.v1",
     sourceSha,
     origin: canonicalOrigin,
+    sessionId,
     punkId,
     workspaceId,
     workspaceSlug: slug,
     conversationId,
     topicRequired: true,
     seedMessageIds,
+    replyMessageId,
   };
 }
 
@@ -222,7 +336,10 @@ function parseArguments(argv) {
   for (let index = 0; index < argv.length; index += 2) {
     const flag = argv[index];
     const value = argv[index + 1];
-    invariant(flag?.startsWith("--") && value !== undefined, "invalid arguments");
+    invariant(
+      flag?.startsWith("--") && value !== undefined,
+      "invalid arguments",
+    );
     invariant(!values.has(flag.slice(2)), `duplicate argument ${flag}`);
     values.set(flag.slice(2), value);
   }
@@ -232,8 +349,14 @@ function parseArguments(argv) {
 function readSecret(path, label) {
   const absolute = resolve(path);
   const status = lstatSync(absolute);
-  invariant(status.isFile() && !status.isSymbolicLink(), `${label} must be a regular file`);
-  invariant(status.size > 0 && status.size <= 16 * 1024, `${label} has an invalid size`);
+  invariant(
+    status.isFile() && !status.isSymbolicLink(),
+    `${label} must be a regular file`,
+  );
+  invariant(
+    status.size > 0 && status.size <= 16 * 1024,
+    `${label} has an invalid size`,
+  );
   return readFileSync(absolute, "utf8").trim();
 }
 
@@ -244,12 +367,19 @@ export async function main(argv = process.argv.slice(2)) {
     invariant(value !== undefined && value !== "", `--${name} is required`);
     return value;
   };
-  const session = JSON.parse(readSecret(required("session-file"), "session file"));
+  const sourceSha = required("source-sha");
+  const session = parsePromotionSessionBundle(
+    readSecret(required("session-file"), "session file"),
+    sourceSha,
+  );
   const fixture = await prepareStagingFixture({
-    sourceSha: required("source-sha"),
+    sourceSha,
     origin: required("origin"),
     cookie: session.cookie,
-    operatorToken: readSecret(required("operator-token-file"), "operator token file"),
+    operatorToken: readSecret(
+      required("operator-token-file"),
+      "operator token file",
+    ),
   });
   const output = resolve(required("output"));
   const descriptor = openSync(output, "wx", 0o600);
@@ -261,7 +391,10 @@ export async function main(argv = process.argv.slice(2)) {
   console.log(`staging fixture prepared for ${fixture.sourceSha}`);
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (
+  process.argv[1] &&
+  resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+) {
   main().catch((error) => {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;

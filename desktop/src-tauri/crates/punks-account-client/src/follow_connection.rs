@@ -83,6 +83,7 @@ impl WorkspaceSession {
         after_cursor: u64,
     ) -> Result<FollowConnection, ClientFailure> {
         validate_uuid(conversation_id, "conversationId")?;
+        crate::promotion_audit::begin_live_follow_capture(after_cursor);
         let _operation = self.operations.read().await;
         self.assert_current().await?;
         #[cfg(not(test))]
@@ -255,6 +256,7 @@ impl FollowConnection {
                 &self.session.lease().workspace_id,
                 &self.conversation_id,
             )?;
+            crate::promotion_audit::record_live_follow_frame(&frame);
             let reduction = reduce_follow_frame(&self.state, frame);
             self.state = reduction.state;
             self.session.assert_current().await?;
@@ -321,6 +323,7 @@ impl FollowConnection {
         }
         self.session.assert_current().await?;
         self.state = confirmation.state;
+        crate::promotion_audit::record_live_follow_confirmation(through_cursor);
         Ok(())
     }
 

@@ -88,6 +88,16 @@ function estSha256(valeur) {
   return typeof valeur === "string" && SHA256_RE.test(valeur);
 }
 
+function clesObjetExactes(value, keys) {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    JSON.stringify(Object.keys(value).sort()) ===
+      JSON.stringify([...keys].sort())
+  );
+}
+
 function estCheminGitCanonique(chemin) {
   return (
     typeof chemin === "string" &&
@@ -240,9 +250,15 @@ function preuvesAttendues(dossier, ledgerRetraits) {
     );
     ajouterPreuveAttendue(
       attendues,
+      `scan/artefact/${plateforme}`,
+      artefact?.scanSha256,
+    );
+    ajouterPreuveAttendue(
+      attendues,
       `transcript/${plateforme}`,
       artefact?.transcriptSha256,
     );
+    ajouterPreuveAttendue(attendues, `brut/${plateforme}`);
     ajouterPreuveAttendue(
       attendues,
       `staging/reobservation/${plateforme}`,
@@ -271,6 +287,24 @@ function preuvesAttendues(dossier, ledgerRetraits) {
       attendues,
       `production/${nom}`,
       dossier.liaison?.["digests-production"]?.[nom],
+    );
+  }
+  const digestsPromotion = dossier.liaison?.["digests-preuves-promotion"];
+  ajouterPreuveAttendue(
+    attendues,
+    "production/evidence/platform-index",
+    digestsPromotion?.platformIndex,
+  );
+  ajouterPreuveAttendue(
+    attendues,
+    "production/evidence/recovery-index",
+    digestsPromotion?.recoveryIndex,
+  );
+  for (const plateforme of PLATEFORMES) {
+    ajouterPreuveAttendue(
+      attendues,
+      `production/evidence/network/${plateforme}`,
+      digestsPromotion?.network?.[plateforme],
     );
   }
   const recits = Array.isArray(dossier.parcours?.recits)
@@ -534,6 +568,11 @@ function validerLiaison(liaison, stagingIds, stagingMateriauSha256, push) {
         `liaison : artefact ${artefact.plateforme} sans transcript installé content-addressé`,
       );
     }
+    if (!estSha256(artefact.scanSha256)) {
+      push(
+        `liaison : artefact ${artefact.plateforme} sans scan installé content-addressé`,
+      );
+    }
     const identite = artefact.identite;
     if (
       !identite ||
@@ -640,6 +679,31 @@ function validerLiaison(liaison, stagingIds, stagingMateriauSha256, push) {
     for (const nom of ["bundle", "manifeste"]) {
       if (!estSha256(digestsProduction[nom])) {
         push(`liaison : digest production « ${nom} » invalide`);
+      }
+    }
+  }
+
+  const digestsPromotion = liaison["digests-preuves-promotion"];
+  if (
+    !clesObjetExactes(digestsPromotion, [
+      "platformIndex",
+      "recoveryIndex",
+      "network",
+    ]) ||
+    !clesObjetExactes(digestsPromotion?.network, PLATEFORMES)
+  ) {
+    push("liaison : digests des preuves de promotion manquants ou élargis");
+  } else {
+    for (const [nom, digest] of [
+      ["platformIndex", digestsPromotion.platformIndex],
+      ["recoveryIndex", digestsPromotion.recoveryIndex],
+      ...PLATEFORMES.map((plateforme) => [
+        `network/${plateforme}`,
+        digestsPromotion.network[plateforme],
+      ]),
+    ]) {
+      if (!estSha256(digest)) {
+        push(`liaison : digest de preuve promotion « ${nom} » invalide`);
       }
     }
   }

@@ -22,6 +22,7 @@ import {
   validateSigstoreBundleContent,
   verifyGithubSubject,
 } from "../github-attestation-lib.mjs";
+import { buildRecoveryIndex } from "./aggregate-recovery-evidence.mjs";
 
 const SOURCE_SHA = /^[0-9a-f]{40}$/;
 const DEPLOYMENT_ID = /^sha256:[0-9a-f]{64}$/;
@@ -217,7 +218,8 @@ function exactObjectKeys(value, keys) {
     value !== null &&
     typeof value === "object" &&
     !Array.isArray(value) &&
-    JSON.stringify(Object.keys(value).sort()) === JSON.stringify([...keys].sort())
+    JSON.stringify(Object.keys(value).sort()) ===
+      JSON.stringify([...keys].sort())
   );
 }
 
@@ -247,7 +249,10 @@ function loadInstalledEvidence(
     fail("Installed evidence sha256 directory must contain only regular files");
   }
 
-  const indexFile = readStableFile(join(root, "index.json"), "Installed evidence index");
+  const indexFile = readStableFile(
+    join(root, "index.json"),
+    "Installed evidence index",
+  );
   const index = parseJsonContent(indexFile, "Installed evidence index");
   if (
     !exactObjectKeys(index, ["schema", "preuves"]) ||
@@ -312,13 +317,23 @@ function loadInstalledEvidence(
     referenced.set(reference.chemin, proofFile);
     referenced.set(reference.sujet.chemin, subjectFile);
   }
-  const actualReferencedPaths = shaEntries.map((entry) => `sha256/${entry.name}`).sort();
+  const actualReferencedPaths = shaEntries
+    .map((entry) => `sha256/${entry.name}`)
+    .sort();
   const expectedReferencedPaths = [...referenced.keys()].sort();
-  if (JSON.stringify(actualReferencedPaths) !== JSON.stringify(expectedReferencedPaths)) {
-    fail("Installed evidence contains unreferenced or missing content-addressed files");
+  if (
+    JSON.stringify(actualReferencedPaths) !==
+    JSON.stringify(expectedReferencedPaths)
+  ) {
+    fail(
+      "Installed evidence contains unreferenced or missing content-addressed files",
+    );
   }
 
-  const networkFile = readStableFile(expectedNetworkPath, "Installed network proof");
+  const networkFile = readStableFile(
+    expectedNetworkPath,
+    "Installed network proof",
+  );
   const network = parseJsonContent(networkFile, "Installed network proof");
   const transcriptReference = index.preuves.find(
     ({ id }) => id === `transcript/${platform}`,
@@ -347,7 +362,10 @@ function loadInstalledEvidence(
     root,
     indexFile,
     networkFile,
-    contentFiles: [...referenced.entries()].map(([path, file]) => ({ path, file })),
+    contentFiles: [...referenced.entries()].map(([path, file]) => ({
+      path,
+      file,
+    })),
   };
 }
 
@@ -724,7 +742,11 @@ function verifyLeg(
     }))
     .sort((left, right) => left.path.localeCompare(right.path));
   if (
-    !exactObjectKeys(manifest.installedEvidence, ["index", "network", "files"]) ||
+    !exactObjectKeys(manifest.installedEvidence, [
+      "index",
+      "network",
+      "files",
+    ]) ||
     !exactObjectKeys(manifest.installedEvidence.index, ["path", "sha256"]) ||
     manifest.installedEvidence.index.path !== "evidence/index.json" ||
     manifest.installedEvidence.index.sha256 !== evidence.indexFile.sha256 ||
@@ -945,6 +967,7 @@ export function aggregateCandidate(options) {
     .sort((left, right) => left.name.localeCompare(right.name));
   const stagedProofName = "staging-deployment-proof.json";
   const promotionReferences = [];
+  const recoveryReferences = [];
   const promotionProofIds = new Set();
   const promotionContent = new Map();
   const promotionNetworks = [];
@@ -958,7 +981,14 @@ export function aggregateCandidate(options) {
         fail("Platform evidence contains duplicate proof IDs");
       }
       promotionProofIds.add(reference.id);
-      promotionReferences.push(reference);
+      if (
+        reference.id.startsWith("faute/") ||
+        reference.id.startsWith("recuperation/")
+      ) {
+        recoveryReferences.push(reference);
+      } else {
+        promotionReferences.push(reference);
+      }
     }
     for (const { path, file } of evidence.contentFiles) {
       const previous = promotionContent.get(path);
@@ -974,6 +1004,12 @@ export function aggregateCandidate(options) {
       content: evidence.networkFile.content,
     });
   }
+  const recoveryIndexContent = buildRecoveryIndex({
+    references: recoveryReferences,
+    content: promotionContent,
+    sourceSha,
+    stagingDeploymentId,
+  });
   promotionReferences.sort((left, right) => left.id.localeCompare(right.id));
   promotionNetworks.sort((left, right) =>
     left.platform.localeCompare(right.platform),
@@ -996,6 +1032,16 @@ export function aggregateCandidate(options) {
       path,
       sha256,
     })),
+    ...(recoveryIndexContent === null
+      ? {}
+      : {
+          recoveryIndex: {
+            path: "promotion-evidence/recovery-index.json",
+            sha256: createHash("sha256")
+              .update(recoveryIndexContent)
+              .digest("hex"),
+          },
+        }),
   };
   const aggregate = {
     schema: "punks.desktop-candidate-aggregate.v1",
@@ -1049,10 +1095,24 @@ export function aggregateCandidate(options) {
     staging.file.content,
     { flag: "wx", mode: 0o644 },
   );
-  writeFileSync(join(promotionRoot, "platform-index.json"), platformIndexContent, {
-    flag: "wx",
-    mode: 0o644,
-  });
+  writeFileSync(
+    join(promotionRoot, "platform-index.json"),
+    platformIndexContent,
+    {
+      flag: "wx",
+      mode: 0o644,
+    },
+  );
+  if (recoveryIndexContent !== null) {
+    writeFileSync(
+      join(promotionRoot, "recovery-index.json"),
+      recoveryIndexContent,
+      {
+        flag: "wx",
+        mode: 0o644,
+      },
+    );
+  }
   for (const [path, file] of promotionContent) {
     writeFileSync(join(promotionRoot, path), file.content, {
       flag: "wx",

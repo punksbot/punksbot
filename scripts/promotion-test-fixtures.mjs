@@ -1,4 +1,5 @@
 /** Fixtures partagées des tests de la chaîne de promotion desktop. */
+import { createHash } from "node:crypto";
 import {
   IDENTITE_APPLICATION_PUNKS,
   MATRICE_ACCESSIBILITE,
@@ -32,6 +33,103 @@ export function bundleSigstoreFixture() {
   };
 }
 
+function sha256(value) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function inventoryDigest(schema, files, links) {
+  return sha256(
+    Buffer.from(
+      JSON.stringify(
+        links === undefined ? { schema, files } : { schema, files, links },
+      ),
+    ),
+  );
+}
+
+export function contenuScanArtefactInstalleFixture({
+  plateforme,
+  candidateSha,
+  nomArtefact,
+  tailleArtefact,
+  sha256Artefact,
+  sha256Natif = "b".repeat(64),
+  tailleNatif = 123,
+}) {
+  const nomNatif =
+    plateforme === "windows-x64"
+      ? "punks-bot-staging.exe"
+      : "punks-bot-staging";
+  const cheminNatif = plateforme.startsWith("macos-")
+    ? `Punks Bot Staging.app/Contents/MacOS/${nomNatif}`
+    : plateforme === "linux-x64"
+      ? `usr/bin/${nomNatif}`
+      : `Punks Bot Staging/${nomNatif}`;
+  const fichiersInstallation = [
+    { path: cheminNatif, size: tailleNatif, sha256: sha256Natif },
+    {
+      path: plateforme.startsWith("macos-")
+        ? "Punks Bot Staging.app/Contents/Info.plist"
+        : plateforme === "linux-x64"
+          ? "usr/share/applications/punks-bot-staging.desktop"
+          : "Punks Bot Staging/WebView2Loader.dll",
+      size: 64,
+      sha256: "9".repeat(64),
+    },
+  ].sort((left, right) =>
+    left.path < right.path ? -1 : left.path > right.path ? 1 : 0,
+  );
+  const fichiersFrontend = [
+    { path: "assets/index.js", size: 31, sha256: "74".repeat(32) },
+    { path: "index.html", size: 29, sha256: "73".repeat(32) },
+  ];
+  const liensInstallation = [];
+  return `${JSON.stringify({
+    schema: "punks.installed-artifact-scan.v2",
+    platform: plateforme,
+    candidateSha,
+    artifact: {
+      name: nomArtefact,
+      size: tailleArtefact,
+      sha256: sha256Artefact,
+    },
+    native: {
+      name: nomNatif,
+      size: tailleNatif,
+      sha256: sha256Natif,
+    },
+    installation: {
+      schema: "punks.installed-file-inventory.v1",
+      files: fichiersInstallation,
+      links: liensInstallation,
+      sha256: inventoryDigest(
+        "punks.installed-file-inventory.v1",
+        fichiersInstallation,
+        liensInstallation,
+      ),
+    },
+    frontend: {
+      schema: "punks.embedded-asset-manifest.v1",
+      product: "punks-frontend",
+      mode: "embedded-runtime",
+      files: fichiersFrontend,
+      sha256: inventoryDigest(
+        "punks.embedded-asset-manifest.v1",
+        fichiersFrontend,
+      ),
+      forbiddenMarkers: [],
+    },
+    forbiddenMarkers: [
+      "buzz-media",
+      "native_websocket",
+      "buzz",
+      "nostr",
+      "relay",
+      "huddle",
+    ],
+  })}\n`;
+}
+
 export function contenuManifesteCandidatFixture({
   candidateSha,
   stagingDeploymentId,
@@ -39,6 +137,16 @@ export function contenuManifesteCandidatFixture({
   repository,
   plateformes,
   artefacts,
+  promotionEvidenceDigests = {
+    platformIndex: "a".repeat(64),
+    recoveryIndex: "b".repeat(64),
+    network: Object.fromEntries(
+      plateformes.map((platform, index) => [
+        platform,
+        String.fromCharCode(99 + index).repeat(64),
+      ]),
+    ),
+  },
 }) {
   return `${JSON.stringify({
     schema: "punks.desktop-candidate-aggregate.v1",
@@ -50,6 +158,25 @@ export function contenuManifesteCandidatFixture({
     stagingProof: {
       path: "staging-deployment-proof.json",
       sha256: stagingProofSha256,
+    },
+    promotionEvidence: {
+      platformIndex: {
+        path: "promotion-evidence/platform-index.json",
+        sha256: promotionEvidenceDigests.platformIndex,
+      },
+      recoveryIndex: {
+        path: "promotion-evidence/recovery-index.json",
+        sha256: promotionEvidenceDigests.recoveryIndex,
+      },
+      stagingProof: {
+        path: "promotion-evidence/staging-deployment-proof.json",
+        sha256: stagingProofSha256,
+      },
+      network: plateformes.map((platform) => ({
+        platform,
+        path: `promotion-evidence/network/${platform}.json`,
+        sha256: promotionEvidenceDigests.network[platform],
+      })),
     },
     platforms: plateformes.map((platform, index) => ({
       platform,
@@ -128,6 +255,24 @@ export function preuveFollowFixture() {
       resync: "vert",
       terminal: "vert",
     },
+    distributed: {
+      proofSha256: "a".repeat(64),
+      observedAt: "2026-08-26T17:11:41.455Z",
+      catchUpFrames: 53,
+      cursors: {
+        initial: 54,
+        live: 55,
+        crashBeforeAck: 56,
+        replay: 56,
+      },
+      scenarios: {
+        catchUpAckReady: "vert",
+        liveChangeAck: "vert",
+        crashBeforeAckReplay: "vert",
+        afterAckNoReplay: "vert",
+        revokedSessionRejected: "vert",
+      },
+    },
   };
 }
 
@@ -179,6 +324,24 @@ export function contenuTranscriptInstalleFixture({
         },
       ]),
     ),
+    authentication: {
+      contour: "navigateur-systeme-provider-reel",
+      proof: {
+        schema: "punks.live-staging-auth-proof.v1",
+        sourceSha: candidateSha,
+        stagingDeploymentId,
+        flow: { method: "github", environment: "staging" },
+        negative: {
+          wrongOauthState: "refused",
+          wrongBrowserBinding: "refused",
+          wrongNativePkceVerifier: "refused",
+        },
+      },
+    },
+    rawEvidence: {
+      indexSha256: "71".repeat(32),
+      files: 7,
+    },
     network: {
       deployment: {
         transport: "https",

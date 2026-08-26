@@ -268,9 +268,48 @@ function nonEmptyCoordinate(value) {
 function validateFollowEvidence(follow, requests) {
   exactKeys(
     follow,
-    ["protocol", "request", "trace", "scenarios"],
+    ["protocol", "request", "trace", "scenarios", "distributed"],
     "installed FOLLOW evidence",
   );
+  exactKeys(
+    follow.distributed,
+    ["proofSha256", "observedAt", "catchUpFrames", "cursors", "scenarios"],
+    "distributed FOLLOW evidence",
+  );
+  exactKeys(
+    follow.distributed.cursors,
+    ["initial", "live", "crashBeforeAck", "replay"],
+    "distributed FOLLOW cursors",
+  );
+  exactKeys(
+    follow.distributed.scenarios,
+    [
+      "catchUpAckReady",
+      "liveChangeAck",
+      "crashBeforeAckReplay",
+      "afterAckNoReplay",
+      "revokedSessionRejected",
+    ],
+    "distributed FOLLOW scenarios",
+  );
+  const distributed = follow.distributed;
+  if (
+    !SHA256_RE.test(distributed.proofSha256 ?? "") ||
+    typeof distributed.observedAt !== "string" ||
+    !Number.isFinite(Date.parse(distributed.observedAt)) ||
+    !Number.isSafeInteger(distributed.catchUpFrames) ||
+    distributed.catchUpFrames < 1 ||
+    !Number.isSafeInteger(distributed.cursors.initial) ||
+    !Number.isSafeInteger(distributed.cursors.live) ||
+    !Number.isSafeInteger(distributed.cursors.crashBeforeAck) ||
+    !Number.isSafeInteger(distributed.cursors.replay) ||
+    distributed.cursors.initial >= distributed.cursors.live ||
+    distributed.cursors.live >= distributed.cursors.crashBeforeAck ||
+    distributed.cursors.crashBeforeAck !== distributed.cursors.replay ||
+    Object.values(distributed.scenarios).some((result) => result !== "vert")
+  ) {
+    fail("distributed FOLLOW evidence is not exact and green");
+  }
   exactKeys(
     follow.request,
     ["transport", "method", "origin", "path", "status"],
@@ -302,51 +341,72 @@ function validateFollowEvidence(follow, requests) {
   let cursor = accepted.cursor;
   let index = 1;
   let batches = 0;
+  let ready = false;
+  let live = false;
+  let terminal = false;
   const batchIds = new Set();
-  while (follow.trace[index]?.state === "changes") {
-    const changes = follow.trace[index];
-    const renderer = follow.trace[index + 1];
-    const ack = follow.trace[index + 2];
-    exactKeys(
-      changes,
-      ["state", "previousCursor", "cursor", "batchId", "atomic"],
-      "FOLLOW changes trace",
-    );
-    exactKeys(renderer, ["state", "cursor"], "FOLLOW renderer confirmation");
-    exactKeys(ack, ["state", "cursor"], "FOLLOW ACK trace");
-    if (
-      changes.previousCursor !== cursor ||
-      !nonEmptyCoordinate(changes.cursor) ||
-      changes.cursor === cursor ||
-      !nonEmptyCoordinate(changes.batchId) ||
-      batchIds.has(changes.batchId) ||
-      changes.atomic !== true ||
-      renderer.state !== "renderer-confirmed" ||
-      renderer.cursor !== changes.cursor ||
-      ack.state !== "ack" ||
-      ack.cursor !== changes.cursor
-    ) {
-      fail(
-        "installed FOLLOW changes must be contiguous, atomic and ACKed only after renderer confirmation",
-      );
-    }
-    cursor = changes.cursor;
-    batchIds.add(changes.batchId);
-    batches += 1;
-    index += 3;
-  }
-  if (batches === 0) fail("installed FOLLOW trace proves no changes batch");
-  const terminalStates = ["ready", "live", "terminal"];
-  if (follow.trace.length !== index + terminalStates.length) {
-    fail("installed FOLLOW trace has an unexpected lifecycle");
-  }
-  for (const state of terminalStates) {
+  while (index < follow.trace.length) {
     const entry = follow.trace[index];
-    exactKeys(entry, ["state", "cursor"], `FOLLOW ${state} trace`);
-    if (entry.state !== state || entry.cursor !== cursor) {
-      fail(`installed FOLLOW trace must reach ${state} on the applied cursor`);
+    if (entry?.state === "changes") {
+      const changes = entry;
+      const renderer = follow.trace[index + 1];
+      const ack = follow.trace[index + 2];
+      exactKeys(
+        changes,
+        ["state", "previousCursor", "cursor", "batchId", "atomic"],
+        "FOLLOW changes trace",
+      );
+      exactKeys(renderer, ["state", "cursor"], "FOLLOW renderer confirmation");
+      exactKeys(ack, ["state", "cursor"], "FOLLOW ACK trace");
+      if (
+        terminal ||
+        changes.previousCursor !== cursor ||
+        !nonEmptyCoordinate(changes.cursor) ||
+        changes.cursor === cursor ||
+        !nonEmptyCoordinate(changes.batchId) ||
+        batchIds.has(changes.batchId) ||
+        changes.atomic !== true ||
+        renderer.state !== "renderer-confirmed" ||
+        renderer.cursor !== changes.cursor ||
+        ack.state !== "ack" ||
+        ack.cursor !== changes.cursor
+      ) {
+        fail(
+          "installed FOLLOW changes must be contiguous, atomic and ACKed only after renderer confirmation",
+        );
+      }
+      cursor = changes.cursor;
+      batchIds.add(changes.batchId);
+      batches += 1;
+      index += 3;
+      continue;
+    }
+    exactKeys(entry, ["state", "cursor"], "FOLLOW lifecycle trace");
+    if (entry.state === "ready" && !ready && !live && entry.cursor === cursor) {
+      ready = true;
+    } else if (
+      entry.state === "live" &&
+      ready &&
+      !live &&
+      entry.cursor === cursor
+    ) {
+      live = true;
+    } else if (
+      entry.state === "terminal" &&
+      ready &&
+      live &&
+      !terminal &&
+      entry.cursor === cursor &&
+      index === follow.trace.length - 1
+    ) {
+      terminal = true;
+    } else {
+      fail("installed FOLLOW trace has an unexpected lifecycle");
     }
     index += 1;
+  }
+  if (batches === 0 || !ready || !live || !terminal) {
+    fail("installed FOLLOW trace is missing changes, ready, live or terminal");
   }
   exactKeys(
     follow.scenarios,
@@ -481,6 +541,7 @@ export function validateCandidateAggregateContent(
     candidateSha,
     stagingDeploymentId,
     stagingProofSha256,
+    promotionEvidenceDigests,
     repository,
     artifacts,
   },
@@ -496,6 +557,7 @@ export function validateCandidateAggregateContent(
       "repository",
       "releaseTag",
       "stagingProof",
+      "promotionEvidence",
       "platforms",
       "immutableLatest",
       "releaseAssets",
@@ -507,6 +569,78 @@ export function validateCandidateAggregateContent(
     ["path", "sha256"],
     "aggregate staging proof",
   );
+  exactKeys(
+    manifest.promotionEvidence,
+    ["platformIndex", "recoveryIndex", "stagingProof", "network"],
+    "aggregate promotion evidence",
+  );
+  exactKeys(
+    promotionEvidenceDigests,
+    ["platformIndex", "recoveryIndex", "network"],
+    "observed promotion evidence digests",
+  );
+  exactKeys(
+    promotionEvidenceDigests.network,
+    PLATFORMS,
+    "observed promotion network digests",
+  );
+  if (
+    !SHA256_RE.test(promotionEvidenceDigests.platformIndex ?? "") ||
+    !SHA256_RE.test(promotionEvidenceDigests.recoveryIndex ?? "") ||
+    PLATFORMS.some(
+      (platform) =>
+        !SHA256_RE.test(promotionEvidenceDigests.network[platform] ?? ""),
+    )
+  ) {
+    fail("observed promotion evidence digest set is invalid");
+  }
+  for (const [name, expectedPath] of [
+    ["platformIndex", "promotion-evidence/platform-index.json"],
+    ["recoveryIndex", "promotion-evidence/recovery-index.json"],
+    ["stagingProof", "promotion-evidence/staging-deployment-proof.json"],
+  ]) {
+    exactKeys(
+      manifest.promotionEvidence[name],
+      ["path", "sha256"],
+      `aggregate promotion evidence ${name}`,
+    );
+    if (
+      manifest.promotionEvidence[name].path !== expectedPath ||
+      !SHA256_RE.test(manifest.promotionEvidence[name].sha256 ?? "") ||
+      (name !== "stagingProof" &&
+        manifest.promotionEvidence[name].sha256 !==
+          promotionEvidenceDigests[name])
+    ) {
+      fail(`aggregate promotion evidence ${name} digest is divergent`);
+    }
+  }
+  if (
+    manifest.promotionEvidence.stagingProof.sha256 !== stagingProofSha256 ||
+    !Array.isArray(manifest.promotionEvidence.network) ||
+    manifest.promotionEvidence.network.length !== PLATFORMS.length
+  ) {
+    fail("aggregate promotion evidence staging or network matrix is divergent");
+  }
+  const networkPlatforms = new Set();
+  for (const network of manifest.promotionEvidence.network) {
+    exactKeys(
+      network,
+      ["platform", "path", "sha256"],
+      "aggregate promotion network evidence",
+    );
+    if (
+      !PLATFORMS.includes(network.platform) ||
+      networkPlatforms.has(network.platform) ||
+      network.path !== `promotion-evidence/network/${network.platform}.json` ||
+      !SHA256_RE.test(network.sha256 ?? "") ||
+      network.sha256 !== promotionEvidenceDigests.network[network.platform]
+    ) {
+      fail(
+        "aggregate promotion network evidence digest is invalid or duplicated",
+      );
+    }
+    networkPlatforms.add(network.platform);
+  }
   exactKeys(
     manifest.immutableLatest,
     ["path", "sha256"],

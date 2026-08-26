@@ -60,7 +60,7 @@ import {
   type ApplyAccountMergeToWorkspaceInput,
   WorkspaceDomainError,
 } from "@punks/core";
-import { DurableObject } from "cloudflare:workers";
+import { PromotionFaultableDurableObject } from "../../../shared/promotion-faultable-do";
 
 import type { ApiEnv } from "./env";
 import { verifyAttestationResponse } from "./attestation-verification";
@@ -447,7 +447,14 @@ function accountMergeWorkspaceMembershipChanges(
   }
 }
 
-export class WorkspaceDO extends DurableObject<ApiEnv> {
+export class WorkspaceDO extends PromotionFaultableDurableObject<ApiEnv> {
+  protected override async promotionRecoveryFingerprint(): Promise<string> {
+    const current = this.effectiveState();
+    if (current === null)
+      throw new Error("promotion Workspace target is missing");
+    return sha256Hex(canonicalJson(current));
+  }
+
   private alarmScheduling: Promise<void> = Promise.resolve();
 
   constructor(ctx: DurableObjectState, env: ApiEnv) {

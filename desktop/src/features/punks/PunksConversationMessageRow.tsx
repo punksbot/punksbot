@@ -60,6 +60,7 @@ export function ConversationMessageRow({
     (selectedReaction === "👍" ? reaction : null);
   return (
     <article
+      aria-label={`Message ${message.id}`}
       className={`rounded-lg border border-border p-3 ${target ? "ring-2 ring-primary" : ""}`}
       data-message-id={message.id}
       data-message-status={message.status}
@@ -94,12 +95,13 @@ export function ConversationMessageRow({
         </time>
       </div>
       {active && message.topic !== null ? (
-        <p
+        <h3
+          aria-label={`Message subject ${message.id}`}
           className="mt-2 text-sm font-semibold"
           data-testid={`punks-message-topic-${message.id}`}
         >
           {message.topic}
-        </p>
+        </h3>
       ) : null}
       <p className="mt-2 whitespace-pre-wrap text-message">
         {active
@@ -131,6 +133,7 @@ export function ConversationMessageRow({
           value={reactionInput}
         />
         <button
+          aria-label={`Reaction ${message.id} thumbs up`}
           className="rounded-md border border-border px-2 py-1 hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
           data-testid={`punks-reaction-${message.id}-thumbs-up`}
           disabled={!canReact || !canMutate || !active || reactionPending}
@@ -142,6 +145,7 @@ export function ConversationMessageRow({
         </button>
         {threadCount > 0 ? (
           <button
+            aria-label={`Thread ${message.id}`}
             className="rounded-md px-2 py-1 hover:bg-accent"
             data-testid={`punks-thread-${message.id}`}
             onClick={onOpenThread}

@@ -9,7 +9,9 @@ use std::sync::Arc;
 use tauri::Manager;
 use tauri_plugin_deep_link::DeepLinkExt;
 
-use crate::{punks_auth, punks_client, punks_session_store::KeyringSessionPersistence};
+use crate::{
+    punks_auth, punks_client, punks_promotion_audit, punks_session_store::KeyringSessionPersistence,
+};
 use punks_account_client::ceremony::CompiledPunksEnvironment;
 
 fn expected_auth_scheme() -> Option<&'static str> {
@@ -80,6 +82,10 @@ fn install_deep_link_handlers(app: &mut tauri::App) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() -> Result<(), String> {
+    let context = tauri::generate_context!();
+    punks_promotion_audit::write_embedded_asset_manifest(context.assets())?;
+    punks_promotion_audit::record_auth_conformance()?;
+    punks_promotion_audit::record_follow_conformance()?;
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
@@ -124,6 +130,7 @@ pub fn run() -> Result<(), String> {
             punks_auth::punks_renew_account_session,
             punks_auth::punks_sign_out,
             punks_client::punks_check_compatibility,
+            punks_client::punks_observe_promotion_fault,
             punks_client::punks_validate_navigation,
             punks_client::punks_list_workspaces,
             punks_client::punks_resolve_workspace,
@@ -142,7 +149,7 @@ pub fn run() -> Result<(), String> {
             punks_client::punks_add_reaction,
             punks_client::punks_remove_reaction,
         ])
-        .build(tauri::generate_context!())
+        .build(context)
         .map_err(|error| format!("error while building Punks desktop: {error}"))?;
 
     app.run(|app_handle, event| {

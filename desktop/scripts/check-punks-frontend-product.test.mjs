@@ -11,6 +11,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
+import { validateInstalledArtifactScan } from "../../scripts/candidate/installed-artifact-scan.mjs";
+import { contenuScanArtefactInstalleFixture } from "../../scripts/promotion-test-fixtures.mjs";
+
 const checker = join(import.meta.dirname, "check-punks-frontend-product.mjs");
 
 function write(root, relativePath, contents) {
@@ -285,6 +288,41 @@ test("dist mode recursively proves one closed Punks frontend bundle", () => {
       "ec12e2d81d34698c3541adb0db5b46947cd4027f4d37a138d22cc76ac4fac8d5",
     );
     assert.match(proof.sha256, /^[a-f0-9]{64}$/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("the source dist proof cannot replace the installed runtime asset manifest", () => {
+  const root = createSourceFixture();
+  createValidDist(root);
+  try {
+    const result = runChecker(root, "--dist");
+    assert.equal(result.status, 0, result.stderr);
+    const frontend = JSON.parse(result.stdout);
+    const candidateSha = "7e".repeat(20);
+    const artifactSha256 = "7f".repeat(32);
+    const installed = JSON.parse(
+      contenuScanArtefactInstalleFixture({
+        plateforme: "linux-x64",
+        candidateSha,
+        nomArtefact: `punks-desktop-linux-x64-${candidateSha}.AppImage`,
+        tailleArtefact: 123,
+        sha256Artefact: artifactSha256,
+        sha256Natif: "80".repeat(32),
+        tailleNatif: 456,
+      }),
+    );
+    installed.frontend = frontend;
+    assert.throws(
+      () =>
+        validateInstalledArtifactScan(installed, {
+          platform: "linux-x64",
+          candidateSha,
+          artifactSha256,
+        }),
+      /embedded frontend asset manifest/,
+    );
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

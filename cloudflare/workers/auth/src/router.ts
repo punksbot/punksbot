@@ -394,15 +394,12 @@ async function oauthCallback(
     return problem(400, "invalid_input", "OAuth callback is invalid");
   }
   const browserBinding = parseCookies(request).get(oauthCookieName(state));
-  if (browserBinding === undefined) {
-    return problem(400, "invalid_input", "OAuth browser binding is missing");
-  }
-  const browserBindingHash = await hash(browserBinding);
   const transactionId = await aggregateName("transaction", state);
+  const transaction = env.AUTH_TRANSACTIONS.getByName(transactionId);
   const begun =
-    await env.AUTH_TRANSACTIONS.getByName(transactionId).begin(
-      browserBindingHash,
-    );
+    browserBinding === undefined
+      ? await transaction.beginDesktopWithReturnedState(state)
+      : await transaction.begin(await hash(browserBinding));
   if (!begun.ok || begun.transaction.provider !== provider) {
     return problem(
       400,
@@ -410,50 +407,51 @@ async function oauthCallback(
       "OAuth transaction is invalid or consumed",
     );
   }
-  const transaction = begun.transaction;
+  const browserBindingHash = begun.transaction.browserBindingHash;
+  const activeTransaction = begun.transaction;
   try {
     const profile = await exchangeProfile(
       env,
       provider,
       code,
-      transaction.codeVerifier,
+      activeTransaction.codeVerifier,
       providerFetch,
     );
     const identity = await identityInput(profile);
-    if (transaction.desktop !== undefined) {
+    if (activeTransaction.desktop !== undefined) {
       return completeDesktopOAuth({
         request,
         env,
-        transaction,
+        transaction: activeTransaction,
         transactionId,
         browserBindingHash,
         identity,
       });
     }
-    if (transaction.intent === "sign_in") {
-      return signIn(env, transaction, transactionId, state, identity);
+    if (activeTransaction.intent === "sign_in") {
+      return signIn(env, activeTransaction, transactionId, state, identity);
     }
-    if (transaction.intent === "reauthenticate") {
-      return reauthenticate(request, env, transaction, state, identity);
+    if (activeTransaction.intent === "reauthenticate") {
+      return reauthenticate(request, env, activeTransaction, state, identity);
     }
     return linkIdentity(
       request,
       env,
-      transaction,
+      activeTransaction,
       transactionId,
       state,
       identity,
     );
   } catch {
-    if (transaction.desktop !== undefined) {
+    if (activeTransaction.desktop !== undefined) {
       return failDesktopOAuth({
         env,
-        transaction,
+        transaction: activeTransaction,
         browserBindingHash,
         code: "provider_error",
       });
     }
-    return resultRedirect(env, transaction, state, "provider_error");
+    return resultRedirect(env, activeTransaction, state, "provider_error");
   }
 }
 

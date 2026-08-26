@@ -18,28 +18,23 @@ import {
   CANONICAL_STAGING_ACCOUNT_ID,
   validateStagingDeploymentProof,
 } from "../../cloudflare/scripts/staging-deployment-proof.mjs";
+import { validatePromotionProfilesContent } from "../promotion-materials-lib.mjs";
 import {
   MATRICE_ACCESSIBILITE,
   METHODES_ACCESSIBILITE,
+  FOLLOW_SCENARIO_OUTCOMES,
   REQUIRED_STORIES,
   VERIFICATIONS_ARTEFACT,
   validateInstalledTranscript,
 } from "../promotion-installed-transcript-lib.mjs";
+import { validateResilienceObservation } from "./resilience-observation.mjs";
+import { validateInstalledRawEvidence } from "./raw-evidence.mjs";
+import { exerciseReviewedInstalledCandidate } from "./reviewed-installed-driver.mjs";
+import { validateLiveAuthProof } from "./live-staging-auth-proof.mjs";
 
 export { REQUIRED_STORIES };
 
-export const FOLLOW_SCENARIO_OUTCOMES = Object.freeze({
-  snapshot: "vert",
-  "pagination-concurrente": "vert",
-  "changements-avant-ready": "vert",
-  "doublon-exact": "ignore",
-  trou: "resync",
-  divergence: "resync",
-  "crash-avant-ack": "rejoue",
-  "crash-apres-ack": "ne-rejoue-pas",
-  resync: "vert",
-  terminal: "vert",
-});
+export { FOLLOW_SCENARIO_OUTCOMES };
 
 const PLATFORMS = Object.freeze([
   "macos-arm64",
@@ -58,6 +53,9 @@ const REQUIRED_CAPABILITIES = Object.freeze([
 ]);
 const SHA1_RE = /^[0-9a-f]{40}$/u;
 const SHA256_RE = /^[0-9a-f]{64}$/u;
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+const WORKSPACE_SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])$/u;
 
 function fail(message) {
   throw new Error(`installed social loop rejected: ${message}`);
@@ -123,6 +121,161 @@ function parseJsonFile(path, label) {
 
 function sha256(content) {
   return createHash("sha256").update(content).digest("hex");
+}
+
+function loadStagingFixture(path, candidateSha) {
+  const document = parseJsonFile(path, "staging promotion fixture").value;
+  exactKeys(
+    document,
+    [
+      "schema",
+      "sourceSha",
+      "origin",
+      "sessionId",
+      "punkId",
+      "workspaceId",
+      "workspaceSlug",
+      "conversationId",
+      "topicRequired",
+      "seedMessageIds",
+      "replyMessageId",
+    ],
+    "staging promotion fixture",
+  );
+  if (
+    document.schema !== "punks.staging-promotion-fixture.v1" ||
+    document.sourceSha !== candidateSha ||
+    document.origin !== "https://staging.punks.bot" ||
+    !UUID_RE.test(document.sessionId ?? "") ||
+    !UUID_RE.test(document.punkId ?? "") ||
+    !UUID_RE.test(document.workspaceId ?? "") ||
+    !WORKSPACE_SLUG_RE.test(document.workspaceSlug ?? "") ||
+    !UUID_RE.test(document.conversationId ?? "") ||
+    document.topicRequired !== true ||
+    !Array.isArray(document.seedMessageIds) ||
+    document.seedMessageIds.length < 51 ||
+    document.seedMessageIds.length > 100 ||
+    new Set(document.seedMessageIds).size !== document.seedMessageIds.length ||
+    document.seedMessageIds.some((id) => !UUID_RE.test(id ?? "")) ||
+    !UUID_RE.test(document.replyMessageId ?? "")
+  ) {
+    fail("staging promotion fixture is not the exact bounded T1 fixture");
+  }
+  return {
+    origin: document.origin,
+    sessionId: document.sessionId,
+    punkId: document.punkId,
+    workspaceId: document.workspaceId,
+    workspaceSlug: document.workspaceSlug,
+    conversationId: document.conversationId,
+    topicRequired: true,
+    seedMessageIds: [...document.seedMessageIds],
+    replyMessageId: document.replyMessageId,
+  };
+}
+
+function loadLiveFollowProof(
+  path,
+  { candidateSha, stagingDeploymentId, fixture },
+) {
+  const file = parseJsonFile(path, "live staging FOLLOW proof");
+  const proof = file.value;
+  exactKeys(
+    proof,
+    [
+      "schema",
+      "result",
+      "sourceSha",
+      "stagingDeploymentId",
+      "staging",
+      "workspaceId",
+      "conversationId",
+      "catchUpFrames",
+      "initialCursor",
+      "liveCursor",
+      "crashBeforeAckCursor",
+      "replayCursor",
+      "scenarios",
+      "observedAt",
+    ],
+    "live staging FOLLOW proof",
+  );
+  exactKeys(
+    proof.scenarios,
+    [
+      "catchUpAckReady",
+      "liveChangeAck",
+      "crashBeforeAckReplay",
+      "afterAckNoReplay",
+      "revokedSessionRejected",
+    ],
+    "live staging FOLLOW scenarios",
+  );
+  if (
+    proof.schema !== "punks.live-staging-follow-proof.v1" ||
+    proof.result !== "PASS" ||
+    proof.sourceSha !== candidateSha ||
+    proof.stagingDeploymentId !== stagingDeploymentId ||
+    proof.staging !== "https://staging.punks.bot" ||
+    proof.workspaceId !== fixture.workspaceId ||
+    proof.conversationId !== fixture.conversationId ||
+    !Number.isSafeInteger(proof.catchUpFrames) ||
+    proof.catchUpFrames < 1 ||
+    !Number.isSafeInteger(proof.initialCursor) ||
+    !Number.isSafeInteger(proof.liveCursor) ||
+    !Number.isSafeInteger(proof.crashBeforeAckCursor) ||
+    !Number.isSafeInteger(proof.replayCursor) ||
+    proof.initialCursor >= proof.liveCursor ||
+    proof.liveCursor >= proof.crashBeforeAckCursor ||
+    proof.crashBeforeAckCursor !== proof.replayCursor ||
+    Object.values(proof.scenarios).some((result) => result !== "vert") ||
+    typeof proof.observedAt !== "string" ||
+    !Number.isFinite(Date.parse(proof.observedAt))
+  ) {
+    fail("live staging FOLLOW proof is not exact and green");
+  }
+  return {
+    proofSha256: sha256(file.content),
+    observedAt: proof.observedAt,
+    catchUpFrames: proof.catchUpFrames,
+    cursors: {
+      initial: proof.initialCursor,
+      live: proof.liveCursor,
+      crashBeforeAck: proof.crashBeforeAckCursor,
+      replay: proof.replayCursor,
+    },
+    scenarios: { ...proof.scenarios },
+  };
+}
+
+function loadLiveAuthProof(
+  path,
+  { candidateSha, stagingDeploymentId, fixture, stagingWorkers },
+) {
+  const proof = parseJsonFile(path, "live staging Auth proof").value;
+  const authWorker = stagingWorkers.find(
+    ({ name }) => name === "punks-auth-staging",
+  );
+  if (authWorker === undefined || !UUID_RE.test(proof?.flow?.flowId ?? "")) {
+    fail("live staging Auth proof has no exact Auth Worker/flow");
+  }
+  try {
+    validateLiveAuthProof(proof, {
+      sourceSha: candidateSha,
+      stagingDeploymentId,
+      flowId: proof.flow.flowId,
+      authWorkerVersionId: authWorker.versionId,
+    });
+  } catch (error) {
+    fail(error instanceof Error ? error.message : String(error));
+  }
+  if (
+    proof.flow.sessionId !== fixture.sessionId ||
+    proof.flow.punkId !== fixture.punkId
+  ) {
+    fail("live Auth proof does not own the installed promotion Session");
+  }
+  return proof;
 }
 
 function nonEmptyString(value) {
@@ -223,6 +376,8 @@ function validateDriverObservation(
       "stories",
       "accessibility",
       "follow",
+      "resilience",
+      "rawEvidence",
     ],
     "installed driver observation",
   );
@@ -323,6 +478,9 @@ function validateDriverObservation(
       if (
         automated === null ||
         typeof automated !== "object" ||
+        Array.isArray(automated) ||
+        JSON.stringify(Object.keys(automated).sort()) !==
+          JSON.stringify(["exitCode", "observation", "tool"]) ||
         automated.exitCode !== 0 ||
         !nonEmptyString(automated.tool) ||
         !nonEmptyString(automated.observation)
@@ -334,7 +492,11 @@ function validateDriverObservation(
       if (
         manual === null ||
         typeof manual !== "object" ||
+        Array.isArray(manual) ||
+        JSON.stringify(Object.keys(manual).sort()) !==
+          JSON.stringify(["observation", "reviewer", "tool"]) ||
         !nonEmptyString(manual.tool) ||
+        !nonEmptyString(manual.reviewer) ||
         !nonEmptyString(manual.observation)
       ) {
         fail(`accessibility observation ${criterion} lacks manual review`);
@@ -421,12 +583,7 @@ async function observeCompatibilityWithFetch(request) {
 }
 
 const reviewedInstalledDriver = Object.freeze({
-  async exercise({ platform }) {
-    const driver = platform.startsWith("macos-") ? "xctest" : "tauri-driver";
-    fail(
-      `reviewed ${driver} installed driver did not provide an observation; promotion remains unavailable`,
-    );
-  },
+  exercise: exerciseReviewedInstalledCandidate,
 });
 
 /**
@@ -439,10 +596,24 @@ export async function exerciseInstalledSocialLoop(
     platform,
     candidateSha,
     stagingDeploymentProof,
+    liveAuthProof,
+    liveFollowProof,
+    stagingFixture,
     bundle,
+    installedRoot,
     installedArtifact,
+    nativeBinary,
+    nativeProof,
+    faultObservation,
+    operatorTokenFile,
+    manualReviewFile,
+    gateReport,
+    gateLog,
+    screenReaderBinary,
     networkLog,
     output,
+    resilienceOutput,
+    rawEvidenceOutput,
   },
   {
     installedDriver = reviewedInstalledDriver,
@@ -451,12 +622,52 @@ export async function exerciseInstalledSocialLoop(
 ) {
   if (!PLATFORMS.includes(platform)) fail("unsupported platform");
   if (!SHA1_RE.test(candidateSha ?? "")) fail("exact source SHA required");
+  const fixture = loadStagingFixture(stagingFixture, candidateSha);
+  const promotionProfileFile = stableFile(
+    fileURLToPath(
+      new URL("../../cloudflare/promotion-profiles.json", import.meta.url),
+    ),
+    "promotion profile material",
+  );
+  let promotionProfile;
+  try {
+    promotionProfile = validatePromotionProfilesContent(
+      promotionProfileFile.content,
+      { tranche: 1 },
+    );
+  } catch (error) {
+    fail(
+      `promotion profile material is invalid: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  const authorities = promotionProfile.authorities.map(({ id }) => id);
   stableDirectory(bundle, "signed bundle root");
   const artifact = stableFile(
     installedArtifact,
     "installed candidate artifact",
   );
   const artifactSha256 = sha256(artifact.content);
+  const screenReader = stableFile(
+    screenReaderBinary,
+    "native screen reader executable",
+  );
+  const operatorToken = stableFile(operatorTokenFile, "operator token file")
+    .content.toString("utf8")
+    .trim();
+  if (
+    operatorToken.length < 32 ||
+    operatorToken.length > 4096 ||
+    /\s/u.test(operatorToken)
+  ) {
+    fail("operator token is malformed");
+  }
+  let manualReview = null;
+  if (existsSync(resolve(manualReviewFile))) {
+    manualReview = parseJsonFile(
+      manualReviewFile,
+      "manual accessibility review",
+    ).value;
+  }
   const stagingFile = parseJsonFile(
     stagingDeploymentProof,
     "staging deployment proof",
@@ -473,11 +684,28 @@ export async function exerciseInstalledSocialLoop(
       `staging deployment proof is invalid: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
+  const distributedFollow = loadLiveFollowProof(liveFollowProof, {
+    candidateSha,
+    stagingDeploymentId: staging.deploymentId,
+    fixture,
+  });
+  const distributedAuth = loadLiveAuthProof(liveAuthProof, {
+    candidateSha,
+    stagingDeploymentId: staging.deploymentId,
+    fixture,
+    stagingWorkers: staging.workers,
+  });
   if (existsSync(resolve(networkLog))) {
     fail("Rust promotion network log must be created by this installed run");
   }
   if (existsSync(resolve(output))) {
     fail("installed transcript output already exists");
+  }
+  if (existsSync(resolve(resilienceOutput))) {
+    fail("installed resilience output already exists");
+  }
+  if (existsSync(resolve(rawEvidenceOutput))) {
+    fail("installed raw evidence output already exists");
   }
 
   const observation = await installedDriver.exercise({
@@ -485,13 +713,44 @@ export async function exerciseInstalledSocialLoop(
     candidateSha,
     stagingDeploymentId: staging.deploymentId,
     bundle: resolve(bundle),
+    installedRoot: resolve(installedRoot),
     installedArtifact: artifact.absolute,
     artifactSha256,
+    nativeBinary: resolve(nativeBinary),
+    nativeProof: resolve(nativeProof),
+    faultObservation: resolve(faultObservation),
+    faultContext: {
+      origin: "https://staging.punks.bot",
+      operatorToken,
+      output: resolve(faultObservation),
+    },
+    manualReview,
+    gateReport: resolve(gateReport),
+    gateLog: resolve(gateLog),
+    screenReaderBinary: screenReader.absolute,
     networkLog: resolve(networkLog),
+    rawEvidence: resolve(rawEvidenceOutput),
+    fixture,
+    authorities,
   });
   const normalized = validateDriverObservation(observation, {
     platform,
     candidateSha,
+    artifactSha256,
+  });
+  validateResilienceObservation(observation.resilience, {
+    platform,
+    candidateSha,
+    stagingDeploymentId: staging.deploymentId,
+    artifactSha256,
+    authorities,
+  });
+  const rawEvidence = validateInstalledRawEvidence({
+    reference: observation.rawEvidence,
+    root: rawEvidenceOutput,
+    platform,
+    candidateSha,
+    stagingDeploymentId: staging.deploymentId,
     artifactSha256,
   });
   const compatibility = await observeCompatibility({
@@ -527,6 +786,14 @@ export async function exerciseInstalledSocialLoop(
     verifications: normalized.verifications,
     stories: normalized.stories,
     accessibility: normalized.accessibility,
+    authentication: {
+      contour: "navigateur-systeme-provider-reel",
+      proof: distributedAuth,
+    },
+    rawEvidence: {
+      indexSha256: observation.rawEvidence.indexSha256,
+      files: rawEvidence.index.files.length,
+    },
     network: {
       deployment: {
         transport: "https",
@@ -544,6 +811,7 @@ export async function exerciseInstalledSocialLoop(
         request: observation.follow.request,
         trace: observation.follow.trace,
         scenarios: normalized.scenarios,
+        distributed: distributedFollow,
       },
     },
   };
@@ -564,6 +832,11 @@ export async function exerciseInstalledSocialLoop(
     flag: "wx",
     mode: 0o600,
   });
+  writeFileSync(
+    resolve(resilienceOutput),
+    `${JSON.stringify(observation.resilience, null, 2)}\n`,
+    { flag: "wx", mode: 0o600 },
+  );
   return transcript;
 }
 
@@ -572,10 +845,24 @@ function parseOptions(argv) {
     "--platform",
     "--source-sha",
     "--staging-deployment-proof",
+    "--live-auth-proof",
+    "--live-follow-proof",
+    "--staging-fixture",
     "--bundle",
+    "--installed-root",
     "--installed-artifact",
+    "--native-binary",
+    "--native-proof",
+    "--fault-observation",
+    "--operator-token-file",
+    "--manual-review-file",
+    "--gate-report",
+    "--gate-log",
+    "--screen-reader-binary",
     "--network-log",
     "--output",
+    "--resilience-output",
+    "--raw-evidence-output",
   ]);
   const values = new Map();
   for (let index = 0; index < argv.length; index += 2) {
@@ -606,10 +893,24 @@ export async function run(argv = process.argv.slice(2)) {
     platform: required("--platform"),
     candidateSha: required("--source-sha"),
     stagingDeploymentProof: required("--staging-deployment-proof"),
+    liveAuthProof: required("--live-auth-proof"),
+    liveFollowProof: required("--live-follow-proof"),
+    stagingFixture: required("--staging-fixture"),
     bundle: required("--bundle"),
+    installedRoot: required("--installed-root"),
     installedArtifact: required("--installed-artifact"),
+    nativeBinary: required("--native-binary"),
+    nativeProof: required("--native-proof"),
+    faultObservation: required("--fault-observation"),
+    operatorTokenFile: required("--operator-token-file"),
+    manualReviewFile: required("--manual-review-file"),
+    gateReport: required("--gate-report"),
+    gateLog: required("--gate-log"),
+    screenReaderBinary: required("--screen-reader-binary"),
     networkLog: required("--network-log"),
     output: required("--output"),
+    resilienceOutput: required("--resilience-output"),
+    rawEvidenceOutput: required("--raw-evidence-output"),
   });
 }
 

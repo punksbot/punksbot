@@ -261,6 +261,8 @@ function requiredEvidenceIds(profile, releaseGraph, goldens) {
     "staging/deploiement",
     "production/bundle",
     "production/manifeste",
+    "production/evidence/platform-index",
+    "production/evidence/recovery-index",
     "recuperation/captures",
     "retrait/diff",
     "retrait/verdicts",
@@ -273,10 +275,13 @@ function requiredEvidenceIds(profile, releaseGraph, goldens) {
     required.add(`gate/${gate}`);
   }
   for (const platform of PLATEFORMES) {
+    required.add(`production/evidence/network/${platform}`);
     required.add(`transcript/${platform}`);
+    required.add(`brut/${platform}`);
     required.add(`staging/reobservation/${platform}`);
     required.add(`artefact/${platform}/bundle`);
     required.add(`artefact/${platform}/signature`);
+    required.add(`scan/artefact/${platform}`);
     for (const verification of VERIFICATIONS_ARTEFACT) {
       required.add(`artefact/${platform}/verification/${verification}`);
     }

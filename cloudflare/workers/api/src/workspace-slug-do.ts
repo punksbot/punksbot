@@ -1,4 +1,5 @@
-import { DurableObject } from "cloudflare:workers";
+import { PromotionFaultableDurableObject } from "../../../shared/promotion-faultable-do";
+import { canonicalJson, sha256Hex } from "@punks/core";
 
 import type { ApiEnv } from "./env";
 import type { SlugClaimResult, SlugResolution } from "./rpc";
@@ -13,7 +14,14 @@ type SlugRow = Record<
   string | number | null
 >;
 
-export class WorkspaceSlugDO extends DurableObject<ApiEnv> {
+export class WorkspaceSlugDO extends PromotionFaultableDurableObject<ApiEnv> {
+  protected override async promotionRecoveryFingerprint(): Promise<string> {
+    const current = this.row();
+    if (current === undefined)
+      throw new Error("promotion Workspace slug target is missing");
+    return sha256Hex(canonicalJson(current));
+  }
+
   constructor(ctx: DurableObjectState, env: ApiEnv) {
     super(ctx, env);
     this.ctx.storage.sql.exec(`

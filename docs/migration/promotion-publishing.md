@@ -53,8 +53,8 @@ pnpm promotion:publier -- \
   --depot punksbot/punksbot \
   --tag punks-staging-0123456789abcdef0123456789abcdef01234567 \
   --canal punks-desktop \
-  --r2-primaire 11111111111111111111111111111111/promotion-a \
-  --r2-secondaire 22222222222222222222222222222222/promotion-b \
+  --r2-primaire 3a391620584c792dbbd8cfa148d7634a/punks-promotion-primary \
+  --r2-secondaire 3a391620584c792dbbd8cfa148d7634a/punks-promotion-recovery \
   --bootstrap-r2 \
   --frontieres scripts/promotion-frontiers.mjs
 ```
@@ -72,8 +72,8 @@ pnpm promotion:publier-recu -- \
   --release-id tranche:1/expansion/execution-1 \
   --etat-release draft \
   --canal punks-desktop \
-  --r2-primaire 11111111111111111111111111111111/promotion-a \
-  --r2-secondaire 22222222222222222222222222222222/promotion-b \
+  --r2-primaire 3a391620584c792dbbd8cfa148d7634a/punks-promotion-primary \
+  --r2-secondaire 3a391620584c792dbbd8cfa148d7634a/punks-promotion-recovery \
   --frontieres scripts/promotion-frontiers.mjs
 ```
 
@@ -149,11 +149,15 @@ PUNKS_RELEASE_APPROVERS_ANCHOR_SHA256
 PUNKS_R2_DESTINATIONS_ANCHOR_SHA256
 ```
 
-Chaque rôle R2 possède un jeton API pour lire le verrouillage Bucket Lock et
-une paire S3 dédiée pour les lectures/écritures d'objets signées SigV4. Les deux
-jetons API, les deux identifiants de clé et les deux secrets doivent rester
-distincts entre les comptes primaire et récupération.
-Chaque `compte` est l'identifiant Cloudflare exact de 32 caractères
+Les deux rôles R2 partagent un jeton `Admin Read only` du compte Punks pour lire
+les configurations Bucket Lock via l'API REST Cloudflare. Chaque rôle possède
+en revanche sa propre paire S3 `Object Read & Write`, limitée à son bucket, pour
+les lectures/écritures d'objets signées SigV4. Les deux identifiants de clé S3
+et les deux secrets S3 doivent rester distincts. Les deux rôles utilisent
+exclusivement le compte Cloudflare Punks ; leur isolation d'écriture repose sur
+deux buckets distincts et deux jeux d'identifiants S3 dédiés, pas sur un autre
+compte.
+Chaque `compte` doit être l'identifiant Cloudflare Punks exact de 32 caractères
 hexadécimaux ; chaque bucket suit le nom canonique R2 (3 à 63 caractères
 minuscules, chiffres ou tirets, sans tiret initial ou final). La frontière
 refuse tout appel dont le triplet `role/compte/bucket` diffère de la liste
@@ -195,9 +199,9 @@ assets GitHub et objets R2 ne sont jamais modifiés ou supprimés par ces outils
 
 ## État opérationnel actuel
 
-Le graphe versionné reste honnêtement en `preparation` : ses destinations R2 et
-son registre d'approbateurs sont vides tant que les deux comptes, les deux
-buckets verrouillés, les jetons séparés et les ancrages protégés n'ont pas été
-provisionnés. Dans cet état, aucune commande de scellement réel ne peut réussir.
-La préparation du mécanisme n'est donc pas présentée comme une promotion déjà
-effectuée.
+Le graphe versionné reste honnêtement en `preparation`. Les deux destinations
+R2 verrouillées du compte Punks et le registre public d'approbateurs y sont
+ancrés, mais une promotion réelle reste bloquée tant que les identifiants
+séparés des deux rôles, les autres secrets de workflow et les preuves runtime
+requises ne sont pas tous provisionnés et validés. La préparation du mécanisme
+n'est donc pas présentée comme une promotion déjà effectuée.

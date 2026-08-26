@@ -3,6 +3,7 @@ import {
   confirmDesktopOAuthAccount,
   confirmExistingBrowserSession,
   launchDesktopBrowser,
+  resumeDesktopOAuthAccount,
   startDesktopAuth,
 } from "./desktop-auth";
 import {
@@ -38,6 +39,8 @@ export function routeDesktopAuth(
       return revokeDesktopSession(request, env);
     case "GET /api/auth/v1/desktop/browser":
       return launchDesktopBrowser(request, env);
+    case "GET /api/auth/v1/desktop/browser/oauth/resume":
+      return resumeDesktopOAuthAccount(request, env);
     case "POST /api/auth/v1/desktop/browser/oauth/confirm":
       return confirmDesktopOAuthAccount(request, env);
     case "POST /api/auth/v1/desktop/browser/session/confirm":

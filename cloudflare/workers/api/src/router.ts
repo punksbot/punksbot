@@ -102,6 +102,9 @@ import {
   readJson,
 } from "./http";
 import { routeMediaUpload } from "./media-upload-http";
+import { routePromotionFault } from "./promotion-fault-http";
+import { routePromotionAuthProof } from "./promotion-auth-proof-http";
+import { routePromotionSession } from "./promotion-session-http";
 import type {
   WorkspaceExecuteResult,
   WorkspaceInvitationClaimResult,
@@ -5681,6 +5684,23 @@ export async function route(request: Request, env: ApiEnv): Promise<Response> {
 
   const mediaUploadResponse = await routeMediaUpload(request, env, path);
   if (mediaUploadResponse !== null) return mediaUploadResponse;
+
+  const promotionFaultResponse = await routePromotionFault(request, env, path);
+  if (promotionFaultResponse !== null) return promotionFaultResponse;
+
+  const promotionAuthProofResponse = await routePromotionAuthProof(
+    request,
+    env,
+    path,
+  );
+  if (promotionAuthProofResponse !== null) return promotionAuthProofResponse;
+
+  const promotionSessionResponse = await routePromotionSession(
+    request,
+    env,
+    path,
+  );
+  if (promotionSessionResponse !== null) return promotionSessionResponse;
 
   if (request.method === "GET" && path === "/api/health") {
     return json({

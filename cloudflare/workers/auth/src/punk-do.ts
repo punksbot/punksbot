@@ -9,8 +9,9 @@ import {
   canonicalJson,
   canonicalPunkAvatarUrl,
   canonicalPunkDisplayName,
+  sha256Hex,
 } from "@punks/core";
-import { DurableObject } from "cloudflare:workers";
+import { PromotionFaultableDurableObject } from "../../../shared/promotion-faultable-do";
 
 import type { AuthEnv } from "./env";
 import type { IdentityInput, PunkResult } from "./rpc";
@@ -295,7 +296,13 @@ function identity(
   };
 }
 
-export class PunkDO extends DurableObject<AuthEnv> {
+export class PunkDO extends PromotionFaultableDurableObject<AuthEnv> {
+  protected override async promotionRecoveryFingerprint(): Promise<string> {
+    const current = await this.readForResolution();
+    if (current === null) throw new Error("promotion Punk target is missing");
+    return sha256Hex(canonicalJson(current));
+  }
+
   constructor(ctx: DurableObjectState, env: AuthEnv) {
     super(ctx, env);
     this.ctx.storage.sql.exec(`

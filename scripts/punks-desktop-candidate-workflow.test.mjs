@@ -69,31 +69,50 @@ const azureLoginAction = "azure/login@f5d393ae46f8fde4be8b75f32e3fc50e654ad0ca";
 const allowedSecretSteps = {
   PUNKS_CLOUDFLARE_API_TOKEN: [
     "verify_staging/observe_staging",
-    "build/exercise_installed_candidate",
+    "build/seal_installed_candidate",
   ],
   PUNKS_PROMOTION_SESSION: ["build/exercise_installed_candidate"],
-  PUNKS_R2_PRIMARY_API_TOKEN: ["publish_promotion/publish_immutable_proofs"],
+  PUNKS_OPERATOR_PROVISIONING_TOKEN: [
+    "verify_staging/prove_live_staging_follow",
+    "verify_staging/prove_live_staging_auth",
+    "build/exercise_installed_candidate",
+  ],
+  PUNKS_LIVE_AUTH_FLOW_ID: ["verify_staging/prove_live_staging_auth"],
+  PUNKS_R2_PRIMARY_API_TOKEN: [
+    "publish_promotion/publish_immutable_proofs",
+    "publish_promotion/materialize_operational_head",
+  ],
   PUNKS_R2_PRIMARY_ACCESS_KEY_ID: [
     "publish_promotion/publish_immutable_proofs",
+    "publish_promotion/materialize_operational_head",
   ],
   PUNKS_R2_PRIMARY_SECRET_ACCESS_KEY: [
     "publish_promotion/publish_immutable_proofs",
+    "publish_promotion/materialize_operational_head",
   ],
-  PUNKS_R2_RECOVERY_API_TOKEN: ["publish_promotion/publish_immutable_proofs"],
+  PUNKS_R2_RECOVERY_API_TOKEN: [
+    "publish_promotion/publish_immutable_proofs",
+    "publish_promotion/materialize_operational_head",
+  ],
   PUNKS_R2_RECOVERY_ACCESS_KEY_ID: [
     "publish_promotion/publish_immutable_proofs",
+    "publish_promotion/materialize_operational_head",
   ],
   PUNKS_R2_RECOVERY_SECRET_ACCESS_KEY: [
     "publish_promotion/publish_immutable_proofs",
+    "publish_promotion/materialize_operational_head",
   ],
   PUNKS_RELEASE_APPROVERS_JSON: [
     "publish_promotion/publish_immutable_proofs",
+    "publish_promotion/materialize_operational_head",
   ],
   PUNKS_RELEASE_APPROVERS_ANCHOR_SHA256: [
     "publish_promotion/publish_immutable_proofs",
+    "publish_promotion/materialize_operational_head",
   ],
   PUNKS_R2_DESTINATIONS_ANCHOR_SHA256: [
     "publish_promotion/publish_immutable_proofs",
+    "publish_promotion/materialize_operational_head",
   ],
   PUNKS_APPLE_CERTIFICATE: ["build/import_apple"],
   PUNKS_APPLE_CERTIFICATE_PASSWORD: ["build/import_apple"],
@@ -454,7 +473,8 @@ function validateWorkflow(workflow) {
         gates.steps.indexOf(workflowStep(gates, "run_gates")),
     "Playwright installation must precede the public capability gate",
   );
-  requireRun(workflowStep(gates, "run_gates"), [
+  const runGates = workflowStep(gates, "run_gates");
+  requireRun(runGates, [
     "scripts/punks-desktop-candidate-workflow.test.mjs",
     "scripts/candidate/*.test.mjs",
     "pnpm migration:check",
@@ -469,7 +489,24 @@ function validateWorkflow(workflow) {
     "cargo check",
     "--no-default-features",
     "--features punks-desktop-social-loop",
+    "::punks-gate::%s::%s",
+    "scripts/candidate/secretless-gates-report.mjs",
+    "punks-secretless-gates-report.json",
   ]);
+  const uploadGateReport = workflowStep(gates, "upload_gate_report");
+  invariant(
+    uploadGateReport.with?.name ===
+      "punks-secretless-gates-" + sourceShaExpression &&
+      uploadGateReport.with?.["retention-days"] === 1 &&
+      String(uploadGateReport.with?.path).includes(
+        "punks-secretless-gates-report.json",
+      ),
+    "secretless gate report artifact is not exact and short-lived",
+  );
+  invariant(
+    gates.steps.indexOf(uploadGateReport) > gates.steps.indexOf(runGates),
+    "gate report must be uploaded only after every gate passes",
+  );
 
   invariant(
     verify_staging.needs === "gates",
@@ -498,6 +535,36 @@ function validateWorkflow(workflow) {
       workflowExpression("secrets.PUNKS_CLOUDFLARE_API_TOKEN"),
     "remote staging observation lacks its protected token",
   );
+  const proveLiveFollow = workflowStep(
+    verify_staging,
+    "prove_live_staging_follow",
+  );
+  requireRun(proveLiveFollow, [
+    "scripts/candidate/live-staging-follow-proof.mjs",
+    '--source-sha "$SOURCE_SHA"',
+    '--staging-deployment-id "$STAGING_DEPLOYMENT_ID"',
+    "live-staging-follow-proof.json",
+  ]);
+  invariant(
+    proveLiveFollow.env?.PUNKS_OPERATOR_TOKEN ===
+      workflowExpression("secrets.PUNKS_OPERATOR_PROVISIONING_TOKEN"),
+    "live staging FOLLOW lacks the protected operator credential",
+  );
+  const proveLiveAuth = workflowStep(verify_staging, "prove_live_staging_auth");
+  requireRun(proveLiveAuth, [
+    "scripts/candidate/live-staging-auth-proof.mjs",
+    '--source-sha "$SOURCE_SHA"',
+    '--staging-deployment-id "$STAGING_DEPLOYMENT_ID"',
+    '--flow-id "$PUNKS_LIVE_AUTH_FLOW_ID"',
+    "live-staging-auth-proof.json",
+  ]);
+  invariant(
+    proveLiveAuth.env?.PUNKS_OPERATOR_TOKEN ===
+      workflowExpression("secrets.PUNKS_OPERATOR_PROVISIONING_TOKEN") &&
+      proveLiveAuth.env?.PUNKS_LIVE_AUTH_FLOW_ID ===
+        workflowExpression("secrets.PUNKS_LIVE_AUTH_FLOW_ID"),
+    "live staging Auth lacks its protected flow/operator coordinates",
+  );
   const uploadStagingProof = workflowStep(
     verify_staging,
     "upload_staging_proof",
@@ -505,7 +572,15 @@ function validateWorkflow(workflow) {
   invariant(
     uploadStagingProof.with?.name ===
       "punks-staging-deployment-proof-" + sourceShaExpression &&
-      uploadStagingProof.with?.path === "staging-deployment-proof.json" &&
+      String(uploadStagingProof.with?.path).includes(
+        "staging-deployment-proof.json",
+      ) &&
+      String(uploadStagingProof.with?.path).includes(
+        "live-staging-auth-proof.json",
+      ) &&
+      String(uploadStagingProof.with?.path).includes(
+        "live-staging-follow-proof.json",
+      ) &&
       uploadStagingProof.with?.["retention-days"] === 1,
     "remote staging proof artifact is not exact and short-lived",
   );
@@ -858,6 +933,28 @@ function validateWorkflow(workflow) {
     "*.exe",
     "*.msi",
   ]);
+  const installedExercise = workflowStep(build, "exercise_installed_candidate");
+  invariant(
+    !JSON.stringify(installedExercise).includes("PUNKS_ACCESSIBILITY_REVIEWER"),
+    "a reviewer name cannot manufacture a manual accessibility review",
+  );
+  requireRun(installedExercise, [
+    'screen_reader_binary="/System/Library/CoreServices/VoiceOver.app/Contents/MacOS/VoiceOver"',
+    'screen_reader_binary="$(command -v orca)"',
+    "steps.windows_dependencies.outputs.nvda_binary",
+    '--screen-reader-binary "$screen_reader_binary"',
+    '--operator-token-file "$operator_token_file"',
+    '--manual-review-file "$manual_review_file"',
+  ]);
+  const reviewUpload = workflowStep(
+    build,
+    "upload_accessibility_review_material",
+  );
+  invariant(
+    String(reviewUpload.if).includes("failure()") &&
+      String(reviewUpload.with?.name).includes("matrix.platform"),
+    "failed installed evidence is unavailable for independent review",
+  );
   requireRun(workflowStep(build, "stage_leg"), [
     "scripts/candidate/artifacts.mjs collect",
   ]);
@@ -1012,13 +1109,21 @@ function validateWorkflow(workflow) {
   for (const { jobName, selected } of uploadSteps) {
     if (selected.id === "upload_final_candidate") {
       invariant(selected.with["retention-days"] === 30, "final retention");
+    } else if (selected.id === "upload_accessibility_review_material") {
+      invariant(
+        selected.with["retention-days"] === 7 &&
+          /accessibility-review/.test(selected.with.name),
+        "manual review material must be explicitly named and short-lived",
+      );
     } else {
       invariant(
         selected.with["retention-days"] === 1,
         jobName + "/" + selected.id + " exposes a long-lived partial candidate",
       );
       invariant(
-        /leg|unattested|deployment-proof/.test(selected.with.name),
+        /leg|unattested|deployment-proof|secretless-gates/.test(
+          selected.with.name,
+        ),
         jobName + "/" + selected.id + " looks final",
       );
     }
@@ -1041,6 +1146,20 @@ function validateWorkflow(workflow) {
 
 test("the parsed workflow satisfies the complete candidate security contract", () => {
   assert.doesNotThrow(() => validateWorkflow(loadWorkflow()));
+});
+
+test("PowerShell workflow steps never use Bash line continuations", () => {
+  const workflow = loadWorkflow();
+  for (const [jobName, job] of Object.entries(workflow.jobs ?? {})) {
+    for (const step of job.steps ?? []) {
+      if (step.shell !== "pwsh" || typeof step.run !== "string") continue;
+      assert.doesNotMatch(
+        step.run,
+        /\\\s*$/mu,
+        `${jobName}/${step.id ?? step.name} uses a Bash continuation in PowerShell`,
+      );
+    }
+  }
 });
 
 const mutations = [

@@ -1,6 +1,7 @@
 import type { AuthEnv } from "./env";
 import { route } from "./router";
 import {
+  aggregateName,
   canonicalPunk,
   ensureSessionForToken,
   getActiveSession,
@@ -18,6 +19,7 @@ import {
 } from "@punks/contracts";
 import { canonicalJson, deriveOpaqueUuid, sha256Hex } from "@punks/core";
 import { mintBotInvocation, verifyBotInvocation } from "./bot-invocation";
+import { randomToken } from "./crypto";
 import type {
   AccountMergeRightsChangeInput,
   AccountMergeWorkspaceRole,
@@ -45,6 +47,8 @@ export { IdentityClaimDO } from "./identity-claim-do";
 export { PasskeyCeremonyDO } from "./passkey-ceremony-do";
 export { PasskeyCredentialDO } from "./passkey-credential-do";
 export { PunkDO } from "./punk-do";
+export { PromotionAuthorityFaultService } from "./promotion-authority-fault-service";
+export { PromotionAuthProofService } from "./promotion-auth-proof-service";
 export { SessionDO } from "./session-do";
 export { SessionRevocationDO } from "./session-revocation-do";
 export { SessionRotationDO } from "./session-rotation-do";
@@ -317,6 +321,98 @@ export class LocalDevAuthBootstrapService extends WorkerEntrypoint<
 export class PunkSessionService extends WorkerEntrypoint<AuthEnv> {
   override fetch(_request: Request): Response {
     return privateNotFound();
+  }
+
+  /**
+   * Issues one short-lived, source-SHA-bound desktop Session for the protected
+   * staging promotion harness. This private RPC never exposes a general login
+   * or accepts a production environment.
+   */
+  async issuePromotionSession(input: unknown): Promise<{
+    source_sha: string;
+    cookie: string;
+    metadata: {
+      session_id: string;
+      punk_id: string;
+      expires_at_seconds: number;
+      last_renewed_at_seconds: null;
+    };
+    revoke_capability: string;
+    revoke_expires_at_seconds: number;
+  } | null> {
+    if (
+      this.env.PROMOTION_SESSION_ISSUANCE_ENABLED !== "true" ||
+      input === null ||
+      typeof input !== "object" ||
+      Array.isArray(input) ||
+      Object.keys(input).sort().join(",") !== "sourceSha"
+    ) {
+      return null;
+    }
+    const sourceSha = Reflect.get(input, "sourceSha");
+    if (typeof sourceSha !== "string" || !/^[0-9a-f]{40}$/.test(sourceSha)) {
+      return null;
+    }
+    const punkId = await deriveOpaqueUuid(
+      "punks.auth.promotion-punk.v1",
+      this.env.ENVIRONMENT,
+    );
+    const subject = `promotion-${this.env.ENVIRONMENT}`;
+    const verifiedEmail = `promotion-${this.env.ENVIRONMENT}@punks.bot`;
+    const provisioned = await this.env.PUNKS.getByName(punkId).provision({
+      punkId,
+      identity: {
+        profile: {
+          provider: "github",
+          subject,
+          verifiedEmail,
+          displayName: "Punks Promotion",
+          avatarUrl: null,
+          username: "punks-promotion",
+        },
+        subjectHash: await sha256Hex(subject),
+        emailHash: await sha256Hex(verifiedEmail),
+      },
+      now: new Date().toISOString(),
+    });
+    if (!provisioned.ok || provisioned.state.id !== punkId) return null;
+
+    const session = await ensureSessionForToken(
+      this.env,
+      canonicalPunk(provisioned.state),
+      randomToken(32),
+      "host",
+      "desktop",
+    );
+    const revokeCapability = randomToken(32);
+    const revocation = this.env.SESSION_REVOCATIONS.getByName(
+      await aggregateName("session-revocation", revokeCapability),
+    );
+    if (
+      !(await revocation.create({
+        sessionId: session.value.sessionId,
+        expiresAt: session.value.expiresAt,
+      }))
+    ) {
+      await this.env.SESSIONS.getByName(session.value.sessionId).revoke();
+      return null;
+    }
+    const expiresAtSeconds = Math.floor(
+      Date.parse(session.value.expiresAt) / 1_000,
+    );
+    const cookie = session.cookie.split(";", 1)[0] ?? "";
+    return {
+      source_sha: sourceSha,
+      cookie,
+      metadata: {
+        session_id: session.value.sessionId,
+        punk_id: session.value.punkId,
+        expires_at_seconds: expiresAtSeconds,
+        last_renewed_at_seconds: null,
+      },
+      revoke_capability: revokeCapability,
+      revoke_expires_at_seconds: expiresAtSeconds,
+    };
   }
 
   async resolveSessionId(sessionId: string): Promise<AuthSession | null> {

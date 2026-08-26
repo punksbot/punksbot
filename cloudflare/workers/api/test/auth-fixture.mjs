@@ -28,6 +28,13 @@ const sessionResolutionHolds = new Map();
 const invocationTimes = new Map();
 const accountMergeRightsIndexCalls = [];
 const workspaceOwnershipTransferAuthorizations = new Map();
+const promotionAuthorityFaults = new Map();
+const promotionRecoveryProofs = [
+  "roll-forward",
+  "rpo-logique-nul",
+  "session-non-restauree",
+  "recu-resistant-pitr",
+];
 const accountMergeRightsIndexAvailability = {
   prepare: true,
   commit: true,
@@ -103,6 +110,22 @@ const revocableSession = () => ({
 });
 
 export class PunkSessionService extends WorkerEntrypoint {
+  issuePromotionSession(input) {
+    if (!/^[0-9a-f]{40}$/.test(input?.sourceSha ?? "")) return null;
+    return {
+      source_sha: input.sourceSha,
+      cookie: `__Host-punks_session=${"s".repeat(48)}`,
+      metadata: {
+        session_id: "70000000-0000-8000-8000-000000000058",
+        punk_id: "80000000-0000-8000-8000-000000000058",
+        expires_at_seconds: 4_102_444_800,
+        last_renewed_at_seconds: null,
+      },
+      revoke_capability: "r".repeat(64),
+      revoke_expires_at_seconds: 4_102_444_800,
+    };
+  }
+
   holdSessionResolution(sessionId, callNumber) {
     sessionResolutionHolds.set(sessionId, {
       remaining: callNumber,
@@ -226,6 +249,92 @@ export class PunkSessionService extends WorkerEntrypoint {
     };
     fixtureProfiles.set(punkId, next);
     return { ok: true, state: structuredClone(next), replayed: false };
+  }
+}
+
+export class PromotionAuthorityFaultService extends WorkerEntrypoint {
+  injectPromotionFault(input) {
+    const existing = promotionAuthorityFaults.get(input.executionId);
+    if (existing !== undefined) return structuredClone(existing);
+    const state = {
+      schema: "punks.promotion-authority-fault-state.v1",
+      ...input,
+      phase: "injected",
+      proof: null,
+      sequence: 1,
+      stateFingerprint: "f".repeat(64),
+    };
+    promotionAuthorityFaults.set(input.executionId, state);
+    return structuredClone(state);
+  }
+
+  recoverPromotionFault(input) {
+    const existing = promotionAuthorityFaults.get(input.executionId);
+    const index = promotionRecoveryProofs.indexOf(input.proof);
+    if (existing === undefined || index < 0) {
+      throw new Error("promotion fault recovery is invalid");
+    }
+    const state = {
+      ...existing,
+      phase:
+        index === promotionRecoveryProofs.length - 1
+          ? "recovered"
+          : "recovering",
+      proof: input.proof,
+      sequence: index + 2,
+    };
+    promotionAuthorityFaults.set(input.executionId, state);
+    return structuredClone(state);
+  }
+
+  probePromotionFault(input) {
+    return structuredClone(
+      promotionAuthorityFaults.get(input.executionId) ?? null,
+    );
+  }
+
+  observePromotionFault(input) {
+    const state = promotionAuthorityFaults.get(input.executionId);
+    if (state === undefined)
+      throw new Error("promotion authority fault is missing");
+    if (state.phase !== "recovered") {
+      throw new Error(
+        `promotion authority fault is active:${state.phase}:${state.type}`,
+      );
+    }
+    return structuredClone(state);
+  }
+}
+
+export class PromotionAuthProofService extends WorkerEntrypoint {
+  attest(input) {
+    return {
+      schema: "punks.live-staging-auth-proof.v1",
+      sourceSha: input.sourceSha,
+      stagingDeploymentId: input.stagingDeploymentId,
+      authWorkerVersionId: "00000000-0000-4000-8000-000000000001",
+      flow: {
+        flowId: input.flowId,
+        method: "github",
+        intent: "sign_in",
+        environment: "staging",
+        outcomeCode: "authenticated",
+        punkId: "00000000-0000-8000-8000-000000000001",
+        sessionId: "11111111-1111-8111-8111-111111111111",
+        browserCompletedAt: "2026-08-26T17:00:00.000Z",
+        confirmedAt: "2026-08-26T17:00:01.000Z",
+        browserBindingHash: "a".repeat(64),
+        oauthStateHash: "b".repeat(64),
+        providerPkceHash: "c".repeat(64),
+        nativeVerifierCommitment: "d".repeat(43),
+      },
+      negative: {
+        wrongOauthState: "refused",
+        wrongBrowserBinding: "refused",
+        wrongNativePkceVerifier: "refused",
+      },
+      observedAt: "2026-08-26T17:00:02.000Z",
+    };
   }
 }
 

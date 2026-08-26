@@ -9,6 +9,7 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3";
 import { canonicalJson, canonicalSha256 } from "./migration-manifest-lib.mjs";
+import { PUNKS_CLOUDFLARE_ACCOUNT_ID } from "./release-graph-lib.mjs";
 
 const SHA256_RE = /^[0-9a-f]{64}$/;
 const COMPTE_R2_RE = /^[0-9a-f]{32}$/;
@@ -182,12 +183,11 @@ function tokensR2(env) {
   const primaire = lireRole("primaire", "PUNKS_R2_PRIMARY");
   const secondaire = lireRole("secondaire", "PUNKS_R2_RECOVERY");
   if (
-    primaire.apiToken === secondaire.apiToken ||
     primaire.accessKeyId === secondaire.accessKeyId ||
     primaire.secretAccessKey === secondaire.secretAccessKey
   ) {
     throw new Error(
-      "les rôles R2 primaire et récupération exigent des jetons REST et identifiants S3 distincts",
+      "les rôles R2 primaire et récupération exigent des identifiants S3 distincts",
     );
   }
   return { primaire, secondaire };
@@ -237,6 +237,11 @@ function destinationsR2Canoniques(destinations) {
     if (!COMPTE_R2_RE.test(compte ?? "")) {
       throw new Error(
         `destination R2 ${role} : compte R2 Cloudflare canonique requis`,
+      );
+    }
+    if (compte !== PUNKS_CLOUDFLARE_ACCOUNT_ID) {
+      throw new Error(
+        `destination R2 ${role} : compte Cloudflare Punks exact requis`,
       );
     }
     if (!BUCKET_R2_RE.test(bucket ?? "")) {

@@ -9,12 +9,12 @@ import { creerFrontieresPublication } from "./promotion-frontiers.mjs";
 const DESTINATIONS = [
   {
     role: "primaire",
-    compte: "11".repeat(16),
+    compte: "3a391620584c792dbbd8cfa148d7634a",
     bucket: "preuves-primaire",
   },
   {
     role: "secondaire",
-    compte: "22".repeat(16),
+    compte: "3a391620584c792dbbd8cfa148d7634a",
     bucket: "preuves-recuperation",
   },
 ];
@@ -42,8 +42,8 @@ function environnement(surcharge = {}) {
   }));
   return {
     GITHUB_TOKEN: "github-protege",
-    PUNKS_R2_PRIMARY_API_TOKEN: "r2-primaire-protege",
-    PUNKS_R2_RECOVERY_API_TOKEN: "r2-recuperation-protege",
+    PUNKS_R2_PRIMARY_API_TOKEN: "r2-verification-punks-protege",
+    PUNKS_R2_RECOVERY_API_TOKEN: "r2-verification-punks-protege",
     PUNKS_R2_PRIMARY_ACCESS_KEY_ID: "access-primaire",
     PUNKS_R2_PRIMARY_SECRET_ACCESS_KEY: "secret-primaire",
     PUNKS_R2_RECOVERY_ACCESS_KEY_ID: "access-recuperation",
@@ -281,18 +281,30 @@ test("les frontières lient chaque appel à la destination R2 ancrée exacte", a
     ),
     /compte R2 Cloudflare canonique/,
   );
+
+  const destinationsHorsPunks = configuration().r2;
+  destinationsHorsPunks[1].compte = "22".repeat(16);
+  await assert.rejects(
+    creerFrontieresPublication(
+      { depot: "punksbot/punksbot", r2: destinationsHorsPunks },
+      {
+        env: environnement({
+          PUNKS_R2_DESTINATIONS_ANCHOR_SHA256: canonicalSha256(
+            destinationsHorsPunks,
+          ),
+        }),
+        fetchImpl: async () => reponseJson({}),
+      },
+    ),
+    /compte Cloudflare Punks/,
+  );
 });
 
-test("les frontières refusent les secrets et ancrages qui confondent les autorités", async () => {
-  await assert.rejects(
-    creerFrontieresPublication(configuration(), {
-      env: environnement({
-        PUNKS_R2_RECOVERY_API_TOKEN: "r2-primaire-protege",
-      }),
-      fetchImpl: async () => reponseJson({}),
-    }),
-    /jetons REST et identifiants S3 distincts/,
-  );
+test("les frontières partagent la lecture REST Punks mais séparent les identités S3", async () => {
+  await creerFrontieresPublication(configuration(), {
+    env: environnement(),
+    fetchImpl: async () => reponseJson({}),
+  });
   await assert.rejects(
     creerFrontieresPublication(configuration(), {
       env: environnement({
@@ -300,7 +312,7 @@ test("les frontières refusent les secrets et ancrages qui confondent les autori
       }),
       fetchImpl: async () => reponseJson({}),
     }),
-    /jetons REST et identifiants S3 distincts/,
+    /identifiants S3 distincts/,
   );
   await assert.rejects(
     creerFrontieresPublication(configuration(), {

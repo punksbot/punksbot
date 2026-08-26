@@ -18,6 +18,7 @@ struct StoredSessionMetadata {
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 struct StoredSession {
+    source_sha: String,
     cookie: String,
     metadata: StoredSessionMetadata,
     revoke_capability: String,
@@ -62,12 +63,24 @@ fn validate_opaque(value: &str, name: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn parse_bundle(input: &[u8], now_seconds: u64) -> Result<StoredSession, String> {
+fn parse_bundle(
+    input: &[u8],
+    now_seconds: u64,
+    expected_source_sha: &str,
+) -> Result<StoredSession, String> {
     if input.is_empty() || input.len() as u64 > MAX_BUNDLE_BYTES {
         return Err("promotion session bundle has an invalid size".to_string());
     }
     let stored: StoredSession = serde_json::from_slice(input)
         .map_err(|_| "promotion session bundle is not the exact JSON shape".to_string())?;
+    if expected_source_sha.len() != 40
+        || !expected_source_sha
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        || stored.source_sha != expected_source_sha
+    {
+        return Err("promotion session belongs to another source SHA".to_string());
+    }
     let token = stored
         .cookie
         .strip_prefix("__Host-punks_session=")
@@ -129,7 +142,7 @@ fn entry() -> Result<keyring::Entry, String> {
     keyring::Entry::new(SERVICE, SESSION_KEY).map_err(|error| error.to_string())
 }
 
-fn install() -> Result<(), String> {
+fn install(source_sha: &str) -> Result<(), String> {
     let mut input = Vec::new();
     io::stdin()
         .take(MAX_BUNDLE_BYTES + 1)
@@ -139,7 +152,7 @@ fn install() -> Result<(), String> {
         .duration_since(UNIX_EPOCH)
         .map_err(|_| "system clock is before the Unix epoch".to_string())?
         .as_secs();
-    let stored = parse_bundle(&input, now)?;
+    let stored = parse_bundle(&input, now, source_sha)?;
     let canonical = serde_json::to_string(&account_state(&stored))
         .map_err(|_| "promotion session bundle could not be normalized".to_string())?;
     entry()?
@@ -167,9 +180,9 @@ fn destroy() -> Result<(), String> {
 
 fn main() {
     let result = match std::env::args().skip(1).collect::<Vec<_>>().as_slice() {
-        [] => install(),
+        [flag, source_sha] if flag == "--source-sha" => install(source_sha),
         [mode] if mode == "--destroy" => destroy(),
-        _ => Err("usage: punks-promotion-session [--destroy]".to_string()),
+        _ => Err("usage: punks-promotion-session --source-sha <sha> | --destroy".to_string()),
     };
     if let Err(error) = result {
         eprintln!("promotion session rejected: {error}");
@@ -181,8 +194,11 @@ fn main() {
 mod tests {
     use super::*;
 
+    const SOURCE_SHA: &str = "abababababababababababababababababababab";
+
     fn valid_bundle() -> Vec<u8> {
         serde_json::to_vec(&serde_json::json!({
+            "source_sha": SOURCE_SHA,
             "cookie": format!("__Host-punks_session={}", "a".repeat(48)),
             "metadata": {
                 "session_id": "d9428888-122b-4d9b-8f03-1a1127e667b8",
@@ -198,7 +214,7 @@ mod tests {
 
     #[test]
     fn accepts_only_one_fresh_staging_session_shape() {
-        let parsed = parse_bundle(&valid_bundle(), 1_000).expect("fresh bundle");
+        let parsed = parse_bundle(&valid_bundle(), 1_000, SOURCE_SHA).expect("fresh bundle");
         assert_eq!(
             parsed.metadata.session_id,
             "d9428888-122b-4d9b-8f03-1a1127e667b8"
@@ -216,9 +232,12 @@ mod tests {
         with_unknown["exportedBy"] = serde_json::json!("renderer");
         assert!(parse_bundle(
             &serde_json::to_vec(&with_unknown).expect("test JSON"),
-            1_000
+            1_000,
+            SOURCE_SHA,
         )
         .is_err());
+
+        assert!(parse_bundle(&valid_bundle(), 1_000, &"c".repeat(40)).is_err());
     }
 
     #[test]
@@ -226,10 +245,13 @@ mod tests {
         let mut wrong_scope: serde_json::Value =
             serde_json::from_slice(&valid_bundle()).expect("test JSON");
         wrong_scope["cookie"] = serde_json::json!(format!("punks_session_dev={}", "b".repeat(48)));
-        assert!(
-            parse_bundle(&serde_json::to_vec(&wrong_scope).expect("test JSON"), 1_000).is_err()
-        );
+        assert!(parse_bundle(
+            &serde_json::to_vec(&wrong_scope).expect("test JSON"),
+            1_000,
+            SOURCE_SHA,
+        )
+        .is_err());
 
-        assert!(parse_bundle(&valid_bundle(), 9_900).is_err());
+        assert!(parse_bundle(&valid_bundle(), 9_900, SOURCE_SHA).is_err());
     }
 }

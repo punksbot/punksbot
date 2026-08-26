@@ -11,6 +11,17 @@
     "ENVIRONMENT": "local",
     "ATTESTATION_KEY_VERSION": "local-v1"
   },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "PROMOTION_AUTHORITY_FAULTS",
+        "class_name": "PromotionAuthorityFaultDO"
+      }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["PromotionAuthorityFaultDO"] }
+  ],
   "secrets": {
     "required": ["ATTESTATION_PRIVATE_KEY"]
   },
@@ -26,6 +37,14 @@
       "vars": {
         "ENVIRONMENT": "staging",
         "ATTESTATION_KEY_VERSION": "staging-v1"
+      },
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "PROMOTION_AUTHORITY_FAULTS",
+            "class_name": "PromotionAuthorityFaultDO"
+          }
+        ]
       },
       "secrets": {
         "required": ["ATTESTATION_PRIVATE_KEY"]
