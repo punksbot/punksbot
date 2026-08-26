@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   deterministicUuid,
+  authAggregateUuid,
   parsePromotionSessionBundle,
   prepareStagingFixture,
 } from "./staging-fixture.mjs";
@@ -15,6 +16,10 @@ const punkId = "00000000-0000-8000-8000-000000000001";
 const workspaceId = "00000000-0000-8000-8000-000000000002";
 const conversationId = "00000000-0000-8000-8000-000000000003";
 const sessionId = "00000000-0000-8000-8000-000000000004";
+const sessionRevocationId = authAggregateUuid(
+  "session-revocation",
+  "r".repeat(64),
+);
 
 function response(status, body) {
   return new Response(JSON.stringify(body), {
@@ -95,12 +100,14 @@ test("prepares one idempotent paginated staging fixture without leaking authorit
     origin,
     cookie,
     operatorToken,
+    sessionRevocationId,
     fetchImpl: fakeFetch,
     historyCount: 52,
   });
 
   assert.equal(fixture.sourceSha, sourceSha);
   assert.equal(fixture.sessionId, sessionId);
+  assert.equal(fixture.sessionRevocationId, sessionRevocationId);
   assert.equal(fixture.workspaceId, workspaceId);
   assert.equal(fixture.conversationId, conversationId);
   assert.equal(fixture.seedMessageIds.length, 52);
@@ -133,6 +140,7 @@ test("fails closed on wrong origin, bad session and partial fixture writes", asy
       origin: "http://staging.punks.bot",
       cookie,
       operatorToken,
+      sessionRevocationId,
       fetchImpl: async () => response(500, {}),
     }),
     /HTTPS staging origin/,
@@ -143,6 +151,7 @@ test("fails closed on wrong origin, bad session and partial fixture writes", asy
       origin,
       cookie: "invalid",
       operatorToken,
+      sessionRevocationId,
       fetchImpl: async () => response(500, {}),
     }),
     /session cookie/,
@@ -153,6 +162,7 @@ test("fails closed on wrong origin, bad session and partial fixture writes", asy
       origin,
       cookie,
       operatorToken,
+      sessionRevocationId,
       fetchImpl: async (url) =>
         new URL(url).pathname === "/api/auth/v1/session"
           ? response(200, {

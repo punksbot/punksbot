@@ -33,8 +33,25 @@ export class RuntimeIdentityService extends WorkerEntrypoint<AttestationEnv> {
   }
 }
 
-/** Worker-local Durable Object that carries an injected Attestation fault. */
-export class PromotionAuthorityFaultDO extends PromotionFaultableDurableObject<AttestationEnv> {}
+/** Worker-local fence whose fingerprint covers the real signing generation. */
+export class PromotionAuthorityFaultDO extends PromotionFaultableDurableObject<AttestationEnv> {
+  protected override async promotionRecoveryFingerprint(): Promise<string> {
+    const digest = await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(
+        JSON.stringify({
+          environment: this.env.ENVIRONMENT,
+          keyVersion: this.env.ATTESTATION_KEY_VERSION,
+          workerVersion: this.env.CF_VERSION_METADATA.id,
+          privateKeyHashMaterial: this.env.ATTESTATION_PRIVATE_KEY,
+        }),
+      ),
+    );
+    return Array.from(new Uint8Array(digest), (byte) =>
+      byte.toString(16).padStart(2, "0"),
+    ).join("");
+  }
+}
 
 /** Private service binding for faulting the Attestation authority itself. */
 export class PromotionAuthorityFaultService extends WorkerEntrypoint<AttestationEnv> {
@@ -786,6 +803,25 @@ export default {
     const url = new URL(request.url);
     if (request.method !== "POST" || url.pathname !== "/internal/v1/attest") {
       return problem(404, "not_found", "Attestation endpoint not found");
+    }
+
+    try {
+      const available = await env.PROMOTION_AUTHORITY_FAULTS.getByName(
+        "internal-event-signature",
+      ).promotionServiceAvailable();
+      if (!available) {
+        return problem(
+          503,
+          "attestation_failed",
+          "Event attestation authority is unavailable",
+        );
+      }
+    } catch {
+      return problem(
+        503,
+        "attestation_failed",
+        "Event attestation authority is unavailable",
+      );
     }
 
     let body: unknown;

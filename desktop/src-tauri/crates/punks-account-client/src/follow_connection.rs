@@ -58,6 +58,7 @@ pub enum FollowDelivery {
 
 /// Native WebSocket owned by exactly one generation-bound WorkspaceSession.
 pub struct FollowConnection {
+    operation_id: String,
     session: WorkspaceSession,
     conversation_id: String,
     socket: WebSocketStream<MaybeTlsStream<TcpStream>>,
@@ -83,7 +84,8 @@ impl WorkspaceSession {
         after_cursor: u64,
     ) -> Result<FollowConnection, ClientFailure> {
         validate_uuid(conversation_id, "conversationId")?;
-        crate::promotion_audit::begin_live_follow_capture(after_cursor);
+        let operation_id = uuid::Uuid::new_v4().to_string();
+        crate::promotion_audit::begin_live_follow_capture(&operation_id, after_cursor);
         let _operation = self.operations.read().await;
         self.assert_current().await?;
         #[cfg(not(test))]
@@ -170,6 +172,7 @@ impl WorkspaceSession {
         }
         self.assert_current().await?;
         Ok(FollowConnection {
+            operation_id,
             session: self.clone(),
             conversation_id: conversation_id.to_owned(),
             socket,
@@ -180,6 +183,11 @@ impl WorkspaceSession {
 }
 
 impl FollowConnection {
+    /// Stable native operation ID shared with promotion capture and IPC.
+    pub fn operation_id(&self) -> &str {
+        &self.operation_id
+    }
+
     pub fn cancellation(&self) -> FollowCancellation {
         self.cancellation.clone()
     }
@@ -256,7 +264,7 @@ impl FollowConnection {
                 &self.session.lease().workspace_id,
                 &self.conversation_id,
             )?;
-            crate::promotion_audit::record_live_follow_frame(&frame);
+            crate::promotion_audit::record_live_follow_frame(&self.operation_id, &frame);
             let reduction = reduce_follow_frame(&self.state, frame);
             self.state = reduction.state;
             self.session.assert_current().await?;
@@ -323,7 +331,7 @@ impl FollowConnection {
         }
         self.session.assert_current().await?;
         self.state = confirmation.state;
-        crate::promotion_audit::record_live_follow_confirmation(through_cursor);
+        crate::promotion_audit::record_live_follow_confirmation(&self.operation_id, through_cursor);
         Ok(())
     }
 

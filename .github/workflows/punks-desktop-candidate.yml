@@ -300,17 +300,31 @@ jobs:
         shell: bash
         env:
           PUNKS_OPERATOR_TOKEN: ${{ secrets.PUNKS_OPERATOR_PROVISIONING_TOKEN }}
-          PUNKS_LIVE_AUTH_FLOW_ID: ${{ secrets.PUNKS_LIVE_AUTH_FLOW_ID }}
+          PUNKS_LIVE_AUTH_MATRIX: ${{ secrets.PUNKS_LIVE_AUTH_MATRIX }}
         run: |
           set -euo pipefail
           test -n "$PUNKS_OPERATOR_TOKEN"
-          test -n "$PUNKS_LIVE_AUTH_FLOW_ID"
+          test -n "$PUNKS_LIVE_AUTH_MATRIX"
+          matrix_file="$RUNNER_TEMP/punks-live-auth-matrix.json"
+          cleanup_auth_matrix() {
+            rm -f "$RUNNER_TEMP/punks-live-auth-matrix.json"
+          }
+          trap cleanup_auth_matrix EXIT
+          node --input-type=module - "$matrix_file" <<'NODE'
+          import { writeFileSync } from "node:fs";
+          const value = process.env.PUNKS_LIVE_AUTH_MATRIX;
+          if (typeof value !== "string" || value.length === 0) process.exit(1);
+          writeFileSync(process.argv[2], value, { flag: "wx", mode: 0o600 });
+          NODE
+          unset PUNKS_LIVE_AUTH_MATRIX
           node scripts/candidate/live-staging-auth-proof.mjs \
             --source-sha "$SOURCE_SHA" \
             --staging-deployment-id "$STAGING_DEPLOYMENT_ID" \
-            --flow-id "$PUNKS_LIVE_AUTH_FLOW_ID" \
+            --matrix "$RUNNER_TEMP/punks-live-auth-matrix.json" \
             --staging-proof staging-deployment-proof.json \
             --output live-staging-auth-proof.json
+          rm -f "$RUNNER_TEMP/punks-live-auth-matrix.json"
+          trap - EXIT
 
       - name: Upload the exact remote staging proof
         id: upload_staging_proof
@@ -1974,6 +1988,40 @@ jobs:
           jq -e '.statut == "publiee" or .statut == "reprise" or .statut == "deja-publiee"' \
             "$RUNNER_TEMP/promotion-publication.json" >/dev/null
 
+      - name: Observe the exact current GitHub Actions cadence
+        id: observe_github_cadence
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PUNKS_OPERATIONAL_BUDGET_OBSERVATION: ${{ secrets.PUNKS_OPERATIONAL_BUDGET_OBSERVATION }}
+        run: |
+          set -euo pipefail
+          budget_file="$RUNNER_TEMP/punks-operational-budget-observation.json"
+          cleanup_budget_file() {
+            rm -f "$RUNNER_TEMP/punks-operational-budget-observation.json"
+          }
+          trap cleanup_budget_file EXIT
+          test -n "$PUNKS_OPERATIONAL_BUDGET_OBSERVATION"
+          node --input-type=module - "$budget_file" <<'NODE'
+          import { writeFileSync } from "node:fs";
+          const value = process.env.PUNKS_OPERATIONAL_BUDGET_OBSERVATION;
+          if (typeof value !== "string" || value.length === 0) process.exit(1);
+          writeFileSync(process.argv[2], value, { flag: "wx", mode: 0o600 });
+          NODE
+          unset PUNKS_OPERATIONAL_BUDGET_OBSERVATION
+          node scripts/candidate/github-cadence-observation.mjs \
+            --dossier candidate/promotion-dossier.json \
+            --publication-result "$RUNNER_TEMP/promotion-publication.json" \
+            --budget-observation "$RUNNER_TEMP/punks-operational-budget-observation.json" \
+            --repository "$GITHUB_REPOSITORY" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --source-sha "$SOURCE_SHA" \
+            --staging-deployment-id "$STAGING_DEPLOYMENT_ID" \
+            --output candidate/github-cadence-observation.json
+          rm -f "$RUNNER_TEMP/punks-operational-budget-observation.json"
+          trap - EXIT
+
       - name: Materialize signed expansion and active execution heads
         id: materialize_operational_head
         shell: bash
@@ -1993,6 +2041,7 @@ jobs:
           node scripts/candidate/operational-release-head.mjs \
             --dossier candidate/promotion-dossier.json \
             --publication-result "$RUNNER_TEMP/promotion-publication.json" \
+            --cadence-observation candidate/github-cadence-observation.json \
             --depot "$GITHUB_REPOSITORY" \
             --tag "punks-staging-${SOURCE_SHA}" \
             --r2-primaire "$PUNKS_R2_PRIMARY_DESTINATION" \

@@ -57,6 +57,7 @@ test("accepts only a create-only XCTest result emitted for the installed app", a
         "/System/Library/CoreServices/VoiceOver.app/Contents/MacOS/VoiceOver",
       fixture: {
         sessionId: "70000000-0000-4000-8000-000000000001",
+        sessionRevocationId: "70000000-0000-4000-8000-000000000002",
         punkId: "80000000-0000-8000-8000-000000000058",
         workspaceId: "w",
         conversationId: "c",
@@ -107,9 +108,19 @@ test("accepts only a create-only XCTest result emitted for the installed app", a
                 },
                 {
                   sequence: 2,
+                  command: "punks_follow_conversation",
+                  status: "ok",
+                  coordinates: {
+                    operationId: "11111111-1111-4111-8111-111111111111",
+                    afterCursor: 0,
+                  },
+                },
+                {
+                  sequence: 3,
                   command: "punks_promotion_live_follow_conformance",
                   status: "ok",
                   coordinates: {
+                    operationId: "11111111-1111-4111-8111-111111111111",
                     scenarios: Object.fromEntries(
                       Object.entries(FOLLOW_SCENARIO_OUTCOMES).map(
                         ([id, outcome]) => [
@@ -121,7 +132,7 @@ test("accepts only a create-only XCTest result emitted for the installed app", a
                   },
                 },
                 {
-                  sequence: 3,
+                  sequence: 4,
                   command: "punks_get_account_session_state",
                   status: "ok",
                   coordinates: {

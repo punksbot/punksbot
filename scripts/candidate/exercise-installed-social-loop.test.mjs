@@ -33,6 +33,7 @@ const PLATFORM = "linux-x64";
 const WORKSPACE_ID = "11111111-1111-4111-8111-111111111111";
 const PUNK_ID = "22222222-2222-4222-8222-222222222222";
 const SESSION_ID = "66666666-6666-4666-8666-666666666666";
+const SESSION_REVOCATION_ID = "77777777-7777-4777-8777-777777777777";
 const CONVERSATION_ID = "33333333-3333-4333-8333-333333333333";
 const REPLY_MESSAGE_ID = "55555555-5555-4555-8555-555555555555";
 const WORKERS = CANONICAL_STAGING_WORKER_NAMES.map((name, index) => ({
@@ -82,6 +83,70 @@ function sha256(content) {
   return createHash("sha256").update(content).digest("hex");
 }
 
+function liveAuthMatrixProof() {
+  const methods = ["google", "github", "passkey"];
+  const flows = Object.fromEntries(
+    methods.map((method, index) => {
+      const common = {
+        method,
+        intent: "sign_in",
+        environment: "staging",
+        browserBindingHash: `${index + 1}`.repeat(64),
+        nativeVerifierCommitment: `${index + 4}`.repeat(43),
+        sourceSha: SOURCE_SHA,
+        stagingDeploymentId: DEPLOYMENT_ID,
+      };
+      return [
+        method,
+        {
+          success: {
+            ...common,
+            flowId: `${index + 1}0000000-0000-8000-8000-000000000058`,
+            outcomeCode:
+              method === "passkey" ? "passkey_authenticated" : "authenticated",
+            punkId: method === "github" ? PUNK_ID : crypto.randomUUID(),
+            sessionId: method === "github" ? SESSION_ID : crypto.randomUUID(),
+            browserCompletedAt: `2026-08-26T17:0${index}:00.000Z`,
+            confirmedAt: `2026-08-26T17:0${index}:01.000Z`,
+            methodEvidence:
+              method === "passkey"
+                ? {
+                    kind: "passkey",
+                    challengeHash: "a".repeat(64),
+                    credentialIdHash: "b".repeat(64),
+                  }
+                : {
+                    kind: "oauth",
+                    oauthStateHash: "c".repeat(64),
+                    providerPkceHash: "d".repeat(64),
+                  },
+          },
+          cancellation: {
+            ...common,
+            flowId: `${index + 4}0000000-0000-8000-8000-000000000058`,
+            outcomeCode: "cancelled",
+            cancelledAt: `2026-08-26T17:0${index}:02.000Z`,
+          },
+        },
+      ];
+    }),
+  );
+  return {
+    schema: "punks.live-staging-auth-matrix-proof.v2",
+    sourceSha: SOURCE_SHA,
+    stagingDeploymentId: DEPLOYMENT_ID,
+    authWorkerVersionId: WORKERS[0].versionId,
+    flows,
+    negative: {
+      wrongOauthState: "refused",
+      wrongBrowserBinding: "refused",
+      wrongNativePkceVerifier: "refused",
+      wrongPasskeyChallenge: "refused",
+    },
+    observedAt: "2026-08-26T17:03:00.000Z",
+  };
+}
+
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), "punks-installed-exercise-"));
   const artifact = join(
@@ -124,36 +189,7 @@ function fixture() {
     "operator-secret-never-output-000000000000\n",
   );
   writeFileSync(stagingProof, `${JSON.stringify(STAGING_PROOF, null, 2)}\n`);
-  writeFileSync(
-    liveAuthProof,
-    `${JSON.stringify({
-      schema: "punks.live-staging-auth-proof.v1",
-      sourceSha: SOURCE_SHA,
-      stagingDeploymentId: DEPLOYMENT_ID,
-      authWorkerVersionId: WORKERS[0].versionId,
-      flow: {
-        flowId: "70000000-0000-8000-8000-000000000058",
-        method: "github",
-        intent: "sign_in",
-        environment: "staging",
-        outcomeCode: "authenticated",
-        punkId: PUNK_ID,
-        sessionId: SESSION_ID,
-        browserCompletedAt: "2026-08-26T17:00:00.000Z",
-        confirmedAt: "2026-08-26T17:00:01.000Z",
-        browserBindingHash: "a".repeat(64),
-        oauthStateHash: "b".repeat(64),
-        providerPkceHash: "c".repeat(64),
-        nativeVerifierCommitment: "d".repeat(43),
-      },
-      negative: {
-        wrongOauthState: "refused",
-        wrongBrowserBinding: "refused",
-        wrongNativePkceVerifier: "refused",
-      },
-      observedAt: "2026-08-26T17:00:02.000Z",
-    })}\n`,
-  );
+  writeFileSync(liveAuthProof, `${JSON.stringify(liveAuthMatrixProof())}\n`);
   writeFileSync(
     liveFollowProof,
     `${JSON.stringify({
@@ -186,6 +222,7 @@ function fixture() {
       sourceSha: SOURCE_SHA,
       origin: "https://staging.punks.bot",
       sessionId: SESSION_ID,
+      sessionRevocationId: SESSION_REVOCATION_ID,
       punkId: PUNK_ID,
       workspaceId: WORKSPACE_ID,
       workspaceSlug: "promotion-fixture",
@@ -353,6 +390,7 @@ function boundaries(input, mutate = () => {}) {
         assert.deepEqual(request.fixture, {
           origin: "https://staging.punks.bot",
           sessionId: SESSION_ID,
+          sessionRevocationId: SESSION_REVOCATION_ID,
           punkId: PUNK_ID,
           workspaceId: WORKSPACE_ID,
           workspaceSlug: "promotion-fixture",

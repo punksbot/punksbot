@@ -113,6 +113,12 @@ describe("promotion fault controller", () => {
       });
     expect((await observe()).status).toBe(503);
     expect((await observe("")).status).toBe(401);
+    const readConversation = () =>
+      SELF.fetch(
+        `https://staging.punks.bot/api/v1/workspaces/${target.workspaceId}/conversations/${target.conversationId}/messages?limit=1&direction=older`,
+        { headers: { cookie: "punks_session_dev=session-owner" } },
+      );
+    expect((await readConversation()).status).toBe(503);
 
     for (const proof of [
       "roll-forward",
@@ -132,6 +138,7 @@ describe("promotion fault controller", () => {
     }
     const recovered = await observe();
     expect(recovered.status).toBe(200);
+    expect((await readConversation()).status).toBe(200);
     await expect(recovered.json()).resolves.toEqual({
       contract: "promotion.fault-observe@1",
       executionId: identity.executionId,
@@ -289,16 +296,16 @@ describe("promotion fault controller", () => {
         authority: "erasure-registry",
         executionId: "979797979797:linux-x64:coupure:erasure-registry",
         worker: "punks-erasure-staging",
-        binding: "PROMOTION_AUTHORITY_FAULTS",
-        className: "PromotionAuthorityFaultDO",
+        binding: "ERASURE_REGISTRY",
+        className: "ErasureRegistry",
       },
       {
         authority: "internal-event-signature",
         executionId:
           "989898989898:windows-x64:perte-autorite:internal-event-signature",
         worker: "punks-attestation-staging",
-        binding: "PROMOTION_AUTHORITY_FAULTS",
-        className: "PromotionAuthorityFaultDO",
+        binding: "ATTESTATION",
+        className: "AttestationWorker",
       },
     ];
     for (const service of services) {

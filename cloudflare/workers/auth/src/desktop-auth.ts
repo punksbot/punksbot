@@ -191,6 +191,24 @@ export async function startDesktopAuth(
   ) {
     return problem(400, "invalid_input", "Desktop auth start is invalid");
   }
+  const promotionSourceSha = request.headers.get(
+    "x-punks-promotion-source-sha",
+  );
+  const promotionStagingDeploymentId = request.headers.get(
+    "x-punks-promotion-staging-deployment-id",
+  );
+  if (
+    (promotionSourceSha !== null || promotionStagingDeploymentId !== null) &&
+    (env.ENVIRONMENT !== "staging" ||
+      !/^[0-9a-f]{40}$/u.test(promotionSourceSha ?? "") ||
+      !/^sha256:[0-9a-f]{64}$/u.test(promotionStagingDeploymentId ?? ""))
+  ) {
+    return problem(
+      400,
+      "invalid_input",
+      "Desktop promotion binding is invalid",
+    );
+  }
   const current = await getActiveSession(request, env);
   const workspaceOwnershipTransfer =
     command.purpose === "transfer_workspace_ownership"
@@ -272,6 +290,8 @@ export async function startDesktopAuth(
     currentPunkId: current?.record.punkId ?? null,
     createdAt: new Date(now).toISOString(),
     expiresAt,
+    promotionSourceSha,
+    promotionStagingDeploymentId,
   });
   if (!created) {
     return problem(
@@ -1083,6 +1103,13 @@ export async function completeDesktopPasskey(
         launched.flow.currentSessionId === null)
     ) {
       return problem(403, "forbidden", "Passkey is bound to another Punk");
+    }
+    if (!(await stub.recordPasskeyAuthentication(await hash(response.id)))) {
+      return problem(
+        409,
+        "idempotency_conflict",
+        "Passkey authentication binding was not recorded",
+      );
     }
     await stub.recordBrowserComplete({ browserBindingHash: bindingHash });
     await stub.ready({

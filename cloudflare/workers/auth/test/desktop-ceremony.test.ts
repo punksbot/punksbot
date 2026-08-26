@@ -192,15 +192,7 @@ describe("DesktopAuthFlow protocol (issue #54)", () => {
       hasOauthState: true,
       hasProviderPkce: true,
     });
-    const proof = await proofStub.promotionProof();
-    expect(proof).toMatchObject({
-      flowId: started.flowId,
-      method: "google",
-      browserBindingHash: expect.stringMatching(/^[0-9a-f]{64}$/),
-      oauthStateHash: expect.stringMatching(/^[0-9a-f]{64}$/),
-      providerPkceHash: expect.stringMatching(/^[0-9a-f]{64}$/),
-      nativeVerifierCommitment: started.commitment,
-    });
+    expect(await proofStub.promotionProof()).toBeNull();
     const callbackUrl = `${origin}/api/auth/v1/oauth/google/callback?state=${launched.state}&code=x`;
     expect(
       (
@@ -211,6 +203,58 @@ describe("DesktopAuthFlow protocol (issue #54)", () => {
         )
       ).status,
     ).toBe(400);
+  });
+
+  it("lie la preuve promotion terminale au SHA et au déploiement dès create", async () => {
+    const flowId = crypto.randomUUID();
+    const sourceSha = "ab".repeat(20);
+    const stagingDeploymentId = `sha256:${"cd".repeat(32)}`;
+    const commitment = "e".repeat(43);
+    const punkId = crypto.randomUUID();
+    const sessionId = crypto.randomUUID();
+    const stub = authEnv.DESKTOP_AUTH_FLOWS.getByName(flowId);
+    expect(
+      await stub.create({
+        flowId,
+        intent: "sign_in",
+        method: "github",
+        purpose: null,
+        workspaceOwnershipTransfer: null,
+        verifierCommitment: commitment,
+        environment: "staging",
+        currentSessionId: null,
+        currentPunkId: null,
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 600_000).toISOString(),
+        promotionSourceSha: sourceSha,
+        promotionStagingDeploymentId: stagingDeploymentId,
+      }),
+    ).toBe(true);
+    expect((await stub.browserLaunch()).ok).toBe(true);
+    expect(await stub.ready({ punkId, outcomeCode: "authenticated" })).toBe(
+      true,
+    );
+    const delivery = await stub.claim(commitment);
+    if (!delivery.ok || delivery.kind !== "session") {
+      throw new Error("promotion delivery missing");
+    }
+    expect(
+      await stub.recordPreparedSession({
+        deliveryId: delivery.deliveryId,
+        sessionId,
+      }),
+    ).toBe(true);
+    expect(
+      await stub.confirmed({ deliveryId: delivery.deliveryId, sessionId }),
+    ).not.toBeNull();
+    await expect(stub.promotionProof()).resolves.toMatchObject({
+      flowId,
+      sourceSha,
+      stagingDeploymentId,
+      sessionId,
+      punkId,
+      method: "github",
+    });
   });
 
   it("rejoue claim/confirm, garde la Session prepared fermée puis révoque par capacité seule", async () => {

@@ -97,6 +97,17 @@ export function deterministicUuid(domain, source) {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
+export function authAggregateUuid(domain, value) {
+  const bytes = createHash("sha256")
+    .update(`punks.auth.${domain}.v1\0${value}`)
+    .digest()
+    .subarray(0, 16);
+  bytes[6] = (bytes[6] & 0x0f) | 0x80;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = bytes.toString("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 async function requestJson(fetchImpl, url, init, label, acceptedStatuses) {
   const response = await fetchImpl(url, { redirect: "error", ...init });
   if (!acceptedStatuses.includes(response.status)) {
@@ -129,6 +140,7 @@ export async function prepareStagingFixture({
   origin,
   cookie,
   operatorToken,
+  sessionRevocationId,
   fetchImpl = fetch,
   historyCount = 52,
 }) {
@@ -150,6 +162,10 @@ export async function prepareStagingFixture({
   );
   const canonicalOrigin = parsedOrigin.origin;
   invariant(COOKIE_RE.test(cookie), "valid staging session cookie required");
+  invariant(
+    UUID_RE.test(sessionRevocationId ?? ""),
+    "exact Session revocation authority ID required",
+  );
   invariant(
     typeof operatorToken === "string" &&
       operatorToken.length >= 32 &&
@@ -321,6 +337,7 @@ export async function prepareStagingFixture({
     sourceSha,
     origin: canonicalOrigin,
     sessionId,
+    sessionRevocationId,
     punkId,
     workspaceId,
     workspaceSlug: slug,
@@ -379,6 +396,10 @@ export async function main(argv = process.argv.slice(2)) {
     operatorToken: readSecret(
       required("operator-token-file"),
       "operator token file",
+    ),
+    sessionRevocationId: authAggregateUuid(
+      "session-revocation",
+      session.revoke_capability,
     ),
   });
   const output = resolve(required("output"));

@@ -65,6 +65,7 @@ test("reads FOLLOW adversarial outcomes only from the installed native journal",
   const root = mkdtempSync(join(tmpdir(), "punks-follow-conformance-ipc-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const path = join(root, "ipc.jsonl");
+  const operationId = "11111111-1111-4111-8111-111111111111";
   const scenarios = Object.fromEntries(
     Object.entries(FOLLOW_SCENARIO_OUTCOMES).map(([id, outcome]) => [
       id,
@@ -75,9 +76,14 @@ test("reads FOLLOW adversarial outcomes only from the installed native journal",
     path,
     `${JSON.stringify({
       sequence: 1,
+      command: "punks_follow_conversation",
+      status: "ok",
+      coordinates: { operationId, afterCursor: 0 },
+    })}\n${JSON.stringify({
+      sequence: 2,
       command: "punks_promotion_live_follow_conformance",
       status: "ok",
-      coordinates: { scenarios },
+      coordinates: { operationId, scenarios },
     })}\n`,
   );
   assert.deepEqual(followScenariosFromIpc(path), scenarios);
@@ -87,9 +93,14 @@ test("reads FOLLOW adversarial outcomes only from the installed native journal",
     path,
     `${JSON.stringify({
       sequence: 1,
+      command: "punks_follow_conversation",
+      status: "ok",
+      coordinates: { operationId, afterCursor: 0 },
+    })}\n${JSON.stringify({
+      sequence: 2,
       command: "punks_promotion_live_follow_conformance",
       status: "ok",
-      coordinates: { scenarios },
+      coordinates: { operationId, scenarios },
     })}\n`,
   );
   assert.throws(() => followScenariosFromIpc(path), /scenario set/i);
@@ -294,6 +305,7 @@ test("drives every social-loop story through one installed browser session", asy
       outputs,
       fixture: {
         sessionId: "11111111-1111-4111-8111-111111111111",
+        sessionRevocationId: "77777777-7777-4777-8777-777777777777",
         punkId: "55555555-5555-4555-8555-555555555555",
         workspaceId: "66666666-6666-4666-8666-666666666666",
         workspaceSlug: "promotion-fixture",

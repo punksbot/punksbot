@@ -94,6 +94,7 @@ export interface DesktopAuthFlowRecord {
   oauthState: string | null;
   codeVerifier: string | null;
   passkeyChallenge: string | null;
+  passkeyCredentialIdHash: string | null;
   pendingIdentity: DesktopPendingIdentity | null;
   pendingPasskey: DesktopPendingPasskey | null;
   browserEffectCommitted: boolean;
@@ -106,6 +107,8 @@ export interface DesktopAuthFlowRecord {
   deliveryStartedAt: string | null;
   confirmedAt: string | null;
   cancelledAt: string | null;
+  promotionSourceSha: string | null;
+  promotionStagingDeploymentId: string | null;
 }
 
 export interface CreateDesktopAuthFlow
@@ -122,12 +125,15 @@ export interface CreateDesktopAuthFlow
     | "currentPunkId"
     | "createdAt"
     | "expiresAt"
-  > {}
+  > {
+  promotionSourceSha?: string | null;
+  promotionStagingDeploymentId?: string | null;
+}
 
 /** Redacted terminal facts proving one real desktop provider ceremony. */
 export interface DesktopPromotionAuthProof {
   flowId: string;
-  method: DesktopAuthMethod;
+  method: Exclude<DesktopAuthMethod, "passkey">;
   intent: DesktopAuthIntent;
   environment: "local" | "staging" | "production";
   outcomeCode: DesktopAuthOutcomeCode;
@@ -139,6 +145,48 @@ export interface DesktopPromotionAuthProof {
   oauthStateHash: string;
   providerPkceHash: string;
   nativeVerifierCommitment: string;
+  sourceSha: string;
+  stagingDeploymentId: string;
+}
+
+export interface DesktopPromotionAuthSuccessProof {
+  flowId: string;
+  method: DesktopAuthMethod;
+  intent: DesktopAuthIntent;
+  environment: "local" | "staging" | "production";
+  outcomeCode: DesktopAuthOutcomeCode;
+  punkId: string;
+  sessionId: string;
+  browserCompletedAt: string;
+  confirmedAt: string;
+  browserBindingHash: string;
+  nativeVerifierCommitment: string;
+  sourceSha: string;
+  stagingDeploymentId: string;
+  methodEvidence:
+    | {
+        kind: "oauth";
+        oauthStateHash: string;
+        providerPkceHash: string;
+      }
+    | {
+        kind: "passkey";
+        challengeHash: string;
+        credentialIdHash: string;
+      };
+}
+
+export interface DesktopPromotionAuthCancellationProof {
+  flowId: string;
+  method: DesktopAuthMethod;
+  intent: DesktopAuthIntent;
+  environment: "local" | "staging" | "production";
+  outcomeCode: "cancelled";
+  cancelledAt: string;
+  browserBindingHash: string;
+  nativeVerifierCommitment: string;
+  sourceSha: string;
+  stagingDeploymentId: string;
 }
 
 export type BrowserLaunchResult =
@@ -201,6 +249,8 @@ export class DesktopAuthFlowDO extends DurableObject<AuthEnv> {
     }
     const record: DesktopAuthFlowRecord = {
       ...input,
+      promotionSourceSha: input.promotionSourceSha ?? null,
+      promotionStagingDeploymentId: input.promotionStagingDeploymentId ?? null,
       phase: "started",
       result: "human_action_required",
       outcomeCode: null,
@@ -211,6 +261,7 @@ export class DesktopAuthFlowDO extends DurableObject<AuthEnv> {
       oauthState: null,
       codeVerifier: null,
       passkeyChallenge: null,
+      passkeyCredentialIdHash: null,
       pendingIdentity: null,
       pendingPasskey: null,
       browserEffectCommitted: false,
@@ -315,6 +366,8 @@ export class DesktopAuthFlowDO extends DurableObject<AuthEnv> {
       flow.phase !== "confirmed" ||
       flow.result !== "success" ||
       flow.method === "passkey" ||
+      !/^[0-9a-f]{40}$/u.test(flow.promotionSourceSha ?? "") ||
+      !/^sha256:[0-9a-f]{64}$/u.test(flow.promotionStagingDeploymentId ?? "") ||
       flow.outcomeCode === null ||
       flow.punkId === null ||
       flow.sessionId === null ||
@@ -322,7 +375,9 @@ export class DesktopAuthFlowDO extends DurableObject<AuthEnv> {
       flow.confirmedAt === null ||
       flow.browserBindingHash === null ||
       flow.oauthState === null ||
-      flow.codeVerifier === null
+      flow.codeVerifier === null ||
+      typeof flow.promotionSourceSha !== "string" ||
+      typeof flow.promotionStagingDeploymentId !== "string"
     ) {
       return null;
     }
@@ -340,6 +395,98 @@ export class DesktopAuthFlowDO extends DurableObject<AuthEnv> {
       oauthStateHash: await hash(flow.oauthState),
       providerPkceHash: await hash(flow.codeVerifier),
       nativeVerifierCommitment: flow.verifierCommitment,
+      sourceSha: flow.promotionSourceSha,
+      stagingDeploymentId: flow.promotionStagingDeploymentId,
+    };
+  }
+
+  /** Redacted success facts for one source-bound OAuth or passkey ceremony. */
+  async promotionSuccessProof(): Promise<DesktopPromotionAuthSuccessProof | null> {
+    const flow = await this.read();
+    if (
+      flow === null ||
+      flow.phase !== "confirmed" ||
+      flow.result !== "success" ||
+      !/^[0-9a-f]{40}$/u.test(flow.promotionSourceSha ?? "") ||
+      !/^sha256:[0-9a-f]{64}$/u.test(flow.promotionStagingDeploymentId ?? "") ||
+      flow.outcomeCode === null ||
+      flow.punkId === null ||
+      flow.sessionId === null ||
+      flow.browserCompletedAt === null ||
+      flow.confirmedAt === null ||
+      flow.browserBindingHash === null ||
+      typeof flow.promotionSourceSha !== "string" ||
+      typeof flow.promotionStagingDeploymentId !== "string"
+    ) {
+      return null;
+    }
+    let methodEvidence: DesktopPromotionAuthSuccessProof["methodEvidence"];
+    if (flow.method === "passkey") {
+      if (
+        flow.passkeyChallenge === null ||
+        typeof flow.passkeyCredentialIdHash !== "string" ||
+        !/^[0-9a-f]{64}$/u.test(flow.passkeyCredentialIdHash)
+      ) {
+        return null;
+      }
+      methodEvidence = {
+        kind: "passkey",
+        challengeHash: await hash(flow.passkeyChallenge),
+        credentialIdHash: flow.passkeyCredentialIdHash,
+      };
+    } else {
+      if (flow.oauthState === null || flow.codeVerifier === null) return null;
+      methodEvidence = {
+        kind: "oauth",
+        oauthStateHash: await hash(flow.oauthState),
+        providerPkceHash: await hash(flow.codeVerifier),
+      };
+    }
+    return {
+      flowId: flow.flowId,
+      method: flow.method,
+      intent: flow.intent,
+      environment: flow.environment,
+      outcomeCode: flow.outcomeCode,
+      punkId: flow.punkId,
+      sessionId: flow.sessionId,
+      browserCompletedAt: flow.browserCompletedAt,
+      confirmedAt: flow.confirmedAt,
+      browserBindingHash: flow.browserBindingHash,
+      nativeVerifierCommitment: flow.verifierCommitment,
+      sourceSha: flow.promotionSourceSha,
+      stagingDeploymentId: flow.promotionStagingDeploymentId,
+      methodEvidence,
+    };
+  }
+
+  /** Redacted terminal cancellation facts for one source-bound ceremony. */
+  async promotionCancellationProof(): Promise<DesktopPromotionAuthCancellationProof | null> {
+    const flow = await this.read();
+    if (
+      flow === null ||
+      flow.phase !== "cancelled" ||
+      flow.outcomeCode !== "cancelled" ||
+      flow.cancelledAt === null ||
+      flow.browserBindingHash === null ||
+      typeof flow.promotionSourceSha !== "string" ||
+      typeof flow.promotionStagingDeploymentId !== "string" ||
+      !/^[0-9a-f]{40}$/u.test(flow.promotionSourceSha ?? "") ||
+      !/^sha256:[0-9a-f]{64}$/u.test(flow.promotionStagingDeploymentId ?? "")
+    ) {
+      return null;
+    }
+    return {
+      flowId: flow.flowId,
+      method: flow.method,
+      intent: flow.intent,
+      environment: flow.environment,
+      outcomeCode: "cancelled",
+      cancelledAt: flow.cancelledAt,
+      browserBindingHash: flow.browserBindingHash,
+      nativeVerifierCommitment: flow.verifierCommitment,
+      sourceSha: flow.promotionSourceSha,
+      stagingDeploymentId: flow.promotionStagingDeploymentId,
     };
   }
 
@@ -360,6 +507,31 @@ export class DesktopAuthFlowDO extends DurableObject<AuthEnv> {
     }
     if (flow.passkeyChallenge === null) {
       flow.passkeyChallenge = input.challenge;
+      await this.write(flow);
+    }
+    return true;
+  }
+
+  /** Binds a verified passkey credential hash before the flow becomes ready. */
+  async recordPasskeyAuthentication(
+    credentialIdHash: string,
+  ): Promise<boolean> {
+    const flow = await this.current();
+    const existingCredentialIdHash = flow?.passkeyCredentialIdHash ?? null;
+    if (
+      flow === null ||
+      flow.method !== "passkey" ||
+      flow.phase !== "started" ||
+      flow.browserBindingHash === null ||
+      flow.passkeyChallenge === null ||
+      !/^[0-9a-f]{64}$/u.test(credentialIdHash) ||
+      (existingCredentialIdHash !== null &&
+        existingCredentialIdHash !== credentialIdHash)
+    ) {
+      return false;
+    }
+    if (existingCredentialIdHash === null) {
+      flow.passkeyCredentialIdHash = credentialIdHash;
       await this.write(flow);
     }
     return true;

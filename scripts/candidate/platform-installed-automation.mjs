@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { openSync, readFileSync, writeFileSync } from "node:fs";
+import { closeSync, openSync, readFileSync, writeFileSync } from "node:fs";
 
 import axeCore from "axe-core";
 import { Builder, By, Capabilities, Key, until } from "selenium-webdriver";
@@ -170,7 +170,8 @@ export function traceFromIpc(path) {
 }
 
 export function followScenariosFromIpc(path) {
-  const records = parseIpcJournal(path).filter(
+  const journal = parseIpcJournal(path);
+  const records = journal.filter(
     ({ command, status }) =>
       command === "punks_promotion_live_follow_conformance" && status === "ok",
   );
@@ -178,6 +179,18 @@ export function followScenariosFromIpc(path) {
     fail(
       "installed native FOLLOW conformance observation is missing or duplicated",
     );
+  }
+  const operationId = records[0]?.coordinates?.operationId;
+  if (
+    typeof operationId !== "string" ||
+    !journal.some(
+      ({ command, status, coordinates }) =>
+        command === "punks_follow_conversation" &&
+        status === "ok" &&
+        coordinates?.operationId === operationId,
+    )
+  ) {
+    fail("installed FOLLOW conformance is not bound to one native operationId");
   }
   const scenarios = records[0]?.coordinates?.scenarios;
   if (
@@ -613,7 +626,28 @@ export async function createSeleniumBrowser(input) {
       try {
         await driver.quit();
       } finally {
-        tauriDriver.kill();
+        try {
+          if (
+            tauriDriver.exitCode === null &&
+            tauriDriver.signalCode === null
+          ) {
+            tauriDriver.kill();
+            await new Promise((resolvePromise, reject) => {
+              const timeout = setTimeout(() => {
+                tauriDriver.kill("SIGKILL");
+                reject(
+                  new Error("tauri-driver did not exit after termination"),
+                );
+              }, 10_000);
+              tauriDriver.once("exit", () => {
+                clearTimeout(timeout);
+                resolvePromise();
+              });
+            });
+          }
+        } finally {
+          closeSync(logDescriptor);
+        }
       }
     },
   };

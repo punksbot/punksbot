@@ -5,8 +5,10 @@ import { fileURLToPath } from "node:url";
 
 const ORIGIN = "https://staging.punks.bot";
 const SHA1_RE = /^[0-9a-f]{40}$/u;
+const DEPLOYMENT_RE = /^sha256:[0-9a-f]{64}$/u;
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+const METHODS = ["google", "github", "passkey"];
 
 function fail(message) {
   throw new Error(`live staging Auth Session rejected: ${message}`);
@@ -20,7 +22,7 @@ function pkce(verifier) {
   return createHash("sha256").update(verifier).digest("base64url");
 }
 
-async function json(fetchImpl, path, body) {
+async function json(fetchImpl, path, body, extraHeaders = {}) {
   const response = await fetchImpl(`${ORIGIN}${path}`, {
     method: "POST",
     redirect: "error",
@@ -28,6 +30,7 @@ async function json(fetchImpl, path, body) {
       origin: ORIGIN,
       "sec-punks-desktop-environment": "staging",
       "content-type": "application/json",
+      ...extraHeaders,
     },
     body: JSON.stringify(body),
   });
@@ -50,7 +53,7 @@ function cookieFrom(response) {
 }
 
 export async function createLiveStagingAuthSession(
-  { sourceSha, pollLimit = 300 },
+  { sourceSha, stagingDeploymentId, method = "github", pollLimit = 300 },
   {
     fetchImpl = fetch,
     wait = (milliseconds) =>
@@ -60,6 +63,8 @@ export async function createLiveStagingAuthSession(
 ) {
   if (
     !SHA1_RE.test(sourceSha ?? "") ||
+    !DEPLOYMENT_RE.test(stagingDeploymentId ?? "") ||
+    !METHODS.includes(method) ||
     !Number.isSafeInteger(pollLimit) ||
     pollLimit < 1
   ) {
@@ -67,13 +72,21 @@ export async function createLiveStagingAuthSession(
   }
   const verifier = base64url(randomBytes(32));
   const verifierCommitment = pkce(verifier);
-  const started = await json(fetchImpl, "/api/auth/v1/desktop/start", {
-    contract: "desktop-auth.start@1",
-    message: "request",
-    intent: "sign_in",
-    method: "github",
-    verifierCommitment,
-  });
+  const started = await json(
+    fetchImpl,
+    "/api/auth/v1/desktop/start",
+    {
+      contract: "desktop-auth.start@1",
+      message: "request",
+      intent: "sign_in",
+      method,
+      verifierCommitment,
+    },
+    {
+      "x-punks-promotion-source-sha": sourceSha,
+      "x-punks-promotion-staging-deployment-id": stagingDeploymentId,
+    },
+  );
   if (
     started.response.status !== 201 ||
     !UUID_RE.test(started.document?.flowId ?? "") ||
@@ -171,14 +184,90 @@ export async function createLiveStagingAuthSession(
   };
 }
 
+export async function createLiveStagingAuthCancellation(
+  { sourceSha, stagingDeploymentId, method },
+  { fetchImpl = fetch, browserFetch = fetch } = {},
+) {
+  if (
+    !SHA1_RE.test(sourceSha ?? "") ||
+    !DEPLOYMENT_RE.test(stagingDeploymentId ?? "") ||
+    !METHODS.includes(method) ||
+    typeof fetchImpl !== "function" ||
+    typeof browserFetch !== "function"
+  ) {
+    fail("exact source, staging and provider method are required");
+  }
+  const verifier = base64url(randomBytes(32));
+  const verifierCommitment = pkce(verifier);
+  const started = await json(
+    fetchImpl,
+    "/api/auth/v1/desktop/start",
+    {
+      contract: "desktop-auth.start@1",
+      message: "request",
+      intent: "sign_in",
+      method,
+      verifierCommitment,
+    },
+    {
+      "x-punks-promotion-source-sha": sourceSha,
+      "x-punks-promotion-staging-deployment-id": stagingDeploymentId,
+    },
+  );
+  if (
+    started.response.status !== 201 ||
+    !UUID_RE.test(started.document?.flowId ?? "") ||
+    typeof started.document?.browserUrl !== "string" ||
+    !started.document.browserUrl.startsWith(
+      `${ORIGIN}/api/auth/v1/desktop/browser?`,
+    )
+  ) {
+    fail("desktop Auth cancellation start failed");
+  }
+  const flowId = started.document.flowId;
+  const launched = await browserFetch(started.document.browserUrl, {
+    method: "GET",
+    redirect: "manual",
+    headers: { "user-agent": "Punks-Promotion-Cancellation/1" },
+  });
+  const expectedLaunch =
+    method === "passkey"
+      ? launched.status === 200
+      : launched.status >= 300 && launched.status < 400;
+  if (!expectedLaunch) {
+    fail(`desktop ${method} browser launch returned HTTP ${launched.status}`);
+  }
+  const cancelled = await json(fetchImpl, "/api/auth/v1/desktop/cancel", {
+    contract: "desktop-auth.cancel@1",
+    message: "request",
+    flowId,
+    verifier,
+  });
+  if (
+    cancelled.response.status !== 200 ||
+    cancelled.document?.flowId !== flowId ||
+    cancelled.document?.phase !== "cancelled" ||
+    !Number.isFinite(Date.parse(cancelled.document?.cancelledAt ?? ""))
+  ) {
+    fail(`desktop ${method} cancellation failed`);
+  }
+  return {
+    flowId,
+    method,
+    cancelledAt: cancelled.document.cancelledAt,
+  };
+}
+
 function cliArgs(argv) {
   const values = new Map();
   for (let index = 0; index < argv.length; index += 2) {
     values.set(argv[index], argv[index + 1]);
   }
   if (
-    values.size !== 3 ||
+    values.size !== 5 ||
     !values.has("--source-sha") ||
+    !values.has("--staging-deployment-id") ||
+    !values.has("--method") ||
     !values.has("--bundle-output") ||
     !values.has("--flow-output")
   ) {
@@ -190,7 +279,11 @@ function cliArgs(argv) {
 export async function run(argv = process.argv.slice(2)) {
   const required = cliArgs(argv);
   const result = await createLiveStagingAuthSession(
-    { sourceSha: required("--source-sha") },
+    {
+      sourceSha: required("--source-sha"),
+      stagingDeploymentId: required("--staging-deployment-id"),
+      method: required("--method"),
+    },
     {
       onBrowserUrl(url, flowId) {
         console.log(`BROWSER_URL=${url}`);

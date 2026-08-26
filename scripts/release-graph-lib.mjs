@@ -2571,6 +2571,33 @@ function validerVerdictsMetriques(
   return valide;
 }
 
+/** Public bootstrap validator backed by the canonical topology rules. */
+export function validateOperationalTopology(topology) {
+  const errors = [];
+  validerTopologieInstantane(topology, "operational topology", (error) => {
+    errors.push(error);
+  });
+  return errors;
+}
+
+/** Public bootstrap validator backed by the canonical 36-budget rules. */
+export function validateOperationalBudgetVerdicts(
+  verdicts,
+  { connectionMethods = [], baselineRequired = false } = {},
+) {
+  const errors = [];
+  validerVerdictsMetriques(
+    verdicts,
+    "operational budgets",
+    (error) => errors.push(error),
+    {
+      baselineExigee: baselineRequired,
+      moyensConnexion: connectionMethods,
+    },
+  );
+  return errors;
+}
+
 function validerChargeOperationnelle(
   contenu,
   instantane,

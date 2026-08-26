@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap},
     fs::{File, OpenOptions},
     io::Write,
     path::PathBuf,
@@ -42,7 +42,7 @@ impl NetworkRecord {
 }
 
 static NETWORK_LOG: OnceLock<Option<Mutex<File>>> = OnceLock::new();
-static LIVE_FOLLOW_CAPTURE: OnceLock<Mutex<LiveFollowCapture>> = OnceLock::new();
+static LIVE_FOLLOW_CAPTURES: OnceLock<Mutex<HashMap<String, LiveFollowCapture>>> = OnceLock::new();
 
 #[derive(Default)]
 struct LiveFollowCapture {
@@ -51,28 +51,40 @@ struct LiveFollowCapture {
     confirmed: Vec<u64>,
 }
 
-pub(crate) fn begin_live_follow_capture(after_cursor: u64) {
-    let capture = LIVE_FOLLOW_CAPTURE.get_or_init(|| Mutex::new(LiveFollowCapture::default()));
-    if let Ok(mut capture) = capture.lock() {
-        if capture.frames.is_empty() {
-            capture.initial_cursor = Some(after_cursor);
-            capture.confirmed.clear();
+pub(crate) fn begin_live_follow_capture(operation_id: &str, after_cursor: u64) {
+    let captures = LIVE_FOLLOW_CAPTURES.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Ok(mut captures) = captures.lock() {
+        if captures.len() >= 16 {
+            captures.retain(|_, capture| capture.frames.len() < 256);
         }
+        captures
+            .entry(operation_id.to_string())
+            .or_insert_with(|| LiveFollowCapture {
+                initial_cursor: Some(after_cursor),
+                frames: Vec::new(),
+                confirmed: Vec::new(),
+            });
     }
 }
 
-pub(crate) fn record_live_follow_frame(frame: &FollowServerFrame) {
-    let capture = LIVE_FOLLOW_CAPTURE.get_or_init(|| Mutex::new(LiveFollowCapture::default()));
-    if let Ok(mut capture) = capture.lock() {
+pub(crate) fn record_live_follow_frame(operation_id: &str, frame: &FollowServerFrame) {
+    let captures = LIVE_FOLLOW_CAPTURES.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Ok(mut captures) = captures.lock() {
+        let Some(capture) = captures.get_mut(operation_id) else {
+            return;
+        };
         if capture.frames.len() < 256 {
             capture.frames.push(frame.clone());
         }
     }
 }
 
-pub(crate) fn record_live_follow_confirmation(cursor: u64) {
-    let capture = LIVE_FOLLOW_CAPTURE.get_or_init(|| Mutex::new(LiveFollowCapture::default()));
-    if let Ok(mut capture) = capture.lock() {
+pub(crate) fn record_live_follow_confirmation(operation_id: &str, cursor: u64) {
+    let captures = LIVE_FOLLOW_CAPTURES.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Ok(mut captures) = captures.lock() {
+        let Some(capture) = captures.get_mut(operation_id) else {
+            return;
+        };
         if capture.confirmed.len() < 256 {
             capture.confirmed.push(cursor);
         }
@@ -88,11 +100,15 @@ fn live_result(outcome: &str, observation: impl Into<String>) -> PromotionFollow
 
 /// Derives the adversarial FOLLOW matrix from frames captured from real staging.
 pub fn promotion_live_follow_conformance(
+    operation_id: &str,
 ) -> Result<BTreeMap<String, PromotionFollowScenario>, String> {
-    let capture = LIVE_FOLLOW_CAPTURE
-        .get_or_init(|| Mutex::new(LiveFollowCapture::default()))
+    let captures = LIVE_FOLLOW_CAPTURES
+        .get_or_init(|| Mutex::new(HashMap::new()))
         .lock()
         .map_err(|_| "live FOLLOW capture lock is unavailable".to_string())?;
+    let capture = captures
+        .get(operation_id)
+        .ok_or_else(|| "live FOLLOW operation capture is missing".to_string())?;
     let initial = capture
         .initial_cursor
         .ok_or_else(|| "live FOLLOW capture did not start".to_string())?;
@@ -379,8 +395,12 @@ mod tests {
 
     #[test]
     fn live_conformance_derives_faults_from_captured_staging_frames() {
-        let capture = LIVE_FOLLOW_CAPTURE.get_or_init(|| Mutex::new(LiveFollowCapture::default()));
-        let mut capture = capture.lock().expect("capture lock");
+        let operation_id = "11111111-1111-4111-8111-111111111111";
+        let captures = LIVE_FOLLOW_CAPTURES.get_or_init(|| Mutex::new(HashMap::new()));
+        let mut captures = captures.lock().expect("capture lock");
+        let capture = captures
+            .entry(operation_id.to_string())
+            .or_insert_with(LiveFollowCapture::default);
         capture.initial_cursor = Some(0);
         capture.confirmed = vec![1, 2];
         capture.frames = vec![
@@ -426,8 +446,8 @@ mod tests {
                 reaction_collection_patches: vec![],
             },
         ];
-        drop(capture);
-        let scenarios = promotion_live_follow_conformance().expect("live conformance");
+        drop(captures);
+        let scenarios = promotion_live_follow_conformance(operation_id).expect("live conformance");
         assert_eq!(scenarios.len(), 10);
         assert_eq!(scenarios["doublon-exact"].outcome, "ignore");
         assert_eq!(scenarios["trou"].outcome, "resync");

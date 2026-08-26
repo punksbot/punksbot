@@ -139,18 +139,27 @@ export function validateInstalledTranscript(
     "installed authentication",
   );
   const liveAuth = transcript.authentication.proof;
+  const authMethods = ["google", "github", "passkey"];
   if (
     transcript.authentication.contour !== "navigateur-systeme-provider-reel" ||
-    liveAuth?.schema !== "punks.live-staging-auth-proof.v1" ||
+    liveAuth?.schema !== "punks.live-staging-auth-matrix-proof.v2" ||
     liveAuth?.sourceSha !== candidateSha ||
     liveAuth?.stagingDeploymentId !== stagingDeploymentId ||
-    !["github", "google"].includes(liveAuth?.flow?.method) ||
-    liveAuth?.flow?.environment !== "staging" ||
+    JSON.stringify(Object.keys(liveAuth?.flows ?? {})) !==
+      JSON.stringify(authMethods) ||
+    authMethods.some(
+      (method) =>
+        liveAuth.flows[method]?.success?.method !== method ||
+        liveAuth.flows[method]?.success?.environment !== "staging" ||
+        liveAuth.flows[method]?.cancellation?.method !== method ||
+        liveAuth.flows[method]?.cancellation?.outcomeCode !== "cancelled",
+    ) ||
     liveAuth?.negative?.wrongOauthState !== "refused" ||
     liveAuth?.negative?.wrongBrowserBinding !== "refused" ||
-    liveAuth?.negative?.wrongNativePkceVerifier !== "refused"
+    liveAuth?.negative?.wrongNativePkceVerifier !== "refused" ||
+    liveAuth?.negative?.wrongPasskeyChallenge !== "refused"
   ) {
-    refuser("one real system-browser provider proof is required");
+    refuser("the complete real system-browser provider matrix is required");
   }
   const expectedDriver = platform.startsWith("macos-")
     ? "xctest"

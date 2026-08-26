@@ -3,6 +3,7 @@ import type {
   PromotionAuthorityFaultRecovery,
   PromotionAuthorityFaultState,
 } from "../../../shared/promotion-faultable-do";
+import { PROMOTION_AUTHORITY_FAULT_ACTIVE } from "../../../shared/promotion-faultable-do";
 
 import type { ApiEnv } from "./env";
 
@@ -33,6 +34,7 @@ interface AuthorityTarget {
   binding: string;
   className: string;
   stub: PromotionAuthorityStub;
+  businessOperation(): Promise<void>;
 }
 
 const AUTH_TARGETS: Record<string, { binding: string; className: string }> = {
@@ -50,35 +52,60 @@ function apiTarget(
   targetId: string,
 ): AuthorityTarget | null {
   if (authority === "api-workspace") {
+    const stub = env.WORKSPACES.getByName(targetId);
     return {
       worker: "punks-api-staging",
       binding: "WORKSPACES",
       className: "WorkspaceDO",
-      stub: env.WORKSPACES.getByName(targetId),
+      stub,
+      async businessOperation() {
+        const result = await stub.execute(null);
+        if (!result.ok && result.code === "internal") {
+          throw new Error(PROMOTION_AUTHORITY_FAULT_ACTIVE);
+        }
+      },
     };
   }
   if (authority === "api-workspace-slug") {
+    const stub = env.WORKSPACE_SLUGS.getByName(targetId);
     return {
       worker: "punks-api-staging",
       binding: "WORKSPACE_SLUGS",
       className: "WorkspaceSlugDO",
-      stub: env.WORKSPACE_SLUGS.getByName(targetId),
+      stub,
+      async businessOperation() {
+        await stub.resolve();
+      },
     };
   }
   if (authority === "api-conversation") {
+    const stub = env.CONVERSATIONS.getByName(targetId);
     return {
       worker: "punks-api-staging",
       binding: "CONVERSATIONS",
       className: "ConversationDO",
-      stub: env.CONVERSATIONS.getByName(targetId),
+      stub,
+      async businessOperation() {
+        const result = await stub.history(null);
+        if (!result.ok && result.code === "content_unavailable") {
+          throw new Error(PROMOTION_AUTHORITY_FAULT_ACTIVE);
+        }
+      },
     };
   }
   if (authority === "api-message-content") {
+    const stub = env.MESSAGE_CONTENT.getByName(targetId);
     return {
       worker: "punks-api-staging",
       binding: "MESSAGE_CONTENT",
       className: "MessageContentDO",
-      stub: env.MESSAGE_CONTENT.getByName(targetId),
+      stub,
+      async businessOperation() {
+        const result = await stub.readAuthorized(null);
+        if (!result.ok && result.code === "storage_unavailable") {
+          throw new Error(PROMOTION_AUTHORITY_FAULT_ACTIVE);
+        }
+      },
     };
   }
   return null;
@@ -106,13 +133,18 @@ function target(
         observePromotionFault: () =>
           env.AUTH_PROMOTION_FAULTS.observePromotionFault(identity),
       },
+      async businessOperation() {
+        await env.AUTH_PROMOTION_FAULTS.observePromotionBusinessOperation(
+          identity,
+        );
+      },
     };
   }
   if (identity.authority === "erasure-registry") {
     return {
       worker: "punks-erasure-staging",
-      binding: "PROMOTION_AUTHORITY_FAULTS",
-      className: "PromotionAuthorityFaultDO",
+      binding: "ERASURE_REGISTRY",
+      className: "ErasureRegistry",
       stub: {
         injectPromotionFault: (input) =>
           env.ERASURE_PROMOTION_FAULTS.injectPromotionFault(input),
@@ -123,13 +155,25 @@ function target(
         observePromotionFault: () =>
           env.ERASURE_PROMOTION_FAULTS.observePromotionFault(identity),
       },
+      async businessOperation() {
+        const messageId = "00000000-0000-8000-8000-000000000058";
+        const result = await env.ERASURE_REGISTRY.lookup({
+          workspaceId: "00000000-0000-8000-8000-000000000059",
+          conversationId: "00000000-0000-8000-8000-000000000060",
+          messageId,
+          generationId: messageId,
+        });
+        if (!result.ok && result.code === "storage_unavailable") {
+          throw new Error(PROMOTION_AUTHORITY_FAULT_ACTIVE);
+        }
+      },
     };
   }
   if (identity.authority === "internal-event-signature") {
     return {
       worker: "punks-attestation-staging",
-      binding: "PROMOTION_AUTHORITY_FAULTS",
-      className: "PromotionAuthorityFaultDO",
+      binding: "ATTESTATION",
+      className: "AttestationWorker",
       stub: {
         injectPromotionFault: (input) =>
           env.ATTESTATION_PROMOTION_FAULTS.injectPromotionFault(input),
@@ -139,6 +183,23 @@ function target(
           env.ATTESTATION_PROMOTION_FAULTS.probePromotionFault(identity),
         observePromotionFault: () =>
           env.ATTESTATION_PROMOTION_FAULTS.observePromotionFault(identity),
+      },
+      async businessOperation() {
+        const response = await env.ATTESTATION.fetch(
+          new Request("https://punks-attestation/internal/v1/attest", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: "{}",
+          }),
+        );
+        if (response.status === 503) {
+          throw new Error(PROMOTION_AUTHORITY_FAULT_ACTIVE);
+        }
+        if (response.status !== 400) {
+          throw new Error(
+            "Attestation business probe returned an invalid status",
+          );
+        }
       },
     };
   }
@@ -191,8 +252,13 @@ export async function observePromotionAuthorityFault(
   identity: PromotionAuthorityFaultIdentity,
 ): Promise<PromotionAuthorityBoundaryState> {
   const selected = target(env, identity);
-  return observed(
-    selected,
-    await selected.stub.observePromotionFault(identity.executionId),
-  );
+  await selected.businessOperation();
+  const state = await selected.stub.probePromotionFault(identity.executionId);
+  if (state === null) throw new Error("promotion authority fault is missing");
+  if (state.phase !== "recovered") {
+    throw new Error(
+      `${PROMOTION_AUTHORITY_FAULT_ACTIVE}:${state.phase}:${state.type}`,
+    );
+  }
+  return observed(selected, state);
 }

@@ -77,7 +77,10 @@ const allowedSecretSteps = {
     "verify_staging/prove_live_staging_auth",
     "build/exercise_installed_candidate",
   ],
-  PUNKS_LIVE_AUTH_FLOW_ID: ["verify_staging/prove_live_staging_auth"],
+  PUNKS_LIVE_AUTH_MATRIX: ["verify_staging/prove_live_staging_auth"],
+  PUNKS_OPERATIONAL_BUDGET_OBSERVATION: [
+    "publish_promotion/observe_github_cadence",
+  ],
   PUNKS_R2_PRIMARY_API_TOKEN: [
     "publish_promotion/publish_immutable_proofs",
     "publish_promotion/materialize_operational_head",
@@ -555,15 +558,17 @@ function validateWorkflow(workflow) {
     "scripts/candidate/live-staging-auth-proof.mjs",
     '--source-sha "$SOURCE_SHA"',
     '--staging-deployment-id "$STAGING_DEPLOYMENT_ID"',
-    '--flow-id "$PUNKS_LIVE_AUTH_FLOW_ID"',
+    '--matrix "$RUNNER_TEMP/punks-live-auth-matrix.json"',
+    "unset PUNKS_LIVE_AUTH_MATRIX",
+    'rm -f "$RUNNER_TEMP/punks-live-auth-matrix.json"',
     "live-staging-auth-proof.json",
   ]);
   invariant(
     proveLiveAuth.env?.PUNKS_OPERATOR_TOKEN ===
       workflowExpression("secrets.PUNKS_OPERATOR_PROVISIONING_TOKEN") &&
-      proveLiveAuth.env?.PUNKS_LIVE_AUTH_FLOW_ID ===
-        workflowExpression("secrets.PUNKS_LIVE_AUTH_FLOW_ID"),
-    "live staging Auth lacks its protected flow/operator coordinates",
+      proveLiveAuth.env?.PUNKS_LIVE_AUTH_MATRIX ===
+        workflowExpression("secrets.PUNKS_LIVE_AUTH_MATRIX"),
+    "live staging Auth lacks its protected matrix/operator coordinates",
   );
   const uploadStagingProof = workflowStep(
     verify_staging,

@@ -212,6 +212,7 @@ test("the aggregate validates, publishes and only then activates the exact draft
     "the completed dependency must be downloaded directly without polling",
   );
   const publishStep = step("publish_promotion", "publish_immutable_proofs");
+  const cadence = step("publish_promotion", "observe_github_cadence");
   const operationalHead = step(
     "publish_promotion",
     "materialize_operational_head",
@@ -219,8 +220,29 @@ test("the aggregate validates, publishes and only then activates the exact draft
   const activate = step("publish_promotion", "activate_verified_draft");
   assert.match(publishStep.run, /scripts\/promotion-publish\.mjs/);
   assert.match(
+    cadence.run,
+    /scripts\/candidate\/github-cadence-observation\.mjs/,
+  );
+  assert.match(cadence.run, /--run-id "\$GITHUB_RUN_ID"/);
+  assert.match(cadence.run, /--run-attempt "\$GITHUB_RUN_ATTEMPT"/);
+  assert.match(
+    cadence.run,
+    /--budget-observation "\$RUNNER_TEMP\/punks-operational-budget-observation\.json"/,
+  );
+  assert.match(cadence.run, /unset PUNKS_OPERATIONAL_BUDGET_OBSERVATION/);
+  assert.match(cadence.run, /github-cadence-observation\.json/);
+  assert.equal(cadence.env?.GITHUB_TOKEN, "${{ github.token }}");
+  assert.equal(
+    cadence.env?.PUNKS_OPERATIONAL_BUDGET_OBSERVATION,
+    "${{ secrets.PUNKS_OPERATIONAL_BUDGET_OBSERVATION }}",
+  );
+  assert.match(
     operationalHead.run,
     /scripts\/candidate\/operational-release-head\.mjs/,
+  );
+  assert.match(
+    operationalHead.run,
+    /--cadence-observation candidate\/github-cadence-observation\.json/,
   );
   assert.match(operationalHead.run, /operational-release-head\.json/);
   assert.match(operationalHead.run, /validateOperationalReleaseHead/);
@@ -241,8 +263,8 @@ test("the aggregate validates, publishes and only then activates the exact draft
     "a prerelease is excluded from GitHub's releases/latest endpoint",
   );
   assert.ok(
-    publish.steps.indexOf(publishStep) <
-      publish.steps.indexOf(operationalHead) &&
+    publish.steps.indexOf(publishStep) < publish.steps.indexOf(cadence) &&
+      publish.steps.indexOf(cadence) < publish.steps.indexOf(operationalHead) &&
       publish.steps.indexOf(operationalHead) < publish.steps.indexOf(activate),
     "release activation must follow immutable publication and the signed operational head",
   );

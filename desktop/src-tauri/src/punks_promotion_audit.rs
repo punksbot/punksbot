@@ -1,11 +1,12 @@
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::{
+    collections::HashSet,
     fs::{read, File, OpenOptions},
     io::Write,
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicU64, Ordering},
         Mutex, OnceLock,
     },
     time::{SystemTime, UNIX_EPOCH},
@@ -64,7 +65,7 @@ struct IpcObservation<'a> {
 
 static IPC_LOG: OnceLock<Option<Mutex<File>>> = OnceLock::new();
 static IPC_SEQUENCE: AtomicU64 = AtomicU64::new(0);
-static LIVE_FOLLOW_RECORDED: AtomicBool = AtomicBool::new(false);
+static LIVE_FOLLOW_RECORDED: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
 
 fn sha256(bytes: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
@@ -191,22 +192,32 @@ pub(crate) fn record_follow_conformance() -> Result<(), String> {
     Ok(())
 }
 
-pub(crate) fn record_live_follow_conformance_if_ready() {
-    if LIVE_FOLLOW_RECORDED.load(Ordering::Acquire) {
+pub(crate) fn record_live_follow_conformance_if_ready(operation_id: &str) {
+    let recorded = LIVE_FOLLOW_RECORDED.get_or_init(|| Mutex::new(HashSet::new()));
+    if recorded
+        .lock()
+        .is_ok_and(|recorded| recorded.contains(operation_id))
+    {
         return;
     }
-    let Ok(scenarios) = punks_account_client::promotion_live_follow_conformance() else {
+    let Ok(scenarios) = punks_account_client::promotion_live_follow_conformance(operation_id)
+    else {
         return;
     };
-    let coordinates = serde_json::json!({ "scenarios": scenarios });
+    let coordinates = serde_json::json!({
+        "operationId": operation_id,
+        "scenarios": scenarios,
+    });
     let Ok(bytes) = serde_json::to_vec(&coordinates) else {
         return;
     };
-    if bytes.len() > 2_048
-        || LIVE_FOLLOW_RECORDED
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_err()
-    {
+    if bytes.len() > 2_048 {
+        return;
+    }
+    let Ok(mut recorded) = recorded.lock() else {
+        return;
+    };
+    if !recorded.insert(operation_id.to_string()) {
         return;
     }
     record_ipc_coordinates(

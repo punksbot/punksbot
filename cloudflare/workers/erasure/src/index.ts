@@ -212,8 +212,37 @@ export class RuntimeIdentityService extends WorkerEntrypoint<CloudflareBindings>
   }
 }
 
-/** Worker-local Durable Object that carries an injected Erasure service fault. */
-export class PromotionAuthorityFaultDO extends PromotionFaultableDurableObject<ErasurePromotionEnv> {}
+/** Worker-local fence whose fingerprint covers the real Erasure registry. */
+export class PromotionAuthorityFaultDO extends PromotionFaultableDurableObject<ErasurePromotionEnv> {
+  protected override async promotionRecoveryFingerprint(): Promise<string> {
+    const objects: Array<{
+      key: string;
+      etag: string;
+      size: number;
+      uploaded: string;
+    }> = [];
+    let cursor: string | undefined;
+    do {
+      const page = await this.env.ERASURE_TOMBSTONES.list({
+        ...(cursor === undefined ? {} : { cursor }),
+        limit: 1_000,
+      });
+      objects.push(
+        ...page.objects.map(({ key, etag, size, uploaded }) => ({
+          key,
+          etag,
+          size,
+          uploaded: uploaded.toISOString(),
+        })),
+      );
+      if (objects.length > 100_000) {
+        throw new Error("promotion Erasure registry fingerprint is unbounded");
+      }
+      cursor = page.truncated ? page.cursor : undefined;
+    } while (cursor !== undefined);
+    return digestHex(canonicalJson(objects));
+  }
+}
 
 /** Private service binding for faulting the Erasure authority itself. */
 export class PromotionAuthorityFaultService extends WorkerEntrypoint<ErasurePromotionEnv> {
@@ -258,6 +287,15 @@ export class PromotionAuthorityFaultService extends WorkerEntrypoint<ErasureProm
 export default class ErasureRegistry extends WorkerEntrypoint<CloudflareBindings> {
   /** Records one create-only tombstone or replays the exact prior decision. */
   async record(input: unknown): Promise<RecordErasureResult> {
+    try {
+      const available =
+        await this.env.PROMOTION_AUTHORITY_FAULTS.getByName(
+          "erasure-registry",
+        ).promotionServiceAvailable();
+      if (!available) return { ok: false, code: "storage_unavailable" };
+    } catch {
+      return { ok: false, code: "storage_unavailable" };
+    }
     const request = validateRecordInput(input);
     if (request === null) {
       return { ok: false, code: "invalid_request" };
@@ -311,6 +349,15 @@ export default class ErasureRegistry extends WorkerEntrypoint<CloudflareBindings
 
   /** Looks up the immutable tombstone for an exact Message scope. */
   async lookup(input: unknown): Promise<LookupErasureResult> {
+    try {
+      const available =
+        await this.env.PROMOTION_AUTHORITY_FAULTS.getByName(
+          "erasure-registry",
+        ).promotionServiceAvailable();
+      if (!available) return { ok: false, code: "storage_unavailable" };
+    } catch {
+      return { ok: false, code: "storage_unavailable" };
+    }
     const scope = validateScopeInput(input);
     if (scope === null) {
       return { ok: false, code: "invalid_request" };

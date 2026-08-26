@@ -600,6 +600,11 @@ export class MessageContentDO extends PromotionFaultableDurableObject<ApiEnv> {
   private async readAuthorizedExclusively(
     input: unknown,
   ): Promise<ReadMessageContentResult> {
+    try {
+      await this.requirePromotionAuthorityAvailable();
+    } catch {
+      return { ok: false, code: "storage_unavailable" };
+    }
     const request = this.validateRead(input);
     if (request === null) {
       return { ok: false, code: "invalid_request" };

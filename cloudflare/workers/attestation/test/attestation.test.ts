@@ -1,6 +1,6 @@
 import { schnorr } from "@noble/curves/secp256k1.js";
 import type { AttestationResponse } from "@punks/contracts";
-import { SELF } from "cloudflare:test";
+import { SELF, env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 
 import { serializeNostrEvent } from "../src/nostr";
@@ -20,6 +20,54 @@ async function requestAttestation(body: unknown): Promise<Response> {
 }
 
 describe("private attestation Worker", () => {
+  it("fences the ordinary signing path until service-state recovery completes", async () => {
+    const identity = {
+      executionId: "929292929292:windows-x64:coupure:internal-event-signature",
+      candidateSha: "91".repeat(20),
+      stagingDeploymentId: `sha256:${"92".repeat(32)}`,
+      type: "coupure" as const,
+      authority: "internal-event-signature",
+      target: {
+        kind: "service" as const,
+        id: "internal-event-signature",
+      },
+    };
+    const fault = env.PROMOTION_AUTHORITY_FAULTS.getByName(
+      "internal-event-signature",
+    );
+    await expect(fault.injectPromotionFault(identity)).resolves.toMatchObject({
+      phase: "injected",
+      stateFingerprint: expect.stringMatching(/^[0-9a-f]{64}$/u),
+    });
+    const body = {
+      purpose: "workspace-journal",
+      event: {
+        created_at: 1_787_227_200,
+        kind: 50000,
+        tags: [
+          ["workspace", "58975ca8-3b75-42c7-a13a-51c9d7306200"],
+          ["cursor", "1"],
+          ["command", "537dc710-324c-4d4a-b8dc-a1fd8c177537"],
+          ["contract", "workspace.create@1"],
+          ["actor", "punk", "punk_owner"],
+        ],
+        content: '{"schemaVersion":1}',
+      },
+    };
+    expect((await requestAttestation(body)).status).toBe(503);
+    for (const proof of [
+      "roll-forward",
+      "rpo-logique-nul",
+      "session-non-restauree",
+      "recu-resistant-pitr",
+    ] as const) {
+      await expect(
+        fault.recoverPromotionFault({ ...identity, proof }),
+      ).resolves.toMatchObject({ proof });
+    }
+    expect((await requestAttestation(body)).status).toBe(200);
+  });
+
   it("produces a NIP-01 id and a valid BIP-340 Schnorr signature", async () => {
     const response = await SELF.fetch(
       "https://attestation.invalid/internal/v1/attest",

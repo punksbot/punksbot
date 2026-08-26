@@ -30,7 +30,7 @@ import {
 import { validateResilienceObservation } from "./resilience-observation.mjs";
 import { validateInstalledRawEvidence } from "./raw-evidence.mjs";
 import { exerciseReviewedInstalledCandidate } from "./reviewed-installed-driver.mjs";
-import { validateLiveAuthProof } from "./live-staging-auth-proof.mjs";
+import { validateLiveAuthMatrixProof } from "./live-staging-auth-proof.mjs";
 
 export { REQUIRED_STORIES };
 
@@ -132,6 +132,7 @@ function loadStagingFixture(path, candidateSha) {
       "sourceSha",
       "origin",
       "sessionId",
+      "sessionRevocationId",
       "punkId",
       "workspaceId",
       "workspaceSlug",
@@ -147,6 +148,7 @@ function loadStagingFixture(path, candidateSha) {
     document.sourceSha !== candidateSha ||
     document.origin !== "https://staging.punks.bot" ||
     !UUID_RE.test(document.sessionId ?? "") ||
+    !UUID_RE.test(document.sessionRevocationId ?? "") ||
     !UUID_RE.test(document.punkId ?? "") ||
     !UUID_RE.test(document.workspaceId ?? "") ||
     !WORKSPACE_SLUG_RE.test(document.workspaceSlug ?? "") ||
@@ -164,6 +166,7 @@ function loadStagingFixture(path, candidateSha) {
   return {
     origin: document.origin,
     sessionId: document.sessionId,
+    sessionRevocationId: document.sessionRevocationId,
     punkId: document.punkId,
     workspaceId: document.workspaceId,
     workspaceSlug: document.workspaceSlug,
@@ -256,23 +259,42 @@ function loadLiveAuthProof(
   const authWorker = stagingWorkers.find(
     ({ name }) => name === "punks-auth-staging",
   );
-  if (authWorker === undefined || !UUID_RE.test(proof?.flow?.flowId ?? "")) {
-    fail("live staging Auth proof has no exact Auth Worker/flow");
+  const methods = ["google", "github", "passkey"];
+  if (
+    authWorker === undefined ||
+    methods.some(
+      (method) =>
+        !UUID_RE.test(proof?.flows?.[method]?.success?.flowId ?? "") ||
+        !UUID_RE.test(proof?.flows?.[method]?.cancellation?.flowId ?? ""),
+    )
+  ) {
+    fail("live staging Auth proof has no exact Auth Worker/matrix");
   }
+  const matrix = Object.fromEntries(
+    methods.map((method) => [
+      method,
+      {
+        successFlowId: proof.flows[method].success.flowId,
+        cancellationFlowId: proof.flows[method].cancellation.flowId,
+      },
+    ]),
+  );
   try {
-    validateLiveAuthProof(proof, {
+    validateLiveAuthMatrixProof(proof, {
       sourceSha: candidateSha,
       stagingDeploymentId,
-      flowId: proof.flow.flowId,
+      matrix,
       authWorkerVersionId: authWorker.versionId,
     });
   } catch (error) {
     fail(error instanceof Error ? error.message : String(error));
   }
-  if (
-    proof.flow.sessionId !== fixture.sessionId ||
-    proof.flow.punkId !== fixture.punkId
-  ) {
+  const installedSessions = methods.filter(
+    (method) =>
+      proof.flows[method].success.sessionId === fixture.sessionId &&
+      proof.flows[method].success.punkId === fixture.punkId,
+  );
+  if (installedSessions.length !== 1) {
     fail("live Auth proof does not own the installed promotion Session");
   }
   return proof;

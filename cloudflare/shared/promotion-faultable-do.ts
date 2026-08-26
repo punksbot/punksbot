@@ -112,6 +112,40 @@ function state(
  * instance, rather than in the independent receipt controller.
  */
 export class PromotionFaultableDurableObject<Env> extends DurableObject<Env> {
+  /**
+   * Shared business-path fence. Normal authority operations call this before
+   * reading or mutating state; promotion controller RPCs are not a substitute.
+   */
+  protected async requirePromotionAuthorityAvailable(): Promise<void> {
+    const existing =
+      await this.ctx.storage.get<StoredPromotionAuthorityFault>(STORAGE_KEY);
+    if (existing !== undefined && existing.current.phase !== "recovered") {
+      throw new Error(
+        `${PROMOTION_AUTHORITY_FAULT_ACTIVE}:${existing.current.phase}:${existing.current.type}`,
+      );
+    }
+  }
+
+  protected async promotionAuthorityIsAvailable(): Promise<boolean> {
+    try {
+      await this.requirePromotionAuthorityAvailable();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Service-boundary form used by real stateless Worker entrypoints. */
+  async requirePromotionServiceAvailable(): Promise<boolean> {
+    await this.requirePromotionAuthorityAvailable();
+    return true;
+  }
+
+  /** Non-throwing service fence for normal Worker entrypoints. */
+  async promotionServiceAvailable(): Promise<boolean> {
+    return this.promotionAuthorityIsAvailable();
+  }
+
   protected async promotionRecoveryFingerprint(): Promise<string> {
     const digest = await crypto.subtle.digest(
       "SHA-256",

@@ -4,13 +4,16 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { canonicalSha256 } from "../migration-manifest-lib.mjs";
 import { verifierSignatureRecu } from "../release-graph-lib.mjs";
+import { validateGithubCadenceObservation } from "./github-cadence-observation.mjs";
+import { operationalEvidenceDigests } from "./operational-release-evidence.mjs";
+
+export { operationalEvidenceDigests } from "./operational-release-evidence.mjs";
 
 const PHASES = Object.freeze({
   expansion: Object.freeze(["E0", "E1", "E2", "E3", "E4"]),
   active: Object.freeze(["A0", "A1", "A2", "A3", "A4"]),
 });
 const SHA1_RE = /^[0-9a-f]{40}$/u;
-const SHA256_RE = /^[0-9a-f]{64}$/u;
 const DEPLOYMENT_RE = /^sha256:[0-9a-f]{64}$/u;
 
 function fail(message) {
@@ -27,10 +30,6 @@ function exact(value, keys, label) {
   ) {
     fail(`${label} has an unexpected shape`);
   }
-}
-
-function instant(base, offset) {
-  return new Date(base + offset).toISOString();
 }
 
 async function signedReceipt({ id, content, approbation }) {
@@ -59,34 +58,6 @@ async function signedReceipt({ id, content, approbation }) {
   };
 }
 
-function evidenceDigests(dossier, publicationResult) {
-  const receipt = publicationResult?.objets?.find(
-    ({ sorte }) => sorte === "recu",
-  );
-  if (!SHA256_RE.test(receipt?.sha256 ?? "")) {
-    fail("published promotion Receipt digest is missing");
-  }
-  const values = {
-    E0: canonicalSha256(dossier.gates),
-    E1: canonicalSha256(dossier.liaison?.staging),
-    E2: canonicalSha256(dossier.parcours),
-    E3: canonicalSha256(dossier.accessibilite),
-    E4: canonicalSha256({
-      recuperation: dossier.recuperation,
-      retrait: dossier.retrait,
-    }),
-    A0: canonicalSha256(dossier.liaison?.artefacts),
-    A1: canonicalSha256(dossier.parcours),
-    A2: canonicalSha256(dossier.fautes),
-    A3: canonicalSha256({ scans: dossier.scans, goldens: dossier.goldens }),
-    A4: receipt.sha256,
-  };
-  if (Object.values(values).some((value) => !SHA256_RE.test(value))) {
-    fail("one operational evidence digest is invalid");
-  }
-  return values;
-}
-
 async function buildExecution({
   phase,
   sourceSha,
@@ -94,8 +65,11 @@ async function buildExecution({
   dossierSha256,
   evidence,
   approbation,
-  baseTime,
-  offset,
+  observations,
+  topology,
+  budgets,
+  artifactHashes,
+  githubRun,
   predecessor,
 }) {
   const releaseId = `tranche:1/${phase}/${sourceSha}`;
@@ -114,15 +88,23 @@ async function buildExecution({
       deploiement: stagingDeploymentId,
       "dossier-preuve-sha256": dossierSha256,
       precedent: predecessor,
-      instant: instant(baseTime, offset),
+      instant: observations[PHASES[phase][0]].startedAt,
     },
   });
   let previousEvent = start.sha256;
   let previousStep = null;
   const steps = [];
   for (const [index, step] of PHASES[phase].entries()) {
-    const startedAt = instant(baseTime, offset + index * 2 + 1);
-    const closedAt = instant(baseTime, offset + index * 2 + 2);
+    const observation = observations[step];
+    const startedAt = observation.startedAt;
+    const closedAt = observation.closedAt;
+    const workerPercentage =
+      phase === "expansion" ? [0, 1, 10, 50, 100][index] : 100;
+    const workers = topology.workers.map((worker) => ({
+      ...worker,
+      pourcentage: workerPercentage,
+    }));
+    const hashesDesktop = phase === "active" ? artifactHashes : [];
     const receipt = await signedReceipt({
       id: `recu-etape-${executionId}-${step}`,
       approbation,
@@ -138,6 +120,22 @@ async function buildExecution({
         deploiement: stagingDeploymentId,
         "precedent-etape-sha256": previousStep,
         "preuve-sha256": evidence[step],
+        observation,
+        "github-run": githubRun,
+        workers,
+        workflows: topology.workflows,
+        "generation-compatibilite": topology["generation-compatibilite"],
+        "hashes-desktop": hashesDesktop,
+        "topologie-sha256": canonicalSha256(topology),
+        "verdicts-metriques": budgets.verdicts,
+        "verdicts-metriques-sha256": canonicalSha256(budgets.verdicts),
+        "budgets-observation-sha256": canonicalSha256(budgets),
+        bookmarks: budgets.bookmarks,
+        dlq: budgets.dlq,
+        outboxes: budgets.outboxes,
+        incidents: budgets.incidents,
+        "actions-steps": observation.actionsSteps,
+        echantillons: observation.sampleCount,
         heures: { debut: startedAt, fin: closedAt },
         resultat: "vert",
       },
@@ -186,7 +184,7 @@ async function buildExecution({
       "sha-punks": sourceSha,
       deploiement: stagingDeploymentId,
       "precedent-evenement-sha256": previousEvent,
-      instant: instant(baseTime, offset + 12),
+      instant: observations[PHASES[phase].at(-1)].closedAt,
     },
   });
   const transitionReceipt = await signedReceipt({
@@ -203,7 +201,19 @@ async function buildExecution({
       "dossier-preuve-sha256": dossierSha256,
       "recu-execution-precedent-sha256": phaseReceipt.sha256,
       precedent: predecessor,
-      instant: instant(baseTime, offset + 13),
+      "github-run": githubRun,
+      workers: topology.workers,
+      workflows: topology.workflows,
+      "generation-compatibilite": topology["generation-compatibilite"],
+      "hashes-desktop": phase === "active" ? artifactHashes : [],
+      "topologie-sha256": canonicalSha256(topology),
+      "verdicts-metriques-sha256": canonicalSha256(budgets.verdicts),
+      "budgets-observation-sha256": canonicalSha256(budgets),
+      bookmarks: budgets.bookmarks,
+      dlq: budgets.dlq,
+      outboxes: budgets.outboxes,
+      incidents: budgets.incidents,
+      instant: observations[PHASES[phase].at(-1)].closedAt,
     },
   });
   return {
@@ -222,8 +232,8 @@ async function buildExecution({
 export async function buildOperationalReleaseHead({
   dossier,
   publicationResult,
+  cadenceObservation,
   approbation,
-  now = Date.now(),
 }) {
   const sourceSha = dossier?.candidat?.sha;
   const stagingDeploymentId = dossier?.liaison?.staging?.deploiement;
@@ -234,7 +244,16 @@ export async function buildOperationalReleaseHead({
     fail("exact candidate/staging identity is required");
   }
   const dossierSha256 = canonicalSha256(dossier);
-  const evidence = evidenceDigests(dossier, publicationResult);
+  const evidence = operationalEvidenceDigests(dossier, publicationResult);
+  try {
+    validateGithubCadenceObservation(cadenceObservation, {
+      sourceSha,
+      stagingDeploymentId,
+      proofDigests: evidence,
+    });
+  } catch (error) {
+    fail(error instanceof Error ? error.message : String(error));
+  }
   const expansion = await buildExecution({
     phase: "expansion",
     sourceSha,
@@ -242,8 +261,14 @@ export async function buildOperationalReleaseHead({
     dossierSha256,
     evidence,
     approbation,
-    baseTime: now,
-    offset: 0,
+    observations: cadenceObservation.steps,
+    topology: cadenceObservation.topology,
+    budgets: cadenceObservation.budgets,
+    artifactHashes: dossier.liaison.artefacts.map(({ plateforme, sha256 }) => ({
+      plateforme,
+      sha256,
+    })),
+    githubRun: cadenceObservation.run,
     predecessor: null,
   });
   const predecessor = {
@@ -258,8 +283,14 @@ export async function buildOperationalReleaseHead({
     dossierSha256,
     evidence,
     approbation,
-    baseTime: now,
-    offset: 20,
+    observations: cadenceObservation.steps,
+    topology: cadenceObservation.topology,
+    budgets: cadenceObservation.budgets,
+    artifactHashes: dossier.liaison.artefacts.map(({ plateforme, sha256 }) => ({
+      plateforme,
+      sha256,
+    })),
+    githubRun: cadenceObservation.run,
     predecessor,
   });
   const content = {
@@ -270,8 +301,11 @@ export async function buildOperationalReleaseHead({
     stagingDeploymentId,
     dossierSha256,
     promotionReceiptSha256: evidence.A4,
+    topologySha256: cadenceObservation.topologySha256,
+    budgetsSha256: cadenceObservation.budgetsSha256,
+    githubRun: cadenceObservation.run,
     transitions: [expansion, active],
-    createdAt: instant(now, 34),
+    createdAt: cadenceObservation.observedAt,
   };
   const document = { ...content, sha256: canonicalSha256(content) };
   validateOperationalReleaseHead(document, {
@@ -321,6 +355,9 @@ export function validateOperationalReleaseHead(document, expected) {
       "stagingDeploymentId",
       "dossierSha256",
       "promotionReceiptSha256",
+      "topologySha256",
+      "budgetsSha256",
+      "githubRun",
       "transitions",
       "createdAt",
       "sha256",
@@ -335,6 +372,10 @@ export function validateOperationalReleaseHead(document, expected) {
     document.sourceSha !== expected.sourceSha ||
     document.stagingDeploymentId !== expected.stagingDeploymentId ||
     document.dossierSha256 !== expected.dossierSha256 ||
+    !/^[0-9a-f]{64}$/u.test(document.topologySha256 ?? "") ||
+    !/^[0-9a-f]{64}$/u.test(document.budgetsSha256 ?? "") ||
+    document.githubRun?.headSha !== expected.sourceSha ||
+    document.githubRun?.event !== "workflow_dispatch" ||
     document.sha256 !== canonicalSha256(content) ||
     !Array.isArray(document.transitions) ||
     document.transitions.length !== 2 ||
@@ -344,6 +385,7 @@ export function validateOperationalReleaseHead(document, expected) {
     fail("operational head identity or transition order is invalid");
   }
   let previous = null;
+  let operationalStateSha256 = null;
   for (const execution of document.transitions) {
     const expectedSteps = PHASES[execution.programme];
     if (!Array.isArray(execution.steps) || execution.steps.length !== 5) {
@@ -353,13 +395,64 @@ export function validateOperationalReleaseHead(document, expected) {
     let eventChain = execution.startReceipt.sha256;
     let stepChain = null;
     for (const [index, step] of execution.steps.entries()) {
+      const receiptContent = step.receipt.contenu;
+      const expectedPercentage =
+        execution.programme === "expansion" ? [0, 1, 10, 50, 100][index] : 100;
+      const stateSha256 = canonicalSha256({
+        githubRun: receiptContent["github-run"],
+        workflows: receiptContent.workflows,
+        generation: receiptContent["generation-compatibilite"],
+        verdicts: receiptContent["verdicts-metriques"],
+        bookmarks: receiptContent.bookmarks,
+        dlq: receiptContent.dlq,
+        outboxes: receiptContent.outboxes,
+        incidents: receiptContent.incidents,
+      });
+      if (operationalStateSha256 === null) {
+        operationalStateSha256 = stateSha256;
+      }
       if (
         step.step !== expectedSteps[index] ||
-        step.receipt.contenu["precedent-etape-sha256"] !== stepChain ||
-        step.receipt.contenu["duree-minimale-heures"] !== 0 ||
-        step.receipt.contenu.resultat !== "vert" ||
+        receiptContent["precedent-etape-sha256"] !== stepChain ||
+        receiptContent["duree-minimale-heures"] !== 0 ||
+        receiptContent.resultat !== "vert" ||
         Date.parse(step.closedAt) <= Date.parse(step.startedAt) ||
-        step.evidenceSha256 !== step.receipt.contenu["preuve-sha256"]
+        step.evidenceSha256 !== receiptContent["preuve-sha256"] ||
+        receiptContent["topologie-sha256"] !== document.topologySha256 ||
+        receiptContent["budgets-observation-sha256"] !==
+          document.budgetsSha256 ||
+        receiptContent["verdicts-metriques-sha256"] !==
+          canonicalSha256(receiptContent["verdicts-metriques"]) ||
+        canonicalSha256(receiptContent["github-run"]) !==
+          canonicalSha256(document.githubRun) ||
+        canonicalSha256(receiptContent["actions-steps"]) !==
+          canonicalSha256(receiptContent.observation?.actionsSteps) ||
+        receiptContent.echantillons !==
+          receiptContent.observation?.sampleCount ||
+        receiptContent.observation?.topologySha256 !==
+          document.topologySha256 ||
+        receiptContent.observation?.budgetsSha256 !== document.budgetsSha256 ||
+        !Array.isArray(receiptContent.workers) ||
+        receiptContent.workers.length < 1 ||
+        receiptContent.workers.some(
+          (worker) => worker?.pourcentage !== expectedPercentage,
+        ) ||
+        !Array.isArray(receiptContent.workflows) ||
+        !Number.isSafeInteger(receiptContent["generation-compatibilite"]) ||
+        receiptContent["generation-compatibilite"] < 1 ||
+        !Array.isArray(receiptContent["hashes-desktop"]) ||
+        (execution.programme === "expansion"
+          ? receiptContent["hashes-desktop"].length !== 0
+          : receiptContent["hashes-desktop"].length < 1) ||
+        !Array.isArray(receiptContent["verdicts-metriques"]) ||
+        receiptContent["verdicts-metriques"].length !== 36 ||
+        !Array.isArray(receiptContent.bookmarks) ||
+        receiptContent.bookmarks.length < 1 ||
+        receiptContent.dlq?.messages !== 0 ||
+        receiptContent.outboxes?.["en-attente"] !== 0 ||
+        !Array.isArray(receiptContent.incidents) ||
+        receiptContent.incidents.length !== 0 ||
+        stateSha256 !== operationalStateSha256
       ) {
         fail(`operational ${execution.programme} step ${index} is invalid`);
       }
@@ -378,11 +471,22 @@ export function validateOperationalReleaseHead(document, expected) {
     }
     validateReceipt(execution.phaseReceipt, "execution-evenement");
     validateReceipt(execution.transitionReceipt, "transition");
+    const transition = execution.transitionReceipt.contenu;
     if (
       execution.phaseReceipt.contenu["precedent-evenement-sha256"] !==
         eventChain ||
       execution.transitionReceipt.contenu["recu-execution-precedent-sha256"] !==
         execution.phaseReceipt.sha256 ||
+      transition["topologie-sha256"] !== document.topologySha256 ||
+      transition["budgets-observation-sha256"] !== document.budgetsSha256 ||
+      transition["verdicts-metriques-sha256"] !==
+        execution.steps.at(-1).receipt.contenu["verdicts-metriques-sha256"] ||
+      canonicalSha256(transition["github-run"]) !==
+        canonicalSha256(document.githubRun) ||
+      transition.dlq?.messages !== 0 ||
+      transition.outboxes?.["en-attente"] !== 0 ||
+      !Array.isArray(transition.incidents) ||
+      transition.incidents.length !== 0 ||
       JSON.stringify(execution.predecessor) !== JSON.stringify(previous)
     ) {
       fail("operational execution receipt chain is broken");
@@ -400,6 +504,7 @@ function parseArgs(argv) {
   const expected = new Set([
     "--dossier",
     "--publication-result",
+    "--cadence-observation",
     "--depot",
     "--tag",
     "--r2-primaire",
@@ -485,6 +590,9 @@ export async function run(argv = process.argv.slice(2)) {
   const publicationResult = JSON.parse(
     readFileSync(resolve(required("--publication-result")), "utf8"),
   );
+  const cadenceObservation = JSON.parse(
+    readFileSync(resolve(required("--cadence-observation")), "utf8"),
+  );
   const depot = required("--depot");
   const tag = required("--tag");
   const r2 = [
@@ -505,6 +613,7 @@ export async function run(argv = process.argv.slice(2)) {
   const document = await buildOperationalReleaseHead({
     dossier,
     publicationResult,
+    cadenceObservation,
     approbation: frontieres.approbation,
   });
   await publishOperationalReleaseHead({

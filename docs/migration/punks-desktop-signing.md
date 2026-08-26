@@ -22,7 +22,7 @@ four-platform candidate passed.
 
 ## Protected staging fixture and installed driver
 
-The full candidate additionally requires two protected environment secrets.
+The full candidate additionally requires three protected environment secrets.
 They are never exposed to the renderer or copied into a proof:
 
 - `PUNKS_PROMOTION_SESSION` — one fresh JSON bundle for the dedicated staging
@@ -33,7 +33,12 @@ They are never exposed to the renderer or copied into a proof:
   `source_sha`;
 - `PUNKS_OPERATOR_PROVISIONING_TOKEN` — the narrow operator credential used
   only to create or replay the source-bound promotion Workspace and drive the
-  operator-only authority fault boundary.
+  operator-only authority fault boundary;
+- `PUNKS_LIVE_AUTH_MATRIX` — six terminal flow identifiers in the closed
+  Google/GitHub/passkey × success/cancellation matrix. Every flow is created
+  only after the final SHA is deployed and is bound at creation to that SHA and
+  the exact staging deployment. The value contains no cookie, verifier,
+  provider credential or passkey secret.
 
 The workflow snapshots both values into create-once runner files (`0600` where
 the host supports POSIX modes), immediately unsets their environment variables,
@@ -86,13 +91,15 @@ not an embedded fixture. Distributed Session revocation/reconnect remains an
 independent live observation. The installed trace is restricted to one native
 `operationId`, so concurrent subscriptions cannot be spliced together.
 
-The promotion Session is delivered by the same real Google/GitHub system
-browser flow used for the live Auth proof; the helper stores that exact Session
+The promotion Session is delivered by exactly one of the three successful
+system-browser flows in the live Auth matrix; the helper stores that exact Session
 in the operating-system credential store before launch. The proof is read from
 the terminal `DesktopAuthFlowDO` and binds provider callback, returned OAuth
 state, browser binding, provider PKCE, native verifier, Punk and Session to the
 exact Auth Worker version, source SHA and staging deployment. The live Worker
-also performs wrong-state, wrong-browser-binding and wrong-native-PKCE probes.
+requires success and explicit cancellation for Google, GitHub and passkey, and
+also performs wrong-state, wrong-browser-binding, wrong-native-PKCE and
+wrong-passkey-challenge probes.
 The compiled ceremony matrix remains diagnostic and cannot replace this proof.
 
 The promotion fault receipt controller remains operator-only for injection and
@@ -119,7 +126,14 @@ executions. Expansion closes `E0…E4`; activation closes `A0…A4`. Every posit
 segment, step Reçu, `etape-fermee`, `phase-fermee` and transition Reçu is
 chained, content-addressed and signed by both anchored Ed25519 approvers. The
 head is published create-only with the draft and in both locked Punks R2
-buckets; a missing or reordered step keeps the draft inactive.
+buckets; a missing or reordered step keeps the draft inactive. Timestamps,
+conclusions, job IDs and step numbers come from the exact current GitHub Actions
+run attempt. Each Reçu also embeds the canonical ten-surface Cloudflare
+topology, exact Workers percentages, Workflows/generation, desktop hashes,
+bookmarks, DLQ/outboxes/incidents and all 36 production budgets recalculated
+with their raw sample counts and required dimensions. A locally generated
+timestamp, a self-declared green metric or an insufficient Wilson sample cannot
+activate the draft.
 
 Never paste a private key, certificate password or API token into an issue,
 commit, workflow input or terminal transcript. Feed values directly to

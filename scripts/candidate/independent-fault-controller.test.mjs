@@ -19,6 +19,7 @@ const ARTIFACT_SHA256 = "93".repeat(32);
 const AUTHORITIES = ["auth-session", "api-workspace", "api-conversation"];
 const FIXTURE = {
   sessionId: "11111111-1111-4111-8111-111111111111",
+  sessionRevocationId: "66666666-6666-4666-8666-666666666666",
   punkId: "22222222-2222-4222-8222-222222222222",
   workspaceId: "33333333-3333-4333-8333-333333333333",
   workspaceSlug: "promotion-fixture",

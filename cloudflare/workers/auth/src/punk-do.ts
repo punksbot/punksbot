@@ -527,6 +527,9 @@ export class PunkDO extends PromotionFaultableDurableObject<AuthEnv> {
   }
 
   async query(): Promise<PunkResult> {
+    if (!(await this.promotionAuthorityIsAvailable())) {
+      return { ok: false, code: "inactive" };
+    }
     if (this.state() === null) {
       return { ok: false, code: "not_found" };
     }

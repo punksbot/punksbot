@@ -90,6 +90,7 @@ test("binds real platform automation to native IPC and create-only raw evidence"
       rawEvidence: input.rawEvidence,
       fixture: {
         sessionId: "55555555-5555-4555-8555-555555555555",
+        sessionRevocationId: "77777777-7777-4777-8777-777777777777",
         punkId: "66666666-6666-4666-8666-666666666666",
         workspaceId: "11111111-1111-4111-8111-111111111111",
         workspaceSlug: "promotion-fixture",

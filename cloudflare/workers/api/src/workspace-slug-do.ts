@@ -165,7 +165,10 @@ export class WorkspaceSlugDO extends PromotionFaultableDurableObject<ApiEnv> {
     return true;
   }
 
-  resolve(): SlugResolution {
+  async resolve(): Promise<SlugResolution> {
+    if (!(await this.promotionAuthorityIsAvailable())) {
+      return { status: "missing" };
+    }
     const current = this.row();
     if (current === undefined) {
       return { status: "missing" };

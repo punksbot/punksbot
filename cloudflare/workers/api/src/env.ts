@@ -174,6 +174,9 @@ interface PromotionAuthorityFaultBinding extends Fetcher {
   observePromotionFault(
     input: PromotionAuthorityFaultIdentity,
   ): Promise<PromotionAuthorityFaultState>;
+  observePromotionBusinessOperation(
+    input: PromotionAuthorityFaultIdentity,
+  ): Promise<PromotionAuthorityFaultState>;
 }
 
 export interface ApiEnv extends CloudflareBindings {

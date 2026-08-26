@@ -30,7 +30,12 @@ type AccountMergeClaimRow = Record<"intent_id" | "account_role", string>;
 
 export class SessionDO extends PromotionFaultableDurableObject<AuthEnv> {
   protected override async promotionRecoveryFingerprint(): Promise<string> {
-    const current = this.get();
+    let current: SessionRecord | null;
+    try {
+      current = this.readForAccountMerge();
+    } catch {
+      current = null;
+    }
     if (current === null)
       throw new Error("promotion Session target is missing");
     return sha256Hex(canonicalJson(current));
@@ -169,7 +174,8 @@ export class SessionDO extends PromotionFaultableDurableObject<AuthEnv> {
     return true;
   }
 
-  get(): SessionRecord | null {
+  async get(): Promise<SessionRecord | null> {
+    if (!(await this.promotionAuthorityIsAvailable())) return null;
     try {
       return this.readForAccountMerge();
     } catch {
@@ -344,7 +350,7 @@ export class SessionDO extends PromotionFaultableDurableObject<AuthEnv> {
     authenticationMethod: "google" | "github" | "passkey";
     providerSubjectBindingHash: string;
   }): Promise<boolean> {
-    const current = this.get();
+    const current = await this.get();
     const until = Date.parse(options.until);
     if (
       current === null ||
@@ -384,7 +390,7 @@ export class SessionDO extends PromotionFaultableDurableObject<AuthEnv> {
     | (AccountMergeReauthentication & { sessionId: string; punkId: string })
     | null
   > {
-    const session = this.get();
+    const session = await this.get();
     const proof = await this.ctx.storage.get<AccountMergeReauthentication>(
       ACCOUNT_MERGE_REAUTH_KEY,
     );

@@ -43,6 +43,7 @@ export class SessionRevocationDO extends PromotionFaultableDurableObject<AuthEnv
   }
 
   async revoke(): Promise<{ revoked: true; expired: boolean }> {
+    await this.requirePromotionAuthorityAvailable();
     const record = await this.read();
     if (record === null) return { revoked: true, expired: true };
     const expired = Date.parse(record.expiresAt) <= Date.now();
@@ -52,6 +53,18 @@ export class SessionRevocationDO extends PromotionFaultableDurableObject<AuthEnv
       await this.ctx.storage.put(RECORD_KEY, record);
     }
     return { revoked: true, expired };
+  }
+
+  /** Normal read of the revoke-only authority without exposing its capability. */
+  async status(): Promise<{ exists: boolean; revoked: boolean }> {
+    if (!(await this.promotionAuthorityIsAvailable())) {
+      return { exists: false, revoked: false };
+    }
+    const record = await this.read();
+    return {
+      exists: record !== null,
+      revoked: record?.revokedAt !== null && record?.revokedAt !== undefined,
+    };
   }
 
   override async alarm(): Promise<void> {

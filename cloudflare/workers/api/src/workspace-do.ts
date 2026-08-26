@@ -466,6 +466,9 @@ export class WorkspaceDO extends PromotionFaultableDurableObject<ApiEnv> {
   }
 
   async execute(input: unknown): Promise<WorkspaceExecuteResult> {
+    if (!(await this.promotionAuthorityIsAvailable())) {
+      return { ok: false, code: "internal" };
+    }
     const command = parseDirectWorkspaceCommand(input);
     if (
       command === null ||

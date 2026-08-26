@@ -81,7 +81,7 @@ export function promotionAuthorityTargets(fixture, authorities) {
     "auth-punk": { kind: "aggregate", id: fixture?.punkId },
     "auth-session-revocation": {
       kind: "aggregate",
-      id: fixture?.sessionId,
+      id: fixture?.sessionRevocationId,
     },
     "auth-session": { kind: "aggregate", id: fixture?.sessionId },
     "api-workspace": { kind: "aggregate", id: fixture?.workspaceId },

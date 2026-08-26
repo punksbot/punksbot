@@ -23,6 +23,12 @@ interface PromotionAuthorityStub {
   ): Promise<PromotionAuthorityFaultState>;
 }
 
+interface PromotionBusinessAuthorityStub extends PromotionAuthorityStub {
+  query?(): Promise<unknown>;
+  status?(): Promise<unknown>;
+  get?(): Promise<unknown>;
+}
+
 function authorityStub(
   env: AuthEnv,
   authority: string,
@@ -82,5 +88,30 @@ export class PromotionAuthorityFaultService extends WorkerEntrypoint<AuthEnv> {
       input.authority,
       input.target.id,
     ).observePromotionFault(input.executionId);
+  }
+
+  /** Executes one ordinary Auth authority read, then returns its fault state. */
+  async observePromotionBusinessOperation(
+    input: PromotionAuthorityFaultIdentity,
+  ): Promise<PromotionAuthorityFaultState> {
+    const stub = authorityStub(
+      this.env,
+      input.authority,
+      input.target.id,
+    ) as PromotionBusinessAuthorityStub;
+    if (input.authority === "auth-punk") {
+      await stub.query?.();
+    } else if (input.authority === "auth-session-revocation") {
+      await stub.status?.();
+    } else if (input.authority === "auth-session") {
+      await stub.get?.();
+    } else {
+      throw new Error(`unknown Auth promotion authority ${input.authority}`);
+    }
+    const state = await stub.probePromotionFault(input.executionId);
+    if (state === null) {
+      throw new Error("promotion authority fault is missing");
+    }
+    return state;
   }
 }

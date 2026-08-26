@@ -215,14 +215,23 @@ function fixture(platform = "linux-x64") {
     authentication: {
       contour: "navigateur-systeme-provider-reel",
       proof: {
-        schema: "punks.live-staging-auth-proof.v1",
+        schema: "punks.live-staging-auth-matrix-proof.v2",
         sourceSha: SOURCE_SHA,
         stagingDeploymentId: DEPLOYMENT_ID,
-        flow: { method: "github", environment: "staging" },
+        flows: Object.fromEntries(
+          ["google", "github", "passkey"].map((method) => [
+            method,
+            {
+              success: { method, environment: "staging" },
+              cancellation: { method, outcomeCode: "cancelled" },
+            },
+          ]),
+        ),
         negative: {
           wrongOauthState: "refused",
           wrongBrowserBinding: "refused",
           wrongNativePkceVerifier: "refused",
+          wrongPasskeyChallenge: "refused",
         },
       },
     },

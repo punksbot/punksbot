@@ -77,6 +77,40 @@ describe("ErasureRegistry RPC", () => {
     vi.restoreAllMocks();
   });
 
+  it("fences the ordinary lookup path until all recovery receipts preserve state", async () => {
+    const identity = {
+      executionId: "919191919191:linux-x64:coupure:erasure-registry",
+      candidateSha: "91".repeat(20),
+      stagingDeploymentId: `sha256:${"92".repeat(32)}`,
+      type: "coupure" as const,
+      authority: "erasure-registry",
+      target: { kind: "service" as const, id: "erasure-registry" },
+    };
+    const fault = env.PROMOTION_AUTHORITY_FAULTS.getByName("erasure-registry");
+    await expect(fault.injectPromotionFault(identity)).resolves.toMatchObject({
+      phase: "injected",
+      stateFingerprint: expect.stringMatching(/^[0-9a-f]{64}$/u),
+    });
+    await expect(exports.default.lookup(scope)).resolves.toEqual({
+      ok: false,
+      code: "storage_unavailable",
+    });
+    for (const proof of [
+      "roll-forward",
+      "rpo-logique-nul",
+      "session-non-restauree",
+      "recu-resistant-pitr",
+    ] as const) {
+      await expect(
+        fault.recoverPromotionFault({ ...identity, proof }),
+      ).resolves.toMatchObject({ proof });
+    }
+    await expect(exports.default.lookup(scope)).resolves.toEqual({
+      ok: true,
+      tombstone: null,
+    });
+  });
+
   it("records and looks up one canonical Message erasure tombstone", async () => {
     const recorded = await exports.default.record(request);
 

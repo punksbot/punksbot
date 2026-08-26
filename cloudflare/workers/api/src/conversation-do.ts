@@ -3964,6 +3964,11 @@ export class ConversationDO extends PromotionFaultableDurableObject<ApiEnv> {
   }
 
   async history(input: unknown): Promise<MessageHistoryResult> {
+    try {
+      await this.requirePromotionAuthorityAvailable();
+    } catch {
+      return { ok: false, code: "content_unavailable" };
+    }
     if (
       !isMessageHistoryRequest(input) ||
       !validateContract("punks://contracts/message.history@1", input.query)

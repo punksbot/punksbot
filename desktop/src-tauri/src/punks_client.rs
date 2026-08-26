@@ -569,7 +569,7 @@ pub async fn punks_follow_conversation(
             .await?
             .follow_conversation(&conversation_id, after_cursor)
             .await?;
-        let operation_id = uuid::Uuid::new_v4().to_string();
+        let operation_id = connection.operation_id().to_string();
         client.follows.lock().await.insert(
             operation_id.clone(),
             FollowEntry {
@@ -655,7 +655,7 @@ pub async fn punks_follow_next(
         result.is_ok(),
         &coordinates,
     );
-    crate::punks_promotion_audit::record_live_follow_conformance_if_ready();
+    crate::punks_promotion_audit::record_live_follow_conformance_if_ready(&operation_id);
     result
 }
 
@@ -681,7 +681,7 @@ pub async fn punks_confirm_follow_batch(
             "throughCursor": through_cursor,
         }),
     );
-    crate::punks_promotion_audit::record_live_follow_conformance_if_ready();
+    crate::punks_promotion_audit::record_live_follow_conformance_if_ready(&operation_id);
     result
 }
 
