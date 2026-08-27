@@ -13,7 +13,8 @@ describe("desktop OAuth browser page", () => {
       "c".repeat(43),
       "Punksbot",
     ).text();
-    expect(html).toContain('action="/api/auth/v1/desktop/browser/confirm"');
+    expect(html).toContain('action="/api/auth/v1/desktop/browser"');
+    expect(html).not.toContain("/browser/confirm");
     expect(html).not.toContain("/browser/oauth/confirm");
   });
 });

@@ -472,7 +472,7 @@ describe("DesktopAuthFlow protocol (issue #54)", () => {
     form.set("state", launched.state);
     form.set("capability", capability);
     const missingBinding = await route(
-      new Request(`${origin}/api/auth/v1/desktop/browser/confirm`, {
+      new Request(`${origin}/api/auth/v1/desktop/browser`, {
         method: "POST",
         headers: { origin },
         body: form,
@@ -490,7 +490,7 @@ describe("DesktopAuthFlow protocol (issue #54)", () => {
       `=${"x".repeat(43)}`,
     );
     const wrongBinding = await route(
-      new Request(`${origin}/api/auth/v1/desktop/browser/confirm`, {
+      new Request(`${origin}/api/auth/v1/desktop/browser`, {
         method: "POST",
         headers: { origin, cookie: wrongCookie },
         body: wrongBindingForm,
@@ -504,7 +504,7 @@ describe("DesktopAuthFlow protocol (issue #54)", () => {
     exactBindingForm.set("state", launched.state);
     exactBindingForm.set("capability", capability);
     const confirmed = await route(
-      new Request(`${origin}/api/auth/v1/desktop/browser/confirm`, {
+      new Request(`${origin}/api/auth/v1/desktop/browser`, {
         method: "POST",
         headers: {
           origin,
@@ -523,34 +523,39 @@ describe("DesktopAuthFlow protocol (issue #54)", () => {
     });
   });
 
-  it("conserve l’alias OAuth historique avec la même liaison navigateur", async () => {
-    const subject = `desktop-legacy-confirm-${crypto.randomUUID()}`;
-    const { started } = await startDesktop();
-    if (started === null) throw new Error("desktop start absent");
-    const launched = await launchOAuth(started);
-    const completed = await finishOAuth(launched, subject);
-    const page = await completed.text();
-    const capability = page.match(
-      /name="capability" value="([A-Za-z0-9_-]{43})"/u,
-    )?.[1];
-    if (capability === undefined) throw new Error("capability absente");
-    const form = new FormData();
-    form.set("flow", started.flowId);
-    form.set("state", launched.state);
-    form.set("capability", capability);
+  it("conserve les aliases de confirmation avec la même liaison navigateur", async () => {
+    for (const alias of [
+      "/api/auth/v1/desktop/browser/confirm",
+      "/api/auth/v1/desktop/browser/oauth/confirm",
+    ]) {
+      const subject = `desktop-legacy-confirm-${crypto.randomUUID()}`;
+      const { started } = await startDesktop();
+      if (started === null) throw new Error("desktop start absent");
+      const launched = await launchOAuth(started);
+      const completed = await finishOAuth(launched, subject);
+      const page = await completed.text();
+      const capability = page.match(
+        /name="capability" value="([A-Za-z0-9_-]{43})"/u,
+      )?.[1];
+      if (capability === undefined) throw new Error("capability absente");
+      const form = new FormData();
+      form.set("flow", started.flowId);
+      form.set("state", launched.state);
+      form.set("capability", capability);
 
-    const confirmed = await route(
-      new Request(`${origin}/api/auth/v1/desktop/browser/oauth/confirm`, {
-        method: "POST",
-        headers: { origin, cookie: launched.cookie },
-        body: form,
-      }),
-      authEnv,
-    );
-    expect(confirmed.status).toBe(303);
-    expect(confirmed.headers.get("location")).toBe(
-      `punks-local://auth/complete?flow=${started.flowId}`,
-    );
+      const confirmed = await route(
+        new Request(`${origin}${alias}`, {
+          method: "POST",
+          headers: { origin, cookie: launched.cookie },
+          body: form,
+        }),
+        authEnv,
+      );
+      expect(confirmed.status).toBe(303);
+      expect(confirmed.headers.get("location")).toBe(
+        `punks-local://auth/complete?flow=${started.flowId}`,
+      );
+    }
   });
 
   it("scelle au confirm un grant 5 min ciblé, refuse cross-purpose et rejeu", async () => {
