@@ -88,6 +88,24 @@ function browserUrl(env: AuthEnv, flowId: string): string {
   return url.toString();
 }
 
+function refreshBrowserBinding(
+  response: Response,
+  flow: DesktopAuthFlowRecord,
+): Response {
+  if (flow.oauthState === null || flow.browserBinding === null) {
+    return response;
+  }
+  const maxAge = Math.max(
+    1,
+    Math.floor((Date.parse(flow.expiresAt) - Date.now()) / 1_000),
+  );
+  response.headers.set(
+    "set-cookie",
+    oauthCookie(flow.oauthState, flow.browserBinding, maxAge),
+  );
+  return response;
+}
+
 function requestMessage<T extends { message: string }>(
   value: T,
 ): value is T & { message: "request" } {
@@ -825,11 +843,14 @@ export async function completeDesktopOAuth(input: {
     );
   }
   return recorded.ok
-    ? confirmationPage(
-        flow.flowId,
-        flow.oauthState,
-        capability,
-        pending.profile.displayName,
+    ? refreshBrowserBinding(
+        confirmationPage(
+          flow.flowId,
+          flow.oauthState,
+          capability,
+          pending.profile.displayName,
+        ),
+        recorded.flow,
       )
     : problem(400, "invalid_input", "Desktop OAuth completion is invalid");
 }
@@ -881,11 +902,14 @@ export async function resumeDesktopOAuthAccount(
   if (capability === null) {
     return problem(400, "invalid_input", "Account confirmation is invalid");
   }
-  return confirmationPage(
-    flow.flowId,
-    flow.oauthState,
-    capability,
-    pending.identity.profile.displayName,
+  return refreshBrowserBinding(
+    confirmationPage(
+      flow.flowId,
+      flow.oauthState,
+      capability,
+      pending.identity.profile.displayName,
+    ),
+    flow,
   );
 }
 

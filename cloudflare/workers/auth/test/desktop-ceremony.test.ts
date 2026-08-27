@@ -385,6 +385,23 @@ describe("DesktopAuthFlow protocol (issue #54)", () => {
     const launched = await launchOAuth(started);
     const completed = await finishOAuth(launched, subject);
     expect(completed.status).toBe(200);
+    const refreshedBinding = oauthCookie(completed);
+    expect(refreshedBinding).toBe(launched.cookie);
+    const refreshedHeader = completed.headers.get("set-cookie") ?? "";
+    const refreshedMaxAge = Number(
+      refreshedHeader.match(/; Max-Age=(\d+);/u)?.[1] ?? Number.NaN,
+    );
+    expect(refreshedHeader).toMatch(
+      /^__Host-punks_oauth_[A-Za-z0-9_-]+=[A-Za-z0-9_-]+; Path=\/; Max-Age=\d+; HttpOnly; Secure; SameSite=Lax$/u,
+    );
+    const pendingMetadata = await authEnv.DESKTOP_AUTH_FLOWS.getByName(
+      started.flowId,
+    ).browserMetadata();
+    if (pendingMetadata === null) throw new Error("flow OAuth absent");
+    expect(refreshedMaxAge).toBeGreaterThan(0);
+    expect(refreshedMaxAge).toBeLessThanOrEqual(
+      Math.ceil((Date.parse(pendingMetadata.expiresAt) - Date.now()) / 1_000),
+    );
     const page = await completed.text();
     expect(page).toContain("Créer mon Compte Punks");
     expect(page).toContain(`name="state" value="${launched.state}"`);
@@ -405,21 +422,52 @@ describe("DesktopAuthFlow protocol (issue #54)", () => {
       authEnv,
     );
     expect(reopened.status).toBe(200);
+    expect(oauthCookie(reopened)).toBe(launched.cookie);
+    const reopenedHeader = reopened.headers.get("set-cookie") ?? "";
+    expect(reopenedHeader).toMatch(
+      /^__Host-punks_oauth_[A-Za-z0-9_-]+=[A-Za-z0-9_-]+; Path=\/; Max-Age=\d+; HttpOnly; Secure; SameSite=Lax$/u,
+    );
+    const reopenedMaxAge = Number(
+      reopenedHeader.match(/; Max-Age=(\d+);/u)?.[1] ?? Number.NaN,
+    );
+    expect(reopenedMaxAge).toBeGreaterThan(0);
+    expect(reopenedMaxAge).toBeLessThanOrEqual(refreshedMaxAge);
+    expect(
+      (
+        await authEnv.DESKTOP_AUTH_FLOWS.getByName(
+          started.flowId,
+        ).browserMetadata()
+      )?.expiresAt,
+    ).toBe(pendingMetadata.expiresAt);
     expect(await reopened.text()).toContain(
       `name="state" value="${launched.state}"`,
     );
 
-    const resumed = await route(
-      new Request(
-        `${origin}/api/auth/v1/desktop/browser/oauth/resume?flow=${started.flowId}`,
-        { headers: { cookie: launched.cookie } },
-      ),
-      authEnv,
-    );
-    expect(resumed.status).toBe(200);
-    expect(await resumed.text()).toContain(
-      `name="state" value="${launched.state}"`,
-    );
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date(Date.parse(pendingMetadata.expiresAt) - 250));
+      const resumed = await route(
+        new Request(
+          `${origin}/api/auth/v1/desktop/browser/oauth/resume?flow=${started.flowId}`,
+          { headers: { cookie: refreshedBinding } },
+        ),
+        authEnv,
+      );
+      expect(resumed.status).toBe(200);
+      expect(resumed.headers.get("set-cookie")).toContain("; Max-Age=1;");
+      expect(await resumed.text()).toContain(
+        `name="state" value="${launched.state}"`,
+      );
+      expect(
+        (
+          await authEnv.DESKTOP_AUTH_FLOWS.getByName(
+            started.flowId,
+          ).browserMetadata()
+        )?.expiresAt,
+      ).toBe(pendingMetadata.expiresAt);
+    } finally {
+      vi.useRealTimers();
+    }
     expect(
       (
         await route(
@@ -508,7 +556,7 @@ describe("DesktopAuthFlow protocol (issue #54)", () => {
         method: "POST",
         headers: {
           origin,
-          cookie: launched.cookie,
+          cookie: refreshedBinding,
         },
         body: exactBindingForm,
       }),
