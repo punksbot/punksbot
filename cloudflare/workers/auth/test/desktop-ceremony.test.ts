@@ -384,7 +384,8 @@ describe("DesktopAuthFlow protocol (issue #54)", () => {
     if (started === null) throw new Error("desktop start absent");
     const launched = await launchOAuth(started);
     const completed = await finishOAuth(launched, subject);
-    expect(completed.status).toBe(200);
+    expect(completed.status).toBe(303);
+    expect(completed.headers.get("location")).toBe(started.browserUrl);
     const refreshedBinding = oauthCookie(completed);
     expect(refreshedBinding).toBe(launched.cookie);
     const refreshedHeader = completed.headers.get("set-cookie") ?? "";
@@ -402,27 +403,20 @@ describe("DesktopAuthFlow protocol (issue #54)", () => {
     expect(refreshedMaxAge).toBeLessThanOrEqual(
       Math.ceil((Date.parse(pendingMetadata.expiresAt) - Date.now()) / 1_000),
     );
-    const page = await completed.text();
-    expect(page).toContain("Créer mon Compte Punks");
-    expect(page).toContain(`name="state" value="${launched.state}"`);
-    const capability = page.match(
-      /name="capability" value="([A-Za-z0-9_-]{43})"/,
-    )?.[1];
-    expect(capability).toBeTypeOf("string");
-    if (capability === undefined) throw new Error("capability absente");
     expect(await (await status(started)).json()).toMatchObject({
       phase: "browser_complete",
       result: "human_action_required",
     });
 
     const reopened = await route(
-      new Request(started.browserUrl, {
-        headers: { cookie: launched.cookie },
+      new Request(completed.headers.get("location") ?? "", {
+        headers: { cookie: refreshedBinding },
       }),
       authEnv,
     );
     expect(reopened.status).toBe(200);
-    expect(oauthCookie(reopened)).toBe(launched.cookie);
+    const cleanPageBinding = oauthCookie(reopened);
+    expect(cleanPageBinding).toBe(launched.cookie);
     const reopenedHeader = reopened.headers.get("set-cookie") ?? "";
     expect(reopenedHeader).toMatch(
       /^__Host-punks_oauth_[A-Za-z0-9_-]+=[A-Za-z0-9_-]+; Path=\/; Max-Age=\d+; HttpOnly; Secure; SameSite=Lax$/u,
@@ -439,9 +433,14 @@ describe("DesktopAuthFlow protocol (issue #54)", () => {
         ).browserMetadata()
       )?.expiresAt,
     ).toBe(pendingMetadata.expiresAt);
-    expect(await reopened.text()).toContain(
-      `name="state" value="${launched.state}"`,
-    );
+    const page = await reopened.text();
+    expect(page).toContain("Créer mon Compte Punks");
+    expect(page).toContain(`name="state" value="${launched.state}"`);
+    const capability = page.match(
+      /name="capability" value="([A-Za-z0-9_-]{43})"/,
+    )?.[1];
+    expect(capability).toBeTypeOf("string");
+    if (capability === undefined) throw new Error("capability absente");
 
     vi.useFakeTimers({ toFake: ["Date"] });
     try {
@@ -556,7 +555,7 @@ describe("DesktopAuthFlow protocol (issue #54)", () => {
         method: "POST",
         headers: {
           origin,
-          cookie: refreshedBinding,
+          cookie: cleanPageBinding,
         },
         body: exactBindingForm,
       }),
@@ -581,7 +580,17 @@ describe("DesktopAuthFlow protocol (issue #54)", () => {
       if (started === null) throw new Error("desktop start absent");
       const launched = await launchOAuth(started);
       const completed = await finishOAuth(launched, subject);
-      const page = await completed.text();
+      expect(completed.status).toBe(303);
+      expect(completed.headers.get("location")).toBe(started.browserUrl);
+      const cleanPage = await route(
+        new Request(started.browserUrl, {
+          headers: { cookie: oauthCookie(completed) },
+        }),
+        authEnv,
+      );
+      expect(cleanPage.status).toBe(200);
+      const confirmationCookie = oauthCookie(cleanPage);
+      const page = await cleanPage.text();
       const capability = page.match(
         /name="capability" value="([A-Za-z0-9_-]{43})"/u,
       )?.[1];
@@ -594,7 +603,7 @@ describe("DesktopAuthFlow protocol (issue #54)", () => {
       const confirmed = await route(
         new Request(`${origin}${alias}`, {
           method: "POST",
-          headers: { origin, cookie: launched.cookie },
+          headers: { origin, cookie: confirmationCookie },
           body: form,
         }),
         authEnv,

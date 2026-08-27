@@ -834,22 +834,9 @@ export async function completeDesktopOAuth(input: {
   if (flow.oauthState === null) {
     return problem(400, "invalid_input", "Desktop OAuth state is unavailable");
   }
-  const capability = await accountConfirmationCapability(flow);
-  if (capability === null) {
-    return problem(
-      400,
-      "invalid_input",
-      "Desktop OAuth confirmation is unavailable",
-    );
-  }
   return recorded.ok
     ? refreshBrowserBinding(
-        confirmationPage(
-          flow.flowId,
-          flow.oauthState,
-          capability,
-          pending.profile.displayName,
-        ),
+        redirect(browserUrl(input.env, flow.flowId)),
         recorded.flow,
       )
     : problem(400, "invalid_input", "Desktop OAuth completion is invalid");
