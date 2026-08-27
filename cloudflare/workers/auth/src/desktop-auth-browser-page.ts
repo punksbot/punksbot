@@ -34,7 +34,7 @@ export function confirmationPage(
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Confirmer le Compte Punks</title>
 <main><h1>Créer mon Compte Punks</h1><p>Continuer comme ${escapedName}</p>
-<form method="post" action="/api/auth/v1/desktop/browser/oauth/confirm">
+<form method="post" action="/api/auth/v1/desktop/browser/confirm">
 <input type="hidden" name="flow" value="${flowId}">
 <input type="hidden" name="state" value="${state}">
 <input type="hidden" name="capability" value="${capability}">

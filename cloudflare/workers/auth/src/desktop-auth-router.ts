@@ -41,6 +41,7 @@ export function routeDesktopAuth(
       return launchDesktopBrowser(request, env);
     case "GET /api/auth/v1/desktop/browser/oauth/resume":
       return resumeDesktopOAuthAccount(request, env);
+    case "POST /api/auth/v1/desktop/browser/confirm":
     case "POST /api/auth/v1/desktop/browser/oauth/confirm":
       return confirmDesktopOAuthAccount(request, env);
     case "POST /api/auth/v1/desktop/browser/session/confirm":

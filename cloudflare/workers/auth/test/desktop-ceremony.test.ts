@@ -472,7 +472,7 @@ describe("DesktopAuthFlow protocol (issue #54)", () => {
     form.set("state", launched.state);
     form.set("capability", capability);
     const confirmed = await route(
-      new Request(`${origin}/api/auth/v1/desktop/browser/oauth/confirm`, {
+      new Request(`${origin}/api/auth/v1/desktop/browser/confirm`, {
         method: "POST",
         headers: {
           origin: "https://github.com",
