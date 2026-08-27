@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -222,6 +223,33 @@ function boundaries(material, publishedRoles = []) {
   };
 }
 
+async function stagedFixture(t, label) {
+  const root = mkdtempSync(join(tmpdir(), label));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const candidateRoot = join(root, "candidate");
+  mkdirSync(candidateRoot);
+  const material = materials();
+  const destinations = [
+    { role: "primaire", compte: "1".repeat(32), bucket: "primary" },
+    { role: "secondaire", compte: "2".repeat(32), bucket: "recovery" },
+  ];
+  await fetchOperationalBudgetEvidence(
+    {
+      sourceSha,
+      stagingDeploymentId,
+      manifestSha256: sha256(material.manifestBytes),
+      candidateRoot,
+      destinations,
+      output: join(candidateRoot, "operational-budget-observation.json"),
+      exportsOutput: join(candidateRoot, "operational-budget-exports"),
+    },
+    { frontieres: boundaries(material) },
+  );
+  const bundle = join(root, "actions-attestation.sigstore.json");
+  writeFileSync(bundle, material.provenanceBytes);
+  return { root, candidateRoot, material, destinations, bundle };
+}
+
 test("downloads identical locked raw sources and recomputes every verdict", async (t) => {
   const root = mkdtempSync(join(tmpdir(), "punks-budget-fetch-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -337,4 +365,150 @@ test("rejects every metric source when its GitHub OIDC subject cannot be verifie
     ),
     /GitHub OIDC subject rejected/,
   );
+});
+
+test("resumes when the primary bundle already exists and the secondary is absent", async (t) => {
+  const fixture = await stagedFixture(t, "punks-budget-partial-");
+  const bundleSha256 = sha256(fixture.material.provenanceBytes);
+  const key = `${prefix}provenance/${bundleSha256}.sigstore.json`;
+  fixture.material.published.set(
+    `primaire:${key}`,
+    fixture.material.provenanceBytes,
+  );
+  const publishedRoles = [];
+
+  await sealOperationalBudgetEvidence(
+    {
+      sourceSha,
+      stagingDeploymentId,
+      manifestSha256: sha256(fixture.material.manifestBytes),
+      candidateRoot: fixture.candidateRoot,
+      destinations: fixture.destinations,
+      bundle: fixture.bundle,
+    },
+    {
+      frontieres: boundaries(fixture.material, publishedRoles),
+      verifyProviderSubject: () => [{ verified: true }],
+    },
+  );
+  assert.deepEqual(publishedRoles, ["secondaire"]);
+});
+
+test("recovers an ALREADY_EXISTS race only when the concurrent bytes are exact", async (t) => {
+  const fixture = await stagedFixture(t, "punks-budget-race-");
+  const publishedRoles = [];
+  const frontieres = boundaries(fixture.material, publishedRoles);
+  frontieres.cloudflare.creerObjet = async ({ role, cle, contenu }) => {
+    publishedRoles.push(role);
+    fixture.material.published.set(`${role}:${cle}`, Buffer.from(contenu));
+    const error = new Error("concurrent create");
+    error.code = "ALREADY_EXISTS";
+    throw error;
+  };
+
+  await sealOperationalBudgetEvidence(
+    {
+      sourceSha,
+      stagingDeploymentId,
+      manifestSha256: sha256(fixture.material.manifestBytes),
+      candidateRoot: fixture.candidateRoot,
+      destinations: fixture.destinations,
+      bundle: fixture.bundle,
+    },
+    {
+      frontieres,
+      verifyProviderSubject: () => [{ verified: true }],
+    },
+  );
+  assert.deepEqual(publishedRoles.sort(), ["primaire", "secondaire"]);
+});
+
+test("rejects a divergent pre-existing bundle before publishing the other copy", async (t) => {
+  const fixture = await stagedFixture(t, "punks-budget-divergent-");
+  const bundleSha256 = sha256(fixture.material.provenanceBytes);
+  const key = `${prefix}provenance/${bundleSha256}.sigstore.json`;
+  fixture.material.published.set(`primaire:${key}`, Buffer.from("divergent"));
+  const publishedRoles = [];
+
+  await assert.rejects(
+    sealOperationalBudgetEvidence(
+      {
+        sourceSha,
+        stagingDeploymentId,
+        manifestSha256: sha256(fixture.material.manifestBytes),
+        candidateRoot: fixture.candidateRoot,
+        destinations: fixture.destinations,
+        bundle: fixture.bundle,
+      },
+      {
+        frontieres: boundaries(fixture.material, publishedRoles),
+        verifyProviderSubject: () => [{ verified: true }],
+      },
+    ),
+    /primary operational Sigstore bundle diverges|primaire operational Sigstore bundle diverges/i,
+  );
+  assert.deepEqual(publishedRoles, []);
+});
+
+test("rejects when a prefix lock disappears during bundle publication", async (t) => {
+  const fixture = await stagedFixture(t, "punks-budget-lock-race-");
+  const frontieres = boundaries(fixture.material);
+  const lockReads = new Map();
+  frontieres.cloudflare.lireVerrouillage = async ({ role, cle }) => {
+    assert.equal(cle, prefix);
+    const count = (lockReads.get(role) ?? 0) + 1;
+    lockReads.set(role, count);
+    return {
+      mode: "compliance",
+      actif: !(role === "primaire" && count === 2),
+    };
+  };
+
+  await assert.rejects(
+    sealOperationalBudgetEvidence(
+      {
+        sourceSha,
+        stagingDeploymentId,
+        manifestSha256: sha256(fixture.material.manifestBytes),
+        candidateRoot: fixture.candidateRoot,
+        destinations: fixture.destinations,
+        bundle: fixture.bundle,
+      },
+      {
+        frontieres,
+        verifyProviderSubject: () => [{ verified: true }],
+      },
+    ),
+    /lock changed during publish/i,
+  );
+});
+
+test("cleans the first local directory when the second directory cannot be created", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "punks-budget-local-retry-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const candidateRoot = join(root, "candidate");
+  mkdirSync(candidateRoot);
+  writeFileSync(join(candidateRoot, "operational-budget-sources"), "blocked\n");
+  const material = materials();
+  const exportsOutput = join(candidateRoot, "operational-budget-exports");
+
+  await assert.rejects(
+    fetchOperationalBudgetEvidence(
+      {
+        sourceSha,
+        stagingDeploymentId,
+        manifestSha256: sha256(material.manifestBytes),
+        candidateRoot,
+        destinations: [
+          { role: "primaire", compte: "1".repeat(32), bucket: "primary" },
+          { role: "secondaire", compte: "2".repeat(32), bucket: "recovery" },
+        ],
+        output: join(candidateRoot, "operational-budget-observation.json"),
+        exportsOutput,
+      },
+      { frontieres: boundaries(material) },
+    ),
+    /EEXIST|directory|file/i,
+  );
+  assert.equal(existsSync(exportsOutput), false);
 });

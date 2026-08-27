@@ -221,9 +221,9 @@ export async function fetchOperationalBudgetEvidence(input, { frontieres }) {
     input.candidateRoot,
     "operational-budget-r2-manifest.json",
   );
-  mkdirSync(exportsRoot, { mode: 0o700 });
-  mkdirSync(sourcesRoot, { mode: 0o700 });
   try {
+    mkdirSync(exportsRoot, { mode: 0o700 });
+    mkdirSync(sourcesRoot, { mode: 0o700 });
     for (const [index, reference] of manifest.exports.entries()) {
       writeFileSync(
         resolve(exportsRoot, basename(reference.key)),

@@ -72,6 +72,15 @@ async function publishBundle(frontieres, destinations, key, content, prefix) {
     if (existing === null || !Buffer.from(existing).equals(content)) {
       fail(`${target.role} operational Sigstore bundle diverges after publish`);
     }
+    const finalLock = await frontieres.cloudflare.lireVerrouillage({
+      ...target,
+      cle: prefix,
+    });
+    if (finalLock?.mode !== "compliance" || finalLock.actif !== true) {
+      fail(
+        `${target.role} operational observation lock changed during publish`,
+      );
+    }
   }
 }
 
@@ -134,8 +143,8 @@ export async function sealOperationalBudgetEvidence(
     "operational-budget-provenance.json",
   );
   const provenanceName = `${bundleSha256}.sigstore.json`;
-  mkdirSync(provenanceRoot, { mode: 0o700 });
   try {
+    mkdirSync(provenanceRoot, { mode: 0o700 });
     writeFileSync(resolve(provenanceRoot, provenanceName), bundleContent, {
       flag: "wx",
       mode: 0o600,
@@ -213,6 +222,7 @@ function parseArgs(argv) {
   return (name) => values.get(name);
 }
 
+/** Executes the closed protected-run CLI; no verifier or boundary is selectable. */
 export async function run(argv = process.argv.slice(2)) {
   const required = parseArgs(argv);
   const r2 = [
