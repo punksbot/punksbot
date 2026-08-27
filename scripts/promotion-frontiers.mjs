@@ -571,4 +571,23 @@ export function creerFrontiereLectureR2(
   };
 }
 
+/** R2 boundary used only to seal verified operational evidence create-only. */
+export function creerFrontiereR2Operationnelle(
+  configuration,
+  { env = process.env, fetchImpl = globalThis.fetch, s3RequestHandler } = {},
+) {
+  if (typeof fetchImpl !== "function") {
+    throw new Error("fetch indisponible pour la frontière R2 opérationnelle");
+  }
+  const destinations = destinationsR2Canoniques(configuration?.r2);
+  return {
+    cloudflare: clientCloudflare({
+      tokens: tokensR2(env),
+      destinations,
+      fetchImpl,
+      s3RequestHandler,
+    }),
+  };
+}
+
 export default creerFrontieresPublication;

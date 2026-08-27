@@ -1554,6 +1554,7 @@ jobs:
     name: Aggregate four verified legs
     needs: attest_legs
     if: inputs.validation_scope == 'full-candidate'
+    environment: punks-staging-promotion
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
@@ -1688,6 +1689,33 @@ jobs:
             --provenance-bundle candidate/promotion-evidence/production-aggregate-provenance.sigstore.json \
             --output candidate/promotion-evidence/index.json
 
+      - name: Stage locked redundant operational budget sources
+        id: stage_operational_budgets
+        shell: bash
+        env:
+          PUNKS_OPERATIONAL_BUDGET_MANIFEST_SHA256: ${{ vars.PUNKS_OPERATIONAL_BUDGET_MANIFEST_SHA256 }}
+          PUNKS_R2_PRIMARY_API_TOKEN: ${{ secrets.PUNKS_R2_PRIMARY_API_TOKEN }}
+          PUNKS_R2_PRIMARY_ACCESS_KEY_ID: ${{ secrets.PUNKS_R2_PRIMARY_ACCESS_KEY_ID }}
+          PUNKS_R2_PRIMARY_SECRET_ACCESS_KEY: ${{ secrets.PUNKS_R2_PRIMARY_SECRET_ACCESS_KEY }}
+          PUNKS_R2_RECOVERY_API_TOKEN: ${{ secrets.PUNKS_R2_RECOVERY_API_TOKEN }}
+          PUNKS_R2_RECOVERY_ACCESS_KEY_ID: ${{ secrets.PUNKS_R2_RECOVERY_ACCESS_KEY_ID }}
+          PUNKS_R2_RECOVERY_SECRET_ACCESS_KEY: ${{ secrets.PUNKS_R2_RECOVERY_SECRET_ACCESS_KEY }}
+          PUNKS_R2_PRIMARY_DESTINATION: ${{ vars.PUNKS_R2_PRIMARY_DESTINATION }}
+          PUNKS_R2_RECOVERY_DESTINATION: ${{ vars.PUNKS_R2_RECOVERY_DESTINATION }}
+        run: |
+          set -euo pipefail
+          test -n "$PUNKS_OPERATIONAL_BUDGET_MANIFEST_SHA256"
+          node scripts/candidate/operational-budget-fetch.mjs \
+            --source-sha "$SOURCE_SHA" \
+            --staging-deployment-id "$STAGING_DEPLOYMENT_ID" \
+            --manifest-sha256 "$PUNKS_OPERATIONAL_BUDGET_MANIFEST_SHA256" \
+            --candidate-root candidate \
+            --r2-primaire "$PUNKS_R2_PRIMARY_DESTINATION" \
+            --r2-secondaire "$PUNKS_R2_RECOVERY_DESTINATION" \
+            --frontieres scripts/promotion-frontiers.mjs \
+            --output candidate/operational-budget-observation.json \
+            --exports-output candidate/operational-budget-exports
+
       - name: Attest the complete pre-dossier evidence
         id: attest_complete_evidence
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
@@ -1699,6 +1727,10 @@ jobs:
             candidate/live-staging-auth-proof.json
             candidate/live-staging-follow-proof.json
             candidate/promotion-evidence/**/*
+            candidate/operational-budget-observation.json
+            candidate/operational-budget-r2-manifest.json
+            candidate/operational-budget-exports/*
+            candidate/operational-budget-sources/*
 
       - name: Verify the complete pre-dossier evidence
         id: verify_complete_evidence
@@ -1721,8 +1753,37 @@ jobs:
               --format json > "$output"
             test -s "$output"
           done < <(find candidate/release-assets candidate/promotion-evidence \
+            candidate/operational-budget-exports candidate/operational-budget-sources \
             -type f -print0; printf '%s\0' candidate/aggregate-manifest.json candidate/staging-deployment-proof.json candidate/live-staging-auth-proof.json candidate/live-staging-follow-proof.json)
           cp "$ATTESTATION_BUNDLE" candidate/promotion-evidence/pre-dossier-provenance.sigstore.json
+
+      - name: Seal and publish authenticated operational budget sources
+        id: seal_operational_budgets
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ATTESTATION_BUNDLE: ${{ steps.attest_complete_evidence.outputs.bundle-path }}
+          PUNKS_OPERATIONAL_BUDGET_MANIFEST_SHA256: ${{ vars.PUNKS_OPERATIONAL_BUDGET_MANIFEST_SHA256 }}
+          PUNKS_R2_PRIMARY_API_TOKEN: ${{ secrets.PUNKS_R2_PRIMARY_API_TOKEN }}
+          PUNKS_R2_PRIMARY_ACCESS_KEY_ID: ${{ secrets.PUNKS_R2_PRIMARY_ACCESS_KEY_ID }}
+          PUNKS_R2_PRIMARY_SECRET_ACCESS_KEY: ${{ secrets.PUNKS_R2_PRIMARY_SECRET_ACCESS_KEY }}
+          PUNKS_R2_RECOVERY_API_TOKEN: ${{ secrets.PUNKS_R2_RECOVERY_API_TOKEN }}
+          PUNKS_R2_RECOVERY_ACCESS_KEY_ID: ${{ secrets.PUNKS_R2_RECOVERY_ACCESS_KEY_ID }}
+          PUNKS_R2_RECOVERY_SECRET_ACCESS_KEY: ${{ secrets.PUNKS_R2_RECOVERY_SECRET_ACCESS_KEY }}
+          PUNKS_R2_PRIMARY_DESTINATION: ${{ vars.PUNKS_R2_PRIMARY_DESTINATION }}
+          PUNKS_R2_RECOVERY_DESTINATION: ${{ vars.PUNKS_R2_RECOVERY_DESTINATION }}
+        run: |
+          set -euo pipefail
+          test -s "$ATTESTATION_BUNDLE"
+          node scripts/candidate/operational-budget-seal.mjs \
+            --source-sha "$SOURCE_SHA" \
+            --staging-deployment-id "$STAGING_DEPLOYMENT_ID" \
+            --manifest-sha256 "$PUNKS_OPERATIONAL_BUDGET_MANIFEST_SHA256" \
+            --candidate-root candidate \
+            --bundle "$ATTESTATION_BUNDLE" \
+            --r2-primaire "$PUNKS_R2_PRIMARY_DESTINATION" \
+            --r2-secondaire "$PUNKS_R2_RECOVERY_DESTINATION" \
+            --frontieres scripts/promotion-frontiers.mjs
 
       - name: Assemble the exact promotion dossier
         id: assemble_promotion_dossier
@@ -2004,13 +2065,6 @@ jobs:
           PUNKS_ATTESTATION_PRIMARY_GENERATION: ${{ vars.PUNKS_ATTESTATION_PRIMARY_GENERATION }}
           PUNKS_ATTESTATION_SECONDARY_GENERATION: ${{ vars.PUNKS_ATTESTATION_SECONDARY_GENERATION }}
           PUNKS_SESSION_RECOVERY_GENERATION: ${{ vars.PUNKS_SESSION_RECOVERY_GENERATION }}
-          PUNKS_OPERATIONAL_BUDGET_MANIFEST_SHA256: ${{ vars.PUNKS_OPERATIONAL_BUDGET_MANIFEST_SHA256 }}
-          PUNKS_R2_PRIMARY_API_TOKEN: ${{ secrets.PUNKS_R2_PRIMARY_API_TOKEN }}
-          PUNKS_R2_PRIMARY_ACCESS_KEY_ID: ${{ secrets.PUNKS_R2_PRIMARY_ACCESS_KEY_ID }}
-          PUNKS_R2_PRIMARY_SECRET_ACCESS_KEY: ${{ secrets.PUNKS_R2_PRIMARY_SECRET_ACCESS_KEY }}
-          PUNKS_R2_RECOVERY_API_TOKEN: ${{ secrets.PUNKS_R2_RECOVERY_API_TOKEN }}
-          PUNKS_R2_RECOVERY_ACCESS_KEY_ID: ${{ secrets.PUNKS_R2_RECOVERY_ACCESS_KEY_ID }}
-          PUNKS_R2_RECOVERY_SECRET_ACCESS_KEY: ${{ secrets.PUNKS_R2_RECOVERY_SECRET_ACCESS_KEY }}
         run: |
           set -euo pipefail
           budget_file="candidate/operational-budget-observation.json"
@@ -2021,19 +2075,10 @@ jobs:
           }
           trap cleanup_topology_input EXIT
           test -n "$CLOUDFLARE_API_TOKEN"
-          test -n "$PUNKS_OPERATIONAL_BUDGET_MANIFEST_SHA256"
-          node scripts/candidate/operational-budget-fetch.mjs \
-            --source-sha "$SOURCE_SHA" \
-            --staging-deployment-id "$STAGING_DEPLOYMENT_ID" \
-            --manifest-sha256 "$PUNKS_OPERATIONAL_BUDGET_MANIFEST_SHA256" \
-            --candidate-root candidate \
-            --r2-primaire "$PUNKS_R2_PRIMARY_DESTINATION" \
-            --r2-secondaire "$PUNKS_R2_RECOVERY_DESTINATION" \
-            --frontieres scripts/promotion-frontiers.mjs \
-            --output "$budget_file" \
-            --exports-output "$budget_exports"
           test -f "$budget_file"
           test -d "$budget_exports"
+          test -d candidate/operational-budget-sources
+          test -s candidate/operational-budget-provenance.json
           node --input-type=module - "$security_generations" <<'NODE'
           import { writeFileSync } from "node:fs";
           const names = {

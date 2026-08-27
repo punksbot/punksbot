@@ -153,8 +153,10 @@ test("the aggregate validates, publishes and only then activates the exact draft
   const verifyProduction = step("aggregate", "verify_production_candidate");
   const buildObserved = step("aggregate", "build_observed_evidence_fragments");
   const complete = step("aggregate", "complete_promotion_evidence");
+  const stageBudgets = step("aggregate", "stage_operational_budgets");
   const attestComplete = step("aggregate", "attest_complete_evidence");
   const verifyComplete = step("aggregate", "verify_complete_evidence");
+  const sealBudgets = step("aggregate", "seal_operational_budgets");
   const assemble = step("aggregate", "assemble_promotion_dossier");
   const validate = step("aggregate", "validate_promotion_dossier");
   assert.match(complete.run, new RegExp(promotionEvidenceProducer));
@@ -169,6 +171,20 @@ test("the aggregate validates, publishes and only then activates the exact draft
     /scripts\/candidate\/observed-evidence-fragments\.mjs/,
   );
   assert.match(complete.run, /production-aggregate-provenance\.sigstore\.json/);
+  assert.equal(aggregate.environment, "punks-staging-promotion");
+  assert.match(
+    stageBudgets.run,
+    /scripts\/candidate\/operational-budget-fetch\.mjs/,
+  );
+  assert.match(
+    attestComplete.with?.["subject-path"],
+    /candidate\/operational-budget-sources\/\*/,
+  );
+  assert.match(verifyComplete.run, /candidate\/operational-budget-sources/);
+  assert.match(
+    sealBudgets.run,
+    /scripts\/candidate\/operational-budget-seal\.mjs/,
+  );
   assert.match(assemble.run, /pre-dossier-provenance\.sigstore\.json/);
   assert.match(validate.run, /pnpm promotion:valider/);
   assert.ok(
@@ -179,10 +195,14 @@ test("the aggregate validates, publishes and only then activates the exact draft
       aggregate.steps.indexOf(buildObserved) <
         aggregate.steps.indexOf(complete) &&
       aggregate.steps.indexOf(complete) <
+        aggregate.steps.indexOf(stageBudgets) &&
+      aggregate.steps.indexOf(stageBudgets) <
         aggregate.steps.indexOf(attestComplete) &&
       aggregate.steps.indexOf(attestComplete) <
         aggregate.steps.indexOf(verifyComplete) &&
       aggregate.steps.indexOf(verifyComplete) <
+        aggregate.steps.indexOf(sealBudgets) &&
+      aggregate.steps.indexOf(sealBudgets) <
         aggregate.steps.indexOf(assemble) &&
       aggregate.steps.indexOf(assemble) < aggregate.steps.indexOf(validate),
     "production provenance, complete evidence provenance, dossier and validation are misordered",
@@ -241,14 +261,8 @@ test("the aggregate validates, publishes and only then activates the exact draft
   );
   assert.match(cadence.run, /--budget-exports "\$budget_exports"/);
   assert.match(cadence.run, /--candidate-root candidate/);
-  assert.match(
-    cadence.run,
-    /scripts\/candidate\/operational-budget-fetch\.mjs/,
-  );
-  assert.match(
-    cadence.run,
-    /--manifest-sha256 "\$PUNKS_OPERATIONAL_BUDGET_MANIFEST_SHA256"/,
-  );
+  assert.doesNotMatch(cadence.run, /operational-budget-fetch\.mjs/);
+  assert.match(cadence.run, /test -f "\$budget_file"/);
   assert.match(
     cadence.run,
     /scripts\/candidate\/operational-topology-observation\.mjs/,

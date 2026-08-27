@@ -135,11 +135,12 @@ with their raw sample counts and required dimensions. A locally generated
 timestamp, a self-declared green metric or an insufficient Wilson sample cannot
 activate the draft. Every raw metric source is itself an exact subject of one
 Sigstore bundle issued under GitHub OIDC for `punksbot/punksbot`, the protected
-`staging` ref and this candidate workflow. The bundle and every source are read
-byte-for-byte from both R2 copies under an Indefinite lock that covers the
-`operational-observations/` key. `gh attestation verify` must authenticate every
-subject before its samples can be used; a digest or an `observer` label alone is
-never evidence.
+`staging` ref and this candidate workflow. The raw provider sources are first
+read byte-for-byte from both R2 copies under an Indefinite lock that covers the
+`operational-observations/` prefix. The aggregate job then attests those exact
+staged bytes, verifies every subject with `gh attestation verify`, and publishes
+the resulting bundle create-only to both locked copies before any sample can be
+used. A digest or an `observer` label alone is never evidence.
 
 Never paste a private key, certificate password or API token into an issue,
 commit, workflow input or terminal transcript. Feed values directly to

@@ -1,12 +1,4 @@
-import {
-  closeSync,
-  constants,
-  fstatSync,
-  lstatSync,
-  openSync,
-  readFileSync,
-  readdirSync,
-} from "node:fs";
+import { lstatSync, readdirSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { basename, isAbsolute, relative, resolve, sep } from "node:path";
 
@@ -19,8 +11,10 @@ import {
   BUDGETS_PRODUCTION,
   borneWilsonUnilaterale95,
 } from "../release-graph-lib.mjs";
+import { readStableEvidenceFile } from "./stable-evidence-file.mjs";
 
 const SHA256_RE = /^[0-9a-f]{64}$/u;
+/** Exact GitHub OIDC identity allowed to authenticate operational samples. */
 export const OPERATIONAL_BUDGET_PROVENANCE = Object.freeze({
   repository: "punksbot/punksbot",
   sourceRef: "refs/heads/staging",
@@ -47,34 +41,10 @@ function exact(value, keys, label) {
 }
 
 function stableJson(path, label) {
-  const absolute = resolve(path);
-  const status = lstatSync(absolute);
-  if (
-    status.isSymbolicLink() ||
-    !status.isFile() ||
-    status.size < 2 ||
-    status.size > 64 * 1024 * 1024
-  ) {
-    fail(`${label} must be one bounded regular file`);
-  }
-  let descriptor;
   try {
-    descriptor = openSync(
-      absolute,
-      constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0),
+    return JSON.parse(
+      readStableEvidenceFile(path, label, { minimum: 2 }).toString("utf8"),
     );
-    const before = fstatSync(descriptor, { bigint: true });
-    const content = readFileSync(descriptor);
-    const after = fstatSync(descriptor, { bigint: true });
-    if (
-      before.dev !== after.dev ||
-      before.ino !== after.ino ||
-      before.size !== after.size ||
-      before.mtimeNs !== after.mtimeNs
-    ) {
-      fail(`${label} changed while it was read`);
-    }
-    return JSON.parse(content.toString("utf8"));
   } catch (error) {
     if (
       error instanceof Error &&
@@ -83,43 +53,11 @@ function stableJson(path, label) {
       throw error;
     }
     fail(`${label} is invalid JSON`);
-  } finally {
-    if (descriptor !== undefined) closeSync(descriptor);
   }
 }
 
 function stableBytes(path, label, maximum = 64 * 1024 * 1024) {
-  const absolute = resolve(path);
-  const status = lstatSync(absolute);
-  if (
-    status.isSymbolicLink() ||
-    !status.isFile() ||
-    status.size < 2 ||
-    status.size > maximum
-  ) {
-    fail(`${label} must be one bounded regular file`);
-  }
-  let descriptor;
-  try {
-    descriptor = openSync(
-      absolute,
-      constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0),
-    );
-    const before = fstatSync(descriptor, { bigint: true });
-    const content = readFileSync(descriptor);
-    const after = fstatSync(descriptor, { bigint: true });
-    if (
-      before.dev !== after.dev ||
-      before.ino !== after.ino ||
-      before.size !== after.size ||
-      before.mtimeNs !== after.mtimeNs
-    ) {
-      fail(`${label} changed while it was read`);
-    }
-    return content;
-  } finally {
-    if (descriptor !== undefined) closeSync(descriptor);
-  }
+  return readStableEvidenceFile(path, label, { minimum: 2, maximum });
 }
 
 function providerProvenance(candidateRoot, expected) {

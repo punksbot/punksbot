@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -12,6 +18,8 @@ import {
   PLATEFORMES,
 } from "../release-graph-lib.mjs";
 import { fetchOperationalBudgetEvidence } from "./operational-budget-fetch.mjs";
+import { sealOperationalBudgetEvidence } from "./operational-budget-seal.mjs";
+import { operationalBudgetSigstoreFixture } from "./operational-budget-test-fixture.mjs";
 
 const sourceSha = "ab".repeat(20);
 const stagingDeploymentId = `sha256:${"cd".repeat(32)}`;
@@ -28,6 +36,7 @@ function sha256(value) {
 
 function materials() {
   const objects = new Map();
+  const published = new Map();
   const sources = [];
   const exports = [];
   const statistic = (budget, dimension) => {
@@ -152,26 +161,15 @@ function materials() {
     sha256: sha256(observationBytes),
   };
   objects.set(observationKey, observationBytes);
-  const provenanceBytes = bytes({
-    mediaType: "application/vnd.dev.sigstore.bundle.v0.3+json",
-    dsseEnvelope: {
-      payload: Buffer.from("operational budget provenance").toString("base64"),
-      signatures: [{ sig: Buffer.from("signature").toString("base64") }],
-    },
-    verificationMaterial: {},
-  });
-  const provenanceDigest = sha256(provenanceBytes);
+  const provenanceBytes = operationalBudgetSigstoreFixture();
   const provenance = {
-    key: `${prefix}provenance/${provenanceDigest}.sigstore.json`,
-    sha256: provenanceDigest,
     repository: "punksbot/punksbot",
     sourceRef: "refs/heads/staging",
     signerWorkflow:
       "github.com/punksbot/punksbot/.github/workflows/punks-desktop-candidate.yml",
   };
-  objects.set(provenance.key, provenanceBytes);
   const manifestContent = {
-    schema: "punks.operational-budget-r2-manifest.v2",
+    schema: "punks.operational-budget-r2-manifest.v3",
     sourceSha,
     stagingDeploymentId,
     observation: observationReference,
@@ -187,7 +185,41 @@ function materials() {
   const manifestBytes = bytes(manifest);
   const manifestKey = `${prefix}manifest.json`;
   objects.set(manifestKey, manifestBytes);
-  return { objects, manifest, manifestBytes, observation };
+  return {
+    objects,
+    published,
+    manifest,
+    manifestBytes,
+    observation,
+    provenanceBytes,
+  };
+}
+
+function boundaries(material, publishedRoles = []) {
+  return {
+    cloudflare: {
+      async lireVerrouillage({ cle }) {
+        return { mode: "compliance", actif: cle === prefix };
+      },
+      async lireObjet({ role, cle }) {
+        return (
+          material.published.get(`${role}:${cle}`) ??
+          material.objects.get(cle) ??
+          null
+        );
+      },
+      async creerObjet({ role, cle, contenu }) {
+        publishedRoles.push(role);
+        const coordinate = `${role}:${cle}`;
+        if (material.published.has(coordinate)) {
+          const error = new Error("already exists");
+          error.code = "ALREADY_EXISTS";
+          throw error;
+        }
+        material.published.set(coordinate, Buffer.from(contenu));
+      },
+    },
+  };
 }
 
 test("downloads identical locked raw sources and recomputes every verdict", async (t) => {
@@ -199,6 +231,7 @@ test("downloads identical locked raw sources and recomputes every verdict", asyn
   const exportsOutput = join(candidateRoot, "operational-budget-exports");
   const material = materials();
   let verifiedSubjects = 0;
+  const publishedRoles = [];
   const destinations = [
     { role: "primaire", compte: "1".repeat(32), bucket: "primary" },
     { role: "secondaire", compte: "2".repeat(32), bucket: "recovery" },
@@ -214,19 +247,22 @@ test("downloads identical locked raw sources and recomputes every verdict", asyn
       exportsOutput,
     },
     {
-      frontieres: {
-        cloudflare: {
-          async lireVerrouillage({ cle }) {
-            return {
-              mode: "compliance",
-              actif: cle === prefix,
-            };
-          },
-          async lireObjet({ cle }) {
-            return material.objects.get(cle) ?? null;
-          },
-        },
-      },
+      frontieres: boundaries(material, publishedRoles),
+    },
+  );
+  const bundle = join(root, "actions-attestation.sigstore.json");
+  writeFileSync(bundle, material.provenanceBytes);
+  const sealed = await sealOperationalBudgetEvidence(
+    {
+      sourceSha,
+      stagingDeploymentId,
+      manifestSha256: sha256(material.manifestBytes),
+      candidateRoot,
+      destinations,
+      bundle,
+    },
+    {
+      frontieres: boundaries(material, publishedRoles),
       verifyProviderSubject({
         artifactContent,
         repository,
@@ -253,6 +289,8 @@ test("downloads identical locked raw sources and recomputes every verdict", asyn
   );
   assert.equal(result.observation.verdicts.length, 36);
   assert.equal(verifiedSubjects, material.manifest.sources.length);
+  assert.deepEqual(publishedRoles.sort(), ["primaire", "secondaire"]);
+  assert.equal(sealed.bundle.sha256, sha256(material.provenanceBytes));
 });
 
 test("rejects every metric source when its GitHub OIDC subject cannot be verified", async (t) => {
@@ -266,31 +304,32 @@ test("rejects every metric source when its GitHub OIDC subject cannot be verifie
     { role: "secondaire", compte: "2".repeat(32), bucket: "recovery" },
   ];
 
+  await fetchOperationalBudgetEvidence(
+    {
+      sourceSha,
+      stagingDeploymentId,
+      manifestSha256: sha256(material.manifestBytes),
+      candidateRoot,
+      destinations,
+      output: join(candidateRoot, "operational-budget-observation.json"),
+      exportsOutput: join(candidateRoot, "operational-budget-exports"),
+    },
+    { frontieres: boundaries(material) },
+  );
+  const bundle = join(root, "actions-attestation.sigstore.json");
+  writeFileSync(bundle, material.provenanceBytes);
   await assert.rejects(
-    fetchOperationalBudgetEvidence(
+    sealOperationalBudgetEvidence(
       {
         sourceSha,
         stagingDeploymentId,
         manifestSha256: sha256(material.manifestBytes),
         candidateRoot,
         destinations,
-        output: join(candidateRoot, "operational-budget-observation.json"),
-        exportsOutput: join(candidateRoot, "operational-budget-exports"),
+        bundle,
       },
       {
-        frontieres: {
-          cloudflare: {
-            async lireVerrouillage({ cle }) {
-              return {
-                mode: "compliance",
-                actif: cle === prefix,
-              };
-            },
-            async lireObjet({ cle }) {
-              return material.objects.get(cle) ?? null;
-            },
-          },
-        },
+        frontieres: boundaries(material),
         verifyProviderSubject() {
           throw new Error("GitHub OIDC subject rejected");
         },

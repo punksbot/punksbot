@@ -21,6 +21,7 @@ import {
   validateOperationalTopology,
 } from "../release-graph-lib.mjs";
 import { operationalEvidenceDigests } from "./operational-release-head.mjs";
+import { writeOperationalBudgetProvenanceFixture } from "./operational-budget-test-fixture.mjs";
 import {
   createGithubActionsBoundary,
   observeGithubCadence,
@@ -141,36 +142,10 @@ function githubObservation() {
 function prepareCandidateRoot(candidateRoot) {
   const sources = join(candidateRoot, "operational-budget-sources");
   mkdirSync(sources, { recursive: true });
-  const provenanceRoot = join(candidateRoot, "operational-budget-provenance");
-  mkdirSync(provenanceRoot);
-  const bundle = Buffer.from(
-    `${JSON.stringify({
-      mediaType: "application/vnd.dev.sigstore.bundle.v0.3+json",
-      dsseEnvelope: {
-        payload: Buffer.from("budget provenance").toString("base64"),
-        signatures: [{ sig: Buffer.from("signature").toString("base64") }],
-      },
-      verificationMaterial: {},
-    })}\n`,
-  );
-  const bundleSha256 = createHash("sha256").update(bundle).digest("hex");
-  writeFileSync(join(provenanceRoot, `${bundleSha256}.sigstore.json`), bundle);
-  writeFileSync(
-    join(candidateRoot, "operational-budget-provenance.json"),
-    `${JSON.stringify({
-      schema: "punks.operational-budget-provenance.v1",
-      sourceSha,
-      stagingDeploymentId,
-      repository,
-      sourceRef: "refs/heads/staging",
-      signerWorkflow:
-        "github.com/punksbot/punksbot/.github/workflows/punks-desktop-candidate.yml",
-      bundle: {
-        path: `operational-budget-provenance/${bundleSha256}.sigstore.json`,
-        sha256: bundleSha256,
-      },
-    })}\n`,
-  );
+  writeOperationalBudgetProvenanceFixture(candidateRoot, {
+    sourceSha,
+    stagingDeploymentId,
+  });
   return sources;
 }
 

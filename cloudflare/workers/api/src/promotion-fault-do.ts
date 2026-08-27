@@ -316,6 +316,10 @@ export class PromotionFaultDO extends DurableObject<ApiEnv> {
     return this.receipt(row, null, 1, observedAt, false);
   }
 
+  /**
+   * Binds the independently persisted controller to one authority fingerprint.
+   * Exact replay is idempotent; a missing injection or divergent value fails.
+   */
   async recordAuthorityStateFingerprint(
     input: PromotionFaultIdentity,
     fingerprint: string,

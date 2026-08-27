@@ -80,33 +80,39 @@ const allowedSecretSteps = {
   ],
   PUNKS_LIVE_AUTH_MATRIX: ["verify_staging/prove_live_staging_auth"],
   PUNKS_R2_PRIMARY_API_TOKEN: [
+    "aggregate/stage_operational_budgets",
+    "aggregate/seal_operational_budgets",
     "publish_promotion/publish_immutable_proofs",
-    "publish_promotion/observe_github_cadence",
     "publish_promotion/materialize_operational_head",
   ],
   PUNKS_R2_PRIMARY_ACCESS_KEY_ID: [
+    "aggregate/stage_operational_budgets",
+    "aggregate/seal_operational_budgets",
     "publish_promotion/publish_immutable_proofs",
-    "publish_promotion/observe_github_cadence",
     "publish_promotion/materialize_operational_head",
   ],
   PUNKS_R2_PRIMARY_SECRET_ACCESS_KEY: [
+    "aggregate/stage_operational_budgets",
+    "aggregate/seal_operational_budgets",
     "publish_promotion/publish_immutable_proofs",
-    "publish_promotion/observe_github_cadence",
     "publish_promotion/materialize_operational_head",
   ],
   PUNKS_R2_RECOVERY_API_TOKEN: [
+    "aggregate/stage_operational_budgets",
+    "aggregate/seal_operational_budgets",
     "publish_promotion/publish_immutable_proofs",
-    "publish_promotion/observe_github_cadence",
     "publish_promotion/materialize_operational_head",
   ],
   PUNKS_R2_RECOVERY_ACCESS_KEY_ID: [
+    "aggregate/stage_operational_budgets",
+    "aggregate/seal_operational_budgets",
     "publish_promotion/publish_immutable_proofs",
-    "publish_promotion/observe_github_cadence",
     "publish_promotion/materialize_operational_head",
   ],
   PUNKS_R2_RECOVERY_SECRET_ACCESS_KEY: [
+    "aggregate/stage_operational_budgets",
+    "aggregate/seal_operational_budgets",
     "publish_promotion/publish_immutable_proofs",
-    "publish_promotion/observe_github_cadence",
     "publish_promotion/materialize_operational_head",
   ],
   PUNKS_RELEASE_APPROVERS_JSON: [
@@ -1013,6 +1019,10 @@ function validateWorkflow(workflow) {
     "Apple-only validation can publish a four-platform candidate",
   );
   same(aggregate.permissions, attestPermissions, "aggregate permissions");
+  invariant(
+    aggregate.environment === "punks-staging-promotion",
+    "operational evidence is outside the protected staging environment",
+  );
   const aggregateDownload = workflowStep(aggregate, "download_attested_legs");
   invariant(
     aggregateDownload.with?.path === "candidate-input/legs",
@@ -1041,6 +1051,40 @@ function validateWorkflow(workflow) {
   invariant(
     aggregateStep.env?.GH_TOKEN === githubTokenExpression,
     "aggregate cannot cryptographically verify leg attestations",
+  );
+  const stageBudgets = workflowStep(aggregate, "stage_operational_budgets");
+  const attestComplete = workflowStep(aggregate, "attest_complete_evidence");
+  const verifyComplete = workflowStep(aggregate, "verify_complete_evidence");
+  const sealBudgets = workflowStep(aggregate, "seal_operational_budgets");
+  requireRun(stageBudgets, [
+    "scripts/candidate/operational-budget-fetch.mjs",
+    '--manifest-sha256 "$PUNKS_OPERATIONAL_BUDGET_MANIFEST_SHA256"',
+    "--candidate-root candidate",
+  ]);
+  invariant(
+    String(attestComplete.with?.["subject-path"]).includes(
+      "candidate/operational-budget-sources/*",
+    ),
+    "operational provider sources are absent from the OIDC subject set",
+  );
+  requireRun(verifyComplete, [
+    "candidate/operational-budget-sources",
+    "gh attestation verify",
+    '--source-ref "$GITHUB_REF"',
+  ]);
+  requireRun(sealBudgets, [
+    "scripts/candidate/operational-budget-seal.mjs",
+    '--bundle "$ATTESTATION_BUNDLE"',
+    "--candidate-root candidate",
+  ]);
+  invariant(
+    aggregate.steps.indexOf(stageBudgets) <
+      aggregate.steps.indexOf(attestComplete) &&
+      aggregate.steps.indexOf(attestComplete) <
+        aggregate.steps.indexOf(verifyComplete) &&
+      aggregate.steps.indexOf(verifyComplete) <
+        aggregate.steps.indexOf(sealBudgets),
+    "operational sources must be staged, attested, verified and sealed in order",
   );
   invariant(
     attest_candidate.needs === "aggregate",

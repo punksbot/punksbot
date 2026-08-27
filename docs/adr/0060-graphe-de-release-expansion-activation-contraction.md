@@ -134,13 +134,14 @@ Les verdicts couvrent exactement les 36 budgets de production décidés, avec
 leurs unités et maxima fermés. Pour un taux, le gate recalcule la borne
 supérieure unilatérale de Wilson à 95 % depuis les comptes bruts ; pour une
 latence ou un compteur, il recalcule la comparaison exacte à la limite. Les
-comptes bruts proviennent de sujets content-addressés vérifiés
-cryptographiquement dans un bundle Sigstore GitHub OIDC lié au dépôt, au
-workflow, au ref `staging` et au SHA exacts ; la simple présence de deux copies
-R2, d'un hash, d'un nom d'observateur ou d'un digest d'attestation déclaré ne
-constitue pas une provenance. Le verrou R2 Indefinite doit couvrir la clé
-`operational-observations/` effectivement lue, et pas seulement le préfixe des
-releases. Les
+comptes bruts proviennent de sujets content-addressés lus identiquement dans
+deux buckets, puis attestés et vérifiés cryptographiquement dans le run protégé
+par un bundle Sigstore GitHub OIDC lié au dépôt, au workflow, au ref `staging`
+et au SHA exacts. Le bundle vérifié est ensuite publié create-only dans les deux
+copies. La simple présence de deux copies R2, d'un hash, d'un nom d'observateur
+ou d'un digest d'attestation déclaré ne constitue pas une provenance. Le verrou
+R2 Indefinite doit couvrir le préfixe `operational-observations/` effectivement
+lu, et pas seulement le préfixe des releases. Les
 dimensions imposées par moyen de connexion et plateforme sont exhaustives et
 la tranche N (comme tout roll-forward) cite les mêmes mesures N−1 en baseline,
 ce qui rend les régressions calculables plutôt que déclaratives. Un verdict
