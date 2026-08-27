@@ -570,6 +570,86 @@ describe("DesktopAuthFlow protocol (issue #54)", () => {
     });
   });
 
+  it("explique l’expiration OAuth quand le navigateur a supprimé son cookie", async () => {
+    const { started } = await startDesktop();
+    if (started === null) throw new Error("desktop start absent");
+    const launched = await launchOAuth(started);
+    const completed = await finishOAuth(
+      launched,
+      `desktop-expired-${crypto.randomUUID()}`,
+    );
+    expect(completed.status).toBe(303);
+    expect(completed.headers.get("location")).toBe(started.browserUrl);
+    const confirmation = await route(
+      new Request(started.browserUrl, {
+        headers: { cookie: oauthCookie(completed) },
+      }),
+      authEnv,
+    );
+    expect(confirmation.status).toBe(200);
+    const page = await confirmation.text();
+    const capability = page.match(
+      /name="capability" value="([A-Za-z0-9_-]{43})"/u,
+    )?.[1];
+    if (capability === undefined) throw new Error("capability absente");
+    const pending = (await (await status(started)).json()) as {
+      expiresAt: string;
+    };
+
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date(Date.parse(pending.expiresAt) + 189_612));
+      for (const field of ["state", "capability"]) {
+        const forged = new FormData();
+        forged.set("flow", started.flowId);
+        forged.set("state", launched.state);
+        forged.set("capability", capability);
+        forged.set(field, "A".repeat(43));
+        const rejected = await route(
+          new Request(`${origin}/api/auth/v1/desktop/browser`, {
+            method: "POST",
+            headers: { origin },
+            body: forged,
+          }),
+          authEnv,
+        );
+        expect(rejected.status).toBe(403);
+      }
+      const form = new FormData();
+      form.set("flow", started.flowId);
+      form.set("state", launched.state);
+      form.set("capability", capability);
+      const expired = await route(
+        new Request(`${origin}/api/auth/v1/desktop/browser`, {
+          method: "POST",
+          headers: { origin },
+          body: form,
+        }),
+        authEnv,
+      );
+
+      expect(expired.status).toBe(410);
+      expect(expired.headers.get("content-type")).toContain("text/html");
+      expect(await expired.text()).toContain("Connexion expirée");
+      expect(await (await status(started)).json()).toMatchObject({
+        phase: "expired",
+        terminal: true,
+      });
+      expect((await claim(started)).status).toBe(409);
+      for (const url of [
+        started.browserUrl,
+        `${origin}/api/auth/v1/desktop/browser/oauth/resume?flow=${started.flowId}`,
+      ]) {
+        const reopened = await route(new Request(url), authEnv);
+        expect(reopened.status).toBe(410);
+        expect(reopened.headers.get("content-type")).toContain("text/html");
+        expect(await reopened.text()).toContain("Connexion expirée");
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("conserve les aliases de confirmation avec la même liaison navigateur", async () => {
     for (const alias of [
       "/api/auth/v1/desktop/browser/confirm",

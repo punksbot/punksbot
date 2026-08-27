@@ -26,6 +26,7 @@ import type {
 import type { DesktopReauthTarget } from "./desktop-reauth-grant-do";
 import {
   confirmationPage,
+  expiredDesktopAuthPage,
   existingBrowserSessionPage,
   passkeyPage,
 } from "./desktop-auth-browser-page";
@@ -344,6 +345,9 @@ export async function launchDesktopBrowser(
   }
   const stub = flowStub(env, flowId);
   const current = await stub.browserMetadata();
+  if (current?.phase === "expired") {
+    return expiredDesktopAuthPage();
+  }
   if (
     current?.phase === "browser_complete" &&
     current.outcomeCode === "account_creation_confirmation_required"
@@ -877,6 +881,9 @@ export async function resumeDesktopOAuthAccount(
   if (flow === null || flow.oauthState === null) {
     return problem(400, "invalid_input", "Desktop flow is unavailable");
   }
+  if (flow.phase === "expired") {
+    return expiredDesktopAuthPage();
+  }
   const binding = browserBinding(flow, request);
   if (binding === null) {
     return problem(400, "invalid_input", "Browser binding is missing");
@@ -895,6 +902,7 @@ export async function resumeDesktopOAuthAccount(
       flow.oauthState,
       capability,
       pending.identity.profile.displayName,
+      pending.flow.expiresAt,
     ),
     flow,
   );
@@ -929,6 +937,9 @@ export async function confirmDesktopOAuthAccount(
       "forbidden",
       "OAuth confirmation capability is invalid",
     );
+  }
+  if (flow.phase === "expired") {
+    return expiredDesktopAuthPage();
   }
   const binding = browserBinding(flow, request);
   if (
