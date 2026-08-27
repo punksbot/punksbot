@@ -65,15 +65,15 @@ export function confirmationPage(
 <p>Revenez dans Punks Bot et relancez la connexion.</p></section></main>
 <script type="module">
 const lifetimeMs=${Math.floor(lifetimeMs)};
-const startedAt=Date.now();
-const startedTick=performance.now();
+// Count navigation time conservatively: a delayed page cannot restart its lifetime.
+const navigationStartedAt=Date.now()-performance.now();
 const form=document.getElementById("account-confirmation");
 const choice=document.getElementById("confirmation-choice");
 const expired=document.getElementById("confirmation-expired");
 const remaining=document.getElementById("remaining-seconds");
 const button=form.querySelector("button");
 function update(){
-  const elapsed=Math.max(Date.now()-startedAt,performance.now()-startedTick);
+  const elapsed=Math.max(Date.now()-navigationStartedAt,performance.now());
   const seconds=Math.max(0,Math.ceil((lifetimeMs-elapsed)/1000));
   remaining.textContent=String(seconds);
   if(seconds>0)return true;
