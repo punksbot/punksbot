@@ -511,4 +511,38 @@ test("cleans the first local directory when the second directory cannot be creat
     /EEXIST|directory|file/i,
   );
   assert.equal(existsSync(exportsOutput), false);
+  assert.equal(
+    readFileSync(join(candidateRoot, "operational-budget-sources"), "utf8"),
+    "blocked\n",
+  );
+});
+
+test("preserves a pre-existing provenance directory when local sealing conflicts", async (t) => {
+  const fixture = await stagedFixture(t, "punks-budget-seal-conflict-");
+  const provenanceRoot = join(
+    fixture.candidateRoot,
+    "operational-budget-provenance",
+  );
+  mkdirSync(provenanceRoot);
+  const sentinel = join(provenanceRoot, "concurrent-proof");
+  writeFileSync(sentinel, "preserve me\n");
+
+  await assert.rejects(
+    sealOperationalBudgetEvidence(
+      {
+        sourceSha,
+        stagingDeploymentId,
+        manifestSha256: sha256(fixture.material.manifestBytes),
+        candidateRoot: fixture.candidateRoot,
+        destinations: fixture.destinations,
+        bundle: fixture.bundle,
+      },
+      {
+        frontieres: boundaries(fixture.material),
+        verifyProviderSubject: () => [{ verified: true }],
+      },
+    ),
+    /EEXIST|exist/i,
+  );
+  assert.equal(readFileSync(sentinel, "utf8"), "preserve me\n");
 });

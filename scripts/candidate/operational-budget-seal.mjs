@@ -143,8 +143,11 @@ export async function sealOperationalBudgetEvidence(
     "operational-budget-provenance.json",
   );
   const provenanceName = `${bundleSha256}.sigstore.json`;
+  let provenanceRootCreated = false;
+  let provenanceDescriptorCreated = false;
   try {
     mkdirSync(provenanceRoot, { mode: 0o700 });
+    provenanceRootCreated = true;
     writeFileSync(resolve(provenanceRoot, provenanceName), bundleContent, {
       flag: "wx",
       mode: 0o600,
@@ -163,6 +166,7 @@ export async function sealOperationalBudgetEvidence(
       })}\n`,
       { flag: "wx", mode: 0o600 },
     );
+    provenanceDescriptorCreated = true;
     const observation = parseJson(
       readStableEvidenceFile(
         resolve(candidateRoot, "operational-budget-observation.json"),
@@ -192,8 +196,12 @@ export async function sealOperationalBudgetEvidence(
     );
     return { manifest, observation, bundle: { key, sha256: bundleSha256 } };
   } catch (error) {
-    rmSync(provenanceRoot, { recursive: true, force: true });
-    rmSync(provenanceDescriptor, { force: true });
+    if (provenanceRootCreated) {
+      rmSync(provenanceRoot, { recursive: true, force: true });
+    }
+    if (provenanceDescriptorCreated) {
+      rmSync(provenanceDescriptor, { force: true });
+    }
     throw error;
   }
 }

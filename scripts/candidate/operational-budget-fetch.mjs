@@ -221,9 +221,15 @@ export async function fetchOperationalBudgetEvidence(input, { frontieres }) {
     input.candidateRoot,
     "operational-budget-r2-manifest.json",
   );
+  let exportsRootCreated = false;
+  let sourcesRootCreated = false;
+  let manifestOutputCreated = false;
+  let outputCreated = false;
   try {
     mkdirSync(exportsRoot, { mode: 0o700 });
+    exportsRootCreated = true;
     mkdirSync(sourcesRoot, { mode: 0o700 });
+    sourcesRootCreated = true;
     for (const [index, reference] of manifest.exports.entries()) {
       writeFileSync(
         resolve(exportsRoot, basename(reference.key)),
@@ -242,17 +248,23 @@ export async function fetchOperationalBudgetEvidence(input, { frontieres }) {
       flag: "wx",
       mode: 0o600,
     });
+    manifestOutputCreated = true;
     writeFileSync(output, observationBytes, { flag: "wx", mode: 0o600 });
+    outputCreated = true;
     const observation = parseJson(
       observationBytes,
       "operational budget observation",
     );
     return { manifest, observation };
   } catch (error) {
-    rmSync(exportsRoot, { recursive: true, force: true });
-    rmSync(sourcesRoot, { recursive: true, force: true });
-    rmSync(manifestOutput, { force: true });
-    rmSync(output, { force: true });
+    if (exportsRootCreated) {
+      rmSync(exportsRoot, { recursive: true, force: true });
+    }
+    if (sourcesRootCreated) {
+      rmSync(sourcesRoot, { recursive: true, force: true });
+    }
+    if (manifestOutputCreated) rmSync(manifestOutput, { force: true });
+    if (outputCreated) rmSync(output, { force: true });
     throw error;
   }
 }
