@@ -471,13 +471,46 @@ describe("DesktopAuthFlow protocol (issue #54)", () => {
     form.set("flow", started.flowId);
     form.set("state", launched.state);
     form.set("capability", capability);
+    const missingBinding = await route(
+      new Request(`${origin}/api/auth/v1/desktop/browser/confirm`, {
+        method: "POST",
+        headers: { origin },
+        body: form,
+      }),
+      authEnv,
+    );
+    expect(missingBinding.status).toBe(403);
+
+    const wrongBindingForm = new FormData();
+    wrongBindingForm.set("flow", started.flowId);
+    wrongBindingForm.set("state", launched.state);
+    wrongBindingForm.set("capability", capability);
+    const wrongCookie = launched.cookie.replace(
+      /=[^;]+/u,
+      `=${"x".repeat(43)}`,
+    );
+    const wrongBinding = await route(
+      new Request(`${origin}/api/auth/v1/desktop/browser/confirm`, {
+        method: "POST",
+        headers: { origin, cookie: wrongCookie },
+        body: wrongBindingForm,
+      }),
+      authEnv,
+    );
+    expect(wrongBinding.status).toBe(403);
+
+    const exactBindingForm = new FormData();
+    exactBindingForm.set("flow", started.flowId);
+    exactBindingForm.set("state", launched.state);
+    exactBindingForm.set("capability", capability);
     const confirmed = await route(
       new Request(`${origin}/api/auth/v1/desktop/browser/confirm`, {
         method: "POST",
         headers: {
-          origin: "https://github.com",
+          origin,
+          cookie: launched.cookie,
         },
-        body: form,
+        body: exactBindingForm,
       }),
       authEnv,
     );
@@ -488,6 +521,36 @@ describe("DesktopAuthFlow protocol (issue #54)", () => {
     expect(await (await status(started)).json()).toMatchObject({
       phase: "ready",
     });
+  });
+
+  it("conserve l’alias OAuth historique avec la même liaison navigateur", async () => {
+    const subject = `desktop-legacy-confirm-${crypto.randomUUID()}`;
+    const { started } = await startDesktop();
+    if (started === null) throw new Error("desktop start absent");
+    const launched = await launchOAuth(started);
+    const completed = await finishOAuth(launched, subject);
+    const page = await completed.text();
+    const capability = page.match(
+      /name="capability" value="([A-Za-z0-9_-]{43})"/u,
+    )?.[1];
+    if (capability === undefined) throw new Error("capability absente");
+    const form = new FormData();
+    form.set("flow", started.flowId);
+    form.set("state", launched.state);
+    form.set("capability", capability);
+
+    const confirmed = await route(
+      new Request(`${origin}/api/auth/v1/desktop/browser/oauth/confirm`, {
+        method: "POST",
+        headers: { origin, cookie: launched.cookie },
+        body: form,
+      }),
+      authEnv,
+    );
+    expect(confirmed.status).toBe(303);
+    expect(confirmed.headers.get("location")).toBe(
+      `punks-local://auth/complete?flow=${started.flowId}`,
+    );
   });
 
   it("scelle au confirm un grant 5 min ciblé, refuse cross-purpose et rejeu", async () => {

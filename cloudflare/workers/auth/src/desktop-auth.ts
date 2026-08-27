@@ -921,16 +921,13 @@ export async function confirmDesktopOAuthAccount(
   }
   const binding = browserBinding(flow, request);
   if (
-    binding !== null &&
-    (flow.browserBindingHash === null ||
-      (await hash(binding)) !== flow.browserBindingHash)
+    binding === null ||
+    flow.browserBindingHash === null ||
+    (await hash(binding)) !== flow.browserBindingHash
   ) {
     return problem(403, "forbidden", "Browser binding is invalid");
   }
   const browserBindingHash = flow.browserBindingHash;
-  if (browserBindingHash === null) {
-    return problem(400, "invalid_input", "Browser binding is unavailable");
-  }
   const pending = await stub.pendingIdentity(browserBindingHash);
   if (!pending.ok) {
     return problem(400, "invalid_input", "Account confirmation is invalid");
