@@ -144,6 +144,72 @@ staged bytes, verifies every subject with `gh attestation verify`, and publishes
 the resulting bundle create-only to both locked copies before any sample can be
 used. A digest or an `observer` label alone is never evidence.
 
+The operational input is prepared with
+`scripts/candidate/operational-budget-materialize.mjs`; the synthetic fixture in
+`operational-budget-fetch.test.mjs` is never an operator input. `materialize`
+accepts exactly 43 byte-content-addressed `punks.operational-metric-source.v2`
+documents: the 36 canonical budgets, Google and GitHub dimensions, four
+platform dimensions and the outbox state. It recalculates every count, Wilson
+bound, histogram quantile and verdict, and writes nothing if one source is
+missing, extra, red or statistically insufficient. `publish` preflights every
+existing object in both Punks buckets, publishes all content-addressed leaves,
+rechecks the Indefinite lock, and makes the two identical manifests visible
+last. Its `manifestSha256` result is the only value installed as the protected
+`PUNKS_OPERATIONAL_BUDGET_MANIFEST_SHA256` variable before dispatching the
+final `full-candidate` run.
+
+```sh
+PUNKS_BUDGET_ARCHIVE="$(mktemp)"
+node --input-type=module - "$PROVIDER_SOURCE_DIRECTORY" <<'NODE' | gzip -9 > "$PUNKS_BUDGET_ARCHIVE"
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
+const documents = readdirSync(process.argv[2])
+  .sort()
+  .map((name) =>
+    JSON.parse(readFileSync(join(process.argv[2], name), "utf8")),
+  );
+process.stdout.write(JSON.stringify(documents));
+NODE
+PUNKS_BUDGET_ARCHIVE_SHA256="$(shasum -a 256 "$PUNKS_BUDGET_ARCHIVE" | cut -d ' ' -f 1)"
+PUNKS_BUDGET_ARCHIVE_BASE64="$(base64 < "$PUNKS_BUDGET_ARCHIVE" | tr -d '\n')"
+
+gh workflow run punks-operational-budget.yml \
+  --repo punksbot/punksbot \
+  --ref staging \
+  -f source_sha="$SOURCE_SHA" \
+  -f staging_deployment_id="$STAGING_DEPLOYMENT_ID" \
+  -f sources_bundle_sha256="$PUNKS_BUDGET_ARCHIVE_SHA256" \
+  -f sources_bundle_gzip_base64="$PUNKS_BUDGET_ARCHIVE_BASE64"
+unset PUNKS_BUDGET_ARCHIVE_BASE64
+```
+
+The protected workflow owns the two independent R2 credentials; its token is
+deliberately read-only for repository state and cannot mutate environment
+variables. After that exact run succeeds, download its one-day audit artifact,
+hash `manifest.json`, compare the hash to `publication.json`, then install it
+with the authenticated operator session:
+
+```sh
+PUNKS_BUDGET_RESULT_DIRECTORY="$(mktemp -d)"
+gh run download "$BUDGET_RUN_ID" \
+  --repo punksbot/punksbot \
+  --name "punks-operational-budget-${SOURCE_SHA}" \
+  --dir "$PUNKS_BUDGET_RESULT_DIRECTORY"
+PUNKS_OPERATIONAL_BUDGET_MANIFEST_SHA256="$(shasum -a 256 \
+  "$PUNKS_BUDGET_RESULT_DIRECTORY/manifest.json" | cut -d ' ' -f 1)"
+jq -e --arg anchor "$PUNKS_OPERATIONAL_BUDGET_MANIFEST_SHA256" \
+  '.manifestSha256 == $anchor' \
+  "$PUNKS_BUDGET_RESULT_DIRECTORY/publication.json" >/dev/null
+gh variable set PUNKS_OPERATIONAL_BUDGET_MANIFEST_SHA256 \
+  --body "$PUNKS_OPERATIONAL_BUDGET_MANIFEST_SHA256" \
+  --repo punksbot/punksbot \
+  --env punks-staging-promotion
+```
+
+Provider source documents and the workflow input contain observations and query
+digests, never cookies, OAuth material, IP addresses, operator tokens or R2
+credentials.
+
 Never paste a private key, certificate password or API token into an issue,
 commit, workflow input or terminal transcript. Feed values directly to
 `gh secret set` over standard input.

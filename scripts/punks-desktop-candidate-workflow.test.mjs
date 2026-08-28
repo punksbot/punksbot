@@ -322,7 +322,7 @@ function validateWindowsSigningConfig(config) {
   );
 }
 
-function requireCheckout(job) {
+function requireCheckout(job, fetchDepth = 1) {
   const checkout = workflowStep(job, "checkout");
   invariant(
     checkout.uses ===
@@ -333,7 +333,7 @@ function requireCheckout(job) {
     checkout.with,
     {
       ref: githubShaExpression,
-      "fetch-depth": 1,
+      "fetch-depth": fetchDepth,
       "persist-credentials": false,
     },
     "checkout must use github.sha",
@@ -456,7 +456,7 @@ function validateWorkflow(workflow) {
   invariant(gates.needs === "preflight", "gates bypass preflight");
   same(gates.permissions, readPermissions, "gates permissions");
   invariant(!gates.environment, "gates can access signing secrets");
-  requireCheckout(gates);
+  requireCheckout(gates, 2);
   requireCleanInstall(gates, "gates");
   const dartSetup = workflowStep(gates, "setup_dart");
   invariant(

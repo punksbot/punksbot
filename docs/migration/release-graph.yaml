@@ -182,13 +182,13 @@ releases:
     materiaux:
       registre-contrats:
         version: 1
-        sha256: fd5f6868d0d9fd6324b5c4865b30ea0625a88cddeca934e18cd1cc6681e8c9e2
+        sha256: 7e3c938676454cd4e82055b8597d3fbc70c1b7030e96c0bd5c61b9a172c5a56f
       schemas:
         version: 1
-        sha256: 179641a87ff985c5e285354ac3e233ecf3c3be92f0909c62bd1d9a041d0bfab0
+        sha256: ed10540af8dd81f71741f6c0e99977264743ad2d2ff3c02e9e925452427853d6
       generes:
         version: 1
-        sha256: 32b10bc31911377dd200d64d8727c2a21d7914fcba8a2b5e72c4835415200828
+        sha256: e5782767020ce31330de1eb38a41affad9177d838ca0a2bd0982bfcd0aa6780f
       profil:
         id: desktop-social-loop@1
         version: 1
@@ -198,13 +198,13 @@ releases:
         sha256: e317ab42ffa0c0aaea7bc7b6ebe5d8ede446a4f0cc9738ed750c96f73d75e483
       manifeste-retrait:
         version: 1
-        sha256: 498f8594838cb7587e6a6f8aecf400350080707263508e25a6240a186e0ccb3c
+        sha256: b9baa65c9e8b17b77a4fbf22c234cba16913c015b6c5870d911bdb0ae5e86fd0
     staging:
       environnement: staging
       compte: 3a391620584c792dbbd8cfa148d7634a
       zone: b91146ce242a275de0b7e6e0cc3804c7
       materiau: cloudflare/staging.resources.json
-      materiau-sha256: 990c4ed698a9322de6fdefdc1870a3c0d67889abb86a1504eb85d51c55fb7f20
+      materiau-sha256: 374b6f0ba2a4a1fae8b4542c547625318ec455fb872384349b2af2d16189eafc
       deploiement: null
     artefacts: []
     digests-production: null

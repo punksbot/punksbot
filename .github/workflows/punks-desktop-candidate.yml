@@ -86,7 +86,10 @@ jobs:
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ github.sha }}
-          fetch-depth: 1
+          # The release-graph gate compares the candidate to HEAD^ to enforce
+          # append-only evolution. Keep exactly one parent while still binding
+          # the checkout itself to the immutable github.sha above.
+          fetch-depth: 2
           persist-credentials: false
 
       - name: Require clean source before dependency installation

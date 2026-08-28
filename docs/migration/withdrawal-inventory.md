@@ -3,7 +3,7 @@
 > Vue dérivée de [`withdrawal-inventory.yaml`](./withdrawal-inventory.yaml), qui est canonique.
 > Régénérée par `scripts/render-withdrawal-inventory.mjs` (`pnpm migration:render`) — ne pas éditer.
 > Décisions : issues [#13](https://github.com/punksbot/punksbot/issues/13), [#14](https://github.com/punksbot/punksbot/issues/14) et [#17](https://github.com/punksbot/punksbot/issues/17).
-> Checkpoint de récupération : `50e16de180dda4365f8001a8a73503f16977a175` — baseline Buzz gelée : `da818eddc2f470c006a1073c8c5452f8a989f272` — version 1 — sha256 canonique `498f8594838cb7587e6a6f8aecf400350080707263508e25a6240a186e0ccb3c`.
+> Checkpoint de récupération : `50e16de180dda4365f8001a8a73503f16977a175` — baseline Buzz gelée : `da818eddc2f470c006a1073c8c5452f8a989f272` — version 1 — sha256 canonique `b9baa65c9e8b17b77a4fbf22c234cba16913c015b6c5870d911bdb0ae5e86fd0`.
 
 Chaque actif reçoit exactement un verdict. Un module partagé appartient à la tranche de
 son **dernier** consommateur ; ses parties antérieures disparaissent plus tôt (champ
@@ -159,7 +159,7 @@ L’entrée « Retrait global du serveur historique » s’ouvre uniquement lors
 - `desktop/{tailwind.punks.config.js,tsconfig.punks.json}` — configurations de build fermées de la surface Punks
 - `scripts/{check-migration-manifests.mjs,check-migration-manifests.test.mjs,migration-manifest-lib.mjs,render-withdrawal-inventory.mjs}` — gate et générateur des manifestes de migration (issue #49)
 - `scripts/{release-graph-lib.mjs,check-release-graph.mjs,check-release-graph.test.mjs,release-graph-live-state.test.mjs}` — gate du graphe de release et du modèle d'attestation (issue #51)
-- `scripts/{github-attestation-lib.mjs,promotion-attestation-lib.mjs,promotion-installed-transcript-lib.mjs,promotion-materials-lib.mjs,promotion-materials-lib.test.mjs,promotion-test-fixtures.mjs,promotion-dossier-validator-fixture.mjs,promotion-dossier-lib.mjs,promotion-dossier-lib.test.mjs,promotion-proof-lib.mjs,promotion-resilience-lib.mjs,promotion-local-emission-lib.mjs,promotion-local-emission.test.mjs,check-promotion-dossier.mjs,check-promotion-dossier.test.mjs,promotion-publish-lib.mjs,promotion-publish.mjs,promotion-publish.test.mjs,promotion-frontiers.mjs,promotion-frontiers.test.mjs,receipt-publish.mjs,punks-desktop-candidate-workflow.test.mjs,punks-desktop-promotion-workflow.test.mjs,check-punks-rust.mjs,punks-native-artifact.mjs,punks-native-artifact.test.mjs,windows-artifact-sign.ps1,windows-artifact-sign.test.ps1}` — harnais d'acceptation d'une promotion : dossier de preuve, gates d'autorisation, chaîne de candidat Tauri signé et émission create-only de l'attestation (issues #52 et #58)
+- `scripts/{github-attestation-lib.mjs,promotion-attestation-lib.mjs,promotion-installed-transcript-lib.mjs,promotion-materials-lib.mjs,promotion-materials-lib.test.mjs,promotion-test-fixtures.mjs,promotion-dossier-validator-fixture.mjs,promotion-dossier-lib.mjs,promotion-dossier-lib.test.mjs,promotion-proof-lib.mjs,promotion-resilience-lib.mjs,promotion-local-emission-lib.mjs,promotion-local-emission.test.mjs,check-promotion-dossier.mjs,check-promotion-dossier.test.mjs,promotion-publish-lib.mjs,promotion-publish.mjs,promotion-publish.test.mjs,promotion-frontiers.mjs,promotion-frontiers.test.mjs,receipt-publish.mjs,punks-desktop-candidate-workflow.test.mjs,punks-desktop-promotion-workflow.test.mjs,punks-operational-budget-workflow.test.mjs,check-punks-rust.mjs,punks-native-artifact.mjs,punks-native-artifact.test.mjs,windows-artifact-sign.ps1,windows-artifact-sign.test.ps1}` — harnais d'acceptation d'une promotion : dossier de preuve, gates d'autorisation, chaîne de candidat Tauri signé et émission create-only de l'attestation (issues #52 et #58)
 - `scripts/candidate/` — collecte fermée, preuves natives et agrégation attestée des quatre plateformes du candidat Punks
 - `package.json` — workspace punksbot — gates Punks (cloudflare:check, punks:check, migration:check)
 - `docs/{adr,agents,spec,research}/`
@@ -168,7 +168,7 @@ L’entrée « Retrait global du serveur historique » s’ouvre uniquement lors
 - `AGENTS.md` — séparation : sections guide Buzz retirées au retrait global — le lien historique CLAUDE.md reste inventorié séparément avec la documentation Buzz
 - `cloudflare/` — registre canonique, workers, workerd, @punks/client, BASELINE.json, frontière managed-only
 - `cloudflare/scripts/` — gates, staging et preuves Workers gérés, dont l'expansion de la boucle sociale
-- `.github/workflows/{punks-cloudflare.yml,punks-desktop-candidate.yml}`
+- `.github/workflows/{punks-cloudflare.yml,punks-desktop-candidate.yml,punks-operational-budget.yml}`
 
 ### Outillage neutre
 

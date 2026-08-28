@@ -1,0 +1,177 @@
+name: Punks Operational Budget Preparation
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact immutable 40-character source SHA observed
+        required: true
+        type: string
+      staging_deployment_id:
+        description: Exact seven-Worker staging deployment digest observed
+        required: true
+        type: string
+      sources_bundle_sha256:
+        description: SHA-256 of the gzip-compressed provider source bundle
+        required: true
+        type: string
+      sources_bundle_gzip_base64:
+        description: Gzip/base64 JSON array of the 43 non-secret provider observations
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: punks-operational-budget-${{ inputs.source_sha }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Publish locked operational observations
+    environment: punks-staging-promotion
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Validate the protected immutable source
+        id: validate_source
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          STAGING_DEPLOYMENT_ID: ${{ inputs.staging_deployment_id }}
+          REF_PROTECTED: ${{ github.ref_protected }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$STAGING_DEPLOYMENT_ID" =~ ^sha256:[0-9a-f]{64}$ ]]
+          test "$SOURCE_SHA" = "$GITHUB_SHA"
+          test "$REF_PROTECTED" = "true"
+
+      - name: Checkout the exact materializer source
+        id: checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Require a clean immutable checkout
+        id: clean_source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git diff --exit-code
+          git diff --cached --exit-code
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Set up pnpm
+        id: setup_pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        with:
+          version: 11.4.0
+
+      - name: Set up Node
+        id: setup_node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24.14.1
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install immutable publication dependencies
+        id: install
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Decode the content-anchored provider observations
+        id: decode_sources
+        shell: bash
+        env:
+          SOURCES_BUNDLE_GZIP_BASE64: ${{ inputs.sources_bundle_gzip_base64 }}
+          SOURCES_BUNDLE_SHA256: ${{ inputs.sources_bundle_sha256 }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCES_BUNDLE_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          bundle="$RUNNER_TEMP/provider-sources.json.gz"
+          sources="$RUNNER_TEMP/provider-sources"
+          mkdir "$sources"
+          printf '%s' "$SOURCES_BUNDLE_GZIP_BASE64" | base64 --decode > "$bundle"
+          unset SOURCES_BUNDLE_GZIP_BASE64
+          test "$(sha256sum "$bundle" | cut -d ' ' -f 1)" = "$SOURCES_BUNDLE_SHA256"
+          node --input-type=module - "$bundle" "$sources" <<'NODE'
+          import { createHash } from "node:crypto";
+          import { readFileSync, writeFileSync } from "node:fs";
+          import { join } from "node:path";
+          import { gunzipSync } from "node:zlib";
+          const documents = JSON.parse(gunzipSync(readFileSync(process.argv[2])));
+          if (!Array.isArray(documents) || documents.length !== 43) process.exit(1);
+          for (const document of documents) {
+            const content = Buffer.from(`${JSON.stringify(document)}\n`);
+            const digest = createHash("sha256").update(content).digest("hex");
+            writeFileSync(join(process.argv[3], `${digest}.json`), content, {
+              flag: "wx",
+              mode: 0o600,
+            });
+          }
+          NODE
+          rm -f "$bundle"
+
+      - name: Recalculate all operational statistics and verdicts
+        id: materialize
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          STAGING_DEPLOYMENT_ID: ${{ inputs.staging_deployment_id }}
+        run: |
+          set -euo pipefail
+          result="$(node scripts/candidate/operational-budget-materialize.mjs materialize \
+            --source-sha "$SOURCE_SHA" \
+            --staging-deployment-id "$STAGING_DEPLOYMENT_ID" \
+            --sources "$RUNNER_TEMP/provider-sources" \
+            --output "$RUNNER_TEMP/operational-budget")"
+          manifest_sha256="$(jq -er '.manifestSha256' <<< "$result")"
+          [[ "$manifest_sha256" =~ ^[0-9a-f]{64}$ ]]
+          echo "manifest_sha256=$manifest_sha256" >> "$GITHUB_OUTPUT"
+
+      - name: Publish leaves redundantly and both locked manifests last
+        id: publish
+        shell: bash
+        env:
+          PUNKS_R2_PRIMARY_API_TOKEN: ${{ secrets.PUNKS_R2_PRIMARY_API_TOKEN }}
+          PUNKS_R2_PRIMARY_ACCESS_KEY_ID: ${{ secrets.PUNKS_R2_PRIMARY_ACCESS_KEY_ID }}
+          PUNKS_R2_PRIMARY_SECRET_ACCESS_KEY: ${{ secrets.PUNKS_R2_PRIMARY_SECRET_ACCESS_KEY }}
+          PUNKS_R2_RECOVERY_API_TOKEN: ${{ secrets.PUNKS_R2_RECOVERY_API_TOKEN }}
+          PUNKS_R2_RECOVERY_ACCESS_KEY_ID: ${{ secrets.PUNKS_R2_RECOVERY_ACCESS_KEY_ID }}
+          PUNKS_R2_RECOVERY_SECRET_ACCESS_KEY: ${{ secrets.PUNKS_R2_RECOVERY_SECRET_ACCESS_KEY }}
+          PUNKS_R2_PRIMARY_DESTINATION: ${{ vars.PUNKS_R2_PRIMARY_DESTINATION }}
+          PUNKS_R2_RECOVERY_DESTINATION: ${{ vars.PUNKS_R2_RECOVERY_DESTINATION }}
+        run: |
+          set -euo pipefail
+          SOURCE_SHA="${{ inputs.source_sha }}"
+          STAGING_DEPLOYMENT_ID="${{ inputs.staging_deployment_id }}"
+          MANIFEST_SHA256="${{ steps.materialize.outputs.manifest_sha256 }}"
+          node scripts/candidate/operational-budget-materialize.mjs publish \
+            --source-sha "$SOURCE_SHA" \
+            --staging-deployment-id "$STAGING_DEPLOYMENT_ID" \
+            --manifest-sha256 "$MANIFEST_SHA256" \
+            --root "$RUNNER_TEMP/operational-budget" \
+            --r2-primaire "$PUNKS_R2_PRIMARY_DESTINATION" \
+            --r2-secondaire "$PUNKS_R2_RECOVERY_DESTINATION" \
+            --frontieres scripts/promotion-frontiers.mjs > "$RUNNER_TEMP/publication.json"
+          jq -e --arg anchor "$MANIFEST_SHA256" \
+            '.manifestSha256 == $anchor' "$RUNNER_TEMP/publication.json" >/dev/null
+
+      - name: Upload the non-secret materialized audit bundle
+        id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: punks-operational-budget-${{ inputs.source_sha }}
+          path: |
+            ${{ runner.temp }}/operational-budget/manifest.json
+            ${{ runner.temp }}/operational-budget/observation.json
+            ${{ runner.temp }}/publication.json
+          if-no-files-found: error
+          retention-days: 1
