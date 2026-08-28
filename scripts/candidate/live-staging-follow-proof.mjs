@@ -287,6 +287,7 @@ export async function proveLiveStagingFollow(
       ),
       fetchImpl,
       historyCount: 52,
+      fixtureScope: "follow",
     });
     const initial = followStream({
       workspaceId: fixture.workspaceId,

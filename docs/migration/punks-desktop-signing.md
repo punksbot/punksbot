@@ -325,9 +325,17 @@ The signer refuses paths outside the six closed artifact roles before contacting
 HSM. It additionally permits and signs exactly the five NSIS plugin DLLs and two
 WiX extension DLLs used by the pinned Tauri CLI, and rejects any other DLL. The
 static Tauri overlay
-`desktop/src-tauri/tauri.punks.windows-signing.conf.json` fixes the complete
-`pwsh -File … %1` command structurally instead of generating it from workflow
-text. Every HSM call is appended to a create-once ledger. The workflow requires
+`desktop/src-tauri/tauri.punks.windows-signing.conf.json` fixes the wrapper name
+`punks-windows-artifact-sign.cmd` and its sole `%1` artifact placeholder. The
+protected workflow creates that wrapper below a fresh dedicated `RUNNER_TEMP`
+directory; the wrapper invokes
+`%GITHUB_WORKSPACE%\scripts\windows-artifact-sign.ps1` with a quoted `%~1`,
+and propagates the PowerShell exit code. Only the dedicated wrapper directory is
+added to `GITHUB_PATH`, and the bundle step requires `Get-Command` to resolve
+exactly to that path before invoking Tauri. This absolute repository handoff is
+also inherited by NSIS `!uninstfinalize`, whose working directory differs from
+Tauri's normal signing calls. Every HSM call is appended to a create-once
+ledger. The workflow requires
 exactly two patched-main signatures, five NSIS plugin signatures, two WiX
 extension signatures and one each for the NSIS uninstaller, NSIS installer and
 MSI installer. It then compares every stable path and digest to the exact

@@ -122,15 +122,65 @@ test("prepares one idempotent paginated staging fixture without leaking authorit
   );
 
   const workspaceCall = calls[1];
+  const workspaceCommand = JSON.parse(workspaceCall.init.body);
   assert.equal(
     workspaceCall.init.headers.authorization,
     `Bearer ${operatorToken}`,
+  );
+  assert.equal(
+    workspaceCommand.commandId,
+    deterministicUuid("workspace", sourceSha),
+  );
+  assert.equal(
+    workspaceCommand.payload.slug,
+    `promotion-${sourceSha.slice(0, 12)}`,
   );
   for (const call of calls.slice(2)) {
     assert.equal(call.init.headers.cookie, cookie);
     assert.equal(call.init.headers.origin, origin);
     assert.match(call.init.headers["idempotency-key"], /^[0-9a-f-]{36}$/);
   }
+});
+
+test("isole la fixture FOLLOW du candidat installé", async () => {
+  let workspaceCommand;
+  await assert.rejects(
+    prepareStagingFixture({
+      sourceSha,
+      origin,
+      cookie,
+      operatorToken,
+      sessionRevocationId,
+      fixtureScope: "follow",
+      fetchImpl: async (url, init = {}) => {
+        if (new URL(url).pathname === "/api/auth/v1/session") {
+          return response(200, {
+            session: {
+              sessionId,
+              punkId,
+              expiresAt: "2026-09-24T00:00:00Z",
+              punk: { id: punkId, displayName: "Proof Punk", avatarUrl: null },
+            },
+          });
+        }
+        workspaceCommand = JSON.parse(init.body);
+        return response(409, { code: "conflict" });
+      },
+    }),
+    /workspace provisioning failed with HTTP 409/,
+  );
+  assert.equal(
+    workspaceCommand.commandId,
+    deterministicUuid("follow-workspace", sourceSha),
+  );
+  assert.equal(
+    workspaceCommand.payload.slug,
+    `promotion-follow-${sourceSha.slice(0, 12)}`,
+  );
+  assert.notEqual(
+    workspaceCommand.commandId,
+    deterministicUuid("workspace", sourceSha),
+  );
 });
 
 test("fails closed on wrong origin, bad session and partial fixture writes", async () => {
@@ -155,6 +205,18 @@ test("fails closed on wrong origin, bad session and partial fixture writes", asy
       fetchImpl: async () => response(500, {}),
     }),
     /session cookie/,
+  );
+  await assert.rejects(
+    prepareStagingFixture({
+      sourceSha,
+      origin,
+      cookie,
+      operatorToken,
+      sessionRevocationId,
+      fixtureScope: "unknown",
+      fetchImpl: async () => response(500, {}),
+    }),
+    /fixture scope/,
   );
   await assert.rejects(
     prepareStagingFixture({

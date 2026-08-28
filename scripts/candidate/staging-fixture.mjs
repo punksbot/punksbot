@@ -14,6 +14,7 @@ const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const COOKIE_RE = /^__Host-punks_session=[^;\s]{32,4096}$/;
 const CAPABILITY_RE = /^[A-Za-z0-9_-]{43,128}$/;
+const FIXTURE_SCOPES = new Set(["candidate", "follow"]);
 
 function invariant(condition, message) {
   if (!condition) throw new Error(message);
@@ -130,6 +131,10 @@ function authenticatedHeaders(origin, cookie, commandId) {
   };
 }
 
+function fixtureDomain(scope, domain) {
+  return scope === "candidate" ? domain : `${scope}-${domain}`;
+}
+
 /**
  * Creates/replays one bounded fixture against the public staging contracts.
  * The returned record contains coordinates only; neither authority input can
@@ -143,8 +148,13 @@ export async function prepareStagingFixture({
   sessionRevocationId,
   fetchImpl = fetch,
   historyCount = 52,
+  fixtureScope = "candidate",
 }) {
   invariant(SHA_RE.test(sourceSha), "exact 40-character source SHA required");
+  invariant(
+    FIXTURE_SCOPES.has(fixtureScope),
+    "staging fixture scope must be candidate or follow",
+  );
   let parsedOrigin;
   try {
     parsedOrigin = new URL(origin);
@@ -195,8 +205,14 @@ export async function prepareStagingFixture({
     "staging session returned no canonical Session/Punk ID",
   );
 
-  const workspaceCommandId = deterministicUuid("workspace", sourceSha);
-  const slug = `promotion-${sourceSha.slice(0, 12)}`;
+  const workspaceCommandId = deterministicUuid(
+    fixtureDomain(fixtureScope, "workspace"),
+    sourceSha,
+  );
+  const slug =
+    fixtureScope === "candidate"
+      ? `promotion-${sourceSha.slice(0, 12)}`
+      : `promotion-follow-${sourceSha.slice(0, 12)}`;
   const workspaceCommand = {
     contract: "workspace.create@1",
     commandId: workspaceCommandId,
@@ -228,7 +244,10 @@ export async function prepareStagingFixture({
     "workspace response has no canonical ID",
   );
 
-  const conversationCommandId = deterministicUuid("conversation", sourceSha);
+  const conversationCommandId = deterministicUuid(
+    fixtureDomain(fixtureScope, "conversation"),
+    sourceSha,
+  );
   const conversationCommand = {
     contract: "conversation.create@1",
     commandId: conversationCommandId,
@@ -265,7 +284,10 @@ export async function prepareStagingFixture({
 
   const seedMessageIds = [];
   for (let index = 0; index < historyCount; index += 1) {
-    const commandId = deterministicUuid(`history-${index}`, sourceSha);
+    const commandId = deterministicUuid(
+      fixtureDomain(fixtureScope, `history-${index}`),
+      sourceSha,
+    );
     const command = {
       contract: "message.post@1",
       commandId,
@@ -300,7 +322,10 @@ export async function prepareStagingFixture({
     seedMessageIds.push(messageId);
   }
 
-  const replyCommandId = deterministicUuid("history-reply", sourceSha);
+  const replyCommandId = deterministicUuid(
+    fixtureDomain(fixtureScope, "history-reply"),
+    sourceSha,
+  );
   const replyEnvelope = await requestJson(
     fetchImpl,
     `${canonicalOrigin}/api/v1/workspaces/${workspaceId}/conversations/${conversationId}/messages`,

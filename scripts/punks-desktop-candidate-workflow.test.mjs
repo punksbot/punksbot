@@ -305,15 +305,8 @@ function validateWindowsSigningConfig(config) {
         createUpdaterArtifacts: false,
         windows: {
           signCommand: {
-            cmd: "pwsh",
-            args: [
-              "-NoLogo",
-              "-NoProfile",
-              "-NonInteractive",
-              "-File",
-              "../../scripts/windows-artifact-sign.ps1",
-              "%1",
-            ],
+            cmd: "punks-windows-artifact-sign.cmd",
+            args: ["%1"],
           },
         },
       },
@@ -646,6 +639,10 @@ function validateWorkflow(workflow) {
   requireCleanInstall(build, "build");
   const unixRunner = workflowStep(build, "prepare_cargo_runner_unix");
   const windowsRunner = workflowStep(build, "prepare_cargo_runner_windows");
+  const windowsSigningCommand = workflowStep(
+    build,
+    "prepare_windows_signing_command",
+  );
   requireRun(unixRunner, [
     'exec cargo "$@" --locked --no-default-features',
     "chmod 0700",
@@ -653,6 +650,12 @@ function validateWorkflow(workflow) {
   requireRun(windowsRunner, [
     "cargo %* --locked --no-default-features",
     "punks-cargo-runner.cmd",
+  ]);
+  requireRun(windowsSigningCommand, [
+    '$signingBin = Join-Path $env:RUNNER_TEMP "punks-windows-signing-bin"',
+    "punks-windows-artifact-sign.cmd",
+    '"%GITHUB_WORKSPACE%\\scripts\\windows-artifact-sign.ps1" "%~1"',
+    "$signingBin | Out-File -FilePath $env:GITHUB_PATH",
   ]);
   requireRun(workflowStep(build, "import_apple"), [
     "Developer ID Application",
@@ -671,8 +674,9 @@ function validateWorkflow(workflow) {
   );
   invariant(
     build.steps.indexOf(unixRunner) < firstSecretStep &&
-      build.steps.indexOf(windowsRunner) < firstSecretStep,
-    "Cargo runners must exist before signing secrets",
+      build.steps.indexOf(windowsRunner) < firstSecretStep &&
+      build.steps.indexOf(windowsSigningCommand) < firstSecretStep,
+    "Cargo runners and Windows signing command must exist before signing secrets",
   );
   for (const [id, runnerOutput] of [
     ["build_macos", "prepare_cargo_runner_unix.outputs.path"],
@@ -832,6 +836,9 @@ function validateWorkflow(workflow) {
     "Windows in-bundler signing environment changed",
   );
   requireRun(bundleWindows, [
+    'Get-Command "punks-windows-artifact-sign.cmd" -CommandType Application',
+    "punks-windows-signing-bin/punks-windows-artifact-sign.cmd",
+    "Windows signing wrapper did not resolve from the dedicated runner directory",
     "PUNKS_WINDOWS_SIGNING_LEDGER",
     "PUNKS_WINDOWS_NSIS_TEMP",
     "$env:TEMP = $nsisTemp",
@@ -1065,9 +1072,7 @@ function validateWorkflow(workflow) {
     "failed installed evidence is unavailable for independent review",
   );
   const stageLeg = workflowStep(build, "stage_leg");
-  requireRun(stageLeg, [
-    "scripts/candidate/artifacts.mjs collect",
-  ]);
+  requireRun(stageLeg, ["scripts/candidate/artifacts.mjs collect"]);
   invariant(
     stageLeg.if === "inputs.validation_scope == 'full-candidate'",
     "Apple-only stages an incomplete closed platform leg",
@@ -1535,6 +1540,20 @@ const mutations = [
     error: /misses \$env:TEMP = \$nsisTemp/,
   },
   {
+    name: "Windows signing wrapper is absent from PATH",
+    change(workflow) {
+      const step = workflowStep(
+        workflow.jobs.build,
+        "prepare_windows_signing_command",
+      );
+      step.run = step.run.replace(
+        "$signingBin | Out-File -FilePath $env:GITHUB_PATH",
+        "$signingBin | Out-File -FilePath $env:IGNORED_PATH",
+      );
+    },
+    error: /signingBin \| Out-File -FilePath \$env:GITHUB_PATH/,
+  },
+  {
     name: "Tauri standalone restoration check is disabled",
     change(workflow) {
       const step = workflowStep(workflow.jobs.build, "bundle_windows");
@@ -1742,24 +1761,15 @@ test("the static Windows Tauri signing config is exact", () => {
 
 const windowsSigningConfigMutations = [
   {
-    name: "PowerShell is replaced by cmd.exe",
+    name: "the PATH-resolved signing wrapper is replaced",
     change(config) {
       config.bundle.windows.signCommand.cmd = "cmd.exe";
     },
   },
   {
-    name: "the File switch is removed",
+    name: "the artifact placeholder is removed",
     change(config) {
-      config.bundle.windows.signCommand.args =
-        config.bundle.windows.signCommand.args.filter(
-          (argument) => argument !== "-File",
-        );
-    },
-  },
-  {
-    name: "the signer path is moved after the artifact",
-    change(config) {
-      config.bundle.windows.signCommand.args.reverse();
+      config.bundle.windows.signCommand.args = [];
     },
   },
   {

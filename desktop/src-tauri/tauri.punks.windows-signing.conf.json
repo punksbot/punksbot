@@ -4,15 +4,8 @@
     "createUpdaterArtifacts": false,
     "windows": {
       "signCommand": {
-        "cmd": "pwsh",
-        "args": [
-          "-NoLogo",
-          "-NoProfile",
-          "-NonInteractive",
-          "-File",
-          "../../scripts/windows-artifact-sign.ps1",
-          "%1"
-        ]
+        "cmd": "punks-windows-artifact-sign.cmd",
+        "args": ["%1"]
       }
     }
   }

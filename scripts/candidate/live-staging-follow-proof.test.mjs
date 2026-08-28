@@ -88,5 +88,6 @@ test("lie la fixture à l'autorité de révocation de la Session émise", async 
     fixtureInput.sessionRevocationId,
     authAggregateUuid("session-revocation", capability),
   );
+  assert.equal(fixtureInput.fixtureScope, "follow");
   assert.equal(calls, 2);
 });
