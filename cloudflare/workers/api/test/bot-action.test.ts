@@ -1,6 +1,7 @@
 import type {
   BotActionAdmission,
   BotActionReceiptArchive,
+  BotInstallationJournalSegmentArchive,
   ConfigureBotInstallationCommand,
   CreateConversationCommand,
   CreateWorkspaceCommand,
@@ -1090,7 +1091,10 @@ describe("private Punks Bot Reaction vertical slice", () => {
     });
   });
 
-  it("archives a terminal receipt before deleting it and replays the exact tombstone from R2", async () => {
+  it.each([
+    false,
+    true,
+  ])("archives a terminal receipt before deleting it and replays the exact tombstone from R2 (early alarm: %s)", async (earlyAlarm) => {
     const coordinates = await fixture(true);
     const stub = env.BOT_INSTALLATIONS.getByName(coordinates.installationId);
     const actionId = "81000000-0000-8000-8000-000000000001";
@@ -1168,16 +1172,9 @@ describe("private Punks Bot Reaction vertical slice", () => {
       );
       await state.storage.setAlarm(Date.now() - 1);
     });
-    const journalArchivesBefore = await env.JOURNAL_ARCHIVE_BUCKET.list({
-      prefix: "journal/v1/bot-installation/",
-    });
+    // A due workerd alarm may win the race with the first R2 observation.
+    if (earlyAlarm) await runDurableObjectAlarm(stub);
     await runDurableObjectAlarm(stub);
-    const journalArchivesAfter = await env.JOURNAL_ARCHIVE_BUCKET.list({
-      prefix: "journal/v1/bot-installation/",
-    });
-    expect(journalArchivesAfter.objects.length).toBeGreaterThan(
-      journalArchivesBefore.objects.length,
-    );
 
     await runInDurableObject(stub, (_instance, state) => {
       const pending = state.storage.sql
@@ -1230,6 +1227,35 @@ describe("private Punks Bot Reaction vertical slice", () => {
       admissionProof50320: admitted.proof,
       completionProof50321: { kind: 50321 },
     });
+    const journalObjects = await env.JOURNAL_ARCHIVE_BUCKET.list({
+      prefix: "journal/v1/bot-installation/",
+    });
+    // With a one-event hot window, completion stays hot while its admission
+    // must already be present in a sealed archive for this exact Installation.
+    let admissionArchived = false;
+    for (const object of journalObjects.objects) {
+      const storedJournal = await env.JOURNAL_ARCHIVE_BUCKET.get(object.key);
+      if (storedJournal === null)
+        throw new Error("Journal archive disappeared");
+      const segment =
+        await storedJournal.json<BotInstallationJournalSegmentArchive>();
+      expect(
+        validateContract(
+          "punks://contracts/bot-installation.journal-segment@1",
+          segment,
+        ).valid,
+      ).toBe(true);
+      if (
+        segment.workspaceId === coordinates.workspaceId &&
+        segment.installationId === coordinates.installationId &&
+        segment.events.some(
+          (event) => event.id === archive.admissionProof50320.id,
+        )
+      ) {
+        admissionArchived = true;
+      }
+    }
+    expect(admissionArchived).toBe(true);
     await runInDurableObject(stub, (_instance, state) => {
       expect(
         state.storage.sql
