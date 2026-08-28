@@ -1027,13 +1027,26 @@ function validateWorkflow(workflow) {
     '($patchedDigests -join ",") -ne ($installedDigests -join ",")',
     "Installed NSIS/MSI executables do not match the two HSM-signed patched variants",
   ]);
-  requireRun(workflowStep(build, "verify_updater"), [
-    "minisign -Vm",
+  const verifyUpdater = workflowStep(build, "verify_updater");
+  requireRun(verifyUpdater, [
+    "verify_tauri_signature",
+    'encoded_signature="${artifact}.sig"',
+    'base64 --decode < "$encoded_signature" > "$decoded_signature"',
+    'minisign -Vm "$artifact" -x "$decoded_signature" -P "$public_key"',
+    'verify_tauri_signature "$updater"',
+    'verify_tauri_signature "$nsis"',
+    'verify_tauri_signature "$msi"',
     "*.app.tar.gz",
     "*.AppImage",
     "*.exe",
     "*.msi",
   ]);
+  invariant(
+    !verifyUpdater.run.includes('-x "${updater}.sig"') &&
+      !verifyUpdater.run.includes('-x "${nsis}.sig"') &&
+      !verifyUpdater.run.includes('-x "${msi}.sig"'),
+    "Tauri's base64-wrapped updater signature is passed directly to minisign",
+  );
   const installedExercise = workflowStep(build, "exercise_installed_candidate");
   invariant(
     !JSON.stringify(installedExercise).includes("PUNKS_ACCESSIBILITY_REVIEWER"),
@@ -1584,6 +1597,17 @@ const mutations = [
       step.run = step.run.replace("tauri signer sign", "echo skipped");
     },
     error: /tauri signer sign/,
+  },
+  {
+    name: "Tauri updater signature remains base64 wrapped",
+    change(workflow) {
+      const step = workflowStep(workflow.jobs.build, "verify_updater");
+      step.run = step.run.replace(
+        'base64 --decode < "$encoded_signature" > "$decoded_signature"',
+        'cp "$encoded_signature" "$decoded_signature"',
+      );
+    },
+    error: /base64 --decode/,
   },
   {
     name: "Windows timestamp check is removed",

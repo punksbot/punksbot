@@ -1209,20 +1209,31 @@ jobs:
             process.stdout.write(config.plugins.updater.pubkey);
           ')"
           public_key="$(printf '%s' "$encoded_key" | base64 --decode | tail -n 1)"
+          decoded_signature="$RUNNER_TEMP/punks-tauri-updater.minisig"
+          trap 'rm -f -- "$decoded_signature"' EXIT
+          verify_tauri_signature() {
+            local artifact="$1"
+            local encoded_signature="${artifact}.sig"
+            [[ -f "$encoded_signature" && ! -L "$encoded_signature" ]]
+            base64 --decode < "$encoded_signature" > "$decoded_signature"
+            [[ -s "$decoded_signature" && ! -L "$decoded_signature" ]]
+            minisign -Vm "$artifact" -x "$decoded_signature" -P "$public_key"
+            rm -f -- "$decoded_signature"
+          }
           case "$PLATFORM" in
             macos-*)
               updater="$(find "$bundle/macos" -maxdepth 1 -name '*.app.tar.gz' -type f)"
-              minisign -Vm "$updater" -x "${updater}.sig" -P "$public_key"
+              verify_tauri_signature "$updater"
               ;;
             linux-x64)
               updater="$(find "$bundle/appimage" -maxdepth 1 -name '*.AppImage' -type f)"
-              minisign -Vm "$updater" -x "${updater}.sig" -P "$public_key"
+              verify_tauri_signature "$updater"
               ;;
             windows-x64)
               nsis="$(find "$bundle/nsis" -maxdepth 1 -name '*.exe' -type f)"
               msi="$(find "$bundle/msi" -maxdepth 1 -name '*.msi' -type f)"
-              minisign -Vm "$nsis" -x "${nsis}.sig" -P "$public_key"
-              minisign -Vm "$msi" -x "${msi}.sig" -P "$public_key"
+              verify_tauri_signature "$nsis"
+              verify_tauri_signature "$msi"
               ;;
             *)
               echo "Unsupported platform: $PLATFORM" >&2
