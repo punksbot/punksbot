@@ -97,7 +97,6 @@
       ]
     },
     {
-      // ADR-0064: permanently retire both dedicated passkey namespaces.
       "tag": "v6",
       "deleted_classes": ["PasskeyCeremonyDO", "PasskeyCredentialDO"]
     }
