@@ -7,6 +7,7 @@ import YAML from "yaml";
 import { OPERATIONAL_BUDGET_PROVENANCE } from "./candidate/operational-budget-evidence.mjs";
 
 const workflowPath = resolve(".github/workflows/punks-desktop-candidate.yml");
+const macosFinalizerPath = resolve("scripts/macos-artifact-finalize.sh");
 const windowsSignerPath = resolve("scripts/windows-artifact-sign.ps1");
 const windowsSignerTestPath = resolve("scripts/windows-artifact-sign.test.ps1");
 const windowsSigningConfigPath = resolve(
@@ -703,12 +704,44 @@ function validateWorkflow(workflow) {
       id + " uses the wrong Cargo runner",
     );
   }
-  requireRun(workflowStep(build, "build_macos"), [
-    'notarytool submit "$dmg"',
-    "--wait --output-format json",
-    "jq -er '.status'",
-    'stapler staple "$dmg"',
+  const buildMacos = workflowStep(build, "build_macos");
+  requireRun(buildMacos, [
+    "unset APPLE_API_PRIVATE_KEY",
+    "-u APPLE_ID -u APPLE_PASSWORD -u APPLE_TEAM_ID",
+    "-u APPLE_API_ISSUER -u APPLE_API_KEY -u APPLE_API_KEY_PATH",
+    "-u APPLE_API_PRIVATE_KEY",
+    "PUNKS_NOTARY_TIMEOUT=120m scripts/macos-artifact-finalize.sh",
   ]);
+  requireRunOrder(buildMacos, [
+    "pnpm --dir desktop tauri build",
+    `printf '%s' "$APPLE_API_PRIVATE_KEY" > "$api_key_path"`,
+    "unset APPLE_API_PRIVATE_KEY",
+    "PUNKS_NOTARY_TIMEOUT=120m scripts/macos-artifact-finalize.sh",
+  ]);
+  invariant(
+    !buildMacos.run.includes("--skip-stapling"),
+    "macOS build still submits an untracked asynchronous notarization",
+  );
+  invariant(
+    build["timeout-minutes"] ===
+      workflowExpression("startsWith(matrix.platform, 'macos-') && 300 || 90"),
+    "macOS candidate does not have the bounded notarization job ceiling",
+  );
+  const macosFinalizer = readFileSync(macosFinalizerPath, "utf8");
+  for (const required of [
+    '--wait --timeout "$notary_timeout" --output-format json',
+    'notarize_and_staple "$app_zip" "$app" app',
+    'COPYFILE_DISABLE=1 tar -czf "$updater_temporary"',
+    'tauri signer sign "$updater"',
+    '"$dmg_script"',
+    'codesign --force --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$dmg"',
+    'notarize_and_staple "$dmg" "$dmg" dmg',
+  ]) {
+    invariant(
+      macosFinalizer.includes(required),
+      `macOS finalizer misses ${required}`,
+    );
+  }
   const buildWindows = workflowStep(build, "build_windows");
   invariant(
     !buildWindows.run.includes("WINDOWS_SIGNING_CONFIG") &&
@@ -1500,12 +1533,15 @@ const mutations = [
     error: /patchedDigests -join/,
   },
   {
-    name: "explicit DMG notarization is removed",
+    name: "bounded macOS artifact finalizer is removed",
     change(workflow) {
       const step = workflowStep(workflow.jobs.build, "build_macos");
-      step.run = step.run.replace("notarytool submit", "echo skipped");
+      step.run = step.run.replace(
+        "scripts/macos-artifact-finalize.sh",
+        "echo skipped",
+      );
     },
-    error: /notarytool submit/,
+    error: /macos-artifact-finalize\.sh/,
   },
   {
     name: "DMG stapler validation is removed",

@@ -214,10 +214,15 @@ gh secret set PUNKS_APPLE_API_PRIVATE_KEY \
 ```
 
 The workflow imports the `.p12` into an ephemeral keychain, extracts the exact
-`Developer ID Application: … (TEAMID)` identity, signs both macOS architectures,
-lets Tauri notarize and staple each `.app`, then explicitly submits and staples
-each DMG with `notarytool`. It requires `codesign`, Gatekeeper and stapler
-verification on both the app and disk image.
+`Developer ID Application: … (TEAMID)` identity and signs both macOS
+architectures. Tauri first creates the signed bundles with its automatic
+notarization credentials deliberately hidden. The reviewed finalizer then uses
+`notarytool` with an explicit 120-minute wait bound to notarize and staple the
+`.app`, recreates and re-signs the updater archive from those exact stapled app
+bytes, rebuilds the DMG around that app, and finally notarizes and staples the
+DMG under the same bound. The surrounding job has a separate five-hour hard
+ceiling. It requires `codesign`, Gatekeeper and stapler verification on both the
+app and disk image.
 
 ## Windows
 

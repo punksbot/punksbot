@@ -368,7 +368,7 @@ jobs:
        needs.observe_operational_backend.result == 'success')
     environment: punks-staging-promotion
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 90
+    timeout-minutes: ${{ startsWith(matrix.platform, 'macos-') && 300 || 90 }}
     permissions:
       contents: read
       id-token: write
@@ -637,25 +637,19 @@ jobs:
           test -n "$APPLE_API_PRIVATE_KEY"
           api_key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY}.p8"
           trap 'rm -f "$api_key_path"' EXIT
-          printf '%s' "$APPLE_API_PRIVATE_KEY" > "$api_key_path"
-          export APPLE_API_KEY_PATH="$api_key_path"
-          pnpm --dir desktop tauri build \
+          env \
+            -u APPLE_ID -u APPLE_PASSWORD -u APPLE_TEAM_ID \
+            -u APPLE_API_ISSUER -u APPLE_API_KEY -u APPLE_API_KEY_PATH \
+            -u APPLE_API_PRIVATE_KEY \
+            pnpm --dir desktop tauri build \
             --runner "$CARGO_RUNNER" \
             --ci --features punks-desktop-social-loop \
             --target "$TARGET" --bundles "$BUNDLES" \
             --config src-tauri/tauri.punks.conf.json
-          bundle="desktop/src-tauri/target/${TARGET}/release/bundle"
-          test "$(find "$bundle/dmg" -maxdepth 1 -name '*.dmg' -type f | wc -l | tr -d ' ')" = "1"
-          dmg="$(find "$bundle/dmg" -maxdepth 1 -name '*.dmg' -type f)"
-          notarization_json="$(
-            xcrun notarytool submit "$dmg" \
-              --key "$api_key_path" \
-              --key-id "$APPLE_API_KEY" \
-              --issuer "$APPLE_API_ISSUER" \
-              --wait --output-format json
-          )"
-          test "$(printf '%s' "$notarization_json" | jq -er '.status')" = "Accepted"
-          xcrun stapler staple "$dmg"
+          printf '%s' "$APPLE_API_PRIVATE_KEY" > "$api_key_path"
+          unset APPLE_API_PRIVATE_KEY
+          export APPLE_API_KEY_PATH="$api_key_path"
+          PUNKS_NOTARY_TIMEOUT=120m scripts/macos-artifact-finalize.sh
 
       - name: Build signed Linux Punks leg
         id: build_linux
