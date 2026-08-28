@@ -36,7 +36,12 @@ function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
-function materials() {
+function materials({
+  latencySampleCount = sampleCount,
+  sourceObservedAt = "2026-08-26T20:19:57.000Z",
+  exportObservedAt = "2026-08-26T20:19:58.000Z",
+  observationObservedAt = "2026-08-26T20:19:59.000Z",
+} = {}) {
   const objects = new Map();
   const published = new Map();
   const sources = [];
@@ -47,7 +52,7 @@ function materials() {
         ? { failures: 0, total: sampleCount }
         : budget.unite === "occurrences"
           ? { occurrences: 0, total: sampleCount }
-          : { histogram: [{ value: 0, count: sampleCount }] };
+          : { histogram: [{ value: 0, count: latencySampleCount }] };
     const source = {
       schema: "punks.operational-metric-source.v2",
       sourceSha,
@@ -57,7 +62,7 @@ function materials() {
       unit: budget.unite,
       observer: "cloudflare-analytics",
       querySha256: canonicalSha256({ metric: budget.nom, dimension, query: 1 }),
-      observedAt: "2026-08-26T20:19:57.000Z",
+      observedAt: sourceObservedAt,
       samples,
     };
     const sourceBytes = bytes(source);
@@ -72,7 +77,7 @@ function materials() {
       metric: budget.nom,
       dimension,
       unit: budget.unite,
-      observedAt: "2026-08-26T20:19:58.000Z",
+      observedAt: exportObservedAt,
       provenance: [
         {
           path: `operational-budget-sources/${sourceDigest}.json`,
@@ -92,7 +97,8 @@ function materials() {
         budget.unite === "pourcentage"
           ? borneWilsonUnilaterale95(0, sampleCount)
           : 0,
-      echantillons: sampleCount,
+      echantillons:
+        budget.unite === "millisecondes" ? latencySampleCount : sampleCount,
       numerateur: budget.unite === "millisecondes" ? null : 0,
       denominateur: budget.unite === "pourcentage" ? sampleCount : null,
       methode:
@@ -150,7 +156,7 @@ function materials() {
       "export-sha256": outbox["export-sha256"],
     },
     incidents: [],
-    observedAt: "2026-08-26T20:19:59.000Z",
+    observedAt: observationObservedAt,
   };
   const observation = {
     ...observationContent,
@@ -179,7 +185,7 @@ function materials() {
     exports,
     sources,
     provenance,
-    createdAt: "2026-08-26T20:20:00.000Z",
+    createdAt: observationObservedAt,
   };
   const manifest = {
     ...manifestContent,
@@ -225,12 +231,12 @@ function boundaries(material, publishedRoles = []) {
   };
 }
 
-async function stagedFixture(t, label) {
+async function stagedFixture(t, label, materialOptions) {
   const root = mkdtempSync(join(tmpdir(), label));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const candidateRoot = join(root, "candidate");
   mkdirSync(candidateRoot);
-  const material = materials();
+  const material = materials(materialOptions);
   const destinations = [
     { role: "primaire", compte: "1".repeat(32), bucket: "primary" },
     { role: "secondaire", compte: "2".repeat(32), bucket: "recovery" },
@@ -456,6 +462,117 @@ test("rejects every metric source when its GitHub OIDC subject cannot be verifie
       },
     ),
     /GitHub OIDC subject rejected/,
+  );
+});
+
+test("writes no local evidence when a bucket lock changes during the remote read", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "punks-budget-fetch-lock-race-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const material = materials();
+  const frontieres = boundaries(material);
+  const lockReads = new Map();
+  frontieres.cloudflare.lireVerrouillage = async ({ role, cle }) => {
+    assert.equal(cle, prefix);
+    const count = (lockReads.get(role) ?? 0) + 1;
+    lockReads.set(role, count);
+    return {
+      mode: "compliance",
+      actif: !(role === "primaire" && count === 2),
+    };
+  };
+  const output = join(root, "observation.json");
+  const exportsOutput = join(root, "exports");
+  await assert.rejects(
+    fetchOperationalBudgetEvidence(
+      {
+        sourceSha,
+        stagingDeploymentId,
+        manifestSha256: sha256(material.manifestBytes),
+        candidateRoot: root,
+        destinations: [
+          { role: "primaire", compte: "1".repeat(32), bucket: "primary" },
+          { role: "secondaire", compte: "2".repeat(32), bucket: "recovery" },
+        ],
+        output,
+        exportsOutput,
+      },
+      { frontieres },
+    ),
+    /lock changed during read/i,
+  );
+  assert.equal(existsSync(output), false);
+  assert.equal(existsSync(exportsOutput), false);
+  assert.equal(
+    existsSync(join(root, "operational-budget-provider.sigstore.json")),
+    false,
+  );
+});
+
+test("rejects insufficient latency samples and stale provider windows", async (t) => {
+  const insufficient = await stagedFixture(t, "punks-budget-latency-samples-", {
+    latencySampleCount: 9_999,
+  });
+  await assert.rejects(
+    sealOperationalBudgetEvidence(
+      {
+        sourceSha,
+        stagingDeploymentId,
+        manifestSha256: sha256(insufficient.material.manifestBytes),
+        candidateRoot: insufficient.candidateRoot,
+        destinations: insufficient.destinations,
+        bundle: insufficient.bundle,
+      },
+      {
+        frontieres: boundaries(insufficient.material),
+        verifyProviderSubject: () => [{ verified: true }],
+      },
+    ),
+    /latency sample count is insufficient/i,
+  );
+
+  const stale = await stagedFixture(t, "punks-budget-stale-provider-", {
+    sourceObservedAt: "2026-08-24T20:19:57.000Z",
+    exportObservedAt: "2026-08-24T20:19:58.000Z",
+  });
+  await assert.rejects(
+    sealOperationalBudgetEvidence(
+      {
+        sourceSha,
+        stagingDeploymentId,
+        manifestSha256: sha256(stale.material.manifestBytes),
+        candidateRoot: stale.candidateRoot,
+        destinations: stale.destinations,
+        bundle: stale.bundle,
+      },
+      {
+        frontieres: boundaries(stale.material),
+        verifyProviderSubject: () => [{ verified: true }],
+      },
+    ),
+    /stale or temporally divergent/i,
+  );
+
+  const nonCanonical = await stagedFixture(
+    t,
+    "punks-budget-noncanonical-time-",
+    { sourceObservedAt: 1_787_906_400_000 },
+  );
+  await assert.rejects(
+    sealOperationalBudgetEvidence(
+      {
+        sourceSha,
+        stagingDeploymentId,
+        manifestSha256: sha256(nonCanonical.material.manifestBytes),
+        candidateRoot: nonCanonical.candidateRoot,
+        destinations: nonCanonical.destinations,
+        bundle: nonCanonical.bundle,
+      },
+      {
+        frontieres: boundaries(nonCanonical.material),
+        verifyProviderSubject: () => [{ verified: true }],
+      },
+    ),
+    /closed UTC instant/i,
   );
 });
 

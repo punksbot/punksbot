@@ -432,6 +432,36 @@ test("observes ten successful cadence steps from the exact current Actions run",
     ]);
     assert.ok(actual.sampleCount > 0);
   }
+  await assert.rejects(
+    observeGithubCadence(
+      {
+        repository,
+        runId,
+        runAttempt,
+        sourceSha,
+        stagingDeploymentId,
+        dossier,
+        publicationResult,
+        budgetObservation: observation.budgets,
+        budgetExportRoot,
+        candidateRoot,
+        topologyObservation: topologyObservation(dossier),
+      },
+      {
+        github: {
+          async readRun() {
+            return remote.run;
+          },
+          async readJobs() {
+            return remote.jobs;
+          },
+        },
+        now: () => new Date("2026-08-28T20:20:00Z"),
+        verifyProviderSubject,
+      },
+    ),
+    /budget observation is stale/i,
+  );
   const firstExport = observation.budgets.verdicts[0]["export-sha256"];
   writeFileSync(
     join(budgetExportRoot, `${firstExport}.json`),

@@ -229,6 +229,15 @@ export async function fetchOperationalBudgetEvidence(input, { frontieres }) {
     manifest.provenance.bundle,
     "operational provider Sigstore bundle",
   );
+  for (const target of input.destinations) {
+    const lock = await frontieres.cloudflare.lireVerrouillage({
+      ...target,
+      cle: lockedPrefix,
+    });
+    if (lock?.mode !== "compliance" || lock.actif !== true) {
+      fail(`${target.role} operational observation lock changed during read`);
+    }
+  }
   const output = resolve(input.output);
   const exportsRoot = resolve(input.exportsOutput);
   const sourcesRoot = resolve(

@@ -14,6 +14,9 @@ import {
 import { readStableEvidenceFile } from "./stable-evidence-file.mjs";
 
 const SHA256_RE = /^[0-9a-f]{64}$/u;
+const INSTANT_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/u;
+const MAX_PROVIDER_OBSERVATION_AGE_MS = 24 * 60 * 60 * 1_000;
+const MIN_LATENCY_SAMPLE_COUNT = 10_000;
 /** Exact GitHub OIDC identity allowed to authenticate operational samples. */
 export const OPERATIONAL_BUDGET_PROVENANCE = Object.freeze({
   repository: "punksbot/punksbot",
@@ -38,6 +41,17 @@ function exact(value, keys, label) {
   ) {
     fail(`${label} has an unexpected shape`);
   }
+}
+
+function instant(value, label) {
+  if (typeof value !== "string" || !INSTANT_RE.test(value)) {
+    fail(`${label} is not a closed UTC instant`);
+  }
+  const milliseconds = Date.parse(value);
+  if (!Number.isFinite(milliseconds)) {
+    fail(`${label} is invalid`);
+  }
+  return milliseconds;
 }
 
 function stableJson(path, label) {
@@ -198,7 +212,9 @@ function verifiedProvenance(
       document.observer,
     ) ||
     !SHA256_RE.test(document.querySha256 ?? "") ||
-    !Number.isFinite(Date.parse(document.observedAt ?? ""))
+    !Number.isFinite(
+      instant(document.observedAt, `${expected.metric} observedAt`),
+    )
   ) {
     fail(`${expected.metric} provenance identity is invalid`);
   }
@@ -267,7 +283,9 @@ function validateExport(document, expected, provider, verifyProviderSubject) {
     document.metric !== expected.metric ||
     document.dimension !== expected.dimension ||
     document.unit !== expected.unit ||
-    !Number.isFinite(Date.parse(document.observedAt ?? "")) ||
+    !Number.isFinite(
+      instant(document.observedAt, `${expected.metric} export observedAt`),
+    ) ||
     !Array.isArray(document.provenance) ||
     document.provenance.length !== 1 ||
     document.provenance.some(
@@ -291,6 +309,27 @@ function validateExport(document, expected, provider, verifyProviderSubject) {
     provider,
     verifyProviderSubject,
   );
+  const sourceObservedAt = instant(
+    source.observedAt,
+    `${expected.metric} provider observedAt`,
+  );
+  const exportObservedAt = instant(
+    document.observedAt,
+    `${expected.metric} export observedAt`,
+  );
+  const observationObservedAt = instant(
+    expected.observationObservedAt,
+    "operational budget observation observedAt",
+  );
+  if (
+    sourceObservedAt > exportObservedAt ||
+    exportObservedAt > observationObservedAt ||
+    observationObservedAt - sourceObservedAt > MAX_PROVIDER_OBSERVATION_AGE_MS
+  ) {
+    fail(
+      `${expected.metric} provider observation is stale or temporally divergent`,
+    );
+  }
   if (canonicalSha256(source.samples) !== canonicalSha256(document.samples)) {
     fail(`${expected.metric} samples diverge from provider provenance`);
   }
@@ -366,6 +405,9 @@ function validateExport(document, expected, provider, verifyProviderSubject) {
     (sum, bucket) => sum + bucket.count,
     0,
   );
+  if (!Number.isSafeInteger(count) || count < MIN_LATENCY_SAMPLE_COUNT) {
+    fail(`${expected.metric} latency sample count is insufficient or unsafe`);
+  }
   const measure = quantile(
     document.samples.histogram,
     latencyPercentile(expected.metric),
@@ -432,6 +474,8 @@ export function validateOperationalBudgetEvidence({
     sourceSha,
     stagingDeploymentId,
   });
+  const observationObservedAt = observation?.observedAt;
+  instant(observationObservedAt, "operational budget observation observedAt");
   const expectedFiles = new Set();
   for (const budget of BUDGETS_PRODUCTION) {
     const verdict = observation.verdicts.find(({ nom }) => nom === budget.nom);
@@ -461,6 +505,7 @@ export function validateOperationalBudgetEvidence({
             dimension,
             unit: budget.unite,
             candidateRoot: candidate,
+            observationObservedAt,
           },
           provider,
           verifyProviderSubject,
@@ -500,6 +545,7 @@ export function validateOperationalBudgetEvidence({
       dimension: null,
       unit: "occurrences",
       candidateRoot: candidate,
+      observationObservedAt,
     },
     provider,
     verifyProviderSubject,

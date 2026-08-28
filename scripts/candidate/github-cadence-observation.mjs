@@ -19,6 +19,8 @@ const GITHUB_API = "https://api.github.com";
 const GITHUB_API_VERSION = "2026-03-10";
 const TOKEN_RE = /^[A-Za-z0-9_=-]{20,512}$/u;
 const SHA256_RE = /^[0-9a-f]{64}$/u;
+const INSTANT_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/u;
+const MAX_BUDGET_OBSERVATION_AGE_MS = 24 * 60 * 60 * 1_000;
 
 const STEP_BINDINGS = Object.freeze([
   Object.freeze({
@@ -95,6 +97,9 @@ function exactKeys(value, keys) {
 }
 
 function instant(value, label) {
+  if (typeof value !== "string" || !INSTANT_RE.test(value)) {
+    fail(`${label} is not a closed UTC instant`);
+  }
   const milliseconds = Date.parse(value ?? "");
   if (!Number.isFinite(milliseconds)) fail(`${label} is invalid`);
   return { milliseconds, canonical: new Date(milliseconds).toISOString() };
@@ -243,7 +248,9 @@ function validateBudgetObservation(
     !SHA256_RE.test(value.outboxes["export-sha256"] ?? "") ||
     !Array.isArray(value.incidents) ||
     value.incidents.length !== 0 ||
-    !Number.isFinite(Date.parse(value.observedAt ?? ""))
+    typeof value.observedAt !== "string" ||
+    !INSTANT_RE.test(value.observedAt) ||
+    !Number.isFinite(Date.parse(value.observedAt))
   ) {
     fail("exact operational budget observation is required");
   }
@@ -351,8 +358,16 @@ export function validateGithubCadenceObservation(
     budgetExportRoot,
     verifyProviderSubject,
   );
-  if (Date.parse(observation.budgets.observedAt) > observedAt.milliseconds) {
-    fail("budget observation is newer than the GitHub cadence observation");
+  const budgetObservedAt = instant(
+    observation.budgets.observedAt,
+    "budget observation timestamp",
+  );
+  if (
+    budgetObservedAt.milliseconds > observedAt.milliseconds ||
+    observedAt.milliseconds - budgetObservedAt.milliseconds >
+      MAX_BUDGET_OBSERVATION_AGE_MS
+  ) {
+    fail("budget observation is stale or newer than the GitHub cadence");
   }
   let previousEnd = null;
   const references = new Set();
@@ -603,6 +618,17 @@ export async function observeGithubCadence(
   }
   if (previousEnd !== null && observedAt.getTime() < previousEnd) {
     fail("observation predates its last completed Actions step");
+  }
+  const budgetObservedAt = instant(
+    budgets.observedAt,
+    "budget observation timestamp",
+  );
+  if (
+    budgetObservedAt.milliseconds > observedAt.getTime() ||
+    observedAt.getTime() - budgetObservedAt.milliseconds >
+      MAX_BUDGET_OBSERVATION_AGE_MS
+  ) {
+    fail("budget observation is stale or newer than the current Actions run");
   }
   const observation = {
     schema: "punks.github-cadence-observation.v1",
