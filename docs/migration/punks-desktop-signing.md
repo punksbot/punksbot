@@ -136,17 +136,25 @@ bookmarks, DLQ/outboxes/incidents and all 36 production coordinates recalculated
 from their exact evidence checks and required dimensions. T1 uses the closed
 `preuve-deterministe-exhaustive` method: it counts failed conformance checks and
 does not invent rates, denominators, histograms or latency quantiles before a
-production population exists. A locally generated timestamp or a self-declared
+production population exists. The graph validator accepts that method only for
+the baseline-free T1 bootstrap; later tranches and every roll-forward retain the
+statistical contract. A locally generated timestamp or a self-declared
 green result cannot activate the draft. The candidate calls the provider-owned
 `punks-operational-observation.yml` workflow twice. Before any platform can
 exercise destructive Session loss, its backend phase reobserves the seven
 Workers and proves each closed public authority once
 (`/api/health`, `/api/auth/v1/session`, `/api/v1/punk`), including equality with
-the exact protected Session and Punk, then attests the secretless report. After
+the exact protected Session and Punk. It reobserves the seven-Worker deployment
+byte-for-byte after those requests and only then attests the secretless report.
+After
 all four installed legs are independently attested, the final phase verifies
 that report, every content-addressed platform/recovery proof and the exact
 four-platform aggregate. It maps each of the closed 43 coordinates only to the
 relevant installed, network, recovery, artifact or backend evidence, then
+queries the exact Cloudflare Queue/DLQ point-in-time backlogs, the promoted
+Workspace/Conversation pending outboxes and archive heads, and both promotion
+R2 locks. Those dedicated states cannot be replaced by a generic recovery
+proof. It then
 attests every source under the provider workflow's GitHub OIDC
 identity for `punksbot/punksbot`, `staging` and the exact source SHA. It
 recalculates the v4 manifest and publishes all leaves, the provider bundle and

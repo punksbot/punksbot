@@ -465,6 +465,56 @@ export class WorkspaceDO extends PromotionFaultableDurableObject<ApiEnv> {
     });
   }
 
+  /** Operator-only RPC used to prove that the promoted Workspace is drained. */
+  async observePromotionOperationalState(): Promise<{
+    authority: "api-workspace";
+    outboxesPending: number;
+    pendingArchives: number;
+    archiveSegments: number;
+    archiveHeadValid: boolean;
+  }> {
+    const counts = this.ctx.storage.sql
+      .exec<{
+        outboxes_pending: number;
+        pending_archives: number;
+        archive_segments: number;
+      }>(
+        `SELECT
+           (SELECT COUNT(*) FROM outbox WHERE delivered_at IS NULL) +
+           (SELECT COUNT(*) FROM account_merge_rights_outbox) +
+           (SELECT COUNT(*) FROM pending_command) AS outboxes_pending,
+           (SELECT COUNT(*) FROM pending_archive) AS pending_archives,
+           (SELECT COUNT(*) FROM archive_segments) AS archive_segments`,
+      )
+      .one();
+    const latest = this.ctx.storage.sql
+      .exec<{ object_key: string; segment_hash: string }>(
+        `SELECT object_key, segment_hash FROM archive_segments
+         ORDER BY end_cursor DESC LIMIT 1`,
+      )
+      .toArray()[0];
+    let archiveHeadValid = latest === undefined;
+    if (latest !== undefined) {
+      const object = await this.env.JOURNAL_ARCHIVE_BUCKET.head(
+        latest.object_key,
+      );
+      const workspaceId = this.state()?.id;
+      archiveHeadValid =
+        object !== null &&
+        object.key === latest.object_key &&
+        object.httpMetadata?.contentType === "application/json" &&
+        object.customMetadata?.segmentHash === latest.segment_hash &&
+        object.customMetadata?.workspaceId === workspaceId;
+    }
+    return {
+      authority: "api-workspace",
+      outboxesPending: Number(counts.outboxes_pending),
+      pendingArchives: Number(counts.pending_archives),
+      archiveSegments: Number(counts.archive_segments),
+      archiveHeadValid,
+    };
+  }
+
   async execute(input: unknown): Promise<WorkspaceExecuteResult> {
     if (!(await this.promotionAuthorityIsAvailable())) {
       return { ok: false, code: "internal" };

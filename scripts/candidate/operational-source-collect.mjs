@@ -16,6 +16,7 @@ import {
 import { canonicalSha256 } from "../migration-manifest-lib.mjs";
 import { BUDGETS_PRODUCTION, PLATEFORMES } from "../release-graph-lib.mjs";
 import { OPERATIONAL_BUDGET_PROVENANCE } from "./operational-budget-evidence.mjs";
+import { validateOperationalInfrastructureReport } from "./operational-infrastructure-evidence.mjs";
 import { readStableEvidenceFile } from "./stable-evidence-file.mjs";
 
 const SHA1_RE = /^[0-9a-f]{40}$/u;
@@ -149,7 +150,7 @@ function validateEvidenceIndex(
       { path: proofReference.chemin, sha256: proofReference.sha256 },
       `${label} proof ${proofReference.id}`,
     );
-    verifyReference(
+    const subjectContent = verifyReference(
       evidenceRoot,
       {
         path: proofReference.sujet.chemin,
@@ -187,6 +188,7 @@ function validateEvidenceIndex(
     proofs.set(proofReference.id, {
       proofSha256: proofReference.sha256,
       subjectSha256: proofReference.sujet.sha256,
+      subjectContent,
     });
   }
   return { digest: reference.sha256, proofs };
@@ -313,6 +315,8 @@ function validateCandidate(root, sourceSha, stagingDeploymentId) {
     files,
   });
   return {
+    sourceSha,
+    stagingDeploymentId,
     corpusSha256,
     aggregateSha256,
     stagingProofSha256: aggregate.promotionEvidence.stagingProof.sha256,
@@ -428,6 +432,42 @@ function transcriptChecks(
   );
 }
 
+function authenticationChecks(candidate, method) {
+  if (!CONNECTION_METHODS.includes(method)) {
+    fail(`authentication method ${String(method)} is invalid`);
+  }
+  return PLATEFORMES.map((platform) => {
+    const proof = candidate.platformProofs.get(`transcript/${platform}`);
+    if (proof === undefined) fail(`transcript proof ${platform} is absent`);
+    const transcript = parseJson(
+      proof.subjectContent,
+      `installed transcript ${platform}`,
+    );
+    const live = transcript.authentication?.proof;
+    const flow = live?.flows?.[method];
+    if (
+      live?.schema !== "punks.live-staging-auth-matrix-proof.v3" ||
+      live.sourceSha !== candidate.sourceSha ||
+      live.stagingDeploymentId !== candidate.stagingDeploymentId ||
+      flow?.success?.method !== method ||
+      flow?.success?.environment !== "staging" ||
+      flow?.cancellation?.method !== method ||
+      flow?.cancellation?.outcomeCode !== "cancelled"
+    ) {
+      fail(`installed ${method} proof ${platform} is absent or divergent`);
+    }
+    return closedCheck(
+      `auth/${method}/${platform}`,
+      canonicalSha256({
+        schema: "punks.operational-auth-method-proof.v1",
+        transcriptSubjectSha256: proof.subjectSha256,
+        method,
+        flow,
+      }),
+    );
+  });
+}
+
 function storyChecks(candidate, story) {
   return PLATEFORMES.map((platform) =>
     requiredProof(
@@ -477,6 +517,56 @@ function backendCheck(report, reportSha256, path) {
   return closedCheck(`backend${path}`, reportSha256, endpoint.result);
 }
 
+function queueChecks(infrastructure, predicate, label) {
+  const checks = infrastructure.queues
+    .filter(({ name }) => predicate(name))
+    .map((queue) =>
+      closedCheck(
+        `${label}/${queue.name}`,
+        canonicalSha256(queue),
+        queue.result,
+      ),
+    );
+  if (checks.length === 0) fail(`infrastructure queue group ${label} is empty`);
+  return checks;
+}
+
+function outboxChecks(infrastructure) {
+  return infrastructure.authorities.map((authority) =>
+    closedCheck(
+      `outbox/${authority.authority}`,
+      canonicalSha256({
+        authority: authority.authority,
+        outboxesPending: authority.outboxesPending,
+      }),
+      authority.outboxesPending === 0 ? "vert" : "rouge",
+    ),
+  );
+}
+
+function archiveChecks(infrastructure) {
+  return infrastructure.authorities.map((authority) =>
+    closedCheck(
+      `archive/${authority.authority}`,
+      canonicalSha256({
+        authority: authority.authority,
+        pendingArchives: authority.pendingArchives,
+        archiveSegments: authority.archiveSegments,
+        archiveHeadValid: authority.archiveHeadValid,
+      }),
+      authority.pendingArchives === 0 && authority.archiveHeadValid
+        ? "vert"
+        : "rouge",
+    ),
+  );
+}
+
+function lockChecks(infrastructure) {
+  return infrastructure.locks.map((lock) =>
+    closedCheck(`r2-lock/${lock.role}`, canonicalSha256(lock), lock.result),
+  );
+}
+
 const AUTH_METRICS = new Set([
   "activation-unconfirmed-terminal",
   "renouvellement-session-echecs",
@@ -500,23 +590,19 @@ const STORAGE_METRICS = new Set([
   "d1-retard-p99",
   "d1-retard-actif-max",
 ]);
-const ASYNC_RECOVERY_METRICS = new Set([
-  "alarmes-outboxes-age-p99",
-  "alarmes-outboxes-age-max",
-  "queues-age-p95",
-  "queues-age-p99",
-  "queues-dlq",
-  "r2-archivage-p99",
-  "r2-element-chaud-bloque-max",
-  "outboxes-en-attente",
-]);
-
-function checksForMetric(metric, dimension, candidate, report, reportSha256) {
+function checksForMetric(
+  metric,
+  dimension,
+  candidate,
+  report,
+  reportSha256,
+  infrastructure,
+) {
   let checks;
   if (metric === "connexion-desktop-echecs-par-moyen") {
     const methods = dimension === null ? CONNECTION_METHODS : [dimension];
     checks = methods.flatMap((method) =>
-      transcriptChecks(candidate, `auth/${method}`),
+      authenticationChecks(candidate, method),
     );
     checks.push(backendCheck(report, reportSha256, "/api/auth/v1/session"));
     checks.push(backendCheck(report, reportSha256, "/api/v1/punk"));
@@ -559,11 +645,29 @@ function checksForMetric(metric, dimension, candidate, report, reportSha256) {
         "storage-recovery",
       ),
     ];
-  } else if (ASYNC_RECOVERY_METRICS.has(metric)) {
-    checks = [
-      closedCheck("recovery/index", candidate.recoveryIndexSha256),
-      ...recoveryChecks(candidate, () => true, "async-recovery"),
-    ];
+  } else if (
+    metric === "alarmes-outboxes-age-p99" ||
+    metric === "alarmes-outboxes-age-max" ||
+    metric === "outboxes-en-attente"
+  ) {
+    checks = outboxChecks(infrastructure);
+  } else if (metric === "queues-age-p95" || metric === "queues-age-p99") {
+    checks = queueChecks(
+      infrastructure,
+      (name) => !name.endsWith("-dlq"),
+      "queue-backlog",
+    );
+  } else if (metric === "queues-dlq") {
+    checks = queueChecks(
+      infrastructure,
+      (name) => name.endsWith("-dlq"),
+      "dead-letter-queue",
+    );
+  } else if (
+    metric === "r2-archivage-p99" ||
+    metric === "r2-element-chaud-bloque-max"
+  ) {
+    checks = archiveChecks(infrastructure);
   } else if (metric === "workspace-profil-absent-ou-incompatible") {
     checks = storyChecks(candidate, "workspace");
   } else if (metric === "contract-violation") {
@@ -604,10 +708,7 @@ function checksForMetric(metric, dimension, candidate, report, reportSha256) {
       "erasure",
     );
   } else if (metric === "r2-double-ecriture-hash-lock-ou-chaine-invalide") {
-    checks = [
-      closedCheck("candidate/recovery-index", candidate.recoveryIndexSha256),
-      closedCheck("candidate/staging-proof", candidate.stagingProofSha256),
-    ];
+    checks = [...lockChecks(infrastructure), ...archiveChecks(infrastructure)];
   } else if (metric === "discordance-artefact-ou-attestation") {
     checks = artifactChecks(candidate);
   } else if (metric === "tentative-buzz-ou-nostr-public") {
@@ -640,6 +741,11 @@ export function collectOperationalMetricSources(
   if (
     !SHA1_RE.test(input?.sourceSha ?? "") ||
     !DEPLOYMENT_RE.test(input?.stagingDeploymentId ?? "") ||
+    typeof input?.candidateRoot !== "string" ||
+    typeof input?.backendReport !== "string" ||
+    typeof input?.backendBundle !== "string" ||
+    typeof input?.infrastructureReport !== "string" ||
+    typeof input?.output !== "string" ||
     typeof verifyProviderSubject !== "function" ||
     typeof now !== "function"
   ) {
@@ -657,6 +763,14 @@ export function collectOperationalMetricSources(
   );
   const report = validateBackendReport(
     JSON.parse(reportContent.toString("utf8")),
+    input,
+  );
+  const infrastructureContent = readStableEvidenceFile(
+    input.infrastructureReport,
+    "infrastructure proof report",
+  );
+  const infrastructure = validateOperationalInfrastructureReport(
+    parseJson(infrastructureContent, "infrastructure proof report"),
     input,
   );
   const bundleContent = readStableEvidenceFile(
@@ -682,13 +796,20 @@ export function collectOperationalMetricSources(
     fail("provider observation clock is invalid");
   }
   const reportTime = instant(report.observedAt, "backend probe observedAt");
+  const infrastructureTime = instant(
+    infrastructure.observedAt,
+    "infrastructure proof observedAt",
+  );
   if (
     reportTime > observedAt.getTime() ||
-    observedAt.getTime() - reportTime > MAX_REPORT_AGE_MS
+    observedAt.getTime() - reportTime > MAX_REPORT_AGE_MS ||
+    infrastructureTime > observedAt.getTime() ||
+    observedAt.getTime() - infrastructureTime > MAX_REPORT_AGE_MS
   ) {
-    fail("backend probe report is stale or future-dated");
+    fail("provider report is stale or future-dated");
   }
   const reportFileSha256 = sha256(reportContent);
+  const infrastructureFileSha256 = sha256(infrastructureContent);
   const output = resolve(input.output);
   let outputCreated = false;
   try {
@@ -702,6 +823,7 @@ export function collectOperationalMetricSources(
         candidate,
         report,
         reportFileSha256,
+        infrastructure,
       );
       const document = {
         schema: "punks.operational-metric-source.v3",
@@ -715,6 +837,7 @@ export function collectOperationalMetricSources(
           schema: "punks.operational-provider-query.v2",
           corpusSha256: candidate.corpusSha256,
           backendReportSha256: reportFileSha256,
+          infrastructureReportSha256: infrastructureFileSha256,
           metric,
           dimension,
           checks,
@@ -742,6 +865,7 @@ export function collectOperationalMetricSources(
       sources: count,
       corpusSha256: candidate.corpusSha256,
       backendReportSha256: reportFileSha256,
+      infrastructureReportSha256: infrastructureFileSha256,
     };
   } catch (error) {
     if (outputCreated) rmSync(output, { recursive: true, force: true });
@@ -756,6 +880,7 @@ function parseArgs(argv) {
     "--candidate-root",
     "--backend-report",
     "--backend-bundle",
+    "--infrastructure-report",
     "--output",
   ]);
   const values = new Map();
@@ -779,6 +904,7 @@ export function run(argv = process.argv.slice(2)) {
     candidateRoot: required("--candidate-root"),
     backendReport: required("--backend-report"),
     backendBundle: required("--backend-bundle"),
+    infrastructureReport: required("--infrastructure-report"),
     output: required("--output"),
   });
 }

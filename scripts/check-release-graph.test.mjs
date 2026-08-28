@@ -3360,14 +3360,22 @@ test("le bootstrap T1 accepte uniquement les preuves déterministes exhaustives 
   assert.deepEqual(
     validateOperationalBudgetVerdicts(verdicts, {
       connectionMethods: ["google", "github"],
+      deterministicBootstrapAllowed: true,
     }),
     [],
+  );
+  assert.match(
+    validateOperationalBudgetVerdicts(verdicts, {
+      connectionMethods: ["google", "github"],
+    }).join("\n"),
+    /contrôles déterministes/iu,
   );
   const falsified = structuredClone(verdicts);
   falsified[0].mesure = 1;
   assert.match(
     validateOperationalBudgetVerdicts(falsified, {
       connectionMethods: ["google", "github"],
+      deterministicBootstrapAllowed: true,
     }).join("\n"),
     /budget|preuve|statistique/iu,
   );

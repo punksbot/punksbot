@@ -2387,7 +2387,7 @@ function evaluerMesureStatistique(
   mesure,
   unite,
   maximum,
-  { baselineExigee, resultatsAutorises },
+  { baselineExigee, resultatsAutorises, preuveDeterministeAutorisee },
 ) {
   if (
     !mesure ||
@@ -2415,6 +2415,8 @@ function evaluerMesureStatistique(
   let respecteBudget = false;
   if (mesure.methode === "preuve-deterministe-exhaustive") {
     calculValide =
+      preuveDeterministeAutorisee === true &&
+      baselineExigee === false &&
       Number.isSafeInteger(mesure.numerateur) &&
       mesure.numerateur >= 0 &&
       mesure.numerateur === mesure.mesure &&
@@ -2483,6 +2485,7 @@ function validerVerdictsMetriques(
     moyensConnexion = [],
     resultatsAutorises = ["vert"],
     exigerViolationRouge = false,
+    preuveDeterministeAutorisee = false,
   } = {},
 ) {
   if (
@@ -2502,7 +2505,11 @@ function validerVerdictsMetriques(
       verdict,
       budget.unite,
       budget.maximum,
-      { baselineExigee, resultatsAutorises },
+      {
+        baselineExigee,
+        resultatsAutorises,
+        preuveDeterministeAutorisee,
+      },
     );
     const schemaValide =
       verdict &&
@@ -2538,6 +2545,7 @@ function validerVerdictsMetriques(
       evaluerMesureStatistique(dimension, budget.unite, budget.maximum, {
         baselineExigee,
         resultatsAutorises,
+        preuveDeterministeAutorisee,
       }),
     );
     const dimensionsValides =
@@ -2591,7 +2599,11 @@ export function validateOperationalTopology(topology) {
 /** Public bootstrap validator backed by the canonical 36-budget rules. */
 export function validateOperationalBudgetVerdicts(
   verdicts,
-  { connectionMethods = [], baselineRequired = false } = {},
+  {
+    connectionMethods = [],
+    baselineRequired = false,
+    deterministicBootstrapAllowed = false,
+  } = {},
 ) {
   const errors = [];
   validerVerdictsMetriques(
@@ -2601,6 +2613,7 @@ export function validateOperationalBudgetVerdicts(
     {
       baselineExigee: baselineRequired,
       moyensConnexion: connectionMethods,
+      preuveDeterministeAutorisee: deterministicBootstrapAllowed,
     },
   );
   return errors;
@@ -2744,6 +2757,10 @@ function validerChargeOperationnelle(
   validerVerdictsMetriques(contenu?.["verdicts-metriques"], libelle, push, {
     baselineExigee,
     moyensConnexion: topologie?.["moyens-connexion"],
+    preuveDeterministeAutorisee:
+      baselineExigee === false &&
+      instantane?.contenu?.tranche === 1 &&
+      ["expansion", "active"].includes(phaseOperationnelle),
   });
   validerListeObjetsUniques(
     contenu?.bookmarks,
@@ -3236,6 +3253,9 @@ function validerCadenceOperationnelle(
           (Number.isInteger(instantane?.contenu?.tranche) &&
             instantane.contenu.tranche > 1),
         moyensConnexion: instantane?.contenu?.topologie?.["moyens-connexion"],
+        preuveDeterministeAutorisee:
+          ["expansion", "active"].includes(phase) &&
+          instantane?.contenu?.tranche === 1,
       },
     );
     if (
@@ -4988,6 +5008,9 @@ function validerEtatExecution(
       (Number.isInteger(instantane?.contenu?.tranche) &&
         instantane.contenu.tranche > 1),
     moyensConnexion: instantane?.contenu?.topologie?.["moyens-connexion"],
+    preuveDeterministeAutorisee:
+      ["expansion", "active"].includes(programme) &&
+      instantane?.contenu?.tranche === 1,
     resultatsAutorises:
       nature === "reprise" ? ["vert"] : ["vert", "rouge", "insuffisant"],
     exigerViolationRouge: estEchec,

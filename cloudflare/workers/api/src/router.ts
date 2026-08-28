@@ -104,6 +104,7 @@ import {
 import { routeMediaUpload } from "./media-upload-http";
 import { routePromotionFault } from "./promotion-fault-http";
 import { routePromotionAuthProof } from "./promotion-auth-proof-http";
+import { routePromotionOperationalState } from "./promotion-operational-state-http";
 import { routePromotionSession } from "./promotion-session-http";
 import type {
   WorkspaceExecuteResult,
@@ -5684,6 +5685,12 @@ export async function route(request: Request, env: ApiEnv): Promise<Response> {
 
   const mediaUploadResponse = await routeMediaUpload(request, env, path);
   if (mediaUploadResponse !== null) return mediaUploadResponse;
+
+  const promotionOperationalStateResponse =
+    await routePromotionOperationalState(request, env, path);
+  if (promotionOperationalStateResponse !== null) {
+    return promotionOperationalStateResponse;
+  }
 
   const promotionFaultResponse = await routePromotionFault(request, env, path);
   if (promotionFaultResponse !== null) return promotionFaultResponse;

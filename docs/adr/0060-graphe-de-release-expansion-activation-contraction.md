@@ -141,7 +141,9 @@ rouges, `echantillons` est le nombre de contrôles exhaustifs et
 `denominateur` reste `null` ; toute valeur rouge bloque T1. Les noms, unités et
 maxima restent stables pour que les fenêtres de production ultérieures puissent
 continuer à employer les exports statistiques historiques, mais un contrôle T1
-ne se présente jamais comme un taux ou une latence observée.
+ne se présente jamais comme un taux ou une latence observée. Le validateur du
+graphe refuse cette méthode dès qu'une baseline N−1 est exigée, pour toute
+tranche supérieure à T1 et pour tout roll-forward.
 
 Les contrôles proviennent de sujets content-addressés lus identiquement dans
 deux buckets et liés, avant le candidat, par un bundle Sigstore GitHub OIDC du
@@ -150,7 +152,12 @@ phase prouve une fois les trois autorités publiques fermées avant toute
 révocation de Session : santé API, Session exacte et Punk exact. Une seconde
 vérifie ces résultats et le corpus complet des quatre artefacts installés,
 associe chaque coordonnée uniquement à ses preuves pertinentes, sans accepter
-de document fourni par l'appelant, puis atteste les 43 sources. Le manifeste R2
+de document fourni par l'appelant. Après les parcours installés, elle lit aussi
+les backlogs point-in-time des Queues et DLQ exactes, les comptes d'outboxes et
+d'archives en attente des deux agrégats de la fixture, l'intégrité de leur tête
+R2 et les deux locks de publication. Une file, outbox ou archive non vidée, une
+tête R2 divergente ou un lock absent produit un contrôle rouge. Elle atteste
+ensuite les 43 sources. Le manifeste R2
 v4 lie le bundle, ses sujets, le dépôt, le ref
 `staging` et le SHA exacts et son hash revient au candidat dans le même run ; le
 workflow candidat vérifie ce bundle fournisseur puis atteste séparément son

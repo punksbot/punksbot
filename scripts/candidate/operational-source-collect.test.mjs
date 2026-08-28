@@ -36,7 +36,28 @@ function fixture(t, failures = 0) {
   mkdirSync(network);
   mkdirSync(shaRoot);
   const reference = (id) => {
-    const subject = Buffer.from(`${JSON.stringify({ id, observed: true })}\n`);
+    const subjectDocument = id.startsWith("transcript/")
+      ? {
+          id,
+          authentication: {
+            proof: {
+              schema: "punks.live-staging-auth-matrix-proof.v3",
+              sourceSha,
+              stagingDeploymentId,
+              flows: Object.fromEntries(
+                ["google", "github"].map((method) => [
+                  method,
+                  {
+                    success: { method, environment: "staging" },
+                    cancellation: { method, outcomeCode: "cancelled" },
+                  },
+                ]),
+              ),
+            },
+          },
+        }
+      : { id, observed: true };
+    const subject = Buffer.from(`${JSON.stringify(subjectDocument)}\n`);
     const subjectSha256 = sha256(subject);
     const proof = Buffer.from(
       `${JSON.stringify({
@@ -167,12 +188,54 @@ function fixture(t, failures = 0) {
   };
   const backendPath = join(root, "backend.json");
   const bundlePath = join(root, "backend.sigstore.json");
+  const infrastructureContent = {
+    schema: "punks.operational-infrastructure-proof.v1",
+    sourceSha,
+    stagingDeploymentId,
+    accountId: "3a391620584c792dbbd8cfa148d7634a",
+    origin: "https://staging.punks.bot",
+    queues: [
+      "punks-projection-staging",
+      "punks-projection-staging-dlq",
+      "punks-bot-wake-staging",
+      "punks-bot-wake-staging-dlq",
+    ].map((name, index) => ({
+      name,
+      queueId: `queue-${index}`,
+      backlogCount: 0,
+      backlogBytes: 0,
+      oldestMessageTimestampMs: 0,
+      result: "vert",
+    })),
+    authorities: ["api-workspace", "api-conversation"].map((authority) => ({
+      authority,
+      outboxesPending: 0,
+      pendingArchives: 0,
+      archiveSegments: 1,
+      archiveHeadValid: true,
+      result: "vert",
+    })),
+    locks: ["primaire", "secondaire"].map((role) => ({
+      role,
+      bucket: role === "primaire" ? "primary" : "recovery",
+      prefix: `operational-observations/tranche:1/${sourceSha}/${stagingDeploymentId.slice(7)}/`,
+      result: "vert",
+    })),
+    observedAt: "2026-08-28T10:00:00.500Z",
+  };
+  const infrastructure = {
+    ...infrastructureContent,
+    sha256: canonicalSha256(infrastructureContent),
+  };
+  const infrastructurePath = join(root, "infrastructure.json");
   writeFileSync(backendPath, `${JSON.stringify(backend)}\n`);
   writeFileSync(bundlePath, operationalBudgetSigstoreFixture());
+  writeFileSync(infrastructurePath, `${JSON.stringify(infrastructure)}\n`);
   return {
     candidate,
     backendPath,
     bundlePath,
+    infrastructurePath,
     output: join(root, "sources"),
   };
 }
@@ -187,6 +250,7 @@ test("derives exactly 43 provider sources from closed proofs and four attested l
       candidateRoot: input.candidate,
       backendReport: input.backendPath,
       backendBundle: input.bundlePath,
+      infrastructureReport: input.infrastructurePath,
       output: input.output,
     },
     {
@@ -237,6 +301,19 @@ test("derives exactly 43 provider sources from closed proofs and four attested l
       .sort(),
     [...PLATEFORMES].sort(),
   );
+  const authDimensions = Object.fromEntries(
+    documents
+      .filter(
+        ({ metric, dimension }) =>
+          metric === "connexion-desktop-echecs-par-moyen" && dimension !== null,
+      )
+      .map((document) => [document.dimension, document.samples.checks]),
+  );
+  assert.deepEqual(Object.keys(authDimensions).sort(), ["github", "google"]);
+  assert.notDeepEqual(
+    authDimensions.google.map(({ evidenceSha256 }) => evidenceSha256),
+    authDimensions.github.map(({ evidenceSha256 }) => evidenceSha256),
+  );
 });
 
 test("rejects an impossible provider observation instant", (t) => {
@@ -256,6 +333,7 @@ test("rejects an impossible provider observation instant", (t) => {
           candidateRoot: input.candidate,
           backendReport: input.backendPath,
           backendBundle: input.bundlePath,
+          infrastructureReport: input.infrastructurePath,
           output: input.output,
         },
         {
@@ -276,6 +354,7 @@ test("scopes a failed backend proof only to related deterministic obligations", 
       candidateRoot: input.candidate,
       backendReport: input.backendPath,
       backendBundle: input.bundlePath,
+      infrastructureReport: input.infrastructurePath,
       output: input.output,
     },
     {
@@ -299,4 +378,59 @@ test("scopes a failed backend proof only to related deterministic obligations", 
     "rouge",
   );
   assert.ok(queues.samples.checks.every(({ result }) => result === "vert"));
+});
+
+test("binds DLQ and outbox coordinates to their dedicated live state", (t) => {
+  const input = fixture(t);
+  const infrastructure = JSON.parse(
+    readFileSync(input.infrastructurePath, "utf8"),
+  );
+  const dlq = infrastructure.queues.find(
+    ({ name }) => name === "punks-bot-wake-staging-dlq",
+  );
+  dlq.backlogCount = 1;
+  dlq.backlogBytes = 64;
+  dlq.oldestMessageTimestampMs = 1_787_910_000_000;
+  dlq.result = "rouge";
+  const { sha256: ignored, ...content } = infrastructure;
+  assert.match(ignored, /^[0-9a-f]{64}$/u);
+  infrastructure.sha256 = canonicalSha256(content);
+  writeFileSync(
+    input.infrastructurePath,
+    `${JSON.stringify(infrastructure)}\n`,
+  );
+  collectOperationalMetricSources(
+    {
+      sourceSha,
+      stagingDeploymentId,
+      candidateRoot: input.candidate,
+      backendReport: input.backendPath,
+      backendBundle: input.bundlePath,
+      infrastructureReport: input.infrastructurePath,
+      output: input.output,
+    },
+    {
+      verifyProviderSubject: () => [{ verified: true }],
+      now: () => new Date("2026-08-28T10:00:01.000Z"),
+    },
+  );
+  const documents = readdirSync(input.output).map((name) =>
+    JSON.parse(readFileSync(join(input.output, name), "utf8")),
+  );
+  const queueSource = documents.find(
+    ({ metric, dimension }) => metric === "queues-dlq" && dimension === null,
+  );
+  const outboxSource = documents.find(
+    ({ metric, dimension }) =>
+      metric === "outboxes-en-attente" && dimension === null,
+  );
+  assert.equal(
+    queueSource.samples.checks.find(({ id }) =>
+      id.endsWith("punks-bot-wake-staging-dlq"),
+    ).result,
+    "rouge",
+  );
+  assert.ok(
+    outboxSource.samples.checks.every(({ result }) => result === "vert"),
+  );
 });

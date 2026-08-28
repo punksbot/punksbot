@@ -337,6 +337,7 @@ export function materializeOperationalBudgetEvidence(input) {
     const verdictErrors = validateOperationalBudgetVerdicts(verdicts, {
       connectionMethods: CONNECTION_METHODS,
       baselineRequired: false,
+      deterministicBootstrapAllowed: true,
     });
     if (
       verdictErrors.length > 0 ||

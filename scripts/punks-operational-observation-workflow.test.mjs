@@ -37,6 +37,7 @@ test("the reusable provider accepts coordinates but no caller samples", () => {
 test("backend probes staging before Session loss and receives no R2 authority", () => {
   const observe = step("backend", "observe_staging");
   const collect = step("backend", "collect_backend");
+  const reobserve = step("backend", "reobserve_staging");
   const attest = step("backend", "attest_backend");
   const verify = step("backend", "verify_backend");
   const upload = step("backend", "upload_backend");
@@ -44,6 +45,13 @@ test("backend probes staging before Session loss and receives no R2 authority", 
   assert.deepEqual(Object.keys(collect.env), ["PUNKS_PROMOTION_SESSION"]);
   assert.match(collect.run, /operational-backend-probe\.mjs/);
   assert.match(collect.run, /unset PUNKS_PROMOTION_SESSION/);
+  assert.match(reobserve.run, /staging-deployment-proof\.mjs/);
+  assert.match(reobserve.run, /cmp -s/);
+  assert.ok(
+    provider.jobs.backend.steps.indexOf(reobserve) <
+      provider.jobs.backend.steps.indexOf(attest),
+    "backend report is attested before the post-probe staging reobservation",
+  );
   assert.equal(
     attest.uses,
     "actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6",
@@ -61,12 +69,16 @@ test("backend probes staging before Session loss and receives no R2 authority", 
 
 test("finalization verifies four legs and publishes one provider-owned v4 manifest", () => {
   const aggregate = step("finalize", "aggregate");
+  const infrastructure = step("finalize", "observe_infrastructure");
   const collect = step("finalize", "collect_sources");
   const attest = step("finalize", "attest_sources");
   const verify = step("finalize", "verify_sources");
   const materialize = step("finalize", "materialize");
   const publish = step("finalize", "publish");
   assert.match(aggregate.run, /artifacts\.mjs aggregate/);
+  assert.match(infrastructure.run, /operational-infrastructure-probe\.mjs/);
+  assert.match(infrastructure.run, /unset PUNKS_OPERATOR_PROVISIONING_TOKEN/);
+  assert.match(collect.run, /--infrastructure-report/);
   assert.match(aggregate.run, /--input provider-input\/legs/);
   assert.match(collect.run, /operational-source-collect\.mjs/);
   assert.match(collect.run, /backend-probe\.sigstore\.json/);

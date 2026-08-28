@@ -495,6 +495,59 @@ export class ConversationDO extends PromotionFaultableDurableObject<ApiEnv> {
     });
   }
 
+  /** Operator-only RPC used to prove that the promoted Conversation is drained. */
+  async observePromotionOperationalState(): Promise<{
+    authority: "api-conversation";
+    outboxesPending: number;
+    pendingArchives: number;
+    archiveSegments: number;
+    archiveHeadValid: boolean;
+  }> {
+    const counts = this.ctx.storage.sql
+      .exec<{
+        outboxes_pending: number;
+        pending_archives: number;
+        archive_segments: number;
+      }>(
+        `SELECT
+           (SELECT COUNT(*) FROM outbox WHERE delivered_at IS NULL) +
+           (SELECT COUNT(*) FROM bot_wake_candidate_outbox) +
+           (SELECT COUNT(*) FROM content_finalization) +
+           (SELECT COUNT(*) FROM message_erasure_schedule)
+             AS outboxes_pending,
+           (SELECT COUNT(*) FROM pending_archive) AS pending_archives,
+           (SELECT COUNT(*) FROM archive_segments) AS archive_segments`,
+      )
+      .one();
+    const latest = this.ctx.storage.sql
+      .exec<{ object_key: string; segment_hash: string }>(
+        `SELECT object_key, segment_hash FROM archive_segments
+         ORDER BY end_cursor DESC LIMIT 1`,
+      )
+      .toArray()[0];
+    let archiveHeadValid = latest === undefined;
+    if (latest !== undefined) {
+      const object = await this.env.JOURNAL_ARCHIVE_BUCKET.head(
+        latest.object_key,
+      );
+      const state = this.state();
+      archiveHeadValid =
+        object !== null &&
+        object.key === latest.object_key &&
+        object.httpMetadata?.contentType === "application/json" &&
+        object.customMetadata?.segmentHash === latest.segment_hash &&
+        object.customMetadata?.workspaceId === state?.workspaceId &&
+        object.customMetadata?.conversationId === state?.id;
+    }
+    return {
+      authority: "api-conversation",
+      outboxesPending: Number(counts.outboxes_pending),
+      pendingArchives: Number(counts.pending_archives),
+      archiveSegments: Number(counts.archive_segments),
+      archiveHeadValid,
+    };
+  }
+
   override async fetch(request: Request): Promise<Response> {
     if (
       request.headers.get("upgrade")?.toLowerCase() !== "websocket" ||
