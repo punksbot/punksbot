@@ -935,6 +935,29 @@ function validateWorkflow(workflow) {
     "--detach-sign",
     '--verify "${deb}.asc" "$deb"',
   ]);
+  const windowsDependencies = workflowStep(build, "windows_dependencies");
+  requireRun(windowsDependencies, [
+    "Start-Process -FilePath $nvdaInstaller",
+    '"--create-portable-silent"',
+    '"--portable-path=$nvdaRoot"',
+    "-Wait -PassThru",
+    "$nvdaProcess.ExitCode -ne 0",
+    'Join-Path $nvdaRoot "nvda.exe"',
+  ]);
+  invariant(
+    !windowsDependencies.run.includes("& $nvdaInstaller"),
+    "the NVDA GUI installer can return before its portable child completes",
+  );
+  const tauriDriver = workflowStep(build, "install_tauri_driver");
+  requireRun(tauriDriver, [
+    "cargo install tauri-driver --version 2.0.6 --locked",
+    'cargo install --list | grep -Fqx "tauri-driver v2.0.6:"',
+    'tauri-driver --help | grep -F "USAGE:"',
+  ]);
+  invariant(
+    !/(?:^|\n)\s*tauri-driver --version(?:\s|$)/u.test(tauriDriver.run),
+    "tauri-driver 2.0.6 does not implement --version",
+  );
   const verifyWindows = workflowStep(build, "verify_windows");
   same(
     verifyWindows.env,
