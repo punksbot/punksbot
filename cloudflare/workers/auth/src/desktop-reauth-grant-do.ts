@@ -208,11 +208,21 @@ export class DesktopReauthGrantDO extends DurableObject<AuthEnv> {
     ) {
       return null;
     }
+    const current =
+      this.ctx.storage.kv.get<DesktopReauthGrantRecord>(RECORD_KEY);
+    if (
+      current === undefined ||
+      !sameGrant(current, record) ||
+      current.consumedByFlowId !== null ||
+      Date.parse(current.expiresAt) <= Date.now()
+    ) {
+      return null;
+    }
     return {
-      punkId: record.punkId,
+      punkId: current.punkId,
       kind: "reauth-authorization",
       state: "deliverable",
-      expiresAt: record.expiresAt,
+      expiresAt: current.expiresAt,
     };
   }
 

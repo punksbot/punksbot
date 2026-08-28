@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { runInDurableObject } from "cloudflare:test";
 import { exports as workerExports } from "cloudflare:workers";
 
 import { route } from "../src/router";
 import { getActiveSession } from "../src/session";
+import { DesktopReauthGrantDO } from "../src/desktop-reauth-grant-do";
 import {
   authEnv,
   claim,
@@ -279,6 +280,90 @@ describe("retired passkey authentication", () => {
     expect(attempts.map(({ response }) => response.status).sort()).toEqual([
       201, 409,
     ]);
+  });
+
+  it.each([
+    "consumed",
+    "expired",
+  ])("does not plan a %s grant after a suspended source revalidation", async (change) => {
+    const subject = `grant-plan-race-${crypto.randomUUID()}`;
+    const owner = await provisionIdentity(subject);
+    const reauth = await reauthenticateFor(
+      subject,
+      owner.cookie,
+      "link_google",
+    );
+    expect((await confirm(reauth.started, reauth.deliveryId)).status).toBe(200);
+    const grant = authEnv.DESKTOP_REAUTH_GRANTS.getByName(
+      reauth.authorizationId,
+    );
+    const source = authEnv.DESKTOP_AUTH_FLOWS.getByName(reauth.started.flowId);
+    const sourceFlow = await source.browserMetadata();
+    if (sourceFlow === null || sourceFlow.currentSessionId === null)
+      throw new Error("Confirmed source fixture absent");
+    const sessionId = sourceFlow.currentSessionId;
+    await runInDurableObject(grant, async (_instance, state) => {
+      let entered: () => void = () => undefined;
+      let release: () => void = () => undefined;
+      const waiting = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const suspended = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let sourceReads = 0;
+      // Only the remote source boundary is delayed; storage and grant decisions
+      // execute in their real workerd Durable Object context.
+      const sourceNamespace = new Proxy(authEnv.DESKTOP_AUTH_FLOWS, {
+        get(_target, property) {
+          if (property !== "getByName")
+            throw new Error("Unexpected source operation");
+          return (flowId: string) => {
+            expect(flowId).toBe(reauth.started.flowId);
+            return {
+              async browserMetadata() {
+                if (++sourceReads === 1) {
+                  entered();
+                  await suspended;
+                }
+                return sourceFlow;
+              },
+            };
+          };
+        },
+      });
+      const authority = new DesktopReauthGrantDO(state, {
+        ...authEnv,
+        DESKTOP_AUTH_FLOWS: sourceNamespace,
+      });
+      const inspection = authority.readForAccountMerge();
+      try {
+        await Promise.race([
+          waiting,
+          inspection.then(() => {
+            throw new Error("Source RPC was not suspended");
+          }),
+        ]);
+        if (change === "consumed") {
+          const consumed = await authority.consume({
+            authorizationId: reauth.authorizationId,
+            sessionId,
+            punkId: owner.punkId,
+            targetMethod: "link_google",
+            workspaceOwnershipTransfer: null,
+            flowId: crypto.randomUUID(),
+          });
+          expect(consumed.ok).toBe(true);
+        } else {
+          vi.spyOn(Date, "now").mockReturnValue(Date.now() + 6 * 60_000);
+        }
+        release();
+        expect(await inspection).toBeNull();
+      } finally {
+        release();
+        vi.restoreAllMocks();
+      }
+    });
   });
 
   it("keeps retired identity history out of the active account profile", async () => {
