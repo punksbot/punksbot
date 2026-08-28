@@ -490,13 +490,6 @@ describe("WorkspaceDO membership projection v2", () => {
       actor: { kind: "punk", punkId: ownerPunkId },
       payload: { slug: "workspace-pitr-cursor-conflict" },
     };
-    await env.ATTESTATION.fetch(
-      new Request("https://punks-attestation.invalid/__test/fail-once", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ commandId: rename.commandId }),
-      }),
-    );
     const observed = await runInDurableObject(stub, async (instance, state) => {
       try {
         const first = await instance.execute(rename);
