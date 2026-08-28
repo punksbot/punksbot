@@ -110,6 +110,7 @@ test("the candidate consumes the provider output from the same run", () => {
     "./.github/workflows/punks-operational-observation.yml",
   );
   assert.equal(backend.with.phase, "backend");
+  assert.equal(backend.if, "inputs.validation_scope == 'full-candidate'");
   assert.equal(finalize.with.phase, "finalize");
   assert.deepEqual(candidate.jobs.aggregate.needs, [
     "attest_legs",

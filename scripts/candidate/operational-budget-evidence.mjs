@@ -206,7 +206,10 @@ function verifiedProvenance(
     `${expected.metric} provenance`,
   );
   if (
-    document.schema !== "punks.operational-metric-source.v2" ||
+    ![
+      "punks.operational-metric-source.v2",
+      "punks.operational-metric-source.v3",
+    ].includes(document.schema) ||
     document.sourceSha !== expected.sourceSha ||
     document.stagingDeploymentId !== expected.stagingDeploymentId ||
     document.metric !== expected.metric ||
@@ -264,6 +267,41 @@ function latencyPercentile(metric) {
   fail(`${metric} has no closed latency statistic`);
 }
 
+function validateDeterministicChecks(samples, metric) {
+  exact(samples, ["checks"], `${metric} samples`);
+  if (!Array.isArray(samples.checks) || samples.checks.length === 0) {
+    fail(`${metric} deterministic checks are empty`);
+  }
+  const ids = new Set();
+  let failures = 0;
+  for (const [index, check] of samples.checks.entries()) {
+    exact(
+      check,
+      ["id", "evidenceSha256", "result"],
+      `${metric} deterministic check ${index}`,
+    );
+    if (
+      typeof check.id !== "string" ||
+      check.id.length === 0 ||
+      ids.has(check.id) ||
+      !SHA256_RE.test(check.evidenceSha256 ?? "") ||
+      !["vert", "rouge"].includes(check.result)
+    ) {
+      fail(`${metric} deterministic check ${index} is invalid`);
+    }
+    ids.add(check.id);
+    failures += check.result === "rouge" ? 1 : 0;
+  }
+  return {
+    count: samples.checks.length,
+    numerator: failures,
+    denominator: null,
+    measure: failures,
+    upper: failures,
+    method: "preuve-deterministe-exhaustive",
+  };
+}
+
 function validateExport(document, expected, provider, verifyProviderSubject) {
   exact(
     document,
@@ -281,7 +319,10 @@ function validateExport(document, expected, provider, verifyProviderSubject) {
     `${expected.metric} export`,
   );
   if (
-    document.schema !== "punks.operational-metric-export.v1" ||
+    ![
+      "punks.operational-metric-export.v1",
+      "punks.operational-metric-export.v2",
+    ].includes(document.schema) ||
     document.sourceSha !== expected.sourceSha ||
     document.stagingDeploymentId !== expected.stagingDeploymentId ||
     document.metric !== expected.metric ||
@@ -337,6 +378,15 @@ function validateExport(document, expected, provider, verifyProviderSubject) {
   if (canonicalSha256(source.samples) !== canonicalSha256(document.samples)) {
     fail(`${expected.metric} samples diverge from provider provenance`);
   }
+  if (document.schema === "punks.operational-metric-export.v2") {
+    if (source.schema !== "punks.operational-metric-source.v3") {
+      fail(`${expected.metric} deterministic source schema is invalid`);
+    }
+    return validateDeterministicChecks(document.samples, expected.metric);
+  }
+  if (source.schema !== "punks.operational-metric-source.v2") {
+    fail(`${expected.metric} statistical source schema is invalid`);
+  }
   if (expected.unit === "pourcentage") {
     exact(
       document.samples,
@@ -361,6 +411,7 @@ function validateExport(document, expected, provider, verifyProviderSubject) {
         document.samples.failures,
         document.samples.total,
       ),
+      method: "wilson-unilaterale-95",
     };
   }
   if (expected.unit === "occurrences") {
@@ -383,6 +434,7 @@ function validateExport(document, expected, provider, verifyProviderSubject) {
       denominator: null,
       measure: document.samples.occurrences,
       upper: document.samples.occurrences,
+      method: "tolerance-zero",
     };
   }
   exact(document.samples, ["histogram"], `${expected.metric} samples`);
@@ -422,6 +474,7 @@ function validateExport(document, expected, provider, verifyProviderSubject) {
     denominator: null,
     measure,
     upper: measure,
+    method: "quantile-export-verifie",
   };
 }
 
@@ -438,6 +491,7 @@ function verifyStatistic(statistic, recalculated, label) {
     statistic.echantillons !== recalculated.count ||
     statistic.numerateur !== recalculated.numerator ||
     statistic.denominateur !== recalculated.denominator ||
+    statistic.methode !== recalculated.method ||
     !almostEqual(statistic.mesure, recalculated.measure) ||
     !almostEqual(
       statistic["borne-superieure-unilaterale-95"],

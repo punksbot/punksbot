@@ -7,8 +7,6 @@ import { parsePromotionSessionBundle } from "./staging-fixture.mjs";
 
 const SHA1_RE = /^[0-9a-f]{40}$/u;
 const DEPLOYMENT_RE = /^sha256:[0-9a-f]{64}$/u;
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const ORIGIN = "https://staging.punks.bot";
 const ENDPOINTS = Object.freeze([
   Object.freeze({ path: "/api/health", authority: "api-public" }),
@@ -20,7 +18,7 @@ function fail(message) {
   throw new Error(`operational backend probe rejected: ${message}`);
 }
 
-function validResponse(path, status, document) {
+function validResponse(path, status, document, expectedSession) {
   if (status !== 200 || document === null || typeof document !== "object") {
     return false;
   }
@@ -33,72 +31,39 @@ function validResponse(path, status, document) {
   }
   if (path === "/api/auth/v1/session") {
     return (
-      UUID_RE.test(document.session?.sessionId ?? "") &&
-      UUID_RE.test(document.session?.punkId ?? "")
+      document.session?.sessionId === expectedSession.sessionId &&
+      document.session?.punkId === expectedSession.punkId
     );
   }
-  return UUID_RE.test(document.punk?.id ?? "");
+  return document.punk?.id === expectedSession.punkId;
 }
 
-function histogram(values) {
-  const buckets = new Map();
-  for (const value of values) {
-    const bounded = Math.max(0, Math.ceil(value));
-    buckets.set(bounded, (buckets.get(bounded) ?? 0) + 1);
-  }
-  return [...buckets.entries()]
-    .sort(([left], [right]) => left - right)
-    .map(([value, count]) => ({ value, count }));
-}
-
-/** Runs actual HTTPS requests against the exact staging before Session loss. */
+/** Proves each closed public authority once against the exact staging state. */
 export async function collectOperationalBackendProbe(
   input,
-  {
-    fetchImpl = fetch,
-    clock = () => performance.now(),
-    now = () => new Date(),
-  } = {},
+  { fetchImpl = fetch, now = () => new Date() } = {},
 ) {
   if (
     !SHA1_RE.test(input?.sourceSha ?? "") ||
     !DEPLOYMENT_RE.test(input?.stagingDeploymentId ?? "") ||
-    !Number.isSafeInteger(input?.countPerEndpoint) ||
-    input.countPerEndpoint < 1 ||
-    input.countPerEndpoint > 100_000 ||
-    !Number.isSafeInteger(input?.concurrency) ||
-    input.concurrency < 1 ||
-    input.concurrency > 256 ||
     typeof fetchImpl !== "function" ||
-    typeof clock !== "function" ||
     typeof now !== "function"
   ) {
-    fail("exact candidate and bounded probe configuration are required");
+    fail("exact candidate and probe boundaries are required");
   }
   const session = parsePromotionSessionBundle(
     JSON.stringify(input.sessionBundle),
     input.sourceSha,
   );
-  const tasks = ENDPOINTS.flatMap((endpoint) =>
-    Array.from({ length: input.countPerEndpoint }, () => endpoint),
-  );
-  const observations = new Map(
-    ENDPOINTS.map(({ path, authority }) => [
-      path,
-      { path, authority, total: 0, failures: 0, latencies: [] },
-    ]),
-  );
-  let cursor = 0;
-  const worker = async () => {
-    while (true) {
-      const index = cursor;
-      cursor += 1;
-      if (index >= tasks.length) return;
-      const endpoint = tasks[index];
-      const observation = observations.get(endpoint.path);
+  const expectedSession = {
+    sessionId: session.metadata.session_id,
+    punkId: session.metadata.punk_id,
+  };
+  const observations = await Promise.all(
+    ENDPOINTS.map(async (endpoint) => {
       const authenticated = endpoint.path !== "/api/health";
-      const started = clock();
-      let accepted = false;
+      let status = null;
+      let document = null;
       try {
         const response = await fetchImpl(`${ORIGIN}${endpoint.path}`, {
           method: "GET",
@@ -110,7 +75,7 @@ export async function collectOperationalBackendProbe(
             ...(authenticated ? { cookie: session.cookie } : {}),
           },
         });
-        let document = null;
+        status = response.status;
         if ((response.headers.get("content-type") ?? "").includes("json")) {
           try {
             document = await response.json();
@@ -118,42 +83,35 @@ export async function collectOperationalBackendProbe(
             document = null;
           }
         }
-        accepted = validResponse(endpoint.path, response.status, document);
       } catch {
-        accepted = false;
+        status = null;
+        document = null;
       }
-      const finished = clock();
-      const latency = finished - started;
-      if (!Number.isFinite(latency) || latency < 0) {
-        fail("probe clock produced an invalid latency");
-      }
-      observation.total += 1;
-      observation.failures += accepted ? 0 : 1;
-      observation.latencies.push(latency);
-    }
-  };
-  await Promise.all(
-    Array.from({ length: Math.min(input.concurrency, tasks.length) }, worker),
+      const accepted = validResponse(
+        endpoint.path,
+        status,
+        document,
+        expectedSession,
+      );
+      return {
+        path: endpoint.path,
+        authority: endpoint.authority,
+        status,
+        result: accepted ? "vert" : "rouge",
+        responseSha256: document === null ? null : canonicalSha256(document),
+      };
+    }),
   );
   const observedAt = now();
   if (!(observedAt instanceof Date) || !Number.isFinite(observedAt.getTime())) {
     fail("probe observation clock is invalid");
   }
   const content = {
-    schema: "punks.operational-backend-probe.v1",
+    schema: "punks.operational-backend-proof.v2",
     sourceSha: input.sourceSha,
     stagingDeploymentId: input.stagingDeploymentId,
     origin: ORIGIN,
-    endpoints: ENDPOINTS.map(({ path }) => {
-      const value = observations.get(path);
-      return {
-        path: value.path,
-        authority: value.authority,
-        total: value.total,
-        failures: value.failures,
-        histogram: histogram(value.latencies),
-      };
-    }),
+    endpoints: observations,
     observedAt: observedAt.toISOString(),
   };
   return { ...content, sha256: canonicalSha256(content) };
@@ -186,8 +144,6 @@ export async function run(argv = process.argv.slice(2)) {
     sourceSha: required("--source-sha"),
     stagingDeploymentId: required("--staging-deployment-id"),
     sessionBundle: JSON.parse(readFileSync(required("--session-file"), "utf8")),
-    countPerEndpoint: 10_000,
-    concurrency: 64,
   });
   writeFileSync(resolve(required("--output")), `${JSON.stringify(report)}\n`, {
     flag: "wx",

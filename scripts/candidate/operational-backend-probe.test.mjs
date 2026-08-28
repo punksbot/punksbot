@@ -41,22 +41,15 @@ function response(path, status = 200) {
 }
 
 test("collects real bounded endpoint outcomes without serializing authority", async () => {
-  let tick = 0;
   const calls = [];
   const report = await collectOperationalBackendProbe(
     {
       sourceSha,
       stagingDeploymentId,
       sessionBundle: sessionBundle(),
-      countPerEndpoint: 10,
-      concurrency: 3,
     },
     {
       now: () => new Date("2026-08-28T10:00:00.000Z"),
-      clock: () => {
-        tick += 2;
-        return tick;
-      },
       async fetchImpl(url, init) {
         const parsed = new URL(url);
         calls.push({ path: parsed.pathname, headers: init.headers });
@@ -65,23 +58,22 @@ test("collects real bounded endpoint outcomes without serializing authority", as
     },
   );
 
-  assert.equal(calls.length, 30);
+  assert.equal(calls.length, 3);
   assert.deepEqual(
-    report.endpoints.map(({ path, total, failures }) => ({
+    report.endpoints.map(({ path, status, result }) => ({
       path,
-      total,
-      failures,
+      status,
+      result,
     })),
     [
-      { path: "/api/health", total: 10, failures: 0 },
-      { path: "/api/auth/v1/session", total: 10, failures: 0 },
-      { path: "/api/v1/punk", total: 10, failures: 0 },
+      { path: "/api/health", status: 200, result: "vert" },
+      { path: "/api/auth/v1/session", status: 200, result: "vert" },
+      { path: "/api/v1/punk", status: 200, result: "vert" },
     ],
   );
   assert.ok(
-    report.endpoints.every(
-      ({ histogram }) =>
-        histogram.reduce((sum, bucket) => sum + bucket.count, 0) === 10,
+    report.endpoints.every(({ responseSha256 }) =>
+      /^[0-9a-f]{64}$/u.test(responseSha256),
     ),
   );
   assert.doesNotMatch(JSON.stringify(report), /punks_session|ssss|rrrr/u);
@@ -95,18 +87,14 @@ test("collects real bounded endpoint outcomes without serializing authority", as
 
 test("records a failed provider response instead of declaring it green", async () => {
   let request = 0;
-  let tick = 0;
   const report = await collectOperationalBackendProbe(
     {
       sourceSha,
       stagingDeploymentId,
       sessionBundle: sessionBundle(),
-      countPerEndpoint: 2,
-      concurrency: 1,
     },
     {
       now: () => new Date("2026-08-28T10:00:00.000Z"),
-      clock: () => ++tick,
       async fetchImpl(url) {
         request += 1;
         return response(new URL(url).pathname, request === 2 ? 503 : 200);
@@ -114,8 +102,38 @@ test("records a failed provider response instead of declaring it green", async (
     },
   );
   assert.equal(
-    report.endpoints.reduce((sum, endpoint) => sum + endpoint.failures, 0),
+    report.endpoints.filter(({ result }) => result === "rouge").length,
     1,
+  );
+});
+
+test("records a valid-looking Session from another account as a failure", async () => {
+  const report = await collectOperationalBackendProbe(
+    {
+      sourceSha,
+      stagingDeploymentId,
+      sessionBundle: sessionBundle(),
+    },
+    {
+      now: () => new Date("2026-08-28T10:00:00.000Z"),
+      async fetchImpl(url) {
+        const path = new URL(url).pathname;
+        if (path !== "/api/auth/v1/session") return response(path);
+        return new Response(
+          JSON.stringify({
+            session: {
+              sessionId: "99999999-9999-4999-8999-999999999999",
+              punkId: "88888888-8888-4888-8888-888888888888",
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      },
+    },
+  );
+  assert.equal(
+    report.endpoints.find(({ path }) => path === "/api/auth/v1/session").result,
+    "rouge",
   );
 });
 
@@ -129,8 +147,6 @@ test("rejects another candidate, invalid bounds and a stale Session", async () =
         sourceSha,
         stagingDeploymentId,
         sessionBundle: stale,
-        countPerEndpoint: 1,
-        concurrency: 1,
       },
       { fetchImpl: async () => response("/api/health") },
     ),
@@ -142,11 +158,9 @@ test("rejects another candidate, invalid bounds and a stale Session", async () =
         sourceSha: "not-a-sha",
         stagingDeploymentId,
         sessionBundle: sessionBundle(),
-        countPerEndpoint: 0,
-        concurrency: 0,
       },
       { fetchImpl: async () => response("/api/health") },
     ),
-    /exact candidate|bounded/i,
+    /exact candidate|boundaries/i,
   );
 });

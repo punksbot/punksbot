@@ -30,14 +30,91 @@ function fixture(t, failures = 0) {
   const candidate = join(root, "candidate");
   const evidence = join(candidate, "promotion-evidence");
   const network = join(evidence, "network");
+  const shaRoot = join(evidence, "sha256");
   mkdirSync(candidate);
   mkdirSync(evidence);
   mkdirSync(network);
+  mkdirSync(shaRoot);
+  const reference = (id) => {
+    const subject = Buffer.from(`${JSON.stringify({ id, observed: true })}\n`);
+    const subjectSha256 = sha256(subject);
+    const proof = Buffer.from(
+      `${JSON.stringify({
+        schema: "punks.promotion-proof.v1",
+        id,
+        candidateSha: sourceSha,
+        stagingDeploymentId,
+        result: "vert",
+        data: { subjectSha256 },
+      })}\n`,
+    );
+    const proofSha256 = sha256(proof);
+    writeFileSync(join(shaRoot, `${subjectSha256}.json`), subject);
+    writeFileSync(join(shaRoot, `${proofSha256}.json`), proof);
+    return {
+      id,
+      chemin: `sha256/${proofSha256}.json`,
+      sha256: proofSha256,
+      sujet: {
+        chemin: `sha256/${subjectSha256}.json`,
+        sha256: subjectSha256,
+      },
+    };
+  };
+  const stories = [
+    "connexion",
+    "workspace",
+    "lecture-live",
+    "pagination",
+    "publication",
+    "reponse",
+    "sujet",
+    "reactions",
+  ];
+  const platformIndex = {
+    schema: "punks.promotion-evidence-index.v1",
+    preuves: PLATEFORMES.flatMap((platform) => [
+      reference(`transcript/${platform}`),
+      reference(`scan/artefact/${platform}`),
+      ...stories.map((story) => reference(`parcours/${platform}/${story}`)),
+    ]),
+  };
+  const recoveryIndex = {
+    schema: "punks.promotion-evidence-index.v1",
+    preuves: [
+      "auth-session",
+      "api-workspace",
+      "api-conversation",
+      "api-message-content",
+      "erasure-registry",
+    ].map((authority) => reference(`faute/coupure/${authority}`)),
+  };
+  const platformBytes = Buffer.from(`${JSON.stringify(platformIndex)}\n`);
+  const recoveryBytes = Buffer.from(`${JSON.stringify(recoveryIndex)}\n`);
+  const stagingBytes = Buffer.from(
+    `${JSON.stringify({ sourceSha, stagingDeploymentId })}\n`,
+  );
+  writeFileSync(join(evidence, "platform-index.json"), platformBytes);
+  writeFileSync(join(evidence, "recovery-index.json"), recoveryBytes);
+  writeFileSync(join(evidence, "staging-deployment-proof.json"), stagingBytes);
+  writeFileSync(join(candidate, "staging-deployment-proof.json"), stagingBytes);
+  const networkDigests = new Map();
+  for (const platform of PLATEFORMES) {
+    const content = Buffer.from(
+      `${JSON.stringify({ platform, result: "vert" })}\n`,
+    );
+    writeFileSync(join(network, `${platform}.json`), content);
+    networkDigests.set(platform, sha256(content));
+  }
   const aggregate = {
     schema: "punks.desktop-candidate-aggregate.v1",
     sourceSha,
     stagingDeploymentId,
     repository: "punksbot/punksbot",
+    stagingProof: {
+      path: "staging-deployment-proof.json",
+      sha256: sha256(stagingBytes),
+    },
     platforms: PLATEFORMES.map((platform) => ({
       platform,
       target: `target-${platform}`,
@@ -45,14 +122,22 @@ function fixture(t, failures = 0) {
       provenanceSha256: sha256(`provenance-${platform}`),
     })),
     promotionEvidence: {
+      platformIndex: {
+        path: "promotion-evidence/platform-index.json",
+        sha256: sha256(platformBytes),
+      },
+      stagingProof: {
+        path: "promotion-evidence/staging-deployment-proof.json",
+        sha256: sha256(stagingBytes),
+      },
       network: PLATEFORMES.map((platform) => ({
         platform,
         path: `promotion-evidence/network/${platform}.json`,
-        sha256: sha256(`${platform}\n`),
+        sha256: networkDigests.get(platform),
       })),
       recoveryIndex: {
         path: "promotion-evidence/recovery-index.json",
-        sha256: sha256("recovery\n"),
+        sha256: sha256(recoveryBytes),
       },
     },
   };
@@ -60,14 +145,8 @@ function fixture(t, failures = 0) {
     join(candidate, "aggregate-manifest.json"),
     `${JSON.stringify(aggregate)}\n`,
   );
-  for (const platform of PLATEFORMES) {
-    writeFileSync(join(network, `${platform}.json`), `${platform}\n`);
-  }
-  writeFileSync(join(evidence, "recovery-index.json"), "recovery\n");
-  writeFileSync(join(evidence, "platform-index.json"), "platforms\n");
-
   const backendContent = {
-    schema: "punks.operational-backend-probe.v1",
+    schema: "punks.operational-backend-proof.v2",
     sourceSha,
     stagingDeploymentId,
     origin: "https://staging.punks.bot",
@@ -75,9 +154,9 @@ function fixture(t, failures = 0) {
       (path, index) => ({
         path,
         authority: ["api-public", "auth-session", "auth-punk"][index],
-        total: 10_000,
-        failures: index === 0 ? failures : 0,
-        histogram: [{ value: index + 1, count: 10_000 }],
+        status: index === 0 && failures > 0 ? 503 : 200,
+        result: index === 0 && failures > 0 ? "rouge" : "vert",
+        responseSha256: sha256(`response-${index}`),
       }),
     ),
     observedAt: "2026-08-28T10:00:00.000Z",
@@ -98,7 +177,7 @@ function fixture(t, failures = 0) {
   };
 }
 
-test("derives exactly 43 provider sources from remote probes and four attested legs", (t) => {
+test("derives exactly 43 provider sources from closed proofs and four attested legs", (t) => {
   const input = fixture(t);
   let verified = 0;
   const result = collectOperationalMetricSources(
@@ -137,6 +216,16 @@ test("derives exactly 43 provider sources from remote probes and four attested l
         document.observer === "github-attested-installed-candidate",
     ),
   );
+  assert.ok(
+    documents.every(
+      ({ schema, samples }) =>
+        schema === "punks.operational-metric-source.v3" &&
+        Array.isArray(samples.checks) &&
+        samples.checks.length > 0 &&
+        samples.failures === undefined &&
+        samples.histogram === undefined,
+    ),
+  );
   assert.deepEqual(
     documents
       .filter(
@@ -150,7 +239,35 @@ test("derives exactly 43 provider sources from remote probes and four attested l
   );
 });
 
-test("carries a real failed backend probe into every zero-tolerance source", (t) => {
+test("rejects an impossible provider observation instant", (t) => {
+  const input = fixture(t);
+  const report = JSON.parse(readFileSync(input.backendPath, "utf8"));
+  report.observedAt = "2026-02-30T10:00:00.000Z";
+  const { sha256: ignored, ...content } = report;
+  assert.match(ignored, /^[0-9a-f]{64}$/u);
+  report.sha256 = canonicalSha256(content);
+  writeFileSync(input.backendPath, `${JSON.stringify(report)}\n`);
+  assert.throws(
+    () =>
+      collectOperationalMetricSources(
+        {
+          sourceSha,
+          stagingDeploymentId,
+          candidateRoot: input.candidate,
+          backendReport: input.backendPath,
+          backendBundle: input.bundlePath,
+          output: input.output,
+        },
+        {
+          verifyProviderSubject: () => [{ verified: true }],
+          now: () => new Date("2026-08-28T10:00:01.000Z"),
+        },
+      ),
+    /observedAt is invalid|instant is invalid/i,
+  );
+});
+
+test("scopes a failed backend proof only to related deterministic obligations", (t) => {
   const input = fixture(t, 1);
   collectOperationalMetricSources(
     {
@@ -169,9 +286,17 @@ test("carries a real failed backend probe into every zero-tolerance source", (t)
   const documents = readdirSync(input.output).map((name) =>
     JSON.parse(readFileSync(join(input.output, name), "utf8")),
   );
-  assert.ok(
-    documents
-      .filter(({ unit }) => unit === "occurrences")
-      .every(({ samples }) => samples.occurrences === 1),
+  const durableObjects = documents.find(
+    ({ metric, dimension }) =>
+      metric === "durable-objects-erreurs-internes" && dimension === null,
   );
+  const queues = documents.find(
+    ({ metric, dimension }) => metric === "queues-dlq" && dimension === null,
+  );
+  assert.equal(
+    durableObjects.samples.checks.find(({ id }) => id === "backend/api/health")
+      .result,
+    "rouge",
+  );
+  assert.ok(queues.samples.checks.every(({ result }) => result === "vert"));
 });

@@ -345,6 +345,7 @@ jobs:
   observe_operational_backend:
     name: Collect provider-owned backend observations
     needs: verify_staging
+    if: inputs.validation_scope == 'full-candidate'
     permissions:
       artifact-metadata: write
       attestations: write
@@ -360,6 +361,11 @@ jobs:
   build:
     name: Signed platform leg (${{ matrix.platform }})
     needs: [verify_staging, observe_operational_backend]
+    if: >-
+      always() &&
+      needs.verify_staging.result == 'success' &&
+      (inputs.validation_scope == 'apple-only' ||
+       needs.observe_operational_backend.result == 'success')
     environment: punks-staging-promotion
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90

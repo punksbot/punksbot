@@ -2413,7 +2413,15 @@ function evaluerMesureStatistique(
   }
   let calculValide = false;
   let respecteBudget = false;
-  if (unite === "pourcentage") {
+  if (mesure.methode === "preuve-deterministe-exhaustive") {
+    calculValide =
+      Number.isSafeInteger(mesure.numerateur) &&
+      mesure.numerateur >= 0 &&
+      mesure.numerateur === mesure.mesure &&
+      mesure.denominateur === null &&
+      mesure["borne-superieure-unilaterale-95"] === mesure.mesure;
+    respecteBudget = calculValide && mesure.mesure === 0;
+  } else if (unite === "pourcentage") {
     const borne = borneWilsonUnilaterale95(
       mesure.numerateur,
       mesure.denominateur,
@@ -2557,7 +2565,7 @@ function validerVerdictsMetriques(
       evaluationsDimensions.some((evaluation) => evaluation.violationRouge);
     if (!schemaValide || !dimensionsValides) {
       push(
-        `${libelle} : budget « ${budget.nom} » doit prouver les comptes statistiques, la borne unilatérale 95 % recalculée, les dimensions exactes et la comparaison N−1 recalculée ≤ 20 % ou justifiée${baselineExigee ? " (baseline Punks obligatoire)" : ""}`,
+        `${libelle} : budget « ${budget.nom} » doit prouver soit les comptes statistiques historiques et la borne unilatérale 95 % recalculée, soit les contrôles déterministes exhaustifs, avec les dimensions exactes et la comparaison N−1 recalculée ≤ 20 % ou justifiée${baselineExigee ? " (baseline Punks obligatoire)" : ""}`,
       );
       valide = false;
     }

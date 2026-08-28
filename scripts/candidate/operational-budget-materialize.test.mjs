@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import {
+  copyFileSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -18,6 +19,10 @@ import {
   materializeOperationalBudgetEvidence,
   publishOperationalBudgetEvidence,
 } from "./operational-budget-materialize.mjs";
+import {
+  OPERATIONAL_BUDGET_PROVENANCE,
+  validateOperationalBudgetEvidence,
+} from "./operational-budget-evidence.mjs";
 import { operationalBudgetSigstoreFixture } from "./operational-budget-test-fixture.mjs";
 
 const sourceSha = "ab".repeat(20);
@@ -43,17 +48,23 @@ function dimensions(metric) {
   return [];
 }
 
-function samples(unit, count = 1_000_000) {
-  if (unit === "pourcentage") return { failures: 0, total: count };
-  if (unit === "occurrences") return { occurrences: 0, total: count };
-  return { histogram: [{ value: 1, count }] };
+function samples(metric, dimension, result = "vert") {
+  return {
+    checks: [
+      {
+        id: `proof/${metric}/${dimension ?? "global"}`,
+        evidenceSha256: canonicalSha256({ metric, dimension, evidence: true }),
+        result,
+      },
+    ],
+  };
 }
 
-function writeSources(root, { count = 1_000_000 } = {}) {
+function writeSources(root, { redMetric = null } = {}) {
   mkdirSync(root);
   const writeSource = (metric, dimension, unit, observer) => {
     const source = {
-      schema: "punks.operational-metric-source.v2",
+      schema: "punks.operational-metric-source.v3",
       sourceSha,
       stagingDeploymentId,
       metric,
@@ -62,7 +73,11 @@ function writeSources(root, { count = 1_000_000 } = {}) {
       observer,
       querySha256: canonicalSha256({ metric, dimension, observedAt }),
       observedAt,
-      samples: samples(unit, count),
+      samples: samples(
+        metric,
+        dimension,
+        metric === redMetric && dimension === null ? "rouge" : "vert",
+      ),
     };
     const content = bytes(source);
     writeFileSync(join(root, `${sha256(content)}.json`), content, {
@@ -70,7 +85,12 @@ function writeSources(root, { count = 1_000_000 } = {}) {
     });
   };
   for (const budget of BUDGETS_PRODUCTION) {
-    writeSource(budget.nom, null, budget.unite, "cloudflare-analytics");
+    writeSource(
+      budget.nom,
+      null,
+      budget.unite,
+      "github-attested-installed-candidate",
+    );
     for (const dimension of dimensions(budget.nom)) {
       writeSource(
         budget.nom,
@@ -84,7 +104,7 @@ function writeSources(root, { count = 1_000_000 } = {}) {
     "outboxes-en-attente",
     null,
     "occurrences",
-    "cloudflare-analytics",
+    "github-attested-installed-candidate",
   );
 }
 
@@ -129,11 +149,59 @@ test("materializes the closed provider set into recomputed green evidence", (t) 
   );
   assert.equal(observation.verdicts.length, BUDGETS_PRODUCTION.length);
   assert.ok(observation.verdicts.every(({ resultat }) => resultat === "vert"));
+  assert.ok(
+    observation.verdicts.every(
+      ({ methode, mesure, denominateur }) =>
+        methode === "preuve-deterministe-exhaustive" &&
+        mesure === 0 &&
+        denominateur === null,
+    ),
+  );
   assert.deepEqual(observation.connectionMethods, ["google", "github"]);
+
+  const candidateRoot = join(input.root, "candidate-verification");
+  const sourcesRoot = join(candidateRoot, "operational-budget-sources");
+  const provenanceRoot = join(candidateRoot, "operational-budget-provenance");
+  mkdirSync(candidateRoot);
+  mkdirSync(sourcesRoot);
+  mkdirSync(provenanceRoot);
+  for (const name of readdirSync(join(input.output, "sources"))) {
+    copyFileSync(join(input.output, "sources", name), join(sourcesRoot, name));
+  }
+  const bundle = readFileSync(input.providerBundle);
+  const bundleSha256 = sha256(bundle);
+  copyFileSync(
+    input.providerBundle,
+    join(provenanceRoot, `${bundleSha256}.sigstore.json`),
+  );
+  writeFileSync(
+    join(candidateRoot, "operational-budget-provenance.json"),
+    bytes({
+      schema: "punks.operational-budget-provenance.v1",
+      sourceSha,
+      stagingDeploymentId,
+      ...OPERATIONAL_BUDGET_PROVENANCE,
+      bundle: {
+        path: `operational-budget-provenance/${bundleSha256}.sigstore.json`,
+        sha256: bundleSha256,
+      },
+    }),
+  );
+  assert.equal(
+    validateOperationalBudgetEvidence({
+      observation,
+      root: join(input.output, "exports"),
+      candidateRoot,
+      sourceSha,
+      stagingDeploymentId,
+      verifyProviderSubject: () => [{ verified: true }],
+    }),
+    observation,
+  );
 });
 
-test("refuses statistically insufficient percentage sources without output", (t) => {
-  const input = fixture(t, { count: 1 });
+test("refuses a red deterministic obligation without output", (t) => {
+  const input = fixture(t, { redMetric: "follow-live-p95" });
   assert.throws(
     () =>
       materializeOperationalBudgetEvidence({
@@ -143,7 +211,7 @@ test("refuses statistically insufficient percentage sources without output", (t)
         providerBundle: input.providerBundle,
         output: input.output,
       }),
-    /not green|insufficient|budget/i,
+    /not deterministically green|not green|obligation/i,
   );
   assert.throws(() => readFileSync(join(input.output, "manifest.json")));
 });

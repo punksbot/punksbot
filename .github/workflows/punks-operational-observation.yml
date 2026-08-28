@@ -26,7 +26,7 @@ permissions:
 jobs:
   backend:
     if: inputs.phase == 'backend'
-    name: Collect provider-owned backend probes
+    name: Collect provider-owned backend proofs
     environment: punks-staging-promotion
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -91,7 +91,7 @@ jobs:
           jq -e --arg expected "$STAGING_DEPLOYMENT_ID" \
             '.deploymentId == $expected' "$RUNNER_TEMP/provider-staging.json" >/dev/null
 
-      - name: Collect live backend samples before destructive Session loss
+      - name: Prove live backend authorities before destructive Session loss
         id: collect_backend
         shell: bash
         env:

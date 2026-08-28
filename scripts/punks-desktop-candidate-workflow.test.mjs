@@ -612,6 +612,7 @@ function validateWorkflow(workflow) {
   const observeBackend = workflow.jobs.observe_operational_backend;
   invariant(
     observeBackend.needs === "verify_staging" &&
+      observeBackend.if === "inputs.validation_scope == 'full-candidate'" &&
       observeBackend.uses ===
         "./.github/workflows/punks-operational-observation.yml" &&
       observeBackend.with?.phase === "backend" &&
@@ -622,6 +623,14 @@ function validateWorkflow(workflow) {
     observeBackend.permissions,
     attestPermissions,
     "provider-owned backend permissions",
+  );
+  invariant(
+    build.if.includes("always()") &&
+      build.if.includes("inputs.validation_scope == 'apple-only'") &&
+      build.if.includes(
+        "needs.observe_operational_backend.result == 'success'",
+      ),
+    "Apple-only cannot bypass safely skipped provider observation",
   );
   same(
     build.permissions,

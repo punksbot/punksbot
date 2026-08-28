@@ -29,6 +29,7 @@ import {
   ETATS,
   PLATEFORMES,
   PREUVES_OBLIGATOIRES,
+  validateOperationalBudgetVerdicts,
   validateReleaseGraph,
   validateReleaseGraphEvolution,
 } from "./release-graph-lib.mjs";
@@ -3319,6 +3320,57 @@ test("la promotion exécute toutes ses étapes sans attente calendaire", () => {
     dates: ["2026-08-26", "2026-08-26"],
   });
   assert.deepEqual(erreurs(graphValide({ releases: [release] })), []);
+});
+
+test("le bootstrap T1 accepte uniquement les preuves déterministes exhaustives vertes", () => {
+  const baseline = {
+    disponible: false,
+    "mesure-n-1": null,
+    "export-n-1-sha256": null,
+    "regression-pourcentage": null,
+    "justification-acceptee": false,
+    "justification-sha256": null,
+  };
+  const statistic = (suffix) => ({
+    mesure: 0,
+    "borne-superieure-unilaterale-95": 0,
+    echantillons: 1,
+    numerateur: 0,
+    denominateur: null,
+    methode: "preuve-deterministe-exhaustive",
+    "baseline-n-1": baseline,
+    resultat: "vert",
+    "export-sha256": canonicalSha256({ suffix, deterministic: true }),
+  });
+  const verdicts = BUDGETS_PRODUCTION.map((budget) => ({
+    nom: budget.nom,
+    unite: budget.unite,
+    "budget-max": budget.maximum,
+    ...statistic(budget.nom),
+    dimensions: (budget.nom === "connexion-desktop-echecs-par-moyen"
+      ? ["google", "github"]
+      : budget.nom === "desktop-sessions-avec-crash-par-plateforme"
+        ? PLATEFORMES
+        : []
+    ).map((dimension) => ({
+      dimension,
+      ...statistic(`${budget.nom}/${dimension}`),
+    })),
+  }));
+  assert.deepEqual(
+    validateOperationalBudgetVerdicts(verdicts, {
+      connectionMethods: ["google", "github"],
+    }),
+    [],
+  );
+  const falsified = structuredClone(verdicts);
+  falsified[0].mesure = 1;
+  assert.match(
+    validateOperationalBudgetVerdicts(falsified, {
+      connectionMethods: ["google", "github"],
+    }).join("\n"),
+    /budget|preuve|statistique/iu,
+  );
 });
 
 test("chaque étape possède ses propres budgets et N−1 impose une baseline", () => {

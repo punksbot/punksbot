@@ -119,7 +119,7 @@ Il n'existe plus de durée calendaire minimale pour la promotion : `E0…E4`,
 `A0…A4` et `P0` portent tous `duree-minimale-heures: 0`. Une migration stateful
 non splittable remplace toujours `E0…E3` par `P0` avant `E4`; la contraction
 réobserve toujours `E4`. Chaque étape doit néanmoins posséder un segment UTC
-strictement positif, des échantillons suffisants et un verdict vert, et les
+strictement positif, une preuve fermée suffisante et un verdict vert, et les
 événements restent strictement ordonnés. Cela permet une exécution complète
 dans le même run sans transformer l'absence d'attente en absence de preuve.
 Chaque Reçu d'étape lie exactement les
@@ -130,17 +130,28 @@ topologie change le hash du snapshot et impose de rejouer les étapes depuis le
 début : aucune preuve acquise sur une autre configuration ne peut être
 réutilisée.
 
-Les verdicts couvrent exactement les 36 budgets de production décidés, avec
-leurs unités et maxima fermés. Pour un taux, le gate recalcule la borne
-supérieure unilatérale de Wilson à 95 % depuis les comptes bruts ; pour une
-latence ou un compteur, il recalcule la comparaison exacte à la limite. Les
-comptes bruts proviennent de sujets content-addressés lus identiquement dans
+Les verdicts couvrent exactement les 36 coordonnées de production décidées,
+avec leurs unités et maxima fermés. Le bootstrap T1 n'affirme aucun taux ni
+quantile de production avant l'existence d'une population de production : il
+utilise la méthode `preuve-deterministe-exhaustive`. Pour chaque coordonnée, le
+gate recompte les contrôles fermés liés aux quatre artefacts installés, à leur
+matrice Google/GitHub, à FOLLOW, aux fautes et récupérations, aux scans et aux
+autorités staging exactes. `mesure` et `numerateur` sont le nombre de contrôles
+rouges, `echantillons` est le nombre de contrôles exhaustifs et
+`denominateur` reste `null` ; toute valeur rouge bloque T1. Les noms, unités et
+maxima restent stables pour que les fenêtres de production ultérieures puissent
+continuer à employer les exports statistiques historiques, mais un contrôle T1
+ne se présente jamais comme un taux ou une latence observée.
+
+Les contrôles proviennent de sujets content-addressés lus identiquement dans
 deux buckets et liés, avant le candidat, par un bundle Sigstore GitHub OIDC du
 workflow fournisseur dédié `punks-operational-observation.yml`. Une première
-phase observe directement les autorités staging avant toute révocation de
-Session ; une seconde vérifie ces résultats et les quatre artefacts installés,
-sans accepter de document d'échantillons fourni par l'appelant, puis atteste les
-43 sources. Le manifeste R2 v4 lie le bundle, ses sujets, le dépôt, le ref
+phase prouve une fois les trois autorités publiques fermées avant toute
+révocation de Session : santé API, Session exacte et Punk exact. Une seconde
+vérifie ces résultats et le corpus complet des quatre artefacts installés,
+associe chaque coordonnée uniquement à ses preuves pertinentes, sans accepter
+de document fourni par l'appelant, puis atteste les 43 sources. Le manifeste R2
+v4 lie le bundle, ses sujets, le dépôt, le ref
 `staging` et le SHA exacts et son hash revient au candidat dans le même run ; le
 workflow candidat vérifie ce bundle fournisseur puis atteste séparément son
 incorporation au dossier. Un ancien manifeste v3, une auto-attestation du
@@ -151,7 +162,8 @@ lu, et pas seulement le préfixe des releases. Les
 dimensions imposées par moyen de connexion et plateforme sont exhaustives et
 la tranche N (comme tout roll-forward) cite les mêmes mesures N−1 en baseline,
 ce qui rend les régressions calculables plutôt que déclaratives. Un verdict
-`vert`, `rouge` ou `insuffisant` doit correspondre au calcul ; seul un ensemble
+`vert`, `rouge` ou `insuffisant` doit correspondre au calcul historique, tandis
+que le bootstrap déterministe n'accepte que `vert` ou `rouge` ; seul un ensemble
 entièrement vert peut fermer une étape.
 
 Les décisions d'arrêt utilisent des fenêtres content-addressées, consécutives

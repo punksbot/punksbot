@@ -24,6 +24,7 @@ const DEPLOYMENT_RE = /^sha256:[0-9a-f]{64}$/u;
 const BACKEND_PATHS = ["/api/health", "/api/auth/v1/session", "/api/v1/punk"];
 const CONNECTION_METHODS = ["google", "github"];
 const MAX_REPORT_AGE_MS = 24 * 60 * 60 * 1_000;
+const INSTANT_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/u;
 
 function fail(message) {
   throw new Error(`operational source collection rejected: ${message}`);
@@ -45,6 +46,21 @@ function sha256(content) {
   return createHash("sha256").update(content).digest("hex");
 }
 
+function instant(value, label) {
+  if (typeof value !== "string" || !INSTANT_RE.test(value)) {
+    fail(`${label} is not a closed UTC instant`);
+  }
+  const milliseconds = Date.parse(value);
+  const normalized = value.includes(".") ? value : `${value.slice(0, -1)}.000Z`;
+  if (
+    !Number.isFinite(milliseconds) ||
+    new Date(milliseconds).toISOString() !== normalized
+  ) {
+    fail(`${label} is invalid`);
+  }
+  return milliseconds;
+}
+
 function json(path, label) {
   try {
     return JSON.parse(readStableEvidenceFile(path, label).toString("utf8"));
@@ -55,6 +71,14 @@ function json(path, label) {
     ) {
       throw error;
     }
+    fail(`${label} is invalid JSON`);
+  }
+}
+
+function parseJson(content, label) {
+  try {
+    return JSON.parse(Buffer.from(content).toString("utf8"));
+  } catch {
     fail(`${label} is invalid JSON`);
   }
 }
@@ -84,6 +108,90 @@ function verifyReference(root, reference, label) {
   return content;
 }
 
+function validateEvidenceIndex(
+  candidateRoot,
+  reference,
+  label,
+  { sourceSha, stagingDeploymentId },
+) {
+  const content = verifyReference(candidateRoot, reference, label);
+  const index = parseJson(content, label);
+  exact(index, ["schema", "preuves"], label);
+  if (
+    index.schema !== "punks.promotion-evidence-index.v1" ||
+    !Array.isArray(index.preuves) ||
+    index.preuves.length === 0
+  ) {
+    fail(`${label} is empty or invalid`);
+  }
+  const evidenceRoot = resolve(candidateRoot, "promotion-evidence");
+  const proofs = new Map();
+  for (const [proofIndex, proofReference] of index.preuves.entries()) {
+    exact(
+      proofReference,
+      ["id", "chemin", "sha256", "sujet"],
+      `${label} proof reference ${proofIndex}`,
+    );
+    exact(
+      proofReference.sujet,
+      ["chemin", "sha256"],
+      `${label} subject reference ${proofIndex}`,
+    );
+    if (
+      typeof proofReference.id !== "string" ||
+      proofReference.id.length === 0 ||
+      proofs.has(proofReference.id)
+    ) {
+      fail(`${label} contains an invalid or duplicate proof ID`);
+    }
+    const proofContent = verifyReference(
+      evidenceRoot,
+      { path: proofReference.chemin, sha256: proofReference.sha256 },
+      `${label} proof ${proofReference.id}`,
+    );
+    verifyReference(
+      evidenceRoot,
+      {
+        path: proofReference.sujet.chemin,
+        sha256: proofReference.sujet.sha256,
+      },
+      `${label} subject ${proofReference.id}`,
+    );
+    const proof = parseJson(
+      proofContent,
+      `${label} proof ${proofReference.id}`,
+    );
+    exact(
+      proof,
+      [
+        "schema",
+        "id",
+        "candidateSha",
+        "stagingDeploymentId",
+        "result",
+        ...(proof.plateforme === undefined ? [] : ["plateforme"]),
+        "data",
+      ],
+      `${label} proof ${proofReference.id}`,
+    );
+    if (
+      proof.schema !== "punks.promotion-proof.v1" ||
+      proof.id !== proofReference.id ||
+      proof.candidateSha !== sourceSha ||
+      proof.stagingDeploymentId !== stagingDeploymentId ||
+      proof.result !== "vert" ||
+      proof.data?.subjectSha256 !== proofReference.sujet.sha256
+    ) {
+      fail(`${label} proof ${proofReference.id} is not green and exact`);
+    }
+    proofs.set(proofReference.id, {
+      proofSha256: proofReference.sha256,
+      subjectSha256: proofReference.sujet.sha256,
+    });
+  }
+  return { digest: reference.sha256, proofs };
+}
+
 function validateCandidate(root, sourceSha, stagingDeploymentId) {
   const aggregate = json(
     join(root, "aggregate-manifest.json"),
@@ -94,6 +202,15 @@ function validateCandidate(root, sourceSha, stagingDeploymentId) {
     aggregate.sourceSha !== sourceSha ||
     aggregate.stagingDeploymentId !== stagingDeploymentId ||
     aggregate.repository !== "punksbot/punksbot" ||
+    aggregate.stagingProof?.path !== "staging-deployment-proof.json" ||
+    aggregate.stagingProof?.sha256 !==
+      aggregate.promotionEvidence?.stagingProof?.sha256 ||
+    aggregate.promotionEvidence?.platformIndex?.path !==
+      "promotion-evidence/platform-index.json" ||
+    aggregate.promotionEvidence?.recoveryIndex?.path !==
+      "promotion-evidence/recovery-index.json" ||
+    aggregate.promotionEvidence?.stagingProof?.path !==
+      "promotion-evidence/staging-deployment-proof.json" ||
     !Array.isArray(aggregate.platforms) ||
     JSON.stringify(aggregate.platforms.map(({ platform }) => platform)) !==
       JSON.stringify(PLATEFORMES) ||
@@ -101,25 +218,67 @@ function validateCandidate(root, sourceSha, stagingDeploymentId) {
     JSON.stringify(
       aggregate.promotionEvidence.network.map(({ platform }) => platform),
     ) !== JSON.stringify(PLATEFORMES) ||
-    aggregate.promotionEvidence.recoveryIndex === undefined
+    aggregate.promotionEvidence.platformIndex === undefined ||
+    aggregate.promotionEvidence.recoveryIndex === undefined ||
+    aggregate.promotionEvidence.stagingProof === undefined
   ) {
     fail("exact four-platform candidate aggregate is required");
   }
+  const networks = new Map();
   for (const [
     index,
     reference,
   ] of aggregate.promotionEvidence.network.entries()) {
+    if (
+      reference.path !==
+        `promotion-evidence/network/${reference.platform}.json` ||
+      !SHA256_RE.test(reference.sha256 ?? "")
+    ) {
+      fail(`platform network evidence ${index} identity is invalid`);
+    }
     verifyReference(
       root,
       { path: reference.path, sha256: reference.sha256 },
       `platform network evidence ${index}`,
     );
+    networks.set(reference.platform, reference.sha256);
   }
   verifyReference(
     root,
+    aggregate.promotionEvidence.stagingProof,
+    "staging proof",
+  );
+  verifyReference(root, aggregate.stagingProof, "aggregate staging proof");
+  const platform = validateEvidenceIndex(
+    root,
+    aggregate.promotionEvidence.platformIndex,
+    "candidate platform evidence",
+    { sourceSha, stagingDeploymentId },
+  );
+  const recovery = validateEvidenceIndex(
+    root,
     aggregate.promotionEvidence.recoveryIndex,
     "candidate recovery evidence",
+    { sourceSha, stagingDeploymentId },
   );
+  if (
+    [...platform.proofs.keys()].some((proofId) => recovery.proofs.has(proofId))
+  ) {
+    fail("candidate evidence contains a duplicate cross-index proof ID");
+  }
+  for (const [index, entry] of aggregate.platforms.entries()) {
+    if (
+      entry === null ||
+      typeof entry !== "object" ||
+      Array.isArray(entry) ||
+      typeof entry.target !== "string" ||
+      entry.target.length === 0 ||
+      !SHA256_RE.test(entry.manifestSha256 ?? "") ||
+      !SHA256_RE.test(entry.provenanceSha256 ?? "")
+    ) {
+      fail(`candidate platform ${index} identity is invalid`);
+    }
+  }
   const evidenceRoot = resolve(root, "promotion-evidence");
   const files = [];
   const walk = (directory) => {
@@ -143,15 +302,29 @@ function validateCandidate(root, sourceSha, stagingDeploymentId) {
   };
   walk(evidenceRoot);
   if (files.length < 6) fail("candidate evidence corpus is incomplete");
-  return canonicalSha256({
-    aggregateSha256: sha256(
-      readStableEvidenceFile(
-        join(root, "aggregate-manifest.json"),
-        "candidate aggregate manifest",
-      ),
+  const aggregateSha256 = sha256(
+    readStableEvidenceFile(
+      join(root, "aggregate-manifest.json"),
+      "candidate aggregate manifest",
     ),
+  );
+  const corpusSha256 = canonicalSha256({
+    aggregateSha256,
     files,
   });
+  return {
+    corpusSha256,
+    aggregateSha256,
+    stagingProofSha256: aggregate.promotionEvidence.stagingProof.sha256,
+    platformIndexSha256: platform.digest,
+    recoveryIndexSha256: recovery.digest,
+    platformProofs: platform.proofs,
+    recoveryProofs: recovery.proofs,
+    networks,
+    platforms: new Map(
+      aggregate.platforms.map((entry) => [entry.platform, entry]),
+    ),
+  };
 }
 
 function validateBackendReport(report, expected) {
@@ -170,7 +343,7 @@ function validateBackendReport(report, expected) {
   );
   const { sha256: digest, ...content } = report;
   if (
-    report.schema !== "punks.operational-backend-probe.v1" ||
+    report.schema !== "punks.operational-backend-proof.v2" ||
     report.sourceSha !== expected.sourceSha ||
     report.stagingDeploymentId !== expected.stagingDeploymentId ||
     report.origin !== "https://staging.punks.bot" ||
@@ -178,61 +351,37 @@ function validateBackendReport(report, expected) {
     !Array.isArray(report.endpoints) ||
     JSON.stringify(report.endpoints.map(({ path }) => path)) !==
       JSON.stringify(BACKEND_PATHS) ||
-    typeof report.observedAt !== "string" ||
-    !Number.isFinite(Date.parse(report.observedAt))
+    !Number.isFinite(instant(report.observedAt, "backend probe observedAt"))
   ) {
     fail("backend probe report identity is invalid");
   }
   for (const [index, endpoint] of report.endpoints.entries()) {
     exact(
       endpoint,
-      ["path", "authority", "total", "failures", "histogram"],
+      ["path", "authority", "status", "result", "responseSha256"],
       `backend endpoint ${index}`,
     );
     if (
-      !Number.isSafeInteger(endpoint.total) ||
-      endpoint.total < 10_000 ||
-      !Number.isSafeInteger(endpoint.failures) ||
-      endpoint.failures < 0 ||
-      endpoint.failures > endpoint.total ||
-      !Array.isArray(endpoint.histogram) ||
-      endpoint.histogram.length === 0
+      endpoint.authority !==
+        ["api-public", "auth-session", "auth-punk"][index] ||
+      !["vert", "rouge"].includes(endpoint.result) ||
+      !(
+        endpoint.status === null ||
+        (Number.isSafeInteger(endpoint.status) &&
+          endpoint.status >= 100 &&
+          endpoint.status <= 599)
+      ) ||
+      !(
+        endpoint.responseSha256 === null ||
+        SHA256_RE.test(endpoint.responseSha256 ?? "")
+      ) ||
+      (endpoint.result === "vert" &&
+        (endpoint.status !== 200 || endpoint.responseSha256 === null))
     ) {
-      fail(`backend endpoint ${index} samples are invalid`);
+      fail(`backend endpoint ${index} proof is invalid`);
     }
-    let count = 0;
-    for (const [bucketIndex, bucket] of endpoint.histogram.entries()) {
-      exact(bucket, ["value", "count"], `backend histogram ${index}`);
-      if (
-        !Number.isFinite(bucket.value) ||
-        bucket.value < 0 ||
-        !Number.isSafeInteger(bucket.count) ||
-        bucket.count < 1 ||
-        (bucketIndex > 0 &&
-          bucket.value <= endpoint.histogram[bucketIndex - 1].value)
-      ) {
-        fail(`backend histogram ${index} is invalid`);
-      }
-      count += bucket.count;
-      if (!Number.isSafeInteger(count))
-        fail("backend histogram count is unsafe");
-    }
-    if (count !== endpoint.total)
-      fail(`backend endpoint ${index} count diverges`);
   }
   return report;
-}
-
-function combinedHistogram(endpoints) {
-  const values = new Map();
-  for (const endpoint of endpoints) {
-    for (const bucket of endpoint.histogram) {
-      values.set(bucket.value, (values.get(bucket.value) ?? 0) + bucket.count);
-    }
-  }
-  return [...values.entries()]
-    .sort(([left], [right]) => left - right)
-    .map(([value, count]) => ({ value, count }));
 }
 
 function dimensions(metric) {
@@ -243,6 +392,244 @@ function dimensions(metric) {
     return PLATEFORMES;
   }
   return [];
+}
+
+function closedCheck(id, evidenceSha256, result = "vert") {
+  if (
+    typeof id !== "string" ||
+    id.length === 0 ||
+    !SHA256_RE.test(evidenceSha256 ?? "") ||
+    !["vert", "rouge"].includes(result)
+  ) {
+    fail("deterministic check identity is invalid");
+  }
+  return { id, evidenceSha256, result };
+}
+
+function requiredProof(proofs, proofId, checkId = proofId) {
+  const proof = proofs.get(proofId);
+  if (proof === undefined)
+    fail(`required candidate proof ${proofId} is absent`);
+  return closedCheck(checkId, proof.proofSha256);
+}
+
+function transcriptChecks(
+  candidate,
+  prefix = "transcript",
+  onlyPlatform = null,
+) {
+  const platforms = onlyPlatform === null ? PLATEFORMES : [onlyPlatform];
+  return platforms.map((platform) =>
+    requiredProof(
+      candidate.platformProofs,
+      `transcript/${platform}`,
+      `${prefix}/${platform}`,
+    ),
+  );
+}
+
+function storyChecks(candidate, story) {
+  return PLATEFORMES.map((platform) =>
+    requiredProof(
+      candidate.platformProofs,
+      `parcours/${platform}/${story}`,
+      `story/${story}/${platform}`,
+    ),
+  );
+}
+
+function networkChecks(candidate) {
+  return PLATEFORMES.map((platform) => {
+    const digest = candidate.networks.get(platform);
+    if (digest === undefined) fail(`network proof ${platform} is absent`);
+    return closedCheck(`network/${platform}`, digest);
+  });
+}
+
+function recoveryChecks(candidate, predicate, label) {
+  const checks = [...candidate.recoveryProofs.entries()]
+    .filter(([id]) => predicate(id))
+    .map(([id, proof]) => closedCheck(`${label}/${id}`, proof.proofSha256));
+  if (checks.length === 0)
+    fail(`required recovery proof group ${label} is absent`);
+  return checks;
+}
+
+function artifactChecks(candidate) {
+  return PLATEFORMES.flatMap((platform) => {
+    const entry = candidate.platforms.get(platform);
+    if (entry === undefined) fail(`candidate platform ${platform} is absent`);
+    return [
+      closedCheck(`artifact/manifest/${platform}`, entry.manifestSha256),
+      closedCheck(`artifact/provenance/${platform}`, entry.provenanceSha256),
+      requiredProof(
+        candidate.platformProofs,
+        `scan/artefact/${platform}`,
+        `artifact/scan/${platform}`,
+      ),
+    ];
+  });
+}
+
+function backendCheck(report, reportSha256, path) {
+  const endpoint = report.endpoints.find((entry) => entry.path === path);
+  if (endpoint === undefined) fail(`backend proof ${path} is absent`);
+  return closedCheck(`backend${path}`, reportSha256, endpoint.result);
+}
+
+const AUTH_METRICS = new Set([
+  "activation-unconfirmed-terminal",
+  "renouvellement-session-echecs",
+  "desktop-demarrage-sans-frontiere-session",
+]);
+const MUTATION_METRICS = new Set([
+  "mutations-ambiguous",
+  "mutations-ambiguous-apres-5m",
+  "replay-automatique",
+]);
+const FOLLOW_METRICS = new Set([
+  "follow-live-p95",
+  "follow-live-p99",
+  "renderer-confirmation-p95",
+  "renderer-confirmation-p99",
+  "follow-trou-ou-chevauchement-divergent",
+  "ack-avant-publication-renderer",
+]);
+const STORAGE_METRICS = new Set([
+  "d1-retard-p95",
+  "d1-retard-p99",
+  "d1-retard-actif-max",
+]);
+const ASYNC_RECOVERY_METRICS = new Set([
+  "alarmes-outboxes-age-p99",
+  "alarmes-outboxes-age-max",
+  "queues-age-p95",
+  "queues-age-p99",
+  "queues-dlq",
+  "r2-archivage-p99",
+  "r2-element-chaud-bloque-max",
+  "outboxes-en-attente",
+]);
+
+function checksForMetric(metric, dimension, candidate, report, reportSha256) {
+  let checks;
+  if (metric === "connexion-desktop-echecs-par-moyen") {
+    const methods = dimension === null ? CONNECTION_METHODS : [dimension];
+    checks = methods.flatMap((method) =>
+      transcriptChecks(candidate, `auth/${method}`),
+    );
+    checks.push(backendCheck(report, reportSha256, "/api/auth/v1/session"));
+    checks.push(backendCheck(report, reportSha256, "/api/v1/punk"));
+  } else if (metric === "desktop-sessions-avec-crash-par-plateforme") {
+    checks = transcriptChecks(candidate, "crash-free", dimension);
+  } else if (AUTH_METRICS.has(metric)) {
+    checks = [
+      ...transcriptChecks(candidate, "auth-session"),
+      backendCheck(report, reportSha256, "/api/auth/v1/session"),
+      backendCheck(report, reportSha256, "/api/v1/punk"),
+    ];
+  } else if (MUTATION_METRICS.has(metric)) {
+    checks = [
+      ...storyChecks(candidate, "publication"),
+      ...storyChecks(candidate, "reponse"),
+      ...storyChecks(candidate, "reactions"),
+      ...transcriptChecks(candidate, "mutation"),
+    ];
+  } else if (FOLLOW_METRICS.has(metric)) {
+    checks = [
+      ...networkChecks(candidate),
+      ...transcriptChecks(candidate, "follow"),
+    ];
+  } else if (metric === "history-required-hors-exercice") {
+    checks = storyChecks(candidate, "pagination");
+  } else if (
+    metric === "durable-objects-erreurs-internes" ||
+    metric === "durable-objects-p99"
+  ) {
+    checks = [
+      ...recoveryChecks(candidate, () => true, "durable-object"),
+      backendCheck(report, reportSha256, "/api/health"),
+    ];
+  } else if (STORAGE_METRICS.has(metric)) {
+    checks = [
+      ...storyChecks(candidate, "pagination"),
+      ...recoveryChecks(
+        candidate,
+        (id) => /api-(conversation|message-content|workspace)/u.test(id),
+        "storage-recovery",
+      ),
+    ];
+  } else if (ASYNC_RECOVERY_METRICS.has(metric)) {
+    checks = [
+      closedCheck("recovery/index", candidate.recoveryIndexSha256),
+      ...recoveryChecks(candidate, () => true, "async-recovery"),
+    ];
+  } else if (metric === "workspace-profil-absent-ou-incompatible") {
+    checks = storyChecks(candidate, "workspace");
+  } else if (metric === "contract-violation") {
+    checks = [
+      closedCheck("candidate/platform-index", candidate.platformIndexSha256),
+      ...[
+        "connexion",
+        "workspace",
+        "lecture-live",
+        "pagination",
+        "publication",
+        "reponse",
+        "sujet",
+        "reactions",
+      ].flatMap((story) => storyChecks(candidate, story)),
+    ];
+  } else if (metric === "fuite-inter-workspace-ou-acces-non-autorise") {
+    checks = [
+      ...transcriptChecks(candidate, "authorization"),
+      ...recoveryChecks(
+        candidate,
+        (id) => /api-(workspace|conversation|message-content)/u.test(id),
+        "authorization-recovery",
+      ),
+    ];
+  } else if (metric === "resurrection-session-revoquee") {
+    checks = [
+      ...transcriptChecks(candidate, "revoked-session"),
+      ...recoveryChecks(candidate, (id) => /auth-session/u.test(id), "session"),
+    ];
+  } else if (
+    metric === "contradiction-marqueur-effacement" ||
+    metric === "plaintext-lisible-apres-effacement"
+  ) {
+    checks = recoveryChecks(
+      candidate,
+      (id) => /erasure-registry/u.test(id),
+      "erasure",
+    );
+  } else if (metric === "r2-double-ecriture-hash-lock-ou-chaine-invalide") {
+    checks = [
+      closedCheck("candidate/recovery-index", candidate.recoveryIndexSha256),
+      closedCheck("candidate/staging-proof", candidate.stagingProofSha256),
+    ];
+  } else if (metric === "discordance-artefact-ou-attestation") {
+    checks = artifactChecks(candidate);
+  } else if (metric === "tentative-buzz-ou-nostr-public") {
+    checks = [
+      ...networkChecks(candidate),
+      ...PLATEFORMES.map((platform) =>
+        requiredProof(
+          candidate.platformProofs,
+          `scan/artefact/${platform}`,
+          `legacy-scan/${platform}`,
+        ),
+      ),
+    ];
+  } else {
+    fail(`metric ${metric} has no deterministic evidence contract`);
+  }
+  const ids = new Set();
+  for (const check of checks) {
+    if (ids.has(check.id)) fail(`${metric} deterministic check is duplicated`);
+    ids.add(check.id);
+  }
+  return checks.sort((left, right) => left.id.localeCompare(right.id));
 }
 
 /** Builds sources only from a provider-attested live report and exact legs. */
@@ -259,7 +646,7 @@ export function collectOperationalMetricSources(
     fail("exact candidate and provider verification are required");
   }
   const candidateRoot = resolve(input.candidateRoot);
-  const corpusSha256 = validateCandidate(
+  const candidate = validateCandidate(
     candidateRoot,
     input.sourceSha,
     input.stagingDeploymentId,
@@ -294,25 +681,14 @@ export function collectOperationalMetricSources(
   if (!(observedAt instanceof Date) || !Number.isFinite(observedAt.getTime())) {
     fail("provider observation clock is invalid");
   }
-  const reportTime = Date.parse(report.observedAt);
+  const reportTime = instant(report.observedAt, "backend probe observedAt");
   if (
     reportTime > observedAt.getTime() ||
     observedAt.getTime() - reportTime > MAX_REPORT_AGE_MS
   ) {
     fail("backend probe report is stale or future-dated");
   }
-  const total = report.endpoints.reduce(
-    (sum, endpoint) => sum + endpoint.total,
-    0,
-  );
-  const failures = report.endpoints.reduce(
-    (sum, endpoint) => sum + endpoint.failures,
-    0,
-  );
-  if (!Number.isSafeInteger(total) || !Number.isSafeInteger(failures)) {
-    fail("backend aggregate counts are unsafe");
-  }
-  const latencyHistogram = combinedHistogram(report.endpoints);
+  const reportFileSha256 = sha256(reportContent);
   const output = resolve(input.output);
   let outputCreated = false;
   try {
@@ -320,14 +696,15 @@ export function collectOperationalMetricSources(
     outputCreated = true;
     let count = 0;
     const writeSource = (metric, dimension, unit) => {
-      const samples =
-        unit === "pourcentage"
-          ? { failures, total }
-          : unit === "occurrences"
-            ? { occurrences: failures, total }
-            : { histogram: latencyHistogram };
+      const checks = checksForMetric(
+        metric,
+        dimension,
+        candidate,
+        report,
+        reportFileSha256,
+      );
       const document = {
-        schema: "punks.operational-metric-source.v2",
+        schema: "punks.operational-metric-source.v3",
         sourceSha: input.sourceSha,
         stagingDeploymentId: input.stagingDeploymentId,
         metric,
@@ -335,15 +712,15 @@ export function collectOperationalMetricSources(
         unit,
         observer: "github-attested-installed-candidate",
         querySha256: canonicalSha256({
-          schema: "punks.operational-provider-query.v1",
-          corpusSha256,
-          backendReportSha256: report.sha256,
+          schema: "punks.operational-provider-query.v2",
+          corpusSha256: candidate.corpusSha256,
+          backendReportSha256: reportFileSha256,
           metric,
           dimension,
-          endpoints: BACKEND_PATHS,
+          checks,
         }),
         observedAt: observedAt.toISOString(),
-        samples,
+        samples: { checks },
       };
       const content = Buffer.from(`${JSON.stringify(document)}\n`);
       const digest = sha256(content);
@@ -361,7 +738,11 @@ export function collectOperationalMetricSources(
     }
     writeSource("outboxes-en-attente", null, "occurrences");
     if (count !== 43) fail("provider source count diverges");
-    return { sources: count, corpusSha256, backendReportSha256: report.sha256 };
+    return {
+      sources: count,
+      corpusSha256: candidate.corpusSha256,
+      backendReportSha256: reportFileSha256,
+    };
   } catch (error) {
     if (outputCreated) rmSync(output, { recursive: true, force: true });
     throw error;

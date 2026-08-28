@@ -13,7 +13,6 @@ import { canonicalSha256 } from "../migration-manifest-lib.mjs";
 import { validateSigstoreBundleContent } from "../github-attestation-lib.mjs";
 import {
   BUDGETS_PRODUCTION,
-  borneWilsonUnilaterale95,
   PLATEFORMES,
   validateOperationalBudgetVerdicts,
 } from "../release-graph-lib.mjs";
@@ -27,13 +26,8 @@ import { readStableEvidenceFile } from "./stable-evidence-file.mjs";
 const SHA1_RE = /^[0-9a-f]{40}$/u;
 const SHA256_RE = /^[0-9a-f]{64}$/u;
 const DEPLOYMENT_RE = /^sha256:[0-9a-f]{64}$/u;
-const OBSERVERS = new Set([
-  "cloudflare-analytics",
-  "github-attested-installed-candidate",
-]);
 const CONNECTION_METHODS = Object.freeze(["google", "github"]);
 const INSTANT_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/u;
-const MIN_LATENCY_SAMPLE_COUNT = 10_000;
 
 function fail(message) {
   throw new Error(`operational budget materialization rejected: ${message}`);
@@ -112,58 +106,30 @@ function expectedSources() {
   return values;
 }
 
-function validateHistogram(samples, metric) {
-  exact(samples, ["histogram"], `${metric} samples`);
-  if (
-    !Array.isArray(samples.histogram) ||
-    samples.histogram.length === 0 ||
-    samples.histogram.some(
-      (bucket, index, values) =>
-        bucket === null ||
-        typeof bucket !== "object" ||
-        Array.isArray(bucket) ||
-        JSON.stringify(Object.keys(bucket).sort()) !==
-          JSON.stringify(["count", "value"]) ||
-        !Number.isFinite(bucket.value) ||
-        bucket.value < 0 ||
-        !Number.isSafeInteger(bucket.count) ||
-        bucket.count < 1 ||
-        (index > 0 && bucket.value <= values[index - 1].value),
-    )
-  ) {
-    fail(`${metric} latency histogram is invalid`);
+function validateChecks(samples, metric) {
+  exact(samples, ["checks"], `${metric} samples`);
+  if (!Array.isArray(samples.checks) || samples.checks.length === 0) {
+    fail(`${metric} deterministic checks are empty`);
   }
-  return samples.histogram;
-}
-
-function validateSamples(samples, unit, metric) {
-  if (unit === "pourcentage") {
-    exact(samples, ["failures", "total"], `${metric} samples`);
+  const ids = new Set();
+  for (const [index, check] of samples.checks.entries()) {
+    exact(
+      check,
+      ["id", "evidenceSha256", "result"],
+      `${metric} deterministic check ${index}`,
+    );
     if (
-      !Number.isSafeInteger(samples.total) ||
-      samples.total < 1 ||
-      !Number.isSafeInteger(samples.failures) ||
-      samples.failures < 0 ||
-      samples.failures > samples.total
+      typeof check.id !== "string" ||
+      check.id.length === 0 ||
+      ids.has(check.id) ||
+      !SHA256_RE.test(check.evidenceSha256 ?? "") ||
+      !["vert", "rouge"].includes(check.result)
     ) {
-      fail(`${metric} percentage samples are invalid`);
+      fail(`${metric} deterministic check ${index} is invalid`);
     }
-    return;
+    ids.add(check.id);
   }
-  if (unit === "occurrences") {
-    exact(samples, ["occurrences", "total"], `${metric} samples`);
-    if (
-      !Number.isSafeInteger(samples.total) ||
-      samples.total < 1 ||
-      !Number.isSafeInteger(samples.occurrences) ||
-      samples.occurrences < 0
-    ) {
-      fail(`${metric} occurrence samples are invalid`);
-    }
-    return;
-  }
-  if (unit !== "millisecondes") fail(`${metric} unit is unsupported`);
-  validateHistogram(samples, metric);
+  return samples.checks;
 }
 
 function validateSource(document, expected, input) {
@@ -184,13 +150,13 @@ function validateSource(document, expected, input) {
     `${expected.metric} provider source`,
   );
   if (
-    document.schema !== "punks.operational-metric-source.v2" ||
+    document.schema !== "punks.operational-metric-source.v3" ||
     document.sourceSha !== input.sourceSha ||
     document.stagingDeploymentId !== input.stagingDeploymentId ||
     document.metric !== expected.metric ||
     document.dimension !== expected.dimension ||
     document.unit !== expected.unit ||
-    !OBSERVERS.has(document.observer) ||
+    document.observer !== "github-attested-installed-candidate" ||
     !SHA256_RE.test(document.querySha256 ?? "") ||
     !Number.isFinite(
       instant(document.observedAt, `${expected.metric} provider observedAt`),
@@ -198,7 +164,7 @@ function validateSource(document, expected, input) {
   ) {
     fail(`${expected.metric} provider source identity is invalid`);
   }
-  validateSamples(document.samples, expected.unit, expected.metric);
+  validateChecks(document.samples, expected.metric);
   return document;
 }
 
@@ -245,25 +211,7 @@ function readProviderSources(input) {
   return { expected, actual };
 }
 
-function quantile(histogram, percentile) {
-  const total = histogram.reduce((sum, bucket) => sum + bucket.count, 0);
-  const rank = Math.max(1, Math.ceil(total * percentile));
-  let seen = 0;
-  for (const bucket of histogram) {
-    seen += bucket.count;
-    if (seen >= rank) return bucket.value;
-  }
-  fail("latency histogram is empty");
-}
-
-function percentile(metric) {
-  if (metric.endsWith("-p95")) return 0.95;
-  if (metric.endsWith("-p99")) return 0.99;
-  if (metric.endsWith("-max")) return 1;
-  fail(`${metric} has no closed latency statistic`);
-}
-
-function statistic(source, maximum, exportSha256) {
+function statistic(source, exportSha256) {
   const baseline = {
     disponible: false,
     "mesure-n-1": null,
@@ -272,52 +220,17 @@ function statistic(source, maximum, exportSha256) {
     "justification-acceptee": false,
     "justification-sha256": null,
   };
-  if (source.unit === "pourcentage") {
-    const upper = borneWilsonUnilaterale95(
-      source.samples.failures,
-      source.samples.total,
-    );
-    const measure = (source.samples.failures / source.samples.total) * 100;
-    return {
-      mesure: measure,
-      "borne-superieure-unilaterale-95": upper,
-      echantillons: source.samples.total,
-      numerateur: source.samples.failures,
-      denominateur: source.samples.total,
-      methode: "wilson-unilaterale-95",
-      "baseline-n-1": baseline,
-      resultat: upper !== null && upper <= maximum ? "vert" : "insuffisant",
-      "export-sha256": exportSha256,
-    };
-  }
-  if (source.unit === "occurrences") {
-    return {
-      mesure: source.samples.occurrences,
-      "borne-superieure-unilaterale-95": source.samples.occurrences,
-      echantillons: source.samples.total,
-      numerateur: source.samples.occurrences,
-      denominateur: null,
-      methode: "tolerance-zero",
-      "baseline-n-1": baseline,
-      resultat: source.samples.occurrences <= maximum ? "vert" : "rouge",
-      "export-sha256": exportSha256,
-    };
-  }
-  const histogram = validateHistogram(source.samples, source.metric);
-  const count = histogram.reduce((sum, bucket) => sum + bucket.count, 0);
-  if (!Number.isSafeInteger(count) || count < MIN_LATENCY_SAMPLE_COUNT) {
-    fail(`${source.metric} latency sample count is insufficient or unsafe`);
-  }
-  const measure = quantile(histogram, percentile(source.metric));
+  const checks = validateChecks(source.samples, source.metric);
+  const failures = checks.filter(({ result }) => result === "rouge").length;
   return {
-    mesure: measure,
-    "borne-superieure-unilaterale-95": measure,
-    echantillons: count,
-    numerateur: null,
+    mesure: failures,
+    "borne-superieure-unilaterale-95": failures,
+    echantillons: checks.length,
+    numerateur: failures,
     denominateur: null,
-    methode: "quantile-export-verifie",
+    methode: "preuve-deterministe-exhaustive",
     "baseline-n-1": baseline,
-    resultat: measure <= maximum ? "vert" : "rouge",
+    resultat: failures === 0 ? "vert" : "rouge",
     "export-sha256": exportSha256,
   };
 }
@@ -378,7 +291,7 @@ export function materializeOperationalBudgetEvidence(input) {
         sha256: source.digest,
       });
       const rawExport = {
-        schema: "punks.operational-metric-export.v1",
+        schema: "punks.operational-metric-export.v2",
         sourceSha: input.sourceSha,
         stagingDeploymentId: input.stagingDeploymentId,
         metric: expected.metric,
@@ -400,14 +313,9 @@ export function materializeOperationalBudgetEvidence(input) {
         key: `${prefix}exports/${exportName}.json`,
         sha256: sha256(exportBytes),
       });
-      const maximum =
-        expected.metric === "outboxes-en-attente"
-          ? 0
-          : BUDGETS_PRODUCTION.find(({ nom }) => nom === expected.metric)
-              ?.maximum;
       statistics.set(
         coordinate(expected.metric, expected.dimension),
-        statistic(source.document, maximum, exportName),
+        statistic(source.document, exportName),
       );
       if (
         latestObservedAt === null ||
@@ -439,7 +347,7 @@ export function materializeOperationalBudgetEvidence(input) {
       )
     ) {
       fail(
-        `one or more operational budgets are not green or sufficiently sampled${verdictErrors.length > 0 ? `: ${verdictErrors.join("; ")}` : ""}`,
+        `one or more operational obligations are not deterministically green${verdictErrors.length > 0 ? `: ${verdictErrors.join("; ")}` : ""}`,
       );
     }
     const dlq = verdicts.find(({ nom }) => nom === "queues-dlq");
