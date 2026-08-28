@@ -611,6 +611,98 @@ test("rejects multiple producers for the same managed Queue", async () => {
   );
 });
 
+test("allows only an explicit metrics observer on a configured dead-letter Queue", async () => {
+  const root = await mkdtemp(join(tmpdir(), "punks-worker-bindings-"));
+  const apiConfig = (observerBinding) => ({
+    name: "punks-api",
+    main: "src/index.ts",
+    queues: {
+      producers: [
+        { binding: "PROJECTION_QUEUE", queue: "punks-projection-local" },
+        {
+          binding: observerBinding,
+          queue: "punks-projection-local-dlq",
+        },
+      ],
+    },
+    env: {
+      staging: {
+        name: "punks-api-staging",
+        queues: {
+          producers: [
+            {
+              binding: "PROJECTION_QUEUE",
+              queue: "punks-projection-staging",
+            },
+            {
+              binding: observerBinding,
+              queue: "punks-projection-staging-dlq",
+            },
+          ],
+        },
+      },
+    },
+  });
+  await writeWorker(
+    root,
+    "api",
+    apiConfig("PROJECTION_DLQ_OBSERVER"),
+    "export default {};\n",
+  );
+  await writeWorker(
+    root,
+    "projector",
+    {
+      name: "punks-projector",
+      main: "src/index.ts",
+      queues: {
+        consumers: [
+          {
+            queue: "punks-projection-local",
+            dead_letter_queue: "punks-projection-local-dlq",
+          },
+        ],
+      },
+      env: {
+        staging: {
+          name: "punks-projector-staging",
+          queues: {
+            consumers: [
+              {
+                queue: "punks-projection-staging",
+                dead_letter_queue: "punks-projection-staging-dlq",
+              },
+            ],
+          },
+        },
+      },
+    },
+    "export default {};\n",
+  );
+  await assert.doesNotReject(validateWorkerBindings(root));
+
+  await writeWorker(
+    root,
+    "api",
+    apiConfig("PROJECTION_DLQ_READER"),
+    "export default {};\n",
+  );
+  await assert.rejects(
+    validateWorkerBindings(root),
+    /PROJECTION_DLQ_READER has no consumer/u,
+  );
+  await writeWorker(
+    root,
+    "api",
+    apiConfig("BOT_WAKE_DLQ_OBSERVER"),
+    "export default {};\n",
+  );
+  await assert.rejects(
+    validateWorkerBindings(root),
+    /BOT_WAKE_DLQ_OBSERVER has no consumer/u,
+  );
+});
+
 test("rejects staging service props that widen a private caller role", async () => {
   const root = await mkdtemp(join(tmpdir(), "punks-worker-bindings-"));
   await writeWorker(

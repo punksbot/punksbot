@@ -521,7 +521,13 @@ export class ConversationDO extends PromotionFaultableDurableObject<ApiEnv> {
            (SELECT COUNT(*) FROM outbox WHERE delivered_at IS NULL) +
            (SELECT COUNT(*) FROM bot_wake_candidate_outbox) +
            (SELECT COUNT(*) FROM content_finalization) +
-           (SELECT COUNT(*) FROM message_erasure_schedule)
+           (SELECT COUNT(*) FROM message_erasure_schedule) +
+           (SELECT COUNT(*) FROM pending_command) +
+           (SELECT COUNT(*) FROM pending_message_command) +
+           (SELECT COUNT(*) FROM pending_message_reaction_command) +
+           (SELECT COUNT(*) FROM pending_bot_reaction) +
+           (SELECT COUNT(*) FROM bot_action_completions
+             WHERE delivered_at IS NULL)
              AS outboxes_pending,
            (SELECT COUNT(*) FROM pending_archive) AS pending_archives,
            (SELECT COUNT(*) FROM archive_segments) AS archive_segments`,

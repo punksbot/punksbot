@@ -266,6 +266,7 @@ function validateBudgetObservation(
     sha256 !== canonicalSha256(content) ||
     validateOperationalBudgetVerdicts(value.verdicts, {
       connectionMethods: value.connectionMethods,
+      deterministicBootstrapAllowed: true,
     }).length !== 0
   ) {
     fail("all 36 canonical operational budgets must be observed green");

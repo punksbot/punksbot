@@ -184,26 +184,47 @@ function topologyObservation(dossier) {
   return { ...content, sha256: canonicalSha256(content) };
 }
 
-function budgetObservation(exportRoot, candidateRoot) {
+function budgetObservation(
+  exportRoot,
+  candidateRoot,
+  { deterministic = false } = {},
+) {
   const sampleCount = 1_000_000;
   const connectionMethods = ["google", "github"];
   const sources = prepareCandidateRoot(candidateRoot);
   mkdirSync(exportRoot);
   const statistic = (budget, dimension) => {
-    const samples =
-      budget.unite === "pourcentage"
+    const samples = deterministic
+      ? {
+          checks: [
+            {
+              id: `proof/${budget.nom}/${dimension ?? "global"}`,
+              evidenceSha256: canonicalSha256({
+                metric: budget.nom,
+                dimension,
+                deterministic: true,
+              }),
+              result: "vert",
+            },
+          ],
+        }
+      : budget.unite === "pourcentage"
         ? { failures: 0, total: sampleCount }
         : budget.unite === "occurrences"
           ? { occurrences: 0, total: sampleCount }
           : { histogram: [{ value: 0, count: sampleCount }] };
     const source = {
-      schema: "punks.operational-metric-source.v2",
+      schema: deterministic
+        ? "punks.operational-metric-source.v3"
+        : "punks.operational-metric-source.v2",
       sourceSha,
       stagingDeploymentId,
       metric: budget.nom,
       dimension,
       unit: budget.unite,
-      observer: "cloudflare-analytics",
+      observer: deterministic
+        ? "github-attested-installed-candidate"
+        : "cloudflare-analytics",
       querySha256: canonicalSha256({ metric: budget.nom, dimension, query: 1 }),
       observedAt: "2026-08-26T20:19:57.000Z",
       samples,
@@ -214,7 +235,9 @@ function budgetObservation(exportRoot, candidateRoot) {
       .digest("hex");
     writeFileSync(join(sources, `${provenanceSha256}.json`), sourceContent);
     const raw = {
-      schema: "punks.operational-metric-export.v1",
+      schema: deterministic
+        ? "punks.operational-metric-export.v2"
+        : "punks.operational-metric-export.v1",
       sourceSha,
       stagingDeploymentId,
       metric: budget.nom,
@@ -236,15 +259,22 @@ function budgetObservation(exportRoot, candidateRoot) {
     );
     return {
       mesure: 0,
-      "borne-superieure-unilaterale-95":
-        budget.unite === "pourcentage"
+      "borne-superieure-unilaterale-95": deterministic
+        ? 0
+        : budget.unite === "pourcentage"
           ? borneWilsonUnilaterale95(0, sampleCount)
           : 0,
-      echantillons: sampleCount,
-      numerateur: budget.unite === "millisecondes" ? null : 0,
-      denominateur: budget.unite === "pourcentage" ? sampleCount : null,
-      methode:
-        budget.unite === "pourcentage"
+      echantillons: deterministic ? 1 : sampleCount,
+      numerateur: deterministic
+        ? 0
+        : budget.unite === "millisecondes"
+          ? null
+          : 0,
+      denominateur:
+        !deterministic && budget.unite === "pourcentage" ? sampleCount : null,
+      methode: deterministic
+        ? "preuve-deterministe-exhaustive"
+        : budget.unite === "pourcentage"
           ? "wilson-unilaterale-95"
           : budget.unite === "occurrences"
             ? "tolerance-zero"
@@ -331,7 +361,9 @@ test("observes ten successful cadence steps from the exact current Actions run",
       stagingDeploymentId,
       dossier,
       publicationResult,
-      budgetObservation: budgetObservation(budgetExportRoot, candidateRoot),
+      budgetObservation: budgetObservation(budgetExportRoot, candidateRoot, {
+        deterministic: true,
+      }),
       budgetExportRoot,
       candidateRoot,
       topologyObservation: topologyObservation(dossier),
@@ -393,6 +425,7 @@ test("observes ten successful cadence steps from the exact current Actions run",
   assert.deepEqual(
     validateOperationalBudgetVerdicts(observation.budgets.verdicts, {
       connectionMethods: observation.budgets.connectionMethods,
+      deterministicBootstrapAllowed: true,
     }),
     [],
   );

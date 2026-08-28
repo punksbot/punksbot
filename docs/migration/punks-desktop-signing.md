@@ -151,9 +151,10 @@ all four installed legs are independently attested, the final phase verifies
 that report, every content-addressed platform/recovery proof and the exact
 four-platform aggregate. It maps each of the closed 43 coordinates only to the
 relevant installed, network, recovery, artifact or backend evidence, then
-queries the exact Cloudflare Queue/DLQ point-in-time backlogs, the promoted
-Workspace/Conversation pending outboxes and archive heads, and both promotion
-R2 locks. Those dedicated states cannot be replaced by a generic recovery
+queries the point-in-time backlogs through the exact four Queue/DLQ runtime
+bindings, the promoted Workspace/Conversation pending outboxes and archives, a
+two-object create-only R2 body/hash chain with a divergent-write refusal, and
+both promotion R2 locks. Those dedicated states cannot be replaced by a generic recovery
 proof. It then
 attests every source under the provider workflow's GitHub OIDC
 identity for `punksbot/punksbot`, `staging` and the exact source SHA. It

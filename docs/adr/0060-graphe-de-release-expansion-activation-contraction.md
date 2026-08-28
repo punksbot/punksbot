@@ -153,10 +153,12 @@ révocation de Session : santé API, Session exacte et Punk exact. Une seconde
 vérifie ces résultats et le corpus complet des quatre artefacts installés,
 associe chaque coordonnée uniquement à ses preuves pertinentes, sans accepter
 de document fourni par l'appelant. Après les parcours installés, elle lit aussi
-les backlogs point-in-time des Queues et DLQ exactes, les comptes d'outboxes et
-d'archives en attente des deux agrégats de la fixture, l'intégrité de leur tête
-R2 et les deux locks de publication. Une file, outbox ou archive non vidée, une
-tête R2 divergente ou un lock absent produit un contrôle rouge. Elle atteste
+les backlogs point-in-time depuis les quatre bindings Queue/DLQ exacts, les
+comptes d'outboxes et d'archives en attente des deux agrégats de la fixture, un
+probe R2 create-only de deux objets dont les corps forment une chaîne complète,
+le refus d'une double écriture divergente et les deux locks de publication. Une
+file, outbox ou archive non vidée, une chaîne R2 divergente ou un lock absent
+produit un contrôle rouge. Elle atteste
 ensuite les 43 sources. Le manifeste R2
 v4 lie le bundle, ses sujets, le dépôt, le ref
 `staging` et le SHA exacts et son hash revient au candidat dans le même run ; le

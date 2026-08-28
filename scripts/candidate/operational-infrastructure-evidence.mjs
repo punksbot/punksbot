@@ -51,6 +51,7 @@ export function validateOperationalInfrastructureReport(report, expected) {
       "origin",
       "queues",
       "authorities",
+      "r2Probe",
       "locks",
       "observedAt",
       "sha256",
@@ -85,7 +86,6 @@ export function validateOperationalInfrastructureReport(report, expected) {
       queue,
       [
         "name",
-        "queueId",
         "backlogCount",
         "backlogBytes",
         "oldestMessageTimestampMs",
@@ -100,13 +100,30 @@ export function validateOperationalInfrastructureReport(report, expected) {
     ];
     const green = counters.every((value) => value === 0);
     if (
-      typeof queue.queueId !== "string" ||
-      queue.queueId.length === 0 ||
       counters.some((value) => !Number.isSafeInteger(value) || value < 0) ||
       queue.result !== (green ? "vert" : "rouge")
     ) {
       fail(`infrastructure queue ${index} state is invalid`);
     }
+  }
+  exact(
+    report.r2Probe,
+    [
+      "objects",
+      "chainHeadSha256",
+      "objectsValid",
+      "duplicateWriteRejected",
+      "result",
+    ],
+    "infrastructure R2 probe",
+  );
+  const r2Green =
+    report.r2Probe.objects === 2 &&
+    /^[0-9a-f]{64}$/u.test(report.r2Probe.chainHeadSha256 ?? "") &&
+    report.r2Probe.objectsValid === true &&
+    report.r2Probe.duplicateWriteRejected === true;
+  if (report.r2Probe.result !== (r2Green ? "vert" : "rouge")) {
+    fail("infrastructure R2 probe result is invalid");
   }
   for (const [index, authority] of report.authorities.entries()) {
     exact(

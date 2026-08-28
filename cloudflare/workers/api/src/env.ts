@@ -185,6 +185,8 @@ interface PromotionAuthorityFaultBinding extends Fetcher {
 
 export interface ApiEnv extends CloudflareBindings {
   BOT_WAKE_QUEUE: Queue<import("@punks/contracts").BotWakeQueueBody>;
+  PROJECTION_DLQ_OBSERVER: Queue<unknown>;
+  BOT_WAKE_DLQ_OBSERVER: Queue<unknown>;
   OPERATOR_PROVISIONING_TOKEN: string;
   /** Public, environment-scoped Attestation key-version registry. */
   ATTESTATION_PUBLIC_KEYS_JSON: string;

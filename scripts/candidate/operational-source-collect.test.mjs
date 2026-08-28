@@ -199,9 +199,8 @@ function fixture(t, failures = 0) {
       "punks-projection-staging-dlq",
       "punks-bot-wake-staging",
       "punks-bot-wake-staging-dlq",
-    ].map((name, index) => ({
+    ].map((name) => ({
       name,
-      queueId: `queue-${index}`,
       backlogCount: 0,
       backlogBytes: 0,
       oldestMessageTimestampMs: 0,
@@ -215,6 +214,13 @@ function fixture(t, failures = 0) {
       archiveHeadValid: true,
       result: "vert",
     })),
+    r2Probe: {
+      objects: 2,
+      chainHeadSha256: sha256("r2-chain-head"),
+      objectsValid: true,
+      duplicateWriteRejected: true,
+      result: "vert",
+    },
     locks: ["primaire", "secondaire"].map((role) => ({
       role,
       bucket: role === "primaire" ? "primary" : "recovery",
@@ -432,5 +438,56 @@ test("binds DLQ and outbox coordinates to their dedicated live state", (t) => {
   );
   assert.ok(
     outboxSource.samples.checks.every(({ result }) => result === "vert"),
+  );
+});
+
+test("binds R2 archive coordinates to the create-only body chain probe", (t) => {
+  const input = fixture(t);
+  const infrastructure = JSON.parse(
+    readFileSync(input.infrastructurePath, "utf8"),
+  );
+  infrastructure.r2Probe.objectsValid = false;
+  infrastructure.r2Probe.result = "rouge";
+  infrastructure.authorities[0].archiveHeadValid = false;
+  infrastructure.authorities[0].result = "rouge";
+  const { sha256: ignored, ...content } = infrastructure;
+  assert.match(ignored, /^[0-9a-f]{64}$/u);
+  infrastructure.sha256 = canonicalSha256(content);
+  writeFileSync(
+    input.infrastructurePath,
+    `${JSON.stringify(infrastructure)}\n`,
+  );
+  collectOperationalMetricSources(
+    {
+      sourceSha,
+      stagingDeploymentId,
+      candidateRoot: input.candidate,
+      backendReport: input.backendPath,
+      backendBundle: input.bundlePath,
+      infrastructureReport: input.infrastructurePath,
+      output: input.output,
+    },
+    {
+      verifyProviderSubject: () => [{ verified: true }],
+      now: () => new Date("2026-08-28T10:00:01.000Z"),
+    },
+  );
+  const documents = readdirSync(input.output).map((name) =>
+    JSON.parse(readFileSync(join(input.output, name), "utf8")),
+  );
+  const r2 = documents.find(
+    ({ metric, dimension }) =>
+      metric === "r2-double-ecriture-hash-lock-ou-chaine-invalide" &&
+      dimension === null,
+  );
+  assert.equal(
+    r2.samples.checks.find(({ id }) => id === "archive/r2-create-read-chain")
+      .result,
+    "rouge",
+  );
+  assert.equal(
+    r2.samples.checks.find(({ id }) => id === "archive-state/api-workspace")
+      .result,
+    "rouge",
   );
 });

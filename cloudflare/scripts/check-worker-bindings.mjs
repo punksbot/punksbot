@@ -518,7 +518,12 @@ function validateEntrypoints(profile, byName, violations) {
 function validateQueueTopology(profile, violations) {
   const consumers = new Map();
   const producers = new Map();
+  const deadLetters = new Set();
   const variant = profile[0]?.variant ?? "environment";
+  const observerQueues = new Map([
+    ["PROJECTION_DLQ_OBSERVER", "punks-projection-"],
+    ["BOT_WAKE_DLQ_OBSERVER", "punks-bot-wake-"],
+  ]);
   for (const { worker, config } of profile) {
     for (const consumer of config.queues?.consumers ?? []) {
       const owners = consumers.get(consumer.queue) ?? [];
@@ -535,6 +540,8 @@ function validateQueueTopology(profile, violations) {
         violations.push(
           `${worker.directory} ${variant} Queue consumer ${consumer.queue} uses itself as its dead-letter Queue`,
         );
+      } else {
+        deadLetters.add(consumer.dead_letter_queue);
       }
     }
     for (const producer of config.queues?.producers ?? []) {
@@ -546,9 +553,17 @@ function validateQueueTopology(profile, violations) {
   for (const [queue, owners] of producers) {
     if (!consumers.has(queue)) {
       for (const owner of owners) {
-        violations.push(
-          `${owner.directory} ${variant} Queue binding ${owner.binding} has no consumer for ${queue}`,
-        );
+        const readOnlyDeadLetterObserver =
+          owner.directory === "api" &&
+          observerQueues.has(owner.binding) &&
+          queue.startsWith(observerQueues.get(owner.binding)) &&
+          queue.endsWith("-dlq") &&
+          deadLetters.has(queue);
+        if (!readOnlyDeadLetterObserver) {
+          violations.push(
+            `${owner.directory} ${variant} Queue binding ${owner.binding} has no consumer for ${queue}`,
+          );
+        }
       }
     }
     if (owners.length > 1) {

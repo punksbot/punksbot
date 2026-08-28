@@ -545,20 +545,27 @@ function outboxChecks(infrastructure) {
 }
 
 function archiveChecks(infrastructure) {
-  return infrastructure.authorities.map((authority) =>
-    closedCheck(
-      `archive/${authority.authority}`,
-      canonicalSha256({
-        authority: authority.authority,
-        pendingArchives: authority.pendingArchives,
-        archiveSegments: authority.archiveSegments,
-        archiveHeadValid: authority.archiveHeadValid,
-      }),
-      authority.pendingArchives === 0 && authority.archiveHeadValid
-        ? "vert"
-        : "rouge",
+  return [
+    ...infrastructure.authorities.map((authority) =>
+      closedCheck(
+        `archive-state/${authority.authority}`,
+        canonicalSha256({
+          authority: authority.authority,
+          pendingArchives: authority.pendingArchives,
+          archiveSegments: authority.archiveSegments,
+          archiveHeadValid: authority.archiveHeadValid,
+        }),
+        authority.pendingArchives === 0 && authority.archiveHeadValid
+          ? "vert"
+          : "rouge",
+      ),
     ),
-  );
+    closedCheck(
+      "archive/r2-create-read-chain",
+      canonicalSha256(infrastructure.r2Probe),
+      infrastructure.r2Probe.result,
+    ),
+  ];
 }
 
 function lockChecks(infrastructure) {

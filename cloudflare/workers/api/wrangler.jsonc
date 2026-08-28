@@ -181,7 +181,15 @@
   "queues": {
     "producers": [
       { "binding": "PROJECTION_QUEUE", "queue": "punks-projection-local" },
-      { "binding": "BOT_WAKE_QUEUE", "queue": "punks-bot-wake-local" }
+      { "binding": "BOT_WAKE_QUEUE", "queue": "punks-bot-wake-local" },
+      {
+        "binding": "PROJECTION_DLQ_OBSERVER",
+        "queue": "punks-projection-local-dlq"
+      },
+      {
+        "binding": "BOT_WAKE_DLQ_OBSERVER",
+        "queue": "punks-bot-wake-local-dlq"
+      }
     ]
   },
   "observability": {
@@ -343,7 +351,15 @@
             "binding": "PROJECTION_QUEUE",
             "queue": "punks-projection-staging"
           },
-          { "binding": "BOT_WAKE_QUEUE", "queue": "punks-bot-wake-staging" }
+          { "binding": "BOT_WAKE_QUEUE", "queue": "punks-bot-wake-staging" },
+          {
+            "binding": "PROJECTION_DLQ_OBSERVER",
+            "queue": "punks-projection-staging-dlq"
+          },
+          {
+            "binding": "BOT_WAKE_DLQ_OBSERVER",
+            "queue": "punks-bot-wake-staging-dlq"
+          }
         ]
       }
     }

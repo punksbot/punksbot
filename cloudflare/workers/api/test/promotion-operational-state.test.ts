@@ -41,6 +41,46 @@ function request(authorization = `Bearer ${token}`, body: unknown = {}) {
   });
 }
 
+function archiveBucket() {
+  const objects = new Map<
+    string,
+    {
+      body: string;
+      httpMetadata: R2HTTPMetadata;
+      customMetadata: Record<string, string>;
+    }
+  >();
+  return {
+    async put(key: string, body: string, options: R2PutOptions = {}) {
+      if (objects.has(key) && options.onlyIf !== undefined) return null;
+      objects.set(key, {
+        body,
+        httpMetadata: (options.httpMetadata ?? {}) as R2HTTPMetadata,
+        customMetadata: options.customMetadata ?? {},
+      });
+      return { key };
+    },
+    async get(key: string) {
+      const value = objects.get(key);
+      if (value === undefined) return null;
+      return {
+        key,
+        httpMetadata: value.httpMetadata,
+        customMetadata: value.customMetadata,
+        text: async () => value.body,
+      };
+    },
+  } as unknown as R2Bucket;
+}
+
+function emptyQueue() {
+  return {
+    async metrics() {
+      return { backlogCount: 0, backlogBytes: 0 };
+    },
+  } as unknown as Queue;
+}
+
 describe("promotion operational state", () => {
   it("observes the exact deterministic fixture and no unrelated aggregate", async () => {
     const coordinates = await expectedCoordinates();
@@ -74,6 +114,11 @@ describe("promotion operational state", () => {
       OPERATOR_PROVISIONING_TOKEN: token,
       ENVIRONMENT: "staging",
       PROMOTION_FAULTS_ENABLED: "true",
+      JOURNAL_ARCHIVE_BUCKET: archiveBucket(),
+      PROJECTION_QUEUE: emptyQueue(),
+      PROJECTION_DLQ_OBSERVER: emptyQueue(),
+      BOT_WAKE_QUEUE: emptyQueue(),
+      BOT_WAKE_DLQ_OBSERVER: emptyQueue(),
       WORKSPACES: { getByName: workspaceGet },
       CONVERSATIONS: { getByName: conversationGet },
     } as unknown as ApiEnv;
@@ -87,13 +132,35 @@ describe("promotion operational state", () => {
       new URL(url).pathname,
     );
     expect(response?.status).toBe(200);
-    expect(await response?.json()).toEqual({
+    const document = (await response?.json()) as Record<string, unknown>;
+    expect(document).toMatchObject({
       schema: "punks.promotion-operational-state.v1",
       sourceSha,
       stagingDeploymentId,
       fixture: coordinates,
       authorities: [workspaceState, conversationState],
+      queues: [
+        "punks-projection-staging",
+        "punks-projection-staging-dlq",
+        "punks-bot-wake-staging",
+        "punks-bot-wake-staging-dlq",
+      ].map((name) => ({
+        name,
+        backlogCount: 0,
+        backlogBytes: 0,
+        oldestMessageTimestampMs: 0,
+        result: "vert",
+      })),
     });
+    expect(document.r2Probe).toMatchObject({
+      objects: 2,
+      objectsValid: true,
+      duplicateWriteRejected: true,
+      result: "vert",
+    });
+    expect(
+      (document.r2Probe as { chainHeadSha256: string }).chainHeadSha256,
+    ).toMatch(/^[0-9a-f]{64}$/u);
     expect(workspaceGet).toHaveBeenCalledOnce();
     expect(conversationGet).toHaveBeenCalledOnce();
   });

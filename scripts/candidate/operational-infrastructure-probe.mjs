@@ -48,17 +48,6 @@ async function jsonResponse(response, label) {
   }
 }
 
-async function cloudflareGet(fetchImpl, apiToken, path, label) {
-  return jsonResponse(
-    await fetchImpl(`https://api.cloudflare.com/client/v4${path}`, {
-      method: "GET",
-      redirect: "error",
-      headers: { authorization: `Bearer ${apiToken}` },
-    }),
-    label,
-  );
-}
-
 function safeCounter(value, label) {
   if (!Number.isSafeInteger(value) || value < 0) fail(`${label} is invalid`);
   return value;
@@ -86,63 +75,11 @@ export async function collectOperationalInfrastructureProof(
     input.operatorToken.length < 32 ||
     input.operatorToken.length > 4_096 ||
     /\s/u.test(input.operatorToken) ||
-    typeof input?.cloudflareApiToken !== "string" ||
-    input.cloudflareApiToken.length < 16 ||
     typeof fetchImpl !== "function" ||
     typeof frontieres?.cloudflare?.lireVerrouillage !== "function" ||
     typeof now !== "function"
   ) {
     fail("exact candidate and protected read boundaries are required");
-  }
-  const listed = await cloudflareGet(
-    fetchImpl,
-    input.cloudflareApiToken,
-    `/accounts/${ACCOUNT_ID}/queues?per_page=100`,
-    "queue inventory",
-  );
-  if (listed?.success !== true || !Array.isArray(listed.result)) {
-    fail("queue inventory envelope is invalid");
-  }
-  const queues = [];
-  for (const name of QUEUES) {
-    const matches = listed.result.filter((entry) => entry?.queue_name === name);
-    const queueId = matches[0]?.queue_id;
-    if (matches.length !== 1 || typeof queueId !== "string" || queueId === "") {
-      fail(`queue ${name} is absent or ambiguous`);
-    }
-    const envelope = await cloudflareGet(
-      fetchImpl,
-      input.cloudflareApiToken,
-      `/accounts/${ACCOUNT_ID}/queues/${encodeURIComponent(queueId)}/metrics`,
-      `queue ${name} metrics`,
-    );
-    const metrics = envelope?.result;
-    if (
-      envelope?.success !== true ||
-      metrics === null ||
-      typeof metrics !== "object"
-    ) {
-      fail(`queue ${name} metrics envelope is invalid`);
-    }
-    const backlogCount = safeCounter(metrics.backlog_count, `${name} backlog`);
-    const backlogBytes = safeCounter(metrics.backlog_bytes, `${name} bytes`);
-    const oldestMessageTimestampMs = safeCounter(
-      metrics.oldest_message_timestamp_ms,
-      `${name} oldest message`,
-    );
-    queues.push({
-      name,
-      queueId,
-      backlogCount,
-      backlogBytes,
-      oldestMessageTimestampMs,
-      result:
-        backlogCount === 0 &&
-        backlogBytes === 0 &&
-        oldestMessageTimestampMs === 0
-          ? "vert"
-          : "rouge",
-    });
   }
   const authorityEnvelope = await jsonResponse(
     await fetchImpl(`${ORIGIN}/api/internal/v1/promotion/operational-state`, {
@@ -162,13 +99,24 @@ export async function collectOperationalInfrastructureProof(
   );
   exact(
     authorityEnvelope,
-    ["schema", "sourceSha", "stagingDeploymentId", "fixture", "authorities"],
+    [
+      "schema",
+      "sourceSha",
+      "stagingDeploymentId",
+      "fixture",
+      "authorities",
+      "queues",
+      "r2Probe",
+    ],
     "promotion authority state",
   );
   if (
     authorityEnvelope.schema !== "punks.promotion-operational-state.v1" ||
     authorityEnvelope.sourceSha !== input.sourceSha ||
     authorityEnvelope.stagingDeploymentId !== input.stagingDeploymentId ||
+    !Array.isArray(authorityEnvelope.queues) ||
+    JSON.stringify(authorityEnvelope.queues.map(({ name }) => name)) !==
+      JSON.stringify(QUEUES) ||
     !Array.isArray(authorityEnvelope.authorities) ||
     JSON.stringify(
       authorityEnvelope.authorities.map(({ authority }) => authority),
@@ -176,6 +124,42 @@ export async function collectOperationalInfrastructureProof(
   ) {
     fail("promotion authority state identity is invalid");
   }
+  const queues = authorityEnvelope.queues.map((queue, index) => {
+    exact(
+      queue,
+      [
+        "name",
+        "backlogCount",
+        "backlogBytes",
+        "oldestMessageTimestampMs",
+        "result",
+      ],
+      `promotion queue ${index}`,
+    );
+    const backlogCount = safeCounter(
+      queue.backlogCount,
+      `${queue.name} backlog`,
+    );
+    const backlogBytes = safeCounter(queue.backlogBytes, `${queue.name} bytes`);
+    const oldestMessageTimestampMs = safeCounter(
+      queue.oldestMessageTimestampMs,
+      `${queue.name} oldest message`,
+    );
+    const green =
+      backlogCount === 0 &&
+      backlogBytes === 0 &&
+      oldestMessageTimestampMs === 0;
+    if (queue.result !== (green ? "vert" : "rouge")) {
+      fail(`promotion queue ${index} result is invalid`);
+    }
+    return {
+      name: queue.name,
+      backlogCount,
+      backlogBytes,
+      oldestMessageTimestampMs,
+      result: queue.result,
+    };
+  });
   const authorities = authorityEnvelope.authorities.map((authority, index) => {
     exact(
       authority,
@@ -217,6 +201,26 @@ export async function collectOperationalInfrastructureProof(
           : "rouge",
     };
   });
+  exact(
+    authorityEnvelope.r2Probe,
+    [
+      "objects",
+      "chainHeadSha256",
+      "objectsValid",
+      "duplicateWriteRejected",
+      "result",
+    ],
+    "promotion R2 probe",
+  );
+  const r2Probe = authorityEnvelope.r2Probe;
+  const r2Green =
+    r2Probe.objects === 2 &&
+    /^[0-9a-f]{64}$/u.test(r2Probe.chainHeadSha256 ?? "") &&
+    r2Probe.objectsValid === true &&
+    r2Probe.duplicateWriteRejected === true;
+  if (r2Probe.result !== (r2Green ? "vert" : "rouge")) {
+    fail("promotion R2 probe result is invalid");
+  }
   const prefix = operationalBudgetManifestPrefix(
     input.sourceSha,
     input.stagingDeploymentId,
@@ -247,6 +251,7 @@ export async function collectOperationalInfrastructureProof(
     origin: ORIGIN,
     queues,
     authorities,
+    r2Probe,
     locks,
     observedAt: observedAt.toISOString(),
   };
@@ -293,7 +298,6 @@ export async function run(argv = process.argv.slice(2)) {
       )
         .toString("utf8")
         .trim(),
-      cloudflareApiToken: process.env.PUNKS_CLOUDFLARE_API_TOKEN,
       destinations,
     },
     { frontieres: creerFrontiereLectureR2({ r2: destinations }) },

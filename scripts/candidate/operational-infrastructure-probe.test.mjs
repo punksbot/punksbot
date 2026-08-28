@@ -24,7 +24,6 @@ function input() {
     sourceSha,
     stagingDeploymentId,
     operatorToken: "o".repeat(64),
-    cloudflareApiToken: "c".repeat(64),
     destinations: [
       {
         role: "primaire",
@@ -54,28 +53,6 @@ function fetchBoundary({ failedQueue = null } = {}) {
   const calls = [];
   const fetchImpl = async (url, init) => {
     calls.push({ url: String(url), init });
-    if (String(url).endsWith("/queues?per_page=100")) {
-      return response({
-        success: true,
-        result: queueNames.map((queue_name, index) => ({
-          queue_name,
-          queue_id: `queue-${index}`,
-        })),
-      });
-    }
-    const metrics = /\/queues\/(queue-\d+)\/metrics$/u.exec(String(url));
-    if (metrics !== null) {
-      const index = Number(metrics[1].slice("queue-".length));
-      const failed = queueNames[index] === failedQueue;
-      return response({
-        success: true,
-        result: {
-          backlog_count: failed ? 1 : 0,
-          backlog_bytes: failed ? 64 : 0,
-          oldest_message_timestamp_ms: failed ? 1_787_910_000_000 : 0,
-        },
-      });
-    }
     if (String(url).endsWith("/api/internal/v1/promotion/operational-state")) {
       return response({
         schema: "punks.promotion-operational-state.v1",
@@ -92,6 +69,23 @@ function fetchBoundary({ failedQueue = null } = {}) {
           archiveSegments: 1,
           archiveHeadValid: true,
         })),
+        queues: queueNames.map((name) => {
+          const failed = name === failedQueue;
+          return {
+            name,
+            backlogCount: failed ? 1 : 0,
+            backlogBytes: failed ? 64 : 0,
+            oldestMessageTimestampMs: failed ? 1_787_910_000_000 : 0,
+            result: failed ? "rouge" : "vert",
+          };
+        }),
+        r2Probe: {
+          objects: 2,
+          chainHeadSha256: "ab".repeat(32),
+          objectsValid: true,
+          duplicateWriteRejected: true,
+          result: "vert",
+        },
       });
     }
     throw new Error(`unexpected URL ${url}`);
@@ -110,13 +104,10 @@ test("collects dedicated queue, outbox, archive and R2 lock proofs", async () =>
   assert.ok(report.queues.every(({ result }) => result === "vert"));
   assert.ok(report.authorities.every(({ result }) => result === "vert"));
   assert.ok(report.locks.every(({ result }) => result === "vert"));
+  assert.equal(report.r2Probe.result, "vert");
   assert.match(report.sha256, /^[0-9a-f]{64}$/u);
-  assert.doesNotMatch(JSON.stringify(report), /o{32}|c{32}/u);
-  assert.ok(
-    remote.calls
-      .filter(({ url }) => url.includes("api.cloudflare.com"))
-      .every(({ init }) => init.method === "GET"),
-  );
+  assert.doesNotMatch(JSON.stringify(report), /o{32}/u);
+  assert.equal(remote.calls.length, 1);
 });
 
 test("keeps a non-empty DLQ red instead of manufacturing an empty state", async () => {
