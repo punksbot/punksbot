@@ -70,6 +70,8 @@ export interface DesktopAuthFlowRecord {
   outcomeCode: DesktopAuthOutcomeCode | null;
   currentSessionId: string | null;
   currentPunkId: string | null;
+  /** Method sealed by the consumed server grant, never accepted from the UI. */
+  reauthenticationMethod: DesktopAuthMethod | null;
   punkId: string | null;
   createdAt: string;
   expiresAt: string;
@@ -110,6 +112,7 @@ export interface CreateDesktopAuthFlow
   > {
   promotionSourceSha?: string | null;
   promotionStagingDeploymentId?: string | null;
+  reauthenticationMethod?: DesktopAuthMethod | null;
 }
 
 /** Redacted terminal facts proving one real desktop provider ceremony. */
@@ -215,11 +218,19 @@ function usesRetiredAuthentication(flow: {
   method: unknown;
   intent: unknown;
   purpose: unknown;
+  reauthenticationMethod?: unknown;
+  phase?: unknown;
+  browserEffectCommitted?: unknown;
 }): boolean {
   return (
     (flow.method !== "google" && flow.method !== "github") ||
     flow.intent === "register_passkey" ||
-    flow.purpose === "register_passkey"
+    flow.purpose === "register_passkey" ||
+    ((flow.intent === "link_google" || flow.intent === "link_github") &&
+      flow.phase !== "confirmed" &&
+      flow.browserEffectCommitted !== true &&
+      flow.reauthenticationMethod !== "google" &&
+      flow.reauthenticationMethod !== "github")
   );
 }
 
@@ -241,6 +252,7 @@ export class DesktopAuthFlowDO extends DurableObject<AuthEnv> {
       ...input,
       promotionSourceSha: input.promotionSourceSha ?? null,
       promotionStagingDeploymentId: input.promotionStagingDeploymentId ?? null,
+      reauthenticationMethod: input.reauthenticationMethod ?? null,
       phase: "started",
       result: "human_action_required",
       outcomeCode: null,

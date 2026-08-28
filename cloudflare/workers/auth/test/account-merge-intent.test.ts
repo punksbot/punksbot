@@ -19,6 +19,7 @@ import { exports as workerExports } from "cloudflare:workers";
 import { describe, expect, it, vi } from "vitest";
 
 import type { AuthEnv } from "../src/env";
+import { confirmedReauthGrant } from "./reauth-grant-fixture";
 
 const authEnv = env as AuthEnv;
 
@@ -285,19 +286,13 @@ describe("AccountMergeIntentDO", () => {
         }),
       ).resolves.toBe(true);
     }
-    const reauthorizationId = crypto.randomUUID();
-    const reauthorizationExpiresAt = timestamp(Date.now() + 120_000);
-    await expect(
-      authEnv.DESKTOP_REAUTH_GRANTS.getByName(reauthorizationId).create({
-        authorizationId: reauthorizationId,
+    const { authorizationId: reauthorizationId } = await confirmedReauthGrant(
+      authEnv,
+      {
         sessionId: value.absorbedSessionId,
         punkId: value.absorbedProof.punkId,
-        targetMethod: "link_github",
-        handoffId: crypto.randomUUID(),
-        expiresAt: reauthorizationExpiresAt,
-        workspaceOwnershipTransfer: null,
-      }),
-    ).resolves.toBe(true);
+      },
+    );
     const authority = stub(value.intentId);
     await authority.recordFreshProof(
       value.survivorProof,
@@ -1111,19 +1106,10 @@ describe("AccountMergeIntentDO", () => {
   it("revalidates a desktop reauthentication grant before planning its cancellation", async () => {
     const value = fixture();
     await seedAuthorities(value);
-    const authorizationId = crypto.randomUUID();
-    const expiresAt = timestamp(Date.now() + 300_000);
-    await expect(
-      authEnv.DESKTOP_REAUTH_GRANTS.getByName(authorizationId).create({
-        authorizationId,
-        sessionId: value.survivorSessionId,
-        punkId: value.survivorProof.punkId,
-        targetMethod: "link_github",
-        workspaceOwnershipTransfer: null,
-        handoffId: crypto.randomUUID(),
-        expiresAt,
-      }),
-    ).resolves.toBe(true);
+    const { expiresAt } = await confirmedReauthGrant(authEnv, {
+      sessionId: value.survivorSessionId,
+      punkId: value.survivorProof.punkId,
+    });
     const authority = stub(value.intentId);
     await authority.recordFreshProof(
       value.survivorProof,

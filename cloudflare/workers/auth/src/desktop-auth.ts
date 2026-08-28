@@ -254,6 +254,7 @@ export async function startDesktopAuth(
   const now = Date.now();
   const expiresAt = new Date(now + 10 * 60_000).toISOString();
   const flowId = crypto.randomUUID();
+  let reauthenticationMethod: DesktopAuthMethod | null = null;
   if (target !== null) {
     if (command.authorizationId === undefined || current === null) {
       return problem(
@@ -281,6 +282,7 @@ export async function startDesktopAuth(
         `Desktop reauthentication grant is ${consumed.code}`,
       );
     }
+    reauthenticationMethod = consumed.authenticationMethod;
   }
   const created = await flowStub(env, flowId).create({
     flowId,
@@ -292,6 +294,7 @@ export async function startDesktopAuth(
     environment: env.ENVIRONMENT,
     currentSessionId: current?.record.sessionId ?? null,
     currentPunkId: current?.record.punkId ?? null,
+    reauthenticationMethod,
     createdAt: new Date(now).toISOString(),
     expiresAt,
     promotionSourceSha,

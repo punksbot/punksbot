@@ -63,6 +63,24 @@ function sameWorkspaceOwnershipTransferBinding(
         left.expectedRevision === right.expectedRevision;
 }
 
+function sameGrant(
+  left: Omit<DesktopReauthGrantRecord, "consumedByFlowId">,
+  right: Omit<DesktopReauthGrantRecord, "consumedByFlowId">,
+): boolean {
+  return (
+    left.authorizationId === right.authorizationId &&
+    left.sessionId === right.sessionId &&
+    left.punkId === right.punkId &&
+    left.targetMethod === right.targetMethod &&
+    sameWorkspaceOwnershipTransferBinding(
+      left.workspaceOwnershipTransfer,
+      right.workspaceOwnershipTransfer,
+    ) &&
+    left.handoffId === right.handoffId &&
+    left.expiresAt === right.expiresAt
+  );
+}
+
 /** Five-minute, target-bound authorization created only by reauth confirm. */
 export class DesktopReauthGrantDO extends DurableObject<AuthEnv> {
   async create(
@@ -81,18 +99,7 @@ export class DesktopReauthGrantDO extends DurableObject<AuthEnv> {
     }
     const existing = await this.read();
     if (existing !== null) {
-      return (
-        existing.authorizationId === input.authorizationId &&
-        existing.sessionId === input.sessionId &&
-        existing.punkId === input.punkId &&
-        existing.targetMethod === input.targetMethod &&
-        sameWorkspaceOwnershipTransferBinding(
-          existing.workspaceOwnershipTransfer,
-          input.workspaceOwnershipTransfer,
-        ) &&
-        existing.handoffId === input.handoffId &&
-        existing.expiresAt === input.expiresAt
-      );
+      return sameGrant(existing, input);
     }
     if (Date.parse(input.expiresAt) <= Date.now()) return false;
     const record: DesktopReauthGrantRecord = {
@@ -119,6 +126,7 @@ export class DesktopReauthGrantDO extends DurableObject<AuthEnv> {
     return true;
   }
 
+  /** Spends this grant once, after revalidating its confirmed OAuth source. */
   async consume(input: {
     authorizationId: string;
     sessionId: string;
@@ -127,7 +135,7 @@ export class DesktopReauthGrantDO extends DurableObject<AuthEnv> {
     workspaceOwnershipTransfer: WorkspaceOwnershipTransferBinding | null;
     flowId: string;
   }): Promise<
-    | { ok: true; replayed: boolean }
+    | { ok: true; replayed: boolean; authenticationMethod: "google" | "github" }
     | {
         ok: false;
         code: "missing" | "expired" | "binding_mismatch" | "consumed";
@@ -153,17 +161,35 @@ export class DesktopReauthGrantDO extends DurableObject<AuthEnv> {
     ) {
       return { ok: false, code: "binding_mismatch" };
     }
-    if (record.consumedByFlowId !== null) {
-      return record.consumedByFlowId === input.flowId
-        ? { ok: true, replayed: true }
-        : { ok: false, code: "consumed" };
-    }
-    record.consumedByFlowId = input.flowId;
-    await this.ctx.storage.put(RECORD_KEY, record);
+    const authenticationMethod = await this.oauthSource(record);
+    if (authenticationMethod === null) return { ok: false, code: "missing" };
+    // The source RPC permits interleaving. Re-read and claim atomically so two
+    // consumers cannot both spend the same authorization after that await.
+    const result = this.ctx.storage.transactionSync(() => {
+      const current =
+        this.ctx.storage.kv.get<DesktopReauthGrantRecord>(RECORD_KEY);
+      if (current === undefined || !sameGrant(current, record)) {
+        return { ok: false, code: "missing" } as const;
+      }
+      if (Date.parse(current.expiresAt) <= Date.now()) {
+        return { ok: false, code: "expired" } as const;
+      }
+      if (current.consumedByFlowId !== null) {
+        return current.consumedByFlowId === input.flowId
+          ? ({ ok: true, replayed: true, authenticationMethod } as const)
+          : ({ ok: false, code: "consumed" } as const);
+      }
+      this.ctx.storage.kv.put(RECORD_KEY, {
+        ...current,
+        consumedByFlowId: input.flowId,
+      });
+      return { ok: true, replayed: false, authenticationMethod } as const;
+    });
+    if (!result.ok) return result;
     await this.env.PUNKS.getByName(record.punkId).removeAccountMergeHandoff(
       record.authorizationId,
     );
-    return { ok: true, replayed: false };
+    return result;
   }
 
   /** Account-merge planning revalidates the live grant at its source. */
@@ -177,7 +203,8 @@ export class DesktopReauthGrantDO extends DurableObject<AuthEnv> {
     if (
       record === null ||
       record.consumedByFlowId !== null ||
-      Date.parse(record.expiresAt) <= Date.now()
+      Date.parse(record.expiresAt) <= Date.now() ||
+      (await this.oauthSource(record)) === null
     ) {
       return null;
     }
@@ -224,6 +251,35 @@ export class DesktopReauthGrantDO extends DurableObject<AuthEnv> {
       record.authorizationId,
     );
     await this.ctx.storage.deleteAll();
+  }
+
+  private async oauthSource(
+    record: DesktopReauthGrantRecord,
+  ): Promise<"google" | "github" | null> {
+    const flow = await this.env.DESKTOP_AUTH_FLOWS.getByName(
+      record.handoffId,
+    ).browserMetadata();
+    if (
+      flow === null ||
+      flow.intent !== "reauthenticate" ||
+      (flow.method !== "google" && flow.method !== "github") ||
+      flow.flowId !== record.handoffId ||
+      flow.currentSessionId !== record.sessionId ||
+      flow.currentPunkId !== record.punkId ||
+      flow.purpose !== record.targetMethod ||
+      flow.authorizationId !== record.authorizationId ||
+      flow.authorizationExpiresAt !== record.expiresAt ||
+      !sameWorkspaceOwnershipTransferBinding(
+        flow.workspaceOwnershipTransfer,
+        record.workspaceOwnershipTransfer,
+      )
+    ) {
+      await this.remove(record);
+      return null;
+    }
+    // Confirm seals the grant immediately before confirming its source flow.
+    // Preserve that intermediate record, but do not let it authorize an action.
+    return flow.phase === "confirmed" ? flow.method : null;
   }
 
   private async read(): Promise<DesktopReauthGrantRecord | null> {

@@ -3,15 +3,19 @@ import { runInDurableObject } from "cloudflare:test";
 import { exports as workerExports } from "cloudflare:workers";
 
 import { route } from "../src/router";
+import { getActiveSession } from "../src/session";
 import {
   authEnv,
   claim,
+  completeOAuth,
   confirm,
   nativeHeaders,
   origin,
   provisionIdentity,
   readyGoogle,
+  reauthenticateFor,
   sessionCookie,
+  startDesktop,
   status,
 } from "./desktop-ceremony-helpers";
 
@@ -103,6 +107,178 @@ describe("retired passkey authentication", () => {
       authEnv,
     );
     expect(session.status).toBe(401);
+  });
+
+  it.each([
+    "google",
+    "passkey",
+  ])("revalidates the %s origin of a previously sealed desktop grant", async (method) => {
+    const subject = `retired-grant-${crypto.randomUUID()}`;
+    const owner = await provisionIdentity(subject);
+    const reauth = await reauthenticateFor(
+      subject,
+      owner.cookie,
+      "link_google",
+    );
+    expect((await confirm(reauth.started, reauth.deliveryId)).status).toBe(200);
+    await runInDurableObject(
+      authEnv.DESKTOP_AUTH_FLOWS.getByName(reauth.started.flowId),
+      async (_instance, state) => {
+        const record = await state.storage.get<Record<string, unknown>>(
+          "desktop_auth_flow_v1",
+        );
+        if (record === undefined)
+          throw new Error("Legacy reauthentication fixture absent");
+        await state.storage.put("desktop_auth_flow_v1", { ...record, method });
+      },
+    );
+    const link = await startDesktop({
+      intent: "link_google",
+      method: "google",
+      session: owner.cookie,
+      authorizationId: reauth.authorizationId,
+    });
+    expect(link.response.status).toBe(method === "google" ? 201 : 409);
+    const session = await route(
+      new Request(`${origin}/api/auth/v1/session`, {
+        headers: { ...nativeHeaders, cookie: owner.cookie },
+      }),
+      authEnv,
+    );
+    expect(session.status).toBe(200);
+  });
+
+  it.each([
+    "google",
+    "github",
+    "passkey",
+  ])("only preserves a recent %s reauthentication if it is still supported", async (method) => {
+    const owner = await provisionIdentity(
+      `retired-freshness-${crypto.randomUUID()}`,
+    );
+    const request = new Request(`${origin}/api/auth/v1/session`, {
+      headers: { cookie: owner.cookie },
+    });
+    const active = await getActiveSession(request, authEnv);
+    if (active === null) throw new Error("Active Session fixture absent");
+    const until = new Date(Date.now() + 5 * 60_000).toISOString();
+    expect(
+      await active.stub.markReauthenticated({
+        sessionId: active.record.sessionId,
+        punkId: owner.punkId,
+        until,
+        authenticationMethod: "google",
+        providerSubjectBindingHash: "a".repeat(64),
+      }),
+    ).toBe(true);
+    await runInDurableObject(active.stub, async (_instance, state) => {
+      const proof = await state.storage.get<Record<string, unknown>>(
+        "account_merge_reauth_v1",
+      );
+      if (proof === undefined)
+        throw new Error("Reauthentication proof fixture absent");
+      await state.storage.put("account_merge_reauth_v1", {
+        ...proof,
+        authenticationMethod: method,
+      });
+    });
+    const link = await route(
+      new Request(`${origin}/api/auth/v1/start`, {
+        method: "POST",
+        headers: {
+          origin,
+          cookie: owner.cookie,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          contract: "auth.start@1",
+          provider: "google",
+          intent: "link",
+          returnTo: "/inbox",
+        }),
+      }),
+      authEnv,
+    );
+    expect(link.status).toBe(method === "passkey" ? 403 : 201);
+    const persisted = await active.stub.get();
+    expect(persisted?.sessionId).toBe(active.record.sessionId);
+    expect(persisted?.recentReauthUntil).toBe(
+      method === "passkey" ? null : until,
+    );
+  });
+
+  it("retires an in-flight legacy link with no OAuth grant provenance without losing its active Session", async () => {
+    const subject = `retired-link-${crypto.randomUUID()}`;
+    const owner = await provisionIdentity(subject);
+    const reauth = await reauthenticateFor(
+      subject,
+      owner.cookie,
+      "link_google",
+    );
+    expect((await confirm(reauth.started, reauth.deliveryId)).status).toBe(200);
+    const link = await startDesktop({
+      intent: "link_google",
+      method: "google",
+      session: owner.cookie,
+      authorizationId: reauth.authorizationId,
+    });
+    if (link.started === null) throw new Error("Link fixture absent");
+    await completeOAuth(link.started, `${subject}-linked`);
+    const delivered = await claim(link.started);
+    expect(delivered.status).toBe(200);
+    const preparedCookie = sessionCookie(delivered);
+    const body = (await delivered.json()) as { deliveryId: string };
+    await runInDurableObject(
+      authEnv.DESKTOP_AUTH_FLOWS.getByName(link.started.flowId),
+      async (_instance, state) => {
+        const record = await state.storage.get<Record<string, unknown>>(
+          "desktop_auth_flow_v1",
+        );
+        if (record === undefined) throw new Error("Legacy link fixture absent");
+        delete record.reauthenticationMethod;
+        await state.storage.put("desktop_auth_flow_v1", record);
+      },
+    );
+    expect((await confirm(link.started, body.deliveryId)).status).toBe(409);
+    for (const [cookie, expectedStatus] of [
+      [owner.cookie, 200],
+      [preparedCookie, 401],
+    ] as const) {
+      expect(
+        (
+          await route(
+            new Request(`${origin}/api/auth/v1/session`, {
+              headers: { ...nativeHeaders, cookie },
+            }),
+            authEnv,
+          )
+        ).status,
+      ).toBe(expectedStatus);
+    }
+  });
+
+  it("allows only one consumer after the OAuth grant source is revalidated", async () => {
+    const subject = `grant-race-${crypto.randomUUID()}`;
+    const owner = await provisionIdentity(subject);
+    const reauth = await reauthenticateFor(
+      subject,
+      owner.cookie,
+      "link_google",
+    );
+    expect((await confirm(reauth.started, reauth.deliveryId)).status).toBe(200);
+    const attempts = await Promise.all(
+      [0, 1].map(() =>
+        startDesktop({
+          intent: "link_google",
+          method: "google",
+          session: owner.cookie,
+          authorizationId: reauth.authorizationId,
+        }),
+      ),
+    );
+    expect(attempts.map(({ response }) => response.status).sort()).toEqual([
+      201, 409,
+    ]);
   });
 
   it("keeps retired identity history out of the active account profile", async () => {

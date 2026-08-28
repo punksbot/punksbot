@@ -625,10 +625,33 @@ export class SessionDO extends PromotionFaultableDurableObject<AuthEnv> {
     await this.ctx.storage.deleteAll();
   }
 
+  /** Reads current state and atomically retires matching legacy passkey freshness. */
   private row(): SessionRow | undefined {
-    return this.ctx.storage.sql
+    const row = this.ctx.storage.sql
       .exec<SessionRow>("SELECT * FROM auth_session WHERE singleton = 1")
       .toArray()[0];
+    if (row !== undefined && row.recent_reauth_until !== null) {
+      const proof = this.ctx.storage.kv.get<{
+        authenticationMethod: unknown;
+        expiresAt: unknown;
+      }>(ACCOUNT_MERGE_REAUTH_KEY);
+      if (
+        proof?.authenticationMethod === "passkey" &&
+        proof.expiresAt === row.recent_reauth_until
+      ) {
+        // Retire only the matching legacy freshness, never the Session itself
+        // or an OAuth reauthentication recorded after that old proof.
+        this.ctx.storage.transactionSync(() => {
+          this.ctx.storage.sql.exec(
+            "UPDATE auth_session SET recent_reauth_until = NULL WHERE singleton = 1",
+          );
+          this.ctx.storage.sql.exec("DELETE FROM account_merge_reauth_claim");
+          this.ctx.storage.kv.delete(ACCOUNT_MERGE_REAUTH_KEY);
+        });
+        row.recent_reauth_until = null;
+      }
+    }
+    return row;
   }
 
   private accountMergeClaim():

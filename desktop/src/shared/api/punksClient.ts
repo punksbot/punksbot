@@ -41,7 +41,6 @@ export type * from "./punksClientTypes";
 export function createTauriPunksAccountClient(): PunksAccountClient {
   return new TauriPunksAccountClient();
 }
-/** Deterministic adapter implementing the same semantic interface as Rust. */
 function assertAuthenticationMethod(method: unknown): void {
   if (method !== "google" && method !== "github") {
     throw new PunksDesktopFailure(
@@ -51,6 +50,7 @@ function assertAuthenticationMethod(method: unknown): void {
   }
 }
 
+/** Deterministic adapter implementing the same semantic interface as Rust. */
 export function createFakePunksAccountClient(
   input: FakePunksClientSeed,
 ): PunksAccountClient {
