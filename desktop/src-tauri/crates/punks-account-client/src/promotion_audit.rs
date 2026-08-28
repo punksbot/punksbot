@@ -398,9 +398,7 @@ mod tests {
         let operation_id = "11111111-1111-4111-8111-111111111111";
         let captures = LIVE_FOLLOW_CAPTURES.get_or_init(|| Mutex::new(HashMap::new()));
         let mut captures = captures.lock().expect("capture lock");
-        let capture = captures
-            .entry(operation_id.to_string())
-            .or_insert_with(LiveFollowCapture::default);
+        let capture = captures.entry(operation_id.to_string()).or_default();
         capture.initial_cursor = Some(0);
         capture.confirmed = vec![1, 2];
         capture.frames = vec![
