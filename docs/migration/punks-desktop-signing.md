@@ -135,14 +135,21 @@ topology, exact Workers percentages, Workflows/generation, desktop hashes,
 bookmarks, DLQ/outboxes/incidents and all 36 production budgets recalculated
 with their raw sample counts and required dimensions. A locally generated
 timestamp, a self-declared green metric or an insufficient Wilson sample cannot
-activate the draft. Every raw metric source must already be an exact subject of
-one provider-owned Sigstore bundle issued by the dedicated
-`punks-operational-observation.yml` workflow under GitHub OIDC for
-`punksbot/punksbot`, the protected `staging` ref and the exact source SHA. That
-workflow must obtain the Cloudflare response or installed-candidate observation
-from its authority; it cannot accept caller-supplied sample documents. The v4
-R2 manifest binds the provider bundle key and byte digest alongside every raw
-subject. The candidate first reads the manifest, bundle and subjects
+activate the draft. The candidate calls the provider-owned
+`punks-operational-observation.yml` workflow twice. Before any platform can
+exercise destructive Session loss, its backend phase reobserves the seven
+Workers and performs 10,000 real HTTPS observations against each closed public
+authority (`/api/health`, `/api/auth/v1/session`, `/api/v1/punk`), then attests
+the secretless report. After all four installed legs are independently
+attested, the final phase verifies that report and the exact four-platform
+aggregate, derives the closed 43-source set without accepting caller-supplied
+samples, and attests every source under the provider workflow's GitHub OIDC
+identity for `punksbot/punksbot`, `staging` and the exact source SHA. It
+recalculates the v4 manifest and publishes all leaves, the provider bundle and
+both manifests under the Indefinite locks. The manifest hash is returned through
+the reusable-workflow output and consumed by the same candidate run; no
+preconfigured observation variable is accepted. The candidate then rereads the
+manifest, bundle and subjects
 byte-for-byte from both R2 copies under an Indefinite lock covering the
 `operational-observations/` prefix, then verifies every source against that
 provider bundle with `gh attestation verify`. Its separate aggregate OIDC bundle

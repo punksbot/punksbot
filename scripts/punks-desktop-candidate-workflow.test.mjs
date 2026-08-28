@@ -47,6 +47,8 @@ const expectedJobs = [
   "attest_legs",
   "build",
   "gates",
+  "observe_operational",
+  "observe_operational_backend",
   "preflight",
   "publish_promotion",
   "verify_staging",
@@ -602,9 +604,24 @@ function validateWorkflow(workflow) {
     "remote staging proof artifact is not exact and short-lived",
   );
 
+  same(
+    build.needs,
+    ["verify_staging", "observe_operational_backend"],
+    "build bypasses remote staging or provider-owned backend evidence",
+  );
+  const observeBackend = workflow.jobs.observe_operational_backend;
   invariant(
-    build.needs === "verify_staging",
-    "build bypasses remote staging verification",
+    observeBackend.needs === "verify_staging" &&
+      observeBackend.uses ===
+        "./.github/workflows/punks-operational-observation.yml" &&
+      observeBackend.with?.phase === "backend" &&
+      observeBackend.secrets === "inherit",
+    "provider-owned backend observation is not closed",
+  );
+  same(
+    observeBackend.permissions,
+    attestPermissions,
+    "provider-owned backend permissions",
   );
   same(
     build.permissions,
@@ -1012,9 +1029,25 @@ function validateWorkflow(workflow) {
   requireAttestationVerification(
     workflowStep(attest_legs, "verify_leg_attestation"),
   );
+  const observeOperational = workflow.jobs.observe_operational;
   invariant(
-    aggregate.needs === "attest_legs",
-    "aggregate bypasses verified legs",
+    observeOperational.needs === "attest_legs" &&
+      observeOperational.if === "inputs.validation_scope == 'full-candidate'" &&
+      observeOperational.uses ===
+        "./.github/workflows/punks-operational-observation.yml" &&
+      observeOperational.with?.phase === "finalize" &&
+      observeOperational.secrets === "inherit",
+    "provider-owned final observation is not closed",
+  );
+  same(
+    observeOperational.permissions,
+    attestPermissions,
+    "provider-owned final permissions",
+  );
+  same(
+    aggregate.needs,
+    ["attest_legs", "observe_operational"],
+    "aggregate bypasses verified legs or provider-owned observations",
   );
   invariant(
     aggregate.if === "inputs.validation_scope == 'full-candidate'",
@@ -1058,6 +1091,15 @@ function validateWorkflow(workflow) {
   const attestComplete = workflowStep(aggregate, "attest_complete_evidence");
   const verifyComplete = workflowStep(aggregate, "verify_complete_evidence");
   const sealBudgets = workflowStep(aggregate, "seal_operational_budgets");
+  const providerManifestExpression =
+    "$" + "{{ needs.observe_operational.outputs.manifest_sha256 }}";
+  invariant(
+    stageBudgets.env?.PUNKS_OPERATIONAL_BUDGET_MANIFEST_SHA256 ===
+      providerManifestExpression &&
+      sealBudgets.env?.PUNKS_OPERATIONAL_BUDGET_MANIFEST_SHA256 ===
+        providerManifestExpression,
+    "aggregate accepts a preconfigured operational manifest",
+  );
   requireRun(stageBudgets, [
     "scripts/candidate/operational-budget-fetch.mjs",
     '--manifest-sha256 "$PUNKS_OPERATIONAL_BUDGET_MANIFEST_SHA256"',

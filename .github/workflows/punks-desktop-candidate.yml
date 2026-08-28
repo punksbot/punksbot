@@ -158,6 +158,7 @@ jobs:
           mark_gate workflow-contracts start
           node --test \
             scripts/punks-desktop-candidate-workflow.test.mjs \
+            scripts/punks-operational-observation-workflow.test.mjs \
             scripts/candidate/*.test.mjs 2>&1 | tee -a "$gate_log"
           mark_gate workflow-contracts pass
           mark_gate migration-check start
@@ -341,9 +342,24 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  observe_operational_backend:
+    name: Collect provider-owned backend observations
+    needs: verify_staging
+    permissions:
+      artifact-metadata: write
+      attestations: write
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/punks-operational-observation.yml
+    with:
+      phase: backend
+      source_sha: ${{ inputs.source_sha }}
+      staging_deployment_id: ${{ inputs.staging_deployment_id }}
+    secrets: inherit
+
   build:
     name: Signed platform leg (${{ matrix.platform }})
-    needs: verify_staging
+    needs: [verify_staging, observe_operational_backend]
     environment: punks-staging-promotion
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
@@ -1553,9 +1569,25 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  observe_operational:
+    name: Publish provider-owned operational observations
+    needs: attest_legs
+    if: inputs.validation_scope == 'full-candidate'
+    permissions:
+      artifact-metadata: write
+      attestations: write
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/punks-operational-observation.yml
+    with:
+      phase: finalize
+      source_sha: ${{ inputs.source_sha }}
+      staging_deployment_id: ${{ inputs.staging_deployment_id }}
+    secrets: inherit
+
   aggregate:
     name: Aggregate four verified legs
-    needs: attest_legs
+    needs: [attest_legs, observe_operational]
     if: inputs.validation_scope == 'full-candidate'
     environment: punks-staging-promotion
     runs-on: ubuntu-24.04
@@ -1696,7 +1728,7 @@ jobs:
         id: stage_operational_budgets
         shell: bash
         env:
-          PUNKS_OPERATIONAL_BUDGET_MANIFEST_SHA256: ${{ vars.PUNKS_OPERATIONAL_BUDGET_MANIFEST_SHA256 }}
+          PUNKS_OPERATIONAL_BUDGET_MANIFEST_SHA256: ${{ needs.observe_operational.outputs.manifest_sha256 }}
           PUNKS_R2_PRIMARY_API_TOKEN: ${{ secrets.PUNKS_R2_PRIMARY_API_TOKEN }}
           PUNKS_R2_PRIMARY_ACCESS_KEY_ID: ${{ secrets.PUNKS_R2_PRIMARY_ACCESS_KEY_ID }}
           PUNKS_R2_PRIMARY_SECRET_ACCESS_KEY: ${{ secrets.PUNKS_R2_PRIMARY_SECRET_ACCESS_KEY }}
@@ -1766,7 +1798,7 @@ jobs:
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          PUNKS_OPERATIONAL_BUDGET_MANIFEST_SHA256: ${{ vars.PUNKS_OPERATIONAL_BUDGET_MANIFEST_SHA256 }}
+          PUNKS_OPERATIONAL_BUDGET_MANIFEST_SHA256: ${{ needs.observe_operational.outputs.manifest_sha256 }}
           PUNKS_R2_PRIMARY_API_TOKEN: ${{ secrets.PUNKS_R2_PRIMARY_API_TOKEN }}
           PUNKS_R2_PRIMARY_ACCESS_KEY_ID: ${{ secrets.PUNKS_R2_PRIMARY_ACCESS_KEY_ID }}
           PUNKS_R2_PRIMARY_SECRET_ACCESS_KEY: ${{ secrets.PUNKS_R2_PRIMARY_SECRET_ACCESS_KEY }}

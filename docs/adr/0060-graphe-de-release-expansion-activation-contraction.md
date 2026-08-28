@@ -136,10 +136,12 @@ supérieure unilatérale de Wilson à 95 % depuis les comptes bruts ; pour une
 latence ou un compteur, il recalcule la comparaison exacte à la limite. Les
 comptes bruts proviennent de sujets content-addressés lus identiquement dans
 deux buckets et liés, avant le candidat, par un bundle Sigstore GitHub OIDC du
-workflow fournisseur dédié `punks-operational-observation.yml`. Ce workflow
-obtient les observations depuis leur autorité Cloudflare ou le candidat installé
-et n'accepte aucun document d'échantillons fourni par l'appelant. Le manifeste
-R2 v4 lie le bundle, ses sujets, le dépôt, le ref `staging` et le SHA exacts ; le
+workflow fournisseur dédié `punks-operational-observation.yml`. Une première
+phase observe directement les autorités staging avant toute révocation de
+Session ; une seconde vérifie ces résultats et les quatre artefacts installés,
+sans accepter de document d'échantillons fourni par l'appelant, puis atteste les
+43 sources. Le manifeste R2 v4 lie le bundle, ses sujets, le dépôt, le ref
+`staging` et le SHA exacts et son hash revient au candidat dans le même run ; le
 workflow candidat vérifie ce bundle fournisseur puis atteste séparément son
 incorporation au dossier. Un ancien manifeste v3, une auto-attestation du
 candidat, la simple présence de deux copies R2, d'un hash, d'un nom
