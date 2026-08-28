@@ -462,6 +462,42 @@ test("observes ten successful cadence steps from the exact current Actions run",
     ),
     /budget observation is stale/i,
   );
+  const impossibleBudgetTime = structuredClone(observation.budgets);
+  impossibleBudgetTime.observedAt = "2026-04-31T20:19:59.000Z";
+  const { sha256: previousBudgetDigest, ...impossibleBudgetContent } =
+    impossibleBudgetTime;
+  assert.match(previousBudgetDigest, /^[0-9a-f]{64}$/u);
+  impossibleBudgetTime.sha256 = canonicalSha256(impossibleBudgetContent);
+  await assert.rejects(
+    observeGithubCadence(
+      {
+        repository,
+        runId,
+        runAttempt,
+        sourceSha,
+        stagingDeploymentId,
+        dossier,
+        publicationResult,
+        budgetObservation: impossibleBudgetTime,
+        budgetExportRoot,
+        candidateRoot,
+        topologyObservation: topologyObservation(dossier),
+      },
+      {
+        github: {
+          async readRun() {
+            return remote.run;
+          },
+          async readJobs() {
+            return remote.jobs;
+          },
+        },
+        now: () => new Date("2026-08-26T20:20:00Z"),
+        verifyProviderSubject,
+      },
+    ),
+    /observedAt is invalid|closed UTC instant/i,
+  );
   const firstExport = observation.budgets.verdicts[0]["export-sha256"];
   writeFileSync(
     join(budgetExportRoot, `${firstExport}.json`),

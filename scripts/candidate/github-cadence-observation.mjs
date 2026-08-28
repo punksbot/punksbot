@@ -101,7 +101,13 @@ function instant(value, label) {
     fail(`${label} is not a closed UTC instant`);
   }
   const milliseconds = Date.parse(value ?? "");
-  if (!Number.isFinite(milliseconds)) fail(`${label} is invalid`);
+  const normalized = value.includes(".") ? value : `${value.slice(0, -1)}.000Z`;
+  if (
+    !Number.isFinite(milliseconds) ||
+    new Date(milliseconds).toISOString() !== normalized
+  ) {
+    fail(`${label} is invalid`);
+  }
   return { milliseconds, canonical: new Date(milliseconds).toISOString() };
 }
 

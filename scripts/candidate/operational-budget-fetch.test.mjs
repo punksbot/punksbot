@@ -574,6 +574,29 @@ test("rejects insufficient latency samples and stale provider windows", async (t
     ),
     /closed UTC instant/i,
   );
+
+  const impossibleDate = await stagedFixture(
+    t,
+    "punks-budget-impossible-date-",
+    { sourceObservedAt: "2026-02-30T20:19:57.000Z" },
+  );
+  await assert.rejects(
+    sealOperationalBudgetEvidence(
+      {
+        sourceSha,
+        stagingDeploymentId,
+        manifestSha256: sha256(impossibleDate.material.manifestBytes),
+        candidateRoot: impossibleDate.candidateRoot,
+        destinations: impossibleDate.destinations,
+        bundle: impossibleDate.bundle,
+      },
+      {
+        frontieres: boundaries(impossibleDate.material),
+        verifyProviderSubject: () => [{ verified: true }],
+      },
+    ),
+    /observedAt is invalid/i,
+  );
 });
 
 test("rejects a divergent provider bundle from either locked copy", async (t) => {
