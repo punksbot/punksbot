@@ -41,7 +41,6 @@ const expectedMatrix = [
 ];
 const appleMatrix = expectedMatrix.slice(0, 2);
 const expectedPlatforms = expectedMatrix.map(({ platform }) => platform);
-const applePlatforms = appleMatrix.map(({ platform }) => platform);
 const expectedJobs = [
   "aggregate",
   "attest_candidate",
@@ -161,10 +160,6 @@ function workflowExpression(name) {
 const buildMatrixExpression = workflowExpression(
   `fromJSON(inputs.validation_scope == 'apple-only' && '${JSON.stringify(appleMatrix)}' || '${JSON.stringify(expectedMatrix)}')`,
 );
-const attestMatrixExpression = workflowExpression(
-  `fromJSON(inputs.validation_scope == 'apple-only' && '${JSON.stringify(applePlatforms)}' || '${JSON.stringify(expectedPlatforms)}')`,
-);
-
 const githubShaExpression = workflowExpression("github.sha");
 const githubTokenExpression = workflowExpression("github.token");
 const sourceShaExpression = workflowExpression("inputs.source_sha");
@@ -428,7 +423,7 @@ function validateWorkflow(workflow) {
     {
       default: "apple-only",
       description:
-        "Build only the two Apple legs, or the complete four-platform candidate",
+        "Verify only the two Apple artifacts, or build the complete four-platform candidate",
       options: ["apple-only", "full-candidate"],
       required: true,
       type: "choice",
@@ -1069,9 +1064,19 @@ function validateWorkflow(workflow) {
       String(reviewUpload.with?.name).includes("matrix.platform"),
     "failed installed evidence is unavailable for independent review",
   );
-  requireRun(workflowStep(build, "stage_leg"), [
+  const stageLeg = workflowStep(build, "stage_leg");
+  requireRun(stageLeg, [
     "scripts/candidate/artifacts.mjs collect",
   ]);
+  invariant(
+    stageLeg.if === "inputs.validation_scope == 'full-candidate'",
+    "Apple-only stages an incomplete closed platform leg",
+  );
+  invariant(
+    workflowStep(build, "upload_leg").if ===
+      "inputs.validation_scope == 'full-candidate'",
+    "Apple-only uploads an incomplete closed platform leg",
+  );
   invariant(
     !build.steps.some((selected) =>
       String(selected.uses ?? "").startsWith("actions/attest@"),
@@ -1096,6 +1101,10 @@ function validateWorkflow(workflow) {
   );
 
   invariant(attest_legs.needs === "build", "leg attestation bypasses builds");
+  invariant(
+    attest_legs.if === "inputs.validation_scope == 'full-candidate'",
+    "leg attestation runs for the Apple diagnostic scope",
+  );
   same(
     attest_legs.permissions,
     attestPermissions,
@@ -1103,7 +1112,7 @@ function validateWorkflow(workflow) {
   );
   same(
     attest_legs.strategy?.matrix?.platform,
-    attestMatrixExpression,
+    expectedPlatforms,
     "leg attestation matrix changed",
   );
   requireAttestationVerification(
@@ -1557,6 +1566,27 @@ const mutations = [
       );
     },
     error: /macos-artifact-finalize\.sh/,
+  },
+  {
+    name: "Apple-only stages an incomplete closed platform leg",
+    change(workflow) {
+      delete workflowStep(workflow.jobs.build, "stage_leg").if;
+    },
+    error: /incomplete closed platform leg/,
+  },
+  {
+    name: "Apple-only uploads an incomplete closed platform leg",
+    change(workflow) {
+      delete workflowStep(workflow.jobs.build, "upload_leg").if;
+    },
+    error: /uploads an incomplete closed platform leg/,
+  },
+  {
+    name: "Apple-only attests an incomplete platform leg",
+    change(workflow) {
+      delete workflow.jobs.attest_legs.if;
+    },
+    error: /Apple diagnostic scope/,
   },
   {
     name: "DMG stapler validation is removed",

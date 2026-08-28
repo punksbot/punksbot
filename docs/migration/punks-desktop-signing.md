@@ -6,9 +6,10 @@ and tranche receipt all exist for the same source SHA.
 
 The workflow has two explicit dispatch scopes:
 
-- `apple-only` builds, notarizes, staples and attests only `macos-arm64` and
-  `macos-x64`. It is a diagnostic scope only. It never aggregates, drafts,
-  publishes or unblocks a four-platform candidate.
+- `apple-only` builds, notarizes, staples and verifies updater signatures only
+  for `macos-arm64` and `macos-x64`. It is a diagnostic scope only. It does not
+  stage or attest a closed platform leg, aggregate, draft, publish or unblock a
+  four-platform candidate.
 - `full-candidate` retains the closed four-platform contract and is the only
   scope allowed to aggregate and stage a candidate release.
 
