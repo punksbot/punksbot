@@ -39,7 +39,6 @@ const LAZY_CAPABILITY_CHUNKS = [
       "punks_start_account_switch",
       "punks_start_reauthentication",
       "punks_start_identity_link",
-      "punks_start_passkey_registration",
       "punks_resume_interrupted_authentication",
       "punks_cancel_authentication",
       "punks_renew_account_session",

@@ -2,10 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "punks://contracts/desktop-auth.status@1",
   "title": "DesktopAuthStatusExchange",
-  "oneOf": [
-    { "$ref": "#/$defs/request" },
-    { "$ref": "#/$defs/response" }
-  ],
+  "oneOf": [{ "$ref": "#/$defs/request" }, { "$ref": "#/$defs/response" }],
   "$defs": {
     "request": {
       "title": "DesktopAuthStatusRequest",
@@ -94,11 +91,6 @@
                 "link_pending",
                 "linked",
                 "merge_required",
-                "passkey_authenticated",
-                "passkey_invalid",
-                "passkey_registration_pending",
-                "passkey_registered",
-                "passkey_unknown_or_invalid",
                 "provider_error",
                 "reauthenticated",
                 "reauthentication_failed",

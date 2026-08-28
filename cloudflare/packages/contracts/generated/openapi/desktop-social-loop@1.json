@@ -131,8 +131,7 @@
           "authenticationMethod": {
             "enum": [
               "google",
-              "github",
-              "passkey"
+              "github"
             ]
           },
           "contract": {
@@ -2647,7 +2646,6 @@
             "enum": [
               "link_google",
               "link_github",
-              "register_passkey",
               "transfer_workspace_ownership"
             ]
           },
@@ -3013,8 +3011,7 @@
               "switch_account",
               "reauthenticate",
               "link_google",
-              "link_github",
-              "register_passkey"
+              "link_github"
             ]
           },
           "message": {
@@ -3023,15 +3020,13 @@
           "method": {
             "enum": [
               "google",
-              "github",
-              "passkey"
+              "github"
             ]
           },
           "purpose": {
             "enum": [
               "link_google",
               "link_github",
-              "register_passkey",
               "transfer_workspace_ownership"
             ]
           },
@@ -3082,8 +3077,7 @@
               "switch_account",
               "reauthenticate",
               "link_google",
-              "link_github",
-              "register_passkey"
+              "link_github"
             ]
           },
           "message": {
@@ -3092,8 +3086,7 @@
           "method": {
             "enum": [
               "google",
-              "github",
-              "passkey"
+              "github"
             ]
           },
           "phase": {
@@ -3238,11 +3231,6 @@
                   "link_pending",
                   "linked",
                   "merge_required",
-                  "passkey_authenticated",
-                  "passkey_invalid",
-                  "passkey_registration_pending",
-                  "passkey_registered",
-                  "passkey_unknown_or_invalid",
                   "provider_error",
                   "reauthenticated",
                   "reauthentication_failed",

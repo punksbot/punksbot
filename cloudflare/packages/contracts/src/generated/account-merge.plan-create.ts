@@ -23,7 +23,7 @@ accountRole: ("survivor" | "absorbed")
 punkId: string
 accountRevision: number
 holderBindingHash: string
-authenticationMethod: ("google" | "github" | "passkey")
+authenticationMethod: ("google" | "github")
 providerSubjectBindingHash: string
 authenticatedAt: string
 expiresAt: string

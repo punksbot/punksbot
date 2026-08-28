@@ -111,16 +111,11 @@ export async function startDesktop(
       | "switch_account"
       | "reauthenticate"
       | "link_google"
-      | "link_github"
-      | "register_passkey";
-    method?: "google" | "github" | "passkey";
+      | "link_github";
+    method?: "google" | "github";
     session?: string;
     originHeader?: string | null;
-    purpose?:
-      | "link_google"
-      | "link_github"
-      | "register_passkey"
-      | "transfer_workspace_ownership";
+    purpose?: "link_google" | "link_github" | "transfer_workspace_ownership";
     authorizationId?: string;
     workspaceOwnershipTransfer?: {
       workspaceId: string;
@@ -310,11 +305,7 @@ export async function readyGoogle(subject: string): Promise<StartedDesktop> {
 export async function reauthenticateFor(
   subject: string,
   session: string,
-  purpose:
-    | "link_google"
-    | "link_github"
-    | "register_passkey"
-    | "transfer_workspace_ownership",
+  purpose: "link_google" | "link_github" | "transfer_workspace_ownership",
   workspaceOwnershipTransfer?: {
     workspaceId: string;
     targetPunkId: string;

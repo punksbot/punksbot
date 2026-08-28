@@ -20,7 +20,6 @@ import { completeDesktopOAuth, failDesktopOAuth } from "./desktop-auth";
 import { routeDesktopAuth } from "./desktop-auth-router";
 import type { AuthEnv, AuthProvider } from "./env";
 import { json, problem, readJson, redirect } from "./http";
-import { routePasskeys } from "./passkeys";
 import {
   authorizationUrl,
   exchangeProfile,
@@ -584,10 +583,6 @@ export async function route(
   }
   if (request.method === "POST" && path === "/api/auth/v1/logout") {
     return logout(request, env);
-  }
-  const passkey = routePasskeys(request, env, path);
-  if (passkey !== null) {
-    return passkey;
   }
   const callback = path.match(/^\/api\/auth\/v1\/oauth\/([^/]+)\/callback$/);
   if (

@@ -259,7 +259,7 @@ function loadLiveAuthProof(
   const authWorker = stagingWorkers.find(
     ({ name }) => name === "punks-auth-staging",
   );
-  const methods = ["google", "github", "passkey"];
+  const methods = ["google", "github"];
   if (
     authWorker === undefined ||
     methods.some(

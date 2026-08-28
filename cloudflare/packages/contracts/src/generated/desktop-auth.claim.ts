@@ -51,7 +51,7 @@ authorizationId: string
 sessionId: string
 punkId: string
 intent: "reauthenticate"
-targetMethod: ("link_google" | "link_github" | "register_passkey" | "transfer_workspace_ownership")
+targetMethod: ("link_google" | "link_github" | "transfer_workspace_ownership")
 workspaceOwnershipTransfer?: DesktopWorkspaceOwnershipTransferBinding
 handoffId: string
 expiresAt: string

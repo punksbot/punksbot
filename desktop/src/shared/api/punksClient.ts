@@ -42,6 +42,15 @@ export function createTauriPunksAccountClient(): PunksAccountClient {
   return new TauriPunksAccountClient();
 }
 /** Deterministic adapter implementing the same semantic interface as Rust. */
+function assertAuthenticationMethod(method: unknown): void {
+  if (method !== "google" && method !== "github") {
+    throw new PunksDesktopFailure(
+      "contract_violation",
+      "Authentication method is not supported",
+    );
+  }
+}
+
 export function createFakePunksAccountClient(
   input: FakePunksClientSeed,
 ): PunksAccountClient {
@@ -69,12 +78,12 @@ export function createFakePunksAccountClient(
       avatarUrl: seed.session.punk.avatarUrl,
       identities: [
         {
-          provider: "passkey",
+          provider: "google",
           subjectHash: "a".repeat(64),
           emailHash: "b".repeat(64),
-          verifiedEmail: null,
+          verifiedEmail: "fake-punk@example.test",
           username: null,
-          credentialId: "fake-punks-credential",
+          credentialId: null,
           linkedAt: seed.session.authenticatedAt,
         },
       ],
@@ -240,6 +249,7 @@ export function createFakePunksAccountClient(
     },
     async startSignIn(provider) {
       assertCompatible();
+      assertAuthenticationMethod(provider);
       if (accountSessionState.state !== "signed_out") {
         throw new PunksDesktopFailure(
           "contract_violation",
@@ -260,6 +270,7 @@ export function createFakePunksAccountClient(
     },
     async startAccountSwitch(provider) {
       assertCompatible();
+      assertAuthenticationMethod(provider);
       ceremonyPhase = {
         phase: "started",
         intent: "switch_account",
@@ -274,6 +285,12 @@ export function createFakePunksAccountClient(
     },
     async startReauthentication(method, purpose, workspaceOwnershipTransfer) {
       assertCompatible();
+      assertAuthenticationMethod(method);
+      if (purpose === "register_passkey")
+        throw new PunksDesktopFailure(
+          "contract_violation",
+          "Authentication purpose is not supported",
+        );
       if (
         (purpose === "transfer_workspace_ownership") !==
         (workspaceOwnershipTransfer !== undefined)
@@ -302,24 +319,11 @@ export function createFakePunksAccountClient(
     },
     async startIdentityLink(provider) {
       assertCompatible();
+      assertAuthenticationMethod(provider);
       ceremonyPhase = {
         phase: "started",
         intent: provider === "google" ? "link_google" : "link_github",
         method: provider,
-      };
-      accountSessionState = {
-        ...accountSessionState,
-        authentication: ceremonyPhase,
-        resumeAvailable: false,
-      };
-      return structuredClone(ceremonyPhase);
-    },
-    async startPasskeyRegistration() {
-      assertCompatible();
-      ceremonyPhase = {
-        phase: "started",
-        intent: "register_passkey",
-        method: "passkey",
       };
       accountSessionState = {
         ...accountSessionState,

@@ -95,8 +95,7 @@ fn installed_promotion_conformance_closes_every_authentication_scenario() {
             ("google-annulation", "vert"),
             ("google-succes", "vert"),
             ("mauvaise-origine", "refuse"),
-            ("passkey-annulation", "vert"),
-            ("passkey-succes", "vert"),
+            ("passkey-retiree", "refuse"),
             ("renouvellement", "borne"),
         ]),
     );

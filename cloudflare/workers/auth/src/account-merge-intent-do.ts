@@ -201,6 +201,8 @@ async function claimsForPunk(
 ): Promise<AccountMergePunkSnapshot["claims"]> {
   const claims: Array<AccountMergePunkSnapshot["claims"][number]> = [];
   for (const identity of punk.identities) {
+    if (identity.provider !== "google" && identity.provider !== "github")
+      continue;
     claims.push({
       claimBindingHash: await sha256Hex(
         canonicalJson({
@@ -225,21 +227,6 @@ async function claimsForPunk(
         ),
         kind: "verified-email",
         provider: identity.provider,
-        punkId: punk.id,
-        revision: punk.revision,
-      });
-    }
-    if (identity.provider === "passkey") {
-      claims.push({
-        claimBindingHash: await sha256Hex(
-          canonicalJson({
-            kind: "passkey-credential",
-            provider: "passkey",
-            value: identity.credentialId,
-          }),
-        ),
-        kind: "passkey-credential",
-        provider: "passkey",
         punkId: punk.id,
         revision: punk.revision,
       });
@@ -733,10 +720,9 @@ export class AccountMergeIntentDO extends DurableObject<AuthEnv> {
         }
         indexedRightCount += inventory.rights.length;
         for (const identity of activeState.identities) {
-          potentialClaimCount +=
-            1 +
-            (identity.verifiedEmail === null ? 0 : 1) +
-            (identity.provider === "passkey" ? 1 : 0);
+          if (identity.provider !== "google" && identity.provider !== "github")
+            continue;
+          potentialClaimCount += 1 + (identity.verifiedEmail === null ? 0 : 1);
           if (potentialClaimCount > 64) {
             return unavailable(correlationId);
           }
@@ -857,9 +843,8 @@ export class AccountMergeIntentDO extends DurableObject<AuthEnv> {
                 ).readForAccountMerge();
                 break;
               case "passkey-ceremony":
-                sourceHandoff = await this.env.PASSKEY_CEREMONIES.getByName(
-                  indexedHandoff.handoffId,
-                ).readForAccountMerge();
+                // The dedicated namespace is deleted by Auth migration v6.
+                sourceHandoff = null;
                 break;
               case "reauth-authorization":
                 sourceHandoff = await this.env.DESKTOP_REAUTH_GRANTS.getByName(
@@ -1687,15 +1672,8 @@ export class AccountMergeIntentDO extends DurableObject<AuthEnv> {
             state: handoff.state,
           });
         case "passkey-ceremony":
-          if (handoff.state === "deliverable") return false;
-          return await this.env.PASSKEY_CEREMONIES.getByName(
-            handoff.handoffId,
-          ).cancelForAccountMerge({
-            ...handoff,
-            punkId,
-            kind: "passkey-ceremony",
-            state: handoff.state,
-          });
+          // Legacy merge plans may retain this now-inert handoff descriptor.
+          return true;
         case "reauth-authorization":
           if (handoff.state !== "deliverable") return false;
           return await this.env.DESKTOP_REAUTH_GRANTS.getByName(

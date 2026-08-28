@@ -1,10 +1,10 @@
 import type { AuthSession } from "@punks/contracts";
 
 /** Moyen de connexion que la Cérémonie desktop peut prouver. */
-export type AuthenticationMethod = "google" | "github" | "passkey";
+export type AuthenticationMethod = "google" | "github";
 
-/** Google et GitHub peuvent être liés ; une passkey a sa propre intention. */
-export type IdentityLinkProvider = Exclude<AuthenticationMethod, "passkey">;
+/** Fournisseur OAuth pouvant être lié au Compte Punks. */
+export type IdentityLinkProvider = AuthenticationMethod;
 
 /** Intention sémantique publique, sans identifiant de flow ni vérificateur. */
 export type AuthenticationIntent =
@@ -12,8 +12,7 @@ export type AuthenticationIntent =
   | "switch_account"
   | "reauthenticate"
   | "link_google"
-  | "link_github"
-  | "register_passkey";
+  | "link_github";
 
 /** Vue IPC assainie de la Cérémonie de connexion desktop. */
 export type CeremonyPhaseView =

@@ -135,6 +135,134 @@ fn authentication_stage_preserves_old_session_until_atomic_promotion() {
 }
 
 #[test]
+fn retired_passkey_flow_does_not_discard_the_active_oauth_session() {
+    let (persistence, memory) = store();
+    let active_id = "22222222-2222-4222-8222-222222222222";
+    persistence
+        .save_active_session(&active(active_id, 'r'))
+        .unwrap();
+    persistence.save_pending_auth_flow(&flow()).unwrap();
+    {
+        let mut saved = memory.0.lock().unwrap();
+        let mut value: serde_json::Value = serde_json::from_str(saved.0.as_ref().unwrap()).unwrap();
+        value["pendingAuthFlow"]["method"] = serde_json::json!("passkey");
+        saved.0 = Some(serde_json::to_string(&value).unwrap());
+    }
+    assert_eq!(persistence.load().unwrap().unwrap().1.session_id, active_id);
+    assert!(persistence.load_pending_auth_flow().unwrap().is_none());
+    assert!(!memory
+        .0
+        .lock()
+        .unwrap()
+        .0
+        .as_ref()
+        .unwrap()
+        .contains("passkey"));
+}
+
+#[test]
+fn retired_passkey_delivery_is_queued_for_revocation_without_replacing_oauth() {
+    let (persistence, memory) = store();
+    let active_id = "22222222-2222-4222-8222-222222222222";
+    let prepared_id = "33333333-3333-4333-8333-333333333333";
+    persistence
+        .save_active_session(&active(active_id, 'r'))
+        .unwrap();
+    persistence.save_pending_auth_flow(&flow()).unwrap();
+    persistence
+        .stage_activation(&staged(prepared_id, 's'))
+        .unwrap();
+    {
+        let mut saved = memory.0.lock().unwrap();
+        let mut value: serde_json::Value = serde_json::from_str(saved.0.as_ref().unwrap()).unwrap();
+        value["pendingAuthFlow"]["method"] = serde_json::json!("passkey");
+        saved.0 = Some(serde_json::to_string(&value).unwrap());
+    }
+    assert_eq!(persistence.load().unwrap().unwrap().1.session_id, active_id);
+    assert!(persistence.load_pending_auth_flow().unwrap().is_none());
+    assert!(persistence.reread_staged_activation().unwrap().is_none());
+    let queued = persistence.list_revocations().unwrap();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].session_id, prepared_id);
+    assert_eq!(queued[0].capability.raw(), revoke('s').raw());
+}
+
+#[test]
+fn retired_passkey_delivery_preserves_a_full_revocation_queue() {
+    let (persistence, memory) = store();
+    let active_id = "22222222-2222-4222-8222-222222222222";
+    let prepared_id = "33333333-3333-4333-8333-333333333333";
+    persistence
+        .save_active_session(&active(active_id, 'r'))
+        .unwrap();
+    for index in 0..64 {
+        persistence
+            .enqueue_revocation(&QueuedRevocation {
+                session_id: format!("44444444-4444-4444-8444-{index:012}"),
+                capability: revoke('q'),
+                expires_at: at(4_000_000_000),
+                queued_at: at(1_000_000_000),
+            })
+            .unwrap();
+    }
+    persistence.save_pending_auth_flow(&flow()).unwrap();
+    persistence
+        .stage_activation(&staged(prepared_id, 's'))
+        .unwrap();
+    {
+        let mut saved = memory.0.lock().unwrap();
+        let mut value: serde_json::Value = serde_json::from_str(saved.0.as_ref().unwrap()).unwrap();
+        value["pendingAuthFlow"]["method"] = serde_json::json!("passkey");
+        saved.0 = Some(serde_json::to_string(&value).unwrap());
+    }
+    assert_eq!(persistence.load().unwrap().unwrap().1.session_id, active_id);
+    let queued = persistence.list_revocations().unwrap();
+    assert_eq!(queued.len(), 65);
+    assert_eq!(queued[64].session_id, prepared_id);
+    assert_eq!(queued[64].capability.raw(), revoke('s').raw());
+    assert!(persistence
+        .enqueue_revocation(&QueuedRevocation {
+            session_id: "55555555-5555-4555-8555-555555555555".into(),
+            capability: revoke('q'),
+            expires_at: at(4_000_000_000),
+            queued_at: at(1_000_000_000),
+        })
+        .is_err());
+    assert!(persistence.remove_revocation(prepared_id).unwrap());
+    assert_eq!(persistence.list_revocations().unwrap().len(), 64);
+}
+
+#[test]
+fn retired_passkey_reauthorization_does_not_remove_the_active_session() {
+    let (persistence, memory) = store();
+    let active_id = "22222222-2222-4222-8222-222222222222";
+    persistence
+        .save_active_session(&active(active_id, 'r'))
+        .unwrap();
+    persistence
+        .save_reauthorization(&PendingReauthorization {
+            authorization_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa".into(),
+            session_id: active_id.into(),
+            punk_id: metadata(active_id).punk_id,
+            target_method: AuthenticationMethod::Google,
+            target_purpose: PendingAuthPurpose::LinkGoogle,
+            workspace_ownership_transfer: None,
+            handoff_id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd".into(),
+            expires_at: at(4_000_000_000),
+        })
+        .unwrap();
+    {
+        let mut saved = memory.0.lock().unwrap();
+        let mut value: serde_json::Value = serde_json::from_str(saved.0.as_ref().unwrap()).unwrap();
+        value["pendingReauthorization"]["targetMethod"] = serde_json::json!("passkey");
+        value["pendingReauthorization"]["targetPurpose"] = serde_json::json!("register_passkey");
+        saved.0 = Some(serde_json::to_string(&value).unwrap());
+    }
+    assert_eq!(persistence.load().unwrap().unwrap().1.session_id, active_id);
+    assert!(persistence.load_reauthorization().unwrap().is_none());
+}
+
+#[test]
 fn renewal_is_exclusive_and_sign_out_atomically_queues_every_capability() {
     let (persistence, _) = store();
     let old_id = "22222222-2222-4222-8222-222222222222";
@@ -290,7 +418,7 @@ fn reauthorization_survives_restart_and_is_consumed_only_by_its_exact_target() {
 }
 
 #[test]
-fn ownership_reauthorization_is_not_consumed_as_a_passkey_registration() {
+fn ownership_reauthorization_is_not_consumed_as_an_identity_link() {
     let (persistence, _) = store();
     persistence
         .save_active_session(&active("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", 'w'))
@@ -299,7 +427,7 @@ fn ownership_reauthorization_is_not_consumed_as_a_passkey_registration() {
         authorization_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa".into(),
         session_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb".into(),
         punk_id: "44444444-4444-4444-8444-444444444444".into(),
-        target_method: AuthenticationMethod::Passkey,
+        target_method: AuthenticationMethod::Github,
         target_purpose: PendingAuthPurpose::TransferWorkspaceOwnership,
         workspace_ownership_transfer: Some(
             punks_account_client::desktop_auth::WorkspaceOwnershipTransferBinding {
@@ -314,7 +442,7 @@ fn ownership_reauthorization_is_not_consumed_as_a_passkey_registration() {
     persistence.save_reauthorization(&handoff).unwrap();
 
     assert!(persistence
-        .take_reauthorization(PendingAuthPurpose::RegisterPasskey)
+        .take_reauthorization(PendingAuthPurpose::LinkGoogle)
         .unwrap()
         .is_none());
     let binding = handoff.workspace_ownership_transfer.as_ref().unwrap();

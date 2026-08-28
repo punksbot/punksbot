@@ -44,8 +44,6 @@ export { DesktopAuthFlowDO } from "./desktop-auth-flow-do";
 export { DesktopReauthGrantDO } from "./desktop-reauth-grant-do";
 export { EmailClaimDO } from "./email-claim-do";
 export { IdentityClaimDO } from "./identity-claim-do";
-export { PasskeyCeremonyDO } from "./passkey-ceremony-do";
-export { PasskeyCredentialDO } from "./passkey-credential-do";
 export { PunkDO } from "./punk-do";
 export { PromotionAuthorityFaultService } from "./promotion-authority-fault-service";
 export { PromotionAuthProofService } from "./promotion-auth-proof-service";
@@ -57,6 +55,19 @@ const opaqueUuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+function activePunkProfile(
+  punk: Omit<Punk, "identities"> & {
+    identities: readonly Punk["identities"][number][];
+  },
+): Punk | null {
+  const identities = punk.identities.filter(
+    (identity) =>
+      identity.provider === "google" || identity.provider === "github",
+  );
+  const [first, ...rest] = identities;
+  return first === undefined ? null : { ...punk, identities: [first, ...rest] };
+}
 
 /** Private request that binds one account role to a recent Session proof. */
 export interface RecordAccountMergeFreshProofInput {
@@ -493,7 +504,7 @@ export class PunkSessionService extends WorkerEntrypoint<AuthEnv> {
       ) {
         return null;
       }
-      return result.state as unknown as Punk;
+      return activePunkProfile(result.state);
     } catch {
       return null;
     }
@@ -516,9 +527,11 @@ export class PunkSessionService extends WorkerEntrypoint<AuthEnv> {
         ) {
           return { ok: false, code: "inactive" };
         }
+        const profile = activePunkProfile(result.state);
+        if (profile === null) return { ok: false, code: "inactive" };
         return {
           ok: true,
-          state: result.state as unknown as Punk,
+          state: profile,
           replayed: result.replayed,
         };
       }

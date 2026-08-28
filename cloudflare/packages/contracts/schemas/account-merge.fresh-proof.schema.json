@@ -29,7 +29,7 @@
     "punkId": { "$ref": "#/$defs/uuid" },
     "accountRevision": { "$ref": "#/$defs/revision" },
     "holderBindingHash": { "$ref": "#/$defs/hexDigest" },
-    "authenticationMethod": { "enum": ["google", "github", "passkey"] },
+    "authenticationMethod": { "enum": ["google", "github"] },
     "providerSubjectBindingHash": { "$ref": "#/$defs/hexDigest" },
     "authenticatedAt": { "$ref": "#/$defs/timestamp" },
     "expiresAt": { "$ref": "#/$defs/timestamp" },

@@ -1,6 +1,7 @@
 //! Punks-only Account persistence in one versioned OS-keyring credential.
 
 mod models;
+mod retirement;
 
 #[cfg(test)]
 mod tests;
@@ -106,9 +107,10 @@ impl KeyringSessionPersistence {
         let Some(raw) = self.credentials.load(self.service()?, ACCOUNT_STATE_KEY)? else {
             return Ok(StoredAccountState::empty());
         };
-        let state =
-            serde_json::from_str::<StoredAccountState>(&raw).map_err(|_| invalid_state())?;
-        state.validate()?;
+        let (state, migrated) = retirement::decode_account_state(&raw, SystemTime::now())?;
+        if migrated {
+            self.write_state(&state)?;
+        }
         Ok(state)
     }
 
@@ -386,9 +388,6 @@ impl KeyringSessionPersistence {
                     }
                     punks_account_client::ceremony::AuthenticationMethod::Github => {
                         PendingAuthPurpose::LinkGithub
-                    }
-                    punks_account_client::ceremony::AuthenticationMethod::Passkey => {
-                        PendingAuthPurpose::RegisterPasskey
                     }
                 });
             if current_purpose != target || current.workspace_ownership_transfer.as_ref() != binding

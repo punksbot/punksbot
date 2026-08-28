@@ -236,7 +236,6 @@ function TransferOwnershipDialog({
             }
             value={method}
           >
-            <option value="passkey">Passkey</option>
             <option value="google">Google</option>
             <option value="github">GitHub</option>
           </select>
@@ -272,7 +271,7 @@ function TransferOwnershipDialog({
         <p className="mt-3 text-xs text-muted-foreground" role="status">
           {reauthenticated
             ? "Fresh authorization confirmed. Review the target, then transfer."
-            : "A fresh browser or passkey reauthentication is required."}
+            : "A fresh Google or GitHub reauthentication is required."}
         </p>
       </DialogContent>
     </Dialog>
@@ -335,7 +334,7 @@ function WorkspaceGovernanceDialog() {
     name: string;
   } | null>(null);
   const [reauthenticationMethod, setReauthenticationMethod] =
-    useState<AuthenticationMethod>("passkey");
+    useState<AuthenticationMethod>("google");
   const [transferReauthenticated, setTransferReauthenticated] = useState(false);
   const reauthenticationGeneration = useRef(0);
   const [lifecycleNotice, setLifecycleNotice] = useState<string | null>(null);

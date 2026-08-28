@@ -309,7 +309,7 @@ export class PromotionAuthorityFaultService extends WorkerEntrypoint {
 export class PromotionAuthProofService extends WorkerEntrypoint {
   attest(input) {
     if (input.flows !== undefined) {
-      const methods = ["google", "github", "passkey"];
+      const methods = ["google", "github"];
       const flows = Object.fromEntries(
         methods.map((method, index) => {
           const common = {
@@ -327,26 +327,16 @@ export class PromotionAuthProofService extends WorkerEntrypoint {
               success: {
                 ...common,
                 flowId: input.flows[method].successFlowId,
-                outcomeCode:
-                  method === "passkey"
-                    ? "passkey_authenticated"
-                    : "authenticated",
+                outcomeCode: "authenticated",
                 punkId: `${index + 7}0000000-0000-8000-8000-000000000058`,
                 sessionId: `${index + 1}1000000-0000-8000-8000-000000000058`,
                 browserCompletedAt: `2026-08-26T17:0${index}:00.000Z`,
                 confirmedAt: `2026-08-26T17:0${index}:01.000Z`,
-                methodEvidence:
-                  method === "passkey"
-                    ? {
-                        kind: "passkey",
-                        challengeHash: "a".repeat(64),
-                        credentialIdHash: "b".repeat(64),
-                      }
-                    : {
-                        kind: "oauth",
-                        oauthStateHash: "c".repeat(64),
-                        providerPkceHash: "d".repeat(64),
-                      },
+                methodEvidence: {
+                  kind: "oauth",
+                  oauthStateHash: "c".repeat(64),
+                  providerPkceHash: "d".repeat(64),
+                },
               },
               cancellation: {
                 ...common,
@@ -359,7 +349,7 @@ export class PromotionAuthProofService extends WorkerEntrypoint {
         }),
       );
       return {
-        schema: "punks.live-staging-auth-matrix-proof.v2",
+        schema: "punks.live-staging-auth-matrix-proof.v3",
         sourceSha: input.sourceSha,
         stagingDeploymentId: input.stagingDeploymentId,
         authWorkerVersionId: "00000000-0000-4000-8000-000000000001",
@@ -368,7 +358,7 @@ export class PromotionAuthProofService extends WorkerEntrypoint {
           wrongOauthState: "refused",
           wrongBrowserBinding: "refused",
           wrongNativePkceVerifier: "refused",
-          wrongPasskeyChallenge: "refused",
+          retiredPasskeyMethod: "refused",
         },
         observedAt: "2026-08-26T17:03:00.000Z",
       };

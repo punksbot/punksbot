@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "punks://contracts/punk@1",
   "title": "Punk",
+  "$comment": "Historical identity records remain readable, including retired passkey metadata. Active authentication and profile projections expose only Google/GitHub (ADR-0064).",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -78,10 +79,7 @@
       }
     },
     "mergedInto": {
-      "anyOf": [
-        { "type": "string", "format": "uuid" },
-        { "type": "null" }
-      ]
+      "anyOf": [{ "type": "string", "format": "uuid" }, { "type": "null" }]
     },
     "revision": { "type": "integer", "minimum": 1 },
     "createdAt": { "type": "string", "format": "date-time" },

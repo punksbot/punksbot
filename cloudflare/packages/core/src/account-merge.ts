@@ -36,12 +36,8 @@ const RIGHT_MERGE_STRATEGIES = Object.freeze({
   "repository-access-proof": "invalidate",
 } as const satisfies Record<RightKind, string>);
 
-const CLAIM_KINDS = new Set<ClaimKind>([
-  "provider-subject",
-  "verified-email",
-  "passkey-credential",
-]);
-const CLAIM_PROVIDERS = new Set<ClaimProvider>(["google", "github", "passkey"]);
+const CLAIM_KINDS = new Set<ClaimKind>(["provider-subject", "verified-email"]);
+const CLAIM_PROVIDERS = new Set<ClaimProvider>(["google", "github"]);
 const RIGHT_KINDS = new Set<RightKind>(
   Object.keys(RIGHT_MERGE_STRATEGIES) as RightKind[],
 );
@@ -54,7 +50,6 @@ const CLIENT_KINDS = new Set<ClientKind>([
 const HANDOFF_KINDS = new Set<HandoffKind>([
   "desktop-auth-flow",
   "oauth-transaction",
-  "passkey-ceremony",
   "reauth-authorization",
   "session-renewal",
   "account-link",

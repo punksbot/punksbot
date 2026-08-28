@@ -186,7 +186,7 @@ function topologyObservation(dossier) {
 
 function budgetObservation(exportRoot, candidateRoot) {
   const sampleCount = 1_000_000;
-  const connectionMethods = ["google", "github", "passkey"];
+  const connectionMethods = ["google", "github"];
   const sources = prepareCandidateRoot(candidateRoot);
   mkdirSync(exportRoot);
   const statistic = (budget, dimension) => {
@@ -372,7 +372,6 @@ test("observes ten successful cadence steps from the exact current Actions run",
   assert.deepEqual(observation.topology["moyens-connexion"], [
     "google",
     "github",
-    "passkey",
   ]);
   assert.deepEqual(
     observation.topology.workflows.map(({ nom }) => nom),

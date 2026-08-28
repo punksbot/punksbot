@@ -5,7 +5,6 @@ import type { AuthEnv } from "./env";
 export type DesktopReauthTarget =
   | "link_google"
   | "link_github"
-  | "register_passkey"
   | "transfer_workspace_ownership";
 
 /** Immutable Workspace coordinates confirmed by one strong reauthentication. */
@@ -24,6 +23,14 @@ interface DesktopReauthGrantRecord {
   handoffId: string;
   expiresAt: string;
   consumedByFlowId: string | null;
+}
+
+function validTarget(value: unknown): value is DesktopReauthTarget {
+  return (
+    value === "link_google" ||
+    value === "link_github" ||
+    value === "transfer_workspace_ownership"
+  );
 }
 
 const RECORD_KEY = "desktop_reauth_grant_v1";
@@ -62,6 +69,7 @@ export class DesktopReauthGrantDO extends DurableObject<AuthEnv> {
     input: Omit<DesktopReauthGrantRecord, "consumedByFlowId">,
   ): Promise<boolean> {
     if (
+      !validTarget(input.targetMethod) ||
       (input.targetMethod === "transfer_workspace_ownership") !==
         validWorkspaceOwnershipTransferBinding(
           input.workspaceOwnershipTransfer,
@@ -125,6 +133,8 @@ export class DesktopReauthGrantDO extends DurableObject<AuthEnv> {
         code: "missing" | "expired" | "binding_mismatch" | "consumed";
       }
   > {
+    if (!validTarget(input.targetMethod))
+      return { ok: false, code: "binding_mismatch" };
     const record = await this.read();
     if (record === null) return { ok: false, code: "missing" };
     if (Date.parse(record.expiresAt) <= Date.now()) {
@@ -217,8 +227,13 @@ export class DesktopReauthGrantDO extends DurableObject<AuthEnv> {
   }
 
   private async read(): Promise<DesktopReauthGrantRecord | null> {
-    return (
-      (await this.ctx.storage.get<DesktopReauthGrantRecord>(RECORD_KEY)) ?? null
-    );
+    const record =
+      (await this.ctx.storage.get<DesktopReauthGrantRecord>(RECORD_KEY)) ??
+      null;
+    if (record !== null && !validTarget(record.targetMethod)) {
+      await this.remove(record);
+      return null;
+    }
+    return record;
   }
 }

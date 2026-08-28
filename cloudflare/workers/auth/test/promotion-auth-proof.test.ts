@@ -4,7 +4,7 @@ import { hash } from "../src/crypto";
 import { authEnv } from "./desktop-ceremony-helpers";
 
 describe("promotion Auth terminal proofs", () => {
-  it("redacts one source-bound passkey success and cancellation", async () => {
+  it("redacts one source-bound OAuth success and cancellation", async () => {
     const sourceSha = "ab".repeat(20);
     const stagingDeploymentId = `sha256:${"cd".repeat(32)}`;
     const create = async (flowId: string, commitment: string) => {
@@ -13,7 +13,7 @@ describe("promotion Auth terminal proofs", () => {
         await stub.create({
           flowId,
           intent: "sign_in",
-          method: "passkey",
+          method: "google",
           purpose: null,
           workspaceOwnershipTransfer: null,
           verifierCommitment: commitment,
@@ -33,24 +33,20 @@ describe("promotion Auth terminal proofs", () => {
     const commitment = "p".repeat(43);
     const success = await create(successFlowId, commitment);
     const launched = await success.browserLaunch();
-    if (!launched.ok) throw new Error("passkey launch missing");
+    if (!launched.ok) throw new Error("OAuth launch missing");
     expect(
-      await success.setPasskeyChallenge({
+      await success.recordBrowserComplete({
         browserBindingHash: await hash(launched.browserBinding),
-        challenge: "passkey-challenge",
       }),
-    ).toBe(true);
-    expect(await success.recordPasskeyAuthentication("f".repeat(64))).toBe(
-      true,
-    );
+    ).toMatchObject({ ok: true });
     const punkId = crypto.randomUUID();
     const sessionId = crypto.randomUUID();
-    expect(
-      await success.ready({ punkId, outcomeCode: "passkey_authenticated" }),
-    ).toBe(true);
+    expect(await success.ready({ punkId, outcomeCode: "authenticated" })).toBe(
+      true,
+    );
     const delivery = await success.claim(commitment);
     if (!delivery.ok || delivery.kind !== "session") {
-      throw new Error("passkey delivery missing");
+      throw new Error("OAuth delivery missing");
     }
     expect(
       await success.recordPreparedSession({
@@ -63,10 +59,11 @@ describe("promotion Auth terminal proofs", () => {
     ).not.toBeNull();
     await expect(success.promotionSuccessProof()).resolves.toMatchObject({
       flowId: successFlowId,
-      method: "passkey",
+      method: "google",
       methodEvidence: {
-        kind: "passkey",
-        credentialIdHash: "f".repeat(64),
+        kind: "oauth",
+        oauthStateHash: await hash(launched.state),
+        providerPkceHash: await hash(launched.codeVerifier),
       },
       sourceSha,
       stagingDeploymentId,
@@ -84,7 +81,7 @@ describe("promotion Auth terminal proofs", () => {
       cancellation.promotionCancellationProof(),
     ).resolves.toMatchObject({
       flowId: cancellationFlowId,
-      method: "passkey",
+      method: "google",
       outcomeCode: "cancelled",
       sourceSha,
       stagingDeploymentId,

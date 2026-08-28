@@ -345,7 +345,7 @@ fn insert_auth(
 pub fn promotion_auth_conformance() -> Result<BTreeMap<String, PromotionAuthScenario>, String> {
     let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_800_000_000);
     let mut scenarios = BTreeMap::new();
-    for provider in ["google", "github", "passkey"] {
+    for provider in ["google", "github"] {
         let mut ceremony = Ceremony::new(Arc::new(FixedClock(now)));
         ceremony.start(provider)?;
         ceremony
@@ -381,6 +381,19 @@ pub fn promotion_auth_conformance() -> Result<BTreeMap<String, PromotionAuthScen
             auth_result("vert", format!("compiled {provider} ceremony cancelled")),
         )?;
     }
+
+    let mut retired = Ceremony::new(Arc::new(FixedClock(now)));
+    if retired.start("passkey").is_ok() || retired.phase() != &CeremonyPhase::Idle {
+        return Err("promotion authentication accepted the retired method".to_string());
+    }
+    insert_auth(
+        &mut scenarios,
+        "passkey-retiree",
+        auth_result(
+            "refuse",
+            "compiled ceremony rejects retired passkey before starting",
+        ),
+    )?;
 
     let mut wrong_origin = Ceremony::new(Arc::new(FixedClock(now)));
     wrong_origin.start("github")?;

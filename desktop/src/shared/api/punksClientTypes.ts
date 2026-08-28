@@ -247,7 +247,6 @@ export interface PunksAccountClient {
     workspaceOwnershipTransfer?: WorkspaceOwnershipTransferReauthenticationInput,
   ): Promise<CeremonyPhaseView>;
   startIdentityLink(provider: IdentityLinkProvider): Promise<CeremonyPhaseView>;
-  startPasskeyRegistration(): Promise<CeremonyPhaseView>;
   resumeInterruptedAuthentication(): Promise<CeremonyPhaseView>;
   cancelAuthentication(): Promise<CeremonyPhaseView>;
   renewAccountSession(): Promise<CeremonyPhaseView>;

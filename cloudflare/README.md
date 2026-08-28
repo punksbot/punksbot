@@ -41,7 +41,7 @@ that failure instead of presenting the rerun as the candidate's proof.
 
 - `contracts`: canonical, language-neutral JSON Schemas and generated TypeScript.
 - `core`: deterministic domain decisions and reducers with no Cloudflare bindings.
-- `workers/auth`: global Punk identities, browser-bound OAuth and passkey
+- `workers/auth`: global Punk identities and browser-bound Google/GitHub OAuth
   ceremonies, explicit identity linking, and opaque sessions.
 - `workers/api`: modular HTTP API and authoritative Durable Objects.
 - `workers/attestation`: private internal Nostr event and archive-seal
@@ -61,8 +61,9 @@ Search, Reaction and hibernable FOLLOW authority, with signed internal
 journals, D1 projections and sealed Workspace, Conversation, Bot and
 Installation journal archives.
 
-Global Punk authentication covers Google, GitHub identity-only OAuth, optional
-passkeys, explicit linking and opaque sessions.
+Global Punk authentication covers Google and GitHub identity-only OAuth,
+explicit linking and opaque sessions. Passkey authentication and registration
+are retired; see [ADR-0064](../docs/adr/0064-limiter-la-connexion-a-google-et-github.md).
 
 Account Merge application is implemented as an Auth-owned fenced saga. The
 private Erasure Worker records a terminal create-only envelope before any

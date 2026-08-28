@@ -102,7 +102,7 @@ fn valid_identity(value: &impl Serialize) -> bool {
                     .is_some_and(|text| !text.is_empty() && text.len() <= maximum)
         })
     };
-    matches!(provider, Some("google" | "github" | "passkey"))
+    matches!(provider, Some("google" | "github"))
         && identity
             .get("subjectHash")
             .and_then(Value::as_str)

@@ -2,10 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "punks://contracts/desktop-auth.start@1",
   "title": "DesktopAuthStartExchange",
-  "oneOf": [
-    { "$ref": "#/$defs/request" },
-    { "$ref": "#/$defs/response" }
-  ],
+  "oneOf": [{ "$ref": "#/$defs/request" }, { "$ref": "#/$defs/response" }],
   "$defs": {
     "request": {
       "title": "DesktopAuthStartRequest",
@@ -27,22 +24,16 @@
             "switch_account",
             "reauthenticate",
             "link_google",
-            "link_github",
-            "register_passkey"
+            "link_github"
           ]
         },
-        "method": { "enum": ["google", "github", "passkey"] },
+        "method": { "enum": ["google", "github"] },
         "verifierCommitment": {
           "type": "string",
           "pattern": "^[A-Za-z0-9_-]{43}$"
         },
         "purpose": {
-          "enum": [
-            "link_google",
-            "link_github",
-            "register_passkey",
-            "transfer_workspace_ownership"
-          ]
+          "enum": ["link_google", "link_github", "transfer_workspace_ownership"]
         },
         "authorizationId": { "type": "string", "format": "uuid" },
         "workspaceOwnershipTransfer": {
@@ -76,11 +67,10 @@
             "switch_account",
             "reauthenticate",
             "link_google",
-            "link_github",
-            "register_passkey"
+            "link_github"
           ]
         },
-        "method": { "enum": ["google", "github", "passkey"] },
+        "method": { "enum": ["google", "github"] },
         "browserUrl": { "type": "string", "format": "uri", "maxLength": 2048 },
         "createdAt": { "type": "string", "format": "date-time" },
         "expiresAt": { "type": "string", "format": "date-time" }

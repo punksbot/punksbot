@@ -12,6 +12,7 @@ import {
 import {
   proveLiveStagingAuth,
   proveLiveStagingAuthMatrix,
+  validateLiveAuthMatrixProof,
 } from "./live-staging-auth-proof.mjs";
 
 const sourceSha = "ab".repeat(20);
@@ -115,8 +116,8 @@ test("rejects a provider proof attributed to another Auth deployment", async () 
   );
 });
 
-test("accepts only the complete Google, GitHub and passkey success/cancellation matrix", async () => {
-  const methods = ["google", "github", "passkey"];
+test("accepts only Google/GitHub success and cancellation, with passkey explicitly refused", async () => {
+  const methods = ["google", "github"];
   const matrix = Object.fromEntries(
     methods.map((method, methodIndex) => [
       method,
@@ -143,24 +144,16 @@ test("accepts only the complete Google, GitHub and passkey success/cancellation 
           success: {
             ...common,
             flowId: matrix[method].successFlowId,
-            outcomeCode:
-              method === "passkey" ? "passkey_authenticated" : "authenticated",
+            outcomeCode: "authenticated",
             punkId: `${methodIndex + 7}0000000-0000-8000-8000-000000000058`,
             sessionId: `${methodIndex + 1}1000000-0000-8000-8000-000000000058`,
             browserCompletedAt: `2026-08-26T17:0${methodIndex}:00.000Z`,
             confirmedAt: `2026-08-26T17:0${methodIndex}:01.000Z`,
-            methodEvidence:
-              method === "passkey"
-                ? {
-                    kind: "passkey",
-                    challengeHash: "a".repeat(64),
-                    credentialIdHash: "b".repeat(64),
-                  }
-                : {
-                    kind: "oauth",
-                    oauthStateHash: "c".repeat(64),
-                    providerPkceHash: "d".repeat(64),
-                  },
+            methodEvidence: {
+              kind: "oauth",
+              oauthStateHash: "c".repeat(64),
+              providerPkceHash: "d".repeat(64),
+            },
           },
           cancellation: {
             ...common,
@@ -183,10 +176,11 @@ test("accepts only the complete Google, GitHub and passkey success/cancellation 
     {
       async fetchImpl(_url, init) {
         const request = JSON.parse(init.body);
+        assert.equal(request.contract, "promotion.auth-matrix-proof@3");
         assert.deepEqual(request.flows, matrix);
         return Response.json({
           proof: {
-            schema: "punks.live-staging-auth-matrix-proof.v2",
+            schema: "punks.live-staging-auth-matrix-proof.v3",
             sourceSha,
             stagingDeploymentId,
             authWorkerVersionId: workers[0].versionId,
@@ -195,7 +189,7 @@ test("accepts only the complete Google, GitHub and passkey success/cancellation 
               wrongOauthState: "refused",
               wrongBrowserBinding: "refused",
               wrongNativePkceVerifier: "refused",
-              wrongPasskeyChallenge: "refused",
+              retiredPasskeyMethod: "refused",
             },
             observedAt: "2026-08-26T17:03:00.000Z",
           },
@@ -204,6 +198,36 @@ test("accepts only the complete Google, GitHub and passkey success/cancellation 
     },
   );
   assert.deepEqual(Object.keys(proof.flows), methods);
-  assert.equal(proof.flows.passkey.success.methodEvidence.kind, "passkey");
+  assert.equal(proof.flows.passkey, undefined);
   assert.equal(proof.flows.github.success.methodEvidence.kind, "oauth");
+  const expected = {
+    sourceSha,
+    stagingDeploymentId,
+    matrix,
+    authWorkerVersionId: workers[0].versionId,
+  };
+  for (const mutate of [
+    (value) => {
+      value.flows.passkey = value.flows.google;
+    },
+    (value) => {
+      value.schema = "punks.live-staging-auth-matrix-proof.v2";
+    },
+    (value) => {
+      delete value.negative.retiredPasskeyMethod;
+    },
+    (value) => {
+      value.negative.retiredPasskeyMethod = "accepted";
+    },
+    (value) => {
+      delete value.flows.github;
+    },
+  ]) {
+    const invalid = structuredClone(proof);
+    mutate(invalid);
+    assert.throws(
+      () => validateLiveAuthMatrixProof(invalid, expected),
+      /complete live provider matrix/,
+    );
+  }
 });

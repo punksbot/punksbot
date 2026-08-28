@@ -1,5 +1,4 @@
 import {
-  completeDesktopPasskey,
   confirmDesktopOAuthAccount,
   confirmExistingBrowserSession,
   launchDesktopBrowser,
@@ -47,8 +46,6 @@ export function routeDesktopAuth(
       return confirmDesktopOAuthAccount(request, env);
     case "POST /api/auth/v1/desktop/browser/session/confirm":
       return confirmExistingBrowserSession(request, env);
-    case "POST /api/auth/v1/desktop/browser/passkey/complete":
-      return completeDesktopPasskey(request, env);
     default:
       return null;
   }

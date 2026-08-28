@@ -29,7 +29,7 @@ Preuve terminale durable qu’un Compte Punks a été absorbé par un survivant 
 _À éviter_ : projection de fusion, journal supprimable, sauvegarde de compte
 
 **Moyen de connexion** :
-Identité Google ou GitHub, ou passkey, explicitement liée à un Compte Punks après preuve d’un moyen déjà lié lorsque ce compte existe.
+Identité Google ou GitHub explicitement liée à un Compte Punks après preuve d’un moyen déjà lié lorsque ce compte existe.
 _À éviter_ : compte automatique par e-mail, identité Workspace
 
 **Session de Compte Punks** :

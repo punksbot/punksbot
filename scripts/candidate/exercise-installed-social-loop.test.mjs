@@ -84,7 +84,7 @@ function sha256(content) {
 }
 
 function liveAuthMatrixProof() {
-  const methods = ["google", "github", "passkey"];
+  const methods = ["google", "github"];
   const flows = Object.fromEntries(
     methods.map((method, index) => {
       const common = {
@@ -102,24 +102,16 @@ function liveAuthMatrixProof() {
           success: {
             ...common,
             flowId: `${index + 1}0000000-0000-8000-8000-000000000058`,
-            outcomeCode:
-              method === "passkey" ? "passkey_authenticated" : "authenticated",
+            outcomeCode: "authenticated",
             punkId: method === "github" ? PUNK_ID : crypto.randomUUID(),
             sessionId: method === "github" ? SESSION_ID : crypto.randomUUID(),
             browserCompletedAt: `2026-08-26T17:0${index}:00.000Z`,
             confirmedAt: `2026-08-26T17:0${index}:01.000Z`,
-            methodEvidence:
-              method === "passkey"
-                ? {
-                    kind: "passkey",
-                    challengeHash: "a".repeat(64),
-                    credentialIdHash: "b".repeat(64),
-                  }
-                : {
-                    kind: "oauth",
-                    oauthStateHash: "c".repeat(64),
-                    providerPkceHash: "d".repeat(64),
-                  },
+            methodEvidence: {
+              kind: "oauth",
+              oauthStateHash: "c".repeat(64),
+              providerPkceHash: "d".repeat(64),
+            },
           },
           cancellation: {
             ...common,
@@ -132,7 +124,7 @@ function liveAuthMatrixProof() {
     }),
   );
   return {
-    schema: "punks.live-staging-auth-matrix-proof.v2",
+    schema: "punks.live-staging-auth-matrix-proof.v3",
     sourceSha: SOURCE_SHA,
     stagingDeploymentId: DEPLOYMENT_ID,
     authWorkerVersionId: WORKERS[0].versionId,
@@ -141,7 +133,7 @@ function liveAuthMatrixProof() {
       wrongOauthState: "refused",
       wrongBrowserBinding: "refused",
       wrongNativePkceVerifier: "refused",
-      wrongPasskeyChallenge: "refused",
+      retiredPasskeyMethod: "refused",
     },
     observedAt: "2026-08-26T17:03:00.000Z",
   };

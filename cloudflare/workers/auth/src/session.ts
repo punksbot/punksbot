@@ -94,7 +94,6 @@ export async function aggregateName(
     | "session"
     | "session-revocation"
     | "session-rotation"
-    | "passkey-credential"
     | "desktop-auth-flow",
   value: string,
 ): Promise<string> {

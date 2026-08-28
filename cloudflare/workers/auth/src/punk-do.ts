@@ -472,60 +472,6 @@ export class PunkDO extends PromotionFaultableDurableObject<AuthEnv> {
     return { ok: true, state: next, replayed: false };
   }
 
-  async linkPasskey(input: {
-    credentialId: string;
-    subjectHash: string;
-    emailHash: string;
-    now: string;
-  }): Promise<PunkResult> {
-    if ((await this.accountMergeReceipt()) !== null) {
-      return { ok: false, code: "inactive" };
-    }
-    if (this.accountMergePrepared()) {
-      return { ok: false, code: "inactive" };
-    }
-    const current = this.state();
-    if (current === null) {
-      return { ok: false, code: "not_found" };
-    }
-    if (current.status !== "active") {
-      return { ok: false, code: "inactive" };
-    }
-    if (
-      current.identities.some(
-        (item) =>
-          item.provider === "passkey" && item.subjectHash === input.subjectHash,
-      )
-    ) {
-      return { ok: true, state: current, replayed: true };
-    }
-    const next: Punk = {
-      ...current,
-      identities: [
-        ...current.identities,
-        {
-          provider: "passkey",
-          subjectHash: input.subjectHash,
-          emailHash: input.emailHash,
-          verifiedEmail: null,
-          username: null,
-          credentialId: input.credentialId,
-          linkedAt: input.now,
-        },
-      ],
-      revision: current.revision + 1,
-      updatedAt: input.now,
-    };
-    if (!validateContract("punks://contracts/punk@1", next).valid) {
-      return { ok: false, code: "identity_conflict" };
-    }
-    this.ctx.storage.sql.exec(
-      "UPDATE punk_state SET state_json = ? WHERE singleton = 1",
-      JSON.stringify(next),
-    );
-    return { ok: true, state: next, replayed: false };
-  }
-
   async query(): Promise<PunkResult> {
     if (!(await this.promotionAuthorityIsAvailable())) {
       return { ok: false, code: "inactive" };
@@ -703,25 +649,6 @@ export class PunkDO extends PromotionFaultableDurableObject<AuthEnv> {
     );
   }
 
-  async hasPasskey(subjectHash: string): Promise<boolean> {
-    if ((await this.accountMergeReceipt()) !== null) return false;
-    return (
-      this.state()?.identities.some(
-        (item) =>
-          item.provider === "passkey" && item.subjectHash === subjectHash,
-      ) ?? false
-    );
-  }
-
-  async passkeyCredentialIds(): Promise<string[]> {
-    if ((await this.accountMergeReceipt()) !== null) return [];
-    return (this.state()?.identities ?? []).flatMap((item) =>
-      item.provider === "passkey" && item.credentialId !== null
-        ? [item.credentialId]
-        : [],
-    );
-  }
-
   /** Registers one authoritative Session coordinate for future merge planning. */
   async recordAccountMergeSession(input: {
     sessionId: string;
@@ -787,7 +714,6 @@ export class PunkDO extends PromotionFaultableDurableObject<AuthEnv> {
       ![
         "desktop-auth-flow",
         "oauth-transaction",
-        "passkey-ceremony",
         "reauth-authorization",
         "session-renewal",
         "account-link",
@@ -1092,7 +1018,7 @@ export class PunkDO extends PromotionFaultableDurableObject<AuthEnv> {
       now,
     );
     this.ctx.storage.sql.exec(
-      "DELETE FROM account_merge_handoff_inventory WHERE expires_at <= ?",
+      "DELETE FROM account_merge_handoff_inventory WHERE expires_at <= ? OR kind = 'passkey-ceremony'",
       now,
     );
     const sessions = this.ctx.storage.sql

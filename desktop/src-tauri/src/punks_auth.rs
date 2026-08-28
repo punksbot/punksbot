@@ -464,7 +464,6 @@ async fn complete_pending_authentication(
             let target_purpose = match claimed.target_method.as_str() {
                 "link_google" => PendingAuthPurpose::LinkGoogle,
                 "link_github" => PendingAuthPurpose::LinkGithub,
-                "register_passkey" => PendingAuthPurpose::RegisterPasskey,
                 "transfer_workspace_ownership" => PendingAuthPurpose::TransferWorkspaceOwnership,
                 _ => {
                     return Err(native_failure(
@@ -750,12 +749,6 @@ pub async fn punks_start_identity_link(
         match method {
             AuthenticationMethod::Google => PendingAuthPurpose::LinkGoogle,
             AuthenticationMethod::Github => PendingAuthPurpose::LinkGithub,
-            AuthenticationMethod::Passkey => {
-                return Err(native_failure(
-                    FailureKind::ContractViolation,
-                    "passkey cannot be linked as a provider",
-                ));
-            }
         },
     )?;
     start_authentication(
@@ -763,27 +756,6 @@ pub async fn punks_start_identity_link(
         &client,
         &store,
         NativeAuthStart::authorized(intent, method, authorization_id),
-    )
-    .await
-}
-
-/// Starts passkey registration after targeted reauthentication.
-#[tauri::command]
-pub async fn punks_start_passkey_registration(
-    app: tauri::AppHandle,
-    client: tauri::State<'_, PunksDesktopClient>,
-    store: tauri::State<'_, Arc<KeyringSessionPersistence>>,
-) -> Result<CeremonyPhaseView, ClientFailure> {
-    let authorization_id = take_authorization(&store, PendingAuthPurpose::RegisterPasskey)?;
-    start_authentication(
-        &app,
-        &client,
-        &store,
-        NativeAuthStart::authorized(
-            PendingAuthIntent::RegisterPasskey,
-            AuthenticationMethod::Passkey,
-            authorization_id,
-        ),
     )
     .await
 }

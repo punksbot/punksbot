@@ -21,8 +21,6 @@ pub use crate::native_auth::{
 
 /// TTL d'une transaction OAuth Google/GitHub côté Worker (10 minutes).
 pub const CEREMONY_START_TTL: Duration = Duration::from_secs(10 * 60);
-/// TTL d'une transaction WebAuthn côté Worker (5 minutes).
-pub const PASSKEY_START_TTL: Duration = Duration::from_secs(5 * 60);
 /// Délai de réclamation après la fin du navigateur (5 minutes).
 pub const DELIVERY_READY_TTL: Duration = Duration::from_secs(5 * 60);
 /// Délai de confirmation après la première réclamation (10 minutes).
@@ -170,20 +168,18 @@ impl Ceremony {
 
     /// `Idle → Started` : enregistre la transaction démarrée côté Worker.
     pub fn start(&mut self, provider: &str) -> Result<(), &'static str> {
+        if provider != "google" && provider != "github" {
+            return Err("moyen de connexion non pris en charge");
+        }
         match &self.phase {
             CeremonyPhase::Idle
             | CeremonyPhase::Confirmed { .. }
             | CeremonyPhase::Cancelled
             | CeremonyPhase::Expired
             | CeremonyPhase::Failed { .. } => {
-                let ttl = if provider == "passkey" {
-                    PASSKEY_START_TTL
-                } else {
-                    CEREMONY_START_TTL
-                };
                 self.phase = CeremonyPhase::Started {
                     provider: provider.to_string(),
-                    expires_at: self.clock.now() + ttl,
+                    expires_at: self.clock.now() + CEREMONY_START_TTL,
                 };
                 Ok(())
             }
@@ -593,7 +589,7 @@ mod tests {
         // plafond de vingt minutes à partir de browser_complete.
         let clock3 = AdvancingClock::at(now());
         let mut ceremony3 = Ceremony::new(clock3.clone());
-        ceremony3.start("passkey").expect("start");
+        ceremony3.start("github").expect("start");
         ceremony3
             .browser_complete("staging", "staging")
             .expect("browser");

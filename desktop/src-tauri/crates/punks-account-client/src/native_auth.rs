@@ -75,8 +75,6 @@ pub enum AuthenticationMethod {
     Google,
     /// Authentification GitHub OAuth dans le navigateur système.
     Github,
-    /// Authentification ou enregistrement WebAuthn dans le navigateur système.
-    Passkey,
 }
 
 impl AuthenticationMethod {
@@ -85,7 +83,6 @@ impl AuthenticationMethod {
         match self {
             Self::Google => "google",
             Self::Github => "github",
-            Self::Passkey => "passkey",
         }
     }
 }
@@ -97,7 +94,6 @@ impl TryFrom<&str> for AuthenticationMethod {
         match value {
             "google" => Ok(Self::Google),
             "github" => Ok(Self::Github),
-            "passkey" => Ok(Self::Passkey),
             _ => Err("authentication method is not supported".to_string()),
         }
     }
@@ -117,8 +113,6 @@ pub enum PendingAuthIntent {
     LinkGoogle,
     /// Lie une identité GitHub après réauthentification ciblée.
     LinkGithub,
-    /// Enregistre une passkey après réauthentification ciblée.
-    RegisterPasskey,
 }
 
 impl PendingAuthIntent {
@@ -130,7 +124,6 @@ impl PendingAuthIntent {
             Self::Reauthenticate => "reauthenticate",
             Self::LinkGoogle => "link_google",
             Self::LinkGithub => "link_github",
-            Self::RegisterPasskey => "register_passkey",
         }
     }
 }
@@ -275,5 +268,25 @@ impl fmt::Debug for NativeVerifier {
 impl fmt::Display for NativeVerifier {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("NativeVerifier(<redacted>)")
+    }
+}
+
+#[cfg(test)]
+mod retirement_tests {
+    use super::{AuthenticationMethod, PendingAuthIntent};
+
+    #[test]
+    fn retired_passkey_values_are_not_native_authentication_choices() {
+        assert!(AuthenticationMethod::try_from("passkey").is_err());
+        assert!(serde_json::from_str::<AuthenticationMethod>("\"passkey\"").is_err());
+        assert!(serde_json::from_str::<PendingAuthIntent>("\"register_passkey\"").is_err());
+        assert_eq!(
+            AuthenticationMethod::try_from("google").unwrap(),
+            AuthenticationMethod::Google
+        );
+        assert_eq!(
+            AuthenticationMethod::try_from("github").unwrap(),
+            AuthenticationMethod::Github
+        );
     }
 }

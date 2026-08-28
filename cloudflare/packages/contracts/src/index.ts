@@ -9,8 +9,6 @@ export type { AccountMergePlan } from "./generated/account-merge.plan";
 export type { AccountMergeReceipt } from "./generated/account-merge.receipt";
 export type { AccountMergeState } from "./generated/account-merge.state";
 export type { AuthProviderProfile } from "./generated/auth.provider-profile";
-export type { FinishPasskeyCommand } from "./generated/auth.passkey-finish";
-export type { PasskeyOptionsResponse } from "./generated/auth.passkey-options";
 export type { AuthSession } from "./generated/auth.session";
 export type { ResolveAuthorsQuery } from "./generated/author.resolve";
 export type { ResolveAuthorsResponse } from "./generated/author.resolve-response";

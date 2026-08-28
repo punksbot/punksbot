@@ -13,8 +13,6 @@
     "BOT_INVOCATION_CURRENT_KID": "local-v1",
     "AUTH_BASE_URL": "http://localhost:1420",
     "SESSION_TTL_SECONDS": "2592000",
-    "WEBAUTHN_RP_ID": "localhost",
-    "WEBAUTHN_RP_NAME": "Punks Bot",
     "GOOGLE_AUTHORIZATION_ENDPOINT": "https://accounts.google.com/o/oauth2/v2/auth",
     "GOOGLE_TOKEN_ENDPOINT": "https://oauth2.googleapis.com/token",
     "GOOGLE_USERINFO_ENDPOINT": "https://openidconnect.googleapis.com/v1/userinfo",
@@ -42,9 +40,7 @@
       { "name": "DESKTOP_REAUTH_GRANTS", "class_name": "DesktopReauthGrantDO" },
       { "name": "SESSION_REVOCATIONS", "class_name": "SessionRevocationDO" },
       { "name": "SESSION_ROTATIONS", "class_name": "SessionRotationDO" },
-      { "name": "SESSIONS", "class_name": "SessionDO" },
-      { "name": "PASSKEY_CEREMONIES", "class_name": "PasskeyCeremonyDO" },
-      { "name": "PASSKEY_CREDENTIALS", "class_name": "PasskeyCredentialDO" }
+      { "name": "SESSIONS", "class_name": "SessionDO" }
     ]
   },
   "services": [
@@ -99,6 +95,11 @@
         "SessionRevocationDO",
         "SessionRotationDO"
       ]
+    },
+    {
+      // ADR-0064: permanently retire both dedicated passkey namespaces.
+      "tag": "v6",
+      "deleted_classes": ["PasskeyCeremonyDO", "PasskeyCredentialDO"]
     }
   ],
   "observability": { "enabled": true },
@@ -117,8 +118,6 @@
         "BOT_INVOCATION_CURRENT_KID": "staging-v1",
         "AUTH_BASE_URL": "https://staging.punks.bot",
         "SESSION_TTL_SECONDS": "2592000",
-        "WEBAUTHN_RP_ID": "staging.punks.bot",
-        "WEBAUTHN_RP_NAME": "Punks Bot",
         "GOOGLE_AUTHORIZATION_ENDPOINT": "https://accounts.google.com/o/oauth2/v2/auth",
         "GOOGLE_TOKEN_ENDPOINT": "https://oauth2.googleapis.com/token",
         "GOOGLE_USERINFO_ENDPOINT": "https://openidconnect.googleapis.com/v1/userinfo",
@@ -155,9 +154,7 @@
             "class_name": "SessionRevocationDO"
           },
           { "name": "SESSION_ROTATIONS", "class_name": "SessionRotationDO" },
-          { "name": "SESSIONS", "class_name": "SessionDO" },
-          { "name": "PASSKEY_CEREMONIES", "class_name": "PasskeyCeremonyDO" },
-          { "name": "PASSKEY_CREDENTIALS", "class_name": "PasskeyCredentialDO" }
+          { "name": "SESSIONS", "class_name": "SessionDO" }
         ]
       },
       "services": [

@@ -345,16 +345,6 @@
       "kind": "response"
     },
     {
-      "id": "punks://contracts/auth.passkey-options@1",
-      "file": "schemas/auth.passkey-options.schema.json",
-      "kind": "response"
-    },
-    {
-      "id": "punks://contracts/auth.passkey-finish@1",
-      "file": "schemas/auth.passkey-finish.schema.json",
-      "kind": "command"
-    },
-    {
       "id": "punks://contracts/account-merge.fresh-proof@1",
       "file": "schemas/account-merge.fresh-proof.schema.json",
       "kind": "state",

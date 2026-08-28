@@ -228,7 +228,7 @@
     "Bot Wake staging Workflow provisioning plus API/runtime Queue binding verification",
     "Bot Wake known-Installation private trigger caller selection and Service Binding verification",
     "Separate approval and a runtime kill switch before any remote Workers AI inference",
-    "Full disposable Google, GitHub, passkey, link, reauthentication, expiry, and logout ceremony smoke",
+    "Full disposable Google/GitHub, link, reauthentication, expiry, logout and retired-passkey refusal smoke",
     "R2 receipt archive create-only, replay, and injected-failure verification"
   ]
 }

@@ -12,13 +12,7 @@
       "title": "DesktopAuthClaimRequest",
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "contract",
-        "message",
-        "deliveryKind",
-        "flowId",
-        "verifier"
-      ],
+      "required": ["contract", "message", "deliveryKind", "flowId", "verifier"],
       "properties": {
         "contract": { "const": "desktop-auth.claim@1" },
         "message": { "const": "request" },
@@ -56,7 +50,11 @@
           "required": ["id", "displayName", "avatarUrl"],
           "properties": {
             "id": { "type": "string", "format": "uuid" },
-            "displayName": { "type": "string", "minLength": 1, "maxLength": 80 },
+            "displayName": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80
+            },
             "avatarUrl": {
               "anyOf": [
                 { "type": "string", "format": "uri", "maxLength": 2048 },
@@ -126,12 +124,7 @@
         "punkId": { "type": "string", "format": "uuid" },
         "intent": { "const": "reauthenticate" },
         "targetMethod": {
-          "enum": [
-            "link_google",
-            "link_github",
-            "register_passkey",
-            "transfer_workspace_ownership"
-          ]
+          "enum": ["link_google", "link_github", "transfer_workspace_ownership"]
         },
         "workspaceOwnershipTransfer": {
           "$ref": "#/$defs/workspaceOwnershipTransfer"

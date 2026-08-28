@@ -509,9 +509,6 @@ impl DesktopAuthClient {
                     contracts::DesktopAuthClaimExchangeAuthorizationTargetMethod::LinkGithub => {
                         "link_github"
                     }
-                    contracts::DesktopAuthClaimExchangeAuthorizationTargetMethod::RegisterPasskey => {
-                        "register_passkey"
-                    }
                     contracts::DesktopAuthClaimExchangeAuthorizationTargetMethod::TransferWorkspaceOwnership => {
                         "transfer_workspace_ownership"
                     }
@@ -726,9 +723,6 @@ fn start_intent(value: PendingAuthIntent) -> contracts::DesktopAuthStartRequestI
         }
         PendingAuthIntent::LinkGoogle => contracts::DesktopAuthStartRequestIntent::LinkGoogle,
         PendingAuthIntent::LinkGithub => contracts::DesktopAuthStartRequestIntent::LinkGithub,
-        PendingAuthIntent::RegisterPasskey => {
-            contracts::DesktopAuthStartRequestIntent::RegisterPasskey
-        }
     }
 }
 
@@ -736,7 +730,6 @@ fn start_method(value: AuthenticationMethod) -> contracts::DesktopAuthStartReque
     match value {
         AuthenticationMethod::Google => contracts::DesktopAuthStartRequestMethod::Google,
         AuthenticationMethod::Github => contracts::DesktopAuthStartRequestMethod::Github,
-        AuthenticationMethod::Passkey => contracts::DesktopAuthStartRequestMethod::Passkey,
     }
 }
 
@@ -744,7 +737,6 @@ fn start_purpose(value: &str) -> Result<contracts::DesktopAuthStartRequestPurpos
     match value {
         "link_google" => Ok(contracts::DesktopAuthStartRequestPurpose::LinkGoogle),
         "link_github" => Ok(contracts::DesktopAuthStartRequestPurpose::LinkGithub),
-        "register_passkey" => Ok(contracts::DesktopAuthStartRequestPurpose::RegisterPasskey),
         "transfer_workspace_ownership" => {
             Ok(contracts::DesktopAuthStartRequestPurpose::TransferWorkspaceOwnership)
         }
@@ -763,9 +755,6 @@ fn response_intent(value: contracts::DesktopAuthStartResponseIntent) -> PendingA
         }
         contracts::DesktopAuthStartResponseIntent::LinkGoogle => PendingAuthIntent::LinkGoogle,
         contracts::DesktopAuthStartResponseIntent::LinkGithub => PendingAuthIntent::LinkGithub,
-        contracts::DesktopAuthStartResponseIntent::RegisterPasskey => {
-            PendingAuthIntent::RegisterPasskey
-        }
     }
 }
 
@@ -773,7 +762,6 @@ fn response_method(value: contracts::DesktopAuthStartResponseMethod) -> Authenti
     match value {
         contracts::DesktopAuthStartResponseMethod::Google => AuthenticationMethod::Google,
         contracts::DesktopAuthStartResponseMethod::Github => AuthenticationMethod::Github,
-        contracts::DesktopAuthStartResponseMethod::Passkey => AuthenticationMethod::Passkey,
     }
 }
 
@@ -818,11 +806,6 @@ fn status_outcome_code(value: contracts::DesktopAuthStatusResponseOutcomeCode) -
         Code::LinkPending => "link_pending",
         Code::Linked => "linked",
         Code::MergeRequired => "merge_required",
-        Code::PasskeyAuthenticated => "passkey_authenticated",
-        Code::PasskeyInvalid => "passkey_invalid",
-        Code::PasskeyRegistrationPending => "passkey_registration_pending",
-        Code::PasskeyRegistered => "passkey_registered",
-        Code::PasskeyUnknownOrInvalid => "passkey_unknown_or_invalid",
         Code::ProviderError => "provider_error",
         Code::Reauthenticated => "reauthenticated",
         Code::ReauthenticationFailed => "reauthentication_failed",

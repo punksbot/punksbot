@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "punks://contracts/account-merge.plan@1",
   "title": "AccountMergePlan",
-  "$comment": "Immutable readable preview only. It carries opaque hashes and bounded effects, never raw credentials, provider tokens, session tokens, passkey assertions, cookies or encryption keys. Historical attribution always preserves the originating Punk ID.",
+  "$comment": "Immutable readable preview only. It carries opaque hashes and bounded effects, never raw credentials, provider tokens, session tokens, assertions, cookies or encryption keys. Historical attribution always preserves the originating Punk ID. Retired passkey claim/handoff variants remain readable for old Plans only; new Plans exclude them (ADR-0064).",
   "type": "object",
   "additionalProperties": false,
   "minProperties": 20,
@@ -183,7 +183,13 @@
         "origin": { "$ref": "#/$defs/origin" },
         "originPunkId": { "$ref": "#/$defs/uuid" },
         "disposition": {
-          "enum": ["preserve", "transfer", "deduplicate", "retarget", "invalidate"]
+          "enum": [
+            "preserve",
+            "transfer",
+            "deduplicate",
+            "retarget",
+            "invalidate"
+          ]
         },
         "role": {
           "anyOf": [

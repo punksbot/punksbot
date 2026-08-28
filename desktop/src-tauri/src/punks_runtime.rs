@@ -124,7 +124,6 @@ pub fn run() -> Result<(), String> {
             punks_auth::punks_start_account_switch,
             punks_auth::punks_start_reauthentication,
             punks_auth::punks_start_identity_link,
-            punks_auth::punks_start_passkey_registration,
             punks_auth::punks_resume_interrupted_authentication,
             punks_auth::punks_cancel_authentication,
             punks_auth::punks_renew_account_session,

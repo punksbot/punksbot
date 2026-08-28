@@ -31,7 +31,7 @@ original upstream README is preserved at
   Nostr journals and sealed R2 archive segments;
 - isolated D1 projections and a Conversation-scoped public Message search
   that revalidates authorization and current encrypted content;
-- Google and GitHub authentication, optional passkeys, opaque sessions and
+- Google and GitHub authentication, opaque sessions and
   explicit identity linking;
 - Conversation membership, metadata, archive/restore, TTL and immutable direct
   Message participant-set identity;

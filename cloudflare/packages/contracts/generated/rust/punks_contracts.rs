@@ -1576,8 +1576,6 @@ pub enum DesktopAuthStartRequestIntent {
     LinkGoogle,
     #[serde(rename = "link_github")]
     LinkGithub,
-    #[serde(rename = "register_passkey")]
-    RegisterPasskey,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -1587,8 +1585,6 @@ pub enum DesktopAuthStartRequestMethod {
     Google,
     #[serde(rename = "github")]
     Github,
-    #[serde(rename = "passkey")]
-    Passkey,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -1598,8 +1594,6 @@ pub enum DesktopAuthStartRequestPurpose {
     LinkGoogle,
     #[serde(rename = "link_github")]
     LinkGithub,
-    #[serde(rename = "register_passkey")]
-    RegisterPasskey,
     #[serde(rename = "transfer_workspace_ownership")]
     TransferWorkspaceOwnership,
 }
@@ -1655,8 +1649,6 @@ pub enum DesktopAuthStartResponseIntent {
     LinkGoogle,
     #[serde(rename = "link_github")]
     LinkGithub,
-    #[serde(rename = "register_passkey")]
-    RegisterPasskey,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -1666,8 +1658,6 @@ pub enum DesktopAuthStartResponseMethod {
     Google,
     #[serde(rename = "github")]
     Github,
-    #[serde(rename = "passkey")]
-    Passkey,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -1779,16 +1769,6 @@ pub enum DesktopAuthStatusResponseOutcomeCode {
     Linked,
     #[serde(rename = "merge_required")]
     MergeRequired,
-    #[serde(rename = "passkey_authenticated")]
-    PasskeyAuthenticated,
-    #[serde(rename = "passkey_invalid")]
-    PasskeyInvalid,
-    #[serde(rename = "passkey_registration_pending")]
-    PasskeyRegistrationPending,
-    #[serde(rename = "passkey_registered")]
-    PasskeyRegistered,
-    #[serde(rename = "passkey_unknown_or_invalid")]
-    PasskeyUnknownOrInvalid,
     #[serde(rename = "provider_error")]
     ProviderError,
     #[serde(rename = "reauthenticated")]
@@ -1946,8 +1926,6 @@ pub enum DesktopAuthClaimExchangeAuthorizationTargetMethod {
     LinkGoogle,
     #[serde(rename = "link_github")]
     LinkGithub,
-    #[serde(rename = "register_passkey")]
-    RegisterPasskey,
     #[serde(rename = "transfer_workspace_ownership")]
     TransferWorkspaceOwnership,
 }
@@ -4055,8 +4033,6 @@ pub enum AccountMergeFreshProofAuthenticationMethod {
     Google,
     #[serde(rename = "github")]
     Github,
-    #[serde(rename = "passkey")]
-    Passkey,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

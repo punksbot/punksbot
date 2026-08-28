@@ -13,7 +13,7 @@ accountRole: ("survivor" | "absorbed")
 punkId: Uuid
 accountRevision: Revision
 holderBindingHash: HexDigest
-authenticationMethod: ("google" | "github" | "passkey")
+authenticationMethod: ("google" | "github")
 providerSubjectBindingHash: HexDigest
 authenticatedAt: Timestamp
 expiresAt: Timestamp

@@ -112,9 +112,12 @@ the complete promotion dossier and the required tranche receipt.
 4. Deploy `punks-auth-staging` and verify OAuth transaction expiry, state
    binding, sign-in, reauthentication, explicit linking, and logout with
    disposable staging identities. Never authorize a production GitHub account
-   or request repository scopes during this smoke test. Confirm the WebAuthn RP
-   ID is exactly `staging.punks.bot`; using `punks.bot` would violate the
-   staging/production credential boundary.
+   or request repository scopes during this smoke test. Confirm that passkey
+   start requests return `400 invalid_input` and the removed passkey routes
+   return `404 not_found`. The Auth migration `v6` permanently
+   deletes only the `PasskeyCeremonyDO` and `PasskeyCredentialDO` namespaces;
+   their historical migration entries must remain in the configuration. OAuth
+   identities, active Sessions and signed account history are not deleted.
 5. Deploy `punks-attestation-staging`. It has no route, preview URL, or
    `workers.dev` URL and is reachable only through a Service Binding.
 6. Deploy `punks-erasure-staging` with its exclusive `ERASURE_TOMBSTONES`
@@ -246,7 +249,7 @@ itself has no secret; its security
 boundary is the exclusive R2 binding and private Worker reachability. Realtime,
 media and sharing Workers will be added as their vertical slices become
 deployable. The Auth Worker and native client now contain the recoverable
-Google/GitHub/passkey desktop ceremony and its local/workerd coverage; the
+Google/GitHub desktop ceremony and its local/workerd coverage; the
 installed, signed multi-platform proof against the exact staging deployment
 remains the responsibility of the tranche promotion workflow. Already provisioned
 isolated resources and successful dry-runs are not evidence that those

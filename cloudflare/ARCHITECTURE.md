@@ -26,7 +26,6 @@ decisions and `PARITY.md` remains the authority for migration status.
 | Terminal Account Merge decision | Create-only receipt under `account-merges/v1/absorbed/{punkId}/receipt.json` through the private Erasure Worker | No delete/overwrite RPC; cold receipt is authoritative over restored Auth/Workspace SQLite |
 | Provider subject and verified e-mail ownership | One opaque `IdentityClaimDO` or `EmailClaimDO` per claim | No eventually consistent security copy |
 | OAuth transaction and Punk session | One `AuthTransactionDO` or `SessionDO` per opaque credential | No KV session authority |
-| Passkey ceremony and credential | One short-lived `PasskeyCeremonyDO` or authoritative `PasskeyCredentialDO` per credential | Punk identity link only; no reusable private material |
 | Git objects and refs | GitHub | Future authorized Punks caches only |
 | Internal event signature | Private attestation Worker | Internal verification-key history, signed event and R2 seal |
 
@@ -510,16 +509,16 @@ desktop profile and no Buzz Presence withdrawal is claimed.
 7. `SessionDO` stores an opaque, revocable session with bounded expiry. The
    browser receives only a random `__Host-` cookie, never a provider subject,
    e-mail, Punk ID, or OAuth token.
-8. Passkey registration additionally requires recent reauthentication. A
-   five-minute browser-bound ceremony verifies origin, RP ID, challenge, user
-   presence and user verification. `PasskeyCredentialDO` stores the public key,
-   transports, backup state and monotonically verified counter, and serializes
-   assertions before issuing a fresh session.
+8. Google and GitHub are the only supported methods. Retired passkey requests
+   are rejected, including flows restored from old storage. Migration
+   `v6` deletes the dedicated ceremony and credential namespaces.
+   Historical identity and merge records remain readable but never authorize
+   authentication or fresh merge proofs (ADR-0064).
 
 The packaged desktop uses a separate `DesktopAuthFlowDO`, never a browser
 Session transfer. Rust generates a 256-bit verifier and sends only its PKCE
 S256 commitment to `desktop-auth.start@1`. The system browser completes OAuth
-or WebAuthn under its HttpOnly browser binding, then returns only a flow UUID
+under its HttpOnly browser binding, then returns only a flow UUID
 through the environment-specific protocol handler. Native `status`, `claim`,
 `confirm`, and `cancel` are idempotent and require the compiled distribution
 header. A claimed Session remains `prepared`: only `/api/auth/v1/session` may
@@ -528,7 +527,9 @@ it until native secure-storage reread and `confirm`. `SessionRevocationDO`
 holds a separate revoke-only capability; `SessionRotationDO` implements the
 same prepare/readback/confirm discipline for foreground renewal. Target-bound
 five-minute `DesktopReauthGrantDO` grants replace a generic recent-reauth flag
-for identity linking and passkey registration.
+for identity linking and Workspace ownership transfer. When upgrading, obsolete
+native pending passkey flows and grants are discarded without clearing an active
+OAuth Session; any staged Session's revoke-only capability is preserved.
 
 ## Account Merge roll-forward path
 
@@ -639,7 +640,7 @@ et n'exposent pas les identités runtime.
 - OAuth callbacks are browser-bound, PKCE-protected, expire after ten minutes,
   and are consumed at most once.
 - Desktop completion schemes, keyring namespaces, native request headers,
-  OAuth clients and WebAuthn RP IDs are distinct for local, staging and
+  OAuth clients are distinct for local, staging and
   production. The browser never receives a desktop Session cookie or a
   revoke-only capability.
 - Auth sessions and security claims are authoritative Durable Objects, never KV.
@@ -656,8 +657,8 @@ et n'exposent pas les identités runtime.
   journals or D1 projections.
 - The Auth Worker never stores provider access tokens. Its GitHub OAuth flow
   rejects every scope outside `read:user user:email`.
-- Passkeys are discoverable and user-verified. Staging uses the narrower
-  `staging.punks.bot` RP ID so its credentials cannot authenticate production.
+- Passkey routes, native commands and WebAuthn dependencies are absent. The
+  live Auth proof includes an explicit refusal of the retired method.
 - Workspaces default to private. The API resolves opaque sessions through a
   Service Binding to the Auth Worker: private reads require membership, `punks`
   reads require any authenticated Punk and return a redacted view, and public

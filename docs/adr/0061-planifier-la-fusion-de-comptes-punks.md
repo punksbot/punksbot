@@ -18,7 +18,7 @@ preuves côté serveur. Le service RPC privé `AccountMergePlanningService`,
 protégé par des props exactes et séparé de `PunkSessionService`, dérive toujours
 le Durable Object par `ACCOUNT_MERGE_INTENTS.getByName(intentId)`. Il ne fabrique
 une preuve qu’à partir d’une Session active dont la réauthentification Google,
-GitHub ou passkey, le sujet fournisseur et l’échéance ont été enregistrés par
+ou GitHub, le sujet fournisseur et l’échéance ont été enregistrés par
 `SessionDO`. Le jeton de liaison du détenteur n’est jamais persisté : seul son
 hash lié à l’intention entre dans les deux preuves. Une réauthentification est
 réclamée create-only par un seul couple `(intentId, rôle)` ; elle ne peut donc
@@ -45,10 +45,14 @@ couverture fermée sur une fenêtre de 30 jours ; tant que cette couverture n’
 pas acquise, leur inventaire ne peut pas être déclaré complet. Chaque Session
 inventoriée est ensuite relue dans son `SessionDO`. Chaque handoff est pareillement
 revalidé contre son Durable Object source — `DesktopAuthFlowDO`,
-`DesktopReauthGrantDO`, `SessionRotationDO`, `AuthTransactionDO` ou
-`PasskeyCeremonyDO` — avec son identifiant, son type, son
+`DesktopReauthGrantDO`, `SessionRotationDO` ou `AuthTransactionDO` — avec son
+identifiant, son type, son
 état, son Punk et son échéance exacts. Une entrée indexée sans source valide est
 retirée ou refusée, jamais transformée en preuve d’autorité.
+
+Depuis [ADR-0064](0064-limiter-la-connexion-a-google-et-github.md), les anciennes
+identités et entrées de handoff passkey restent lisibles dans l’historique, mais
+ne peuvent ni produire une preuve fraîche ni entrer dans un nouveau Plan.
 
 Une révision de Compte ancienne échoue. Toutes les limites de cardinalité sont
 appliquées avant le premier parcours, tri, hash ou calcul cryptographique des

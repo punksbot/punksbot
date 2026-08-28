@@ -5,10 +5,10 @@ export type DesktopAuthStartExchange = (DesktopAuthStartRequest | DesktopAuthSta
 export interface DesktopAuthStartRequest {
 contract: "desktop-auth.start@1"
 message: "request"
-intent: ("sign_in" | "switch_account" | "reauthenticate" | "link_google" | "link_github" | "register_passkey")
-method: ("google" | "github" | "passkey")
+intent: ("sign_in" | "switch_account" | "reauthenticate" | "link_google" | "link_github")
+method: ("google" | "github")
 verifierCommitment: string
-purpose?: ("link_google" | "link_github" | "register_passkey" | "transfer_workspace_ownership")
+purpose?: ("link_google" | "link_github" | "transfer_workspace_ownership")
 authorizationId?: string
 workspaceOwnershipTransfer?: DesktopWorkspaceOwnershipTransferBinding
 }
@@ -22,8 +22,8 @@ contract: "desktop-auth.start@1"
 message: "response"
 flowId: string
 phase: "started"
-intent: ("sign_in" | "switch_account" | "reauthenticate" | "link_google" | "link_github" | "register_passkey")
-method: ("google" | "github" | "passkey")
+intent: ("sign_in" | "switch_account" | "reauthenticate" | "link_google" | "link_github")
+method: ("google" | "github")
 browserUrl: string
 createdAt: string
 expiresAt: string

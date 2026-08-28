@@ -20,7 +20,7 @@ const PENDING_RENEWAL_KEY = "pending_renewal_command";
 const ACCOUNT_MERGE_REAUTH_KEY = "account_merge_reauth_v1";
 
 interface AccountMergeReauthentication {
-  authenticationMethod: "google" | "github" | "passkey";
+  authenticationMethod: "google" | "github";
   providerSubjectBindingHash: string;
   authenticatedAt: string;
   expiresAt: string;
@@ -350,12 +350,12 @@ export class SessionDO extends PromotionFaultableDurableObject<AuthEnv> {
     };
   }
 
-  /** Records an exact five-minute provider or passkey reauthentication. */
+  /** Records an exact five-minute OAuth provider reauthentication. */
   async markReauthenticated(options: {
     sessionId: string;
     punkId: string;
     until: string;
-    authenticationMethod: "google" | "github" | "passkey";
+    authenticationMethod: "google" | "github";
     providerSubjectBindingHash: string;
   }): Promise<boolean> {
     const current = await this.get();
@@ -369,8 +369,7 @@ export class SessionDO extends PromotionFaultableDurableObject<AuthEnv> {
       until <= Date.now() ||
       until - Date.now() > 5 * 60_000 ||
       (options.authenticationMethod !== "google" &&
-        options.authenticationMethod !== "github" &&
-        options.authenticationMethod !== "passkey") ||
+        options.authenticationMethod !== "github") ||
       !/^[0-9a-f]{64}$/.test(options.providerSubjectBindingHash)
     ) {
       return false;
@@ -409,8 +408,7 @@ export class SessionDO extends PromotionFaultableDurableObject<AuthEnv> {
       proof === undefined ||
       session.recentReauthUntil !== proof.expiresAt ||
       (proof.authenticationMethod !== "google" &&
-        proof.authenticationMethod !== "github" &&
-        proof.authenticationMethod !== "passkey") ||
+        proof.authenticationMethod !== "github") ||
       !/^[0-9a-f]{64}$/.test(proof.providerSubjectBindingHash) ||
       !Number.isFinite(authenticatedAt) ||
       !Number.isFinite(expiresAt) ||
@@ -478,7 +476,7 @@ export class SessionDO extends PromotionFaultableDurableObject<AuthEnv> {
   async consumeAccountMergeProof(input: {
     intentId: string;
     accountRole: "survivor" | "absorbed";
-    authenticationMethod: "google" | "github" | "passkey";
+    authenticationMethod: "google" | "github";
     providerSubjectBindingHash: string;
     authenticatedAt: string;
     expiresAt: string;

@@ -34,11 +34,11 @@ They are never exposed to the renderer or copied into a proof:
 - `PUNKS_OPERATOR_PROVISIONING_TOKEN` — the narrow operator credential used
   only to create or replay the source-bound promotion Workspace and drive the
   operator-only authority fault boundary;
-- `PUNKS_LIVE_AUTH_MATRIX` — six terminal flow identifiers in the closed
-  Google/GitHub/passkey × success/cancellation matrix. Every flow is created
+- `PUNKS_LIVE_AUTH_MATRIX` — four terminal flow identifiers in the closed
+  Google/GitHub × success/cancellation matrix. Every flow is created
   only after the final SHA is deployed and is bound at creation to that SHA and
   the exact staging deployment. The value contains no cookie, verifier,
-  provider credential or passkey secret.
+  provider credential or authentication secret.
 
 The workflow snapshots both values into create-once runner files (`0600` where
 the host supports POSIX modes), immediately unsets their environment variables,
@@ -97,9 +97,11 @@ in the operating-system credential store before launch. The proof is read from
 the terminal `DesktopAuthFlowDO` and binds provider callback, returned OAuth
 state, browser binding, provider PKCE, native verifier, Punk and Session to the
 exact Auth Worker version, source SHA and staging deployment. The live Worker
-requires success and explicit cancellation for Google, GitHub and passkey, and
+requires success and explicit cancellation for Google and GitHub, and
 also performs wrong-state, wrong-browser-binding, wrong-native-PKCE and
-wrong-passkey-challenge probes.
+retired-passkey-method refusal probes. The closed proof is
+`punks.live-staging-auth-matrix-proof.v3`, requested with
+`promotion.auth-matrix-proof@3`; old three-provider matrices are rejected.
 The compiled ceremony matrix remains diagnostic and cannot replace this proof.
 
 The promotion fault receipt controller remains operator-only for injection and

@@ -96,7 +96,7 @@ test("delivers the real claimed browser Session as a source-bound promotion bund
 test("creates one browser-launched source-bound cancellation for every method", async () => {
   const sourceSha = "ab".repeat(20);
   const stagingDeploymentId = `sha256:${"cd".repeat(32)}`;
-  for (const [index, method] of ["google", "github", "passkey"].entries()) {
+  for (const [index, method] of ["google", "github"].entries()) {
     const flowId = `${index + 1}0000000-0000-8000-8000-000000000058`;
     const calls = [];
     const result = await createLiveStagingAuthCancellation(
@@ -132,9 +132,7 @@ test("creates one browser-launched source-bound cancellation for every method", 
         async browserFetch(url, init) {
           calls.push(new URL(url).pathname);
           assert.equal(init.redirect, "manual");
-          return new Response(method === "passkey" ? "passkey" : null, {
-            status: method === "passkey" ? 200 : 303,
-          });
+          return new Response(null, { status: 303 });
         },
       },
     );

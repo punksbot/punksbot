@@ -170,15 +170,6 @@ export function PunksSignedOut({
           >
             {busy === "github" ? "Opening…" : "GitHub"}
           </button>
-          <button
-            className="rounded-md border border-border px-3 py-2 text-sm"
-            data-testid="punks-sign-in-passkey"
-            disabled={busy !== null || polling}
-            onClick={() => void start("passkey")}
-            type="button"
-          >
-            {busy === "passkey" ? "Opening…" : "Passkey"}
-          </button>
         </div>
         {resumeAvailable && !polling ? (
           <button

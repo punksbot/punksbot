@@ -3,8 +3,6 @@ import { Validator } from "@cfworker/json-schema";
 import attestationRequest from "../schemas/attestation.request.schema.json";
 import attestationResponse from "../schemas/attestation.response.schema.json";
 import authProviderProfile from "../schemas/auth.provider-profile.schema.json";
-import authPasskeyFinish from "../schemas/auth.passkey-finish.schema.json";
-import authPasskeyOptions from "../schemas/auth.passkey-options.schema.json";
 import authSession from "../schemas/auth.session.schema.json";
 import accountMergeFreshProof from "../schemas/account-merge.fresh-proof.schema.json";
 import accountMergeCommit from "../schemas/account-merge.commit.schema.json";
@@ -627,8 +625,6 @@ export const contractSchemas = {
   "punks://contracts/desktop-session.renew@1": desktopSessionRenew,
   "punks://contracts/desktop-session.revoke@1": desktopSessionRevoke,
   "punks://contracts/auth.provider-profile@1": authProviderProfile,
-  "punks://contracts/auth.passkey-options@1": authPasskeyOptions,
-  "punks://contracts/auth.passkey-finish@1": authPasskeyFinish,
   "punks://contracts/auth.session@1": authSession,
   "punks://contracts/account-merge.fresh-proof@1": accountMergeFreshProof,
   "punks://contracts/account-merge.plan-create@1": accountMergePlanCreate,

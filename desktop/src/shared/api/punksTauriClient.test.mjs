@@ -86,12 +86,6 @@ test("semantic authentication methods use only their dedicated typed IPC command
           intent: `link_${args.provider}`,
           method: args.provider,
         };
-      case "punks_start_passkey_registration":
-        return {
-          phase: "started",
-          intent: "register_passkey",
-          method: "passkey",
-        };
       case "punks_resume_interrupted_authentication":
         return { phase: "ready" };
       case "punks_cancel_authentication":
@@ -108,11 +102,11 @@ test("semantic authentication methods use only their dedicated typed IPC command
   const { TauriPunksAccountClient } = await import("./punksTauriClient.ts");
   const client = new TauriPunksAccountClient();
   await client.getAccountSessionState();
-  await client.startSignIn("passkey");
+  await client.startSignIn("google");
   await client.startAccountSwitch("github");
   await client.startReauthentication("google", "account_merge");
   await client.startIdentityLink("github");
-  await client.startPasskeyRegistration();
+  assert.equal(typeof client.startPasskeyRegistration, "undefined");
   await client.resumeInterruptedAuthentication();
   await client.cancelAuthentication();
   await client.renewAccountSession();
@@ -120,7 +114,7 @@ test("semantic authentication methods use only their dedicated typed IPC command
 
   assert.deepEqual(calls, [
     { command: "punks_get_account_session_state", args: {} },
-    { command: "punks_start_sign_in", args: { provider: "passkey" } },
+    { command: "punks_start_sign_in", args: { provider: "google" } },
     { command: "punks_start_account_switch", args: { provider: "github" } },
     {
       command: "punks_start_reauthentication",
@@ -131,7 +125,6 @@ test("semantic authentication methods use only their dedicated typed IPC command
       },
     },
     { command: "punks_start_identity_link", args: { provider: "github" } },
-    { command: "punks_start_passkey_registration", args: {} },
     { command: "punks_resume_interrupted_authentication", args: {} },
     { command: "punks_cancel_authentication", args: {} },
     { command: "punks_renew_account_session", args: {} },

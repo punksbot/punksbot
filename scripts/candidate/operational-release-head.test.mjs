@@ -105,7 +105,7 @@ function topology() {
       ]),
     ),
     "migration-stateful": { mode: "aucune" },
-    "moyens-connexion": ["google", "github", "passkey"],
+    "moyens-connexion": ["google", "github"],
     "versions-cloudflare": [
       { ressource: "punks-api-staging", id: "version-api" },
     ],
@@ -130,7 +130,7 @@ function topology() {
 
 function budgetObservation() {
   const sampleCount = 1_000_000;
-  const connectionMethods = ["google", "github", "passkey"];
+  const connectionMethods = ["google", "github"];
   const statistic = (budget, dimension) => {
     const samples =
       budget.unite === "pourcentage"

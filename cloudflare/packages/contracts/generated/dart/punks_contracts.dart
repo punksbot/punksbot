@@ -290,7 +290,6 @@ enum DesktopAuthStartExchangeRequestIntent {
   reauthenticate("reauthenticate"),
   linkGoogle("link_google"),
   linkGithub("link_github"),
-  registerPasskey("register_passkey"),
   ;
 
   const DesktopAuthStartExchangeRequestIntent(this.value);
@@ -310,7 +309,6 @@ enum DesktopAuthStartExchangeRequestIntent {
 enum DesktopAuthStartExchangeRequestMethod {
   google("google"),
   github("github"),
-  passkey("passkey"),
   ;
 
   const DesktopAuthStartExchangeRequestMethod(this.value);
@@ -330,7 +328,6 @@ enum DesktopAuthStartExchangeRequestMethod {
 enum DesktopAuthStartExchangeRequestPurpose {
   linkGoogle("link_google"),
   linkGithub("link_github"),
-  registerPasskey("register_passkey"),
   transferWorkspaceOwnership("transfer_workspace_ownership"),
   ;
 
@@ -441,7 +438,6 @@ enum DesktopAuthStartExchangeResponseIntent {
   reauthenticate("reauthenticate"),
   linkGoogle("link_google"),
   linkGithub("link_github"),
-  registerPasskey("register_passkey"),
   ;
 
   const DesktopAuthStartExchangeResponseIntent(this.value);
@@ -461,7 +457,6 @@ enum DesktopAuthStartExchangeResponseIntent {
 enum DesktopAuthStartExchangeResponseMethod {
   google("google"),
   github("github"),
-  passkey("passkey"),
   ;
 
   const DesktopAuthStartExchangeResponseMethod(this.value);
@@ -640,11 +635,6 @@ enum DesktopAuthStatusExchangeResponseOutcomeCode {
   linkPending("link_pending"),
   linked("linked"),
   mergeRequired("merge_required"),
-  passkeyAuthenticated("passkey_authenticated"),
-  passkeyInvalid("passkey_invalid"),
-  passkeyRegistrationPending("passkey_registration_pending"),
-  passkeyRegistered("passkey_registered"),
-  passkeyUnknownOrInvalid("passkey_unknown_or_invalid"),
   providerError("provider_error"),
   reauthenticated("reauthenticated"),
   reauthenticationFailed("reauthentication_failed"),
@@ -971,7 +961,6 @@ class DesktopAuthClaimExchangeSessionResponse extends DesktopAuthClaimExchange {
 enum DesktopAuthClaimExchangeAuthorizationTargetMethod {
   linkGoogle("link_google"),
   linkGithub("link_github"),
-  registerPasskey("register_passkey"),
   transferWorkspaceOwnership("transfer_workspace_ownership"),
   ;
 
@@ -5607,7 +5596,6 @@ enum AccountMergeFreshProofAccountRole {
 enum AccountMergeFreshProofAuthenticationMethod {
   google("google"),
   github("github"),
-  passkey("passkey"),
   ;
 
   const AccountMergeFreshProofAuthenticationMethod(this.value);

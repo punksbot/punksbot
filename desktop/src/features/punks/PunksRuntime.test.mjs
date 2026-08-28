@@ -102,7 +102,10 @@ test("interrupted authentication waits for an explicit Finish sign-in action", a
 
   const finish = await screen.findByRole("button", { name: "Finish sign-in" });
   assert.equal(resumeCalls, 0);
-  assert.ok(screen.getByRole("button", { name: "Passkey" }));
+  assert.equal(
+    screen.queryByRole("button", { name: "Passkey" }) === null,
+    true,
+  );
   assert.ok(screen.getByRole("button", { name: "Cancel" }));
 
   fireEvent.click(finish);
@@ -110,7 +113,7 @@ test("interrupted authentication waits for an explicit Finish sign-in action", a
   assert.equal(resumeCalls, 1);
 });
 
-test("Passkey sign-in uses the semantic startSignIn method", async () => {
+test("Google and GitHub are the only sign-in choices", async () => {
   const providers = [];
   const client = {
     async getAccountSessionState() {
@@ -133,9 +136,15 @@ test("Passkey sign-in uses the semantic startSignIn method", async () => {
     }),
   );
 
-  fireEvent.click(await screen.findByRole("button", { name: "Passkey" }));
+  const google = await screen.findByRole("button", { name: "Google" });
+  assert.ok(screen.getByRole("button", { name: "GitHub" }));
+  assert.equal(
+    screen.queryByRole("button", { name: "Passkey" }) === null,
+    true,
+  );
+  fireEvent.click(google);
   await screen.findByText(/finish authorization in your system browser/i);
-  assert.deepEqual(providers, ["passkey"]);
+  assert.deepEqual(providers, ["google"]);
 });
 
 test("Account renewal is requested only on a visible foreground return", async () => {

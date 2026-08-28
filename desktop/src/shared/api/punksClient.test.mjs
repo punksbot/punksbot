@@ -93,7 +93,7 @@ const seed = {
   messages: {},
 };
 
-test("fake Account client exposes sanitized state and starts passkey sign-in", async () => {
+test("fake Account client exposes sanitized state and rejects retired sign-in", async () => {
   const signInSeed = structuredClone(seed);
   signInSeed.accountSessionState = {
     state: "signed_out",
@@ -108,17 +108,21 @@ test("fake Account client exposes sanitized state and starts passkey sign-in", a
     authentication: { phase: "idle" },
     resumeAvailable: false,
   });
-  assert.deepEqual(await account.startSignIn("passkey"), {
+  await assert.rejects(
+    () => account.startSignIn("passkey"),
+    /method.*supported/i,
+  );
+  assert.deepEqual(await account.startSignIn("google"), {
     phase: "started",
     intent: "sign_in",
-    method: "passkey",
+    method: "google",
   });
   assert.deepEqual(await account.getAccountSessionState(), {
     state: "signed_out",
     authentication: {
       phase: "started",
       intent: "sign_in",
-      method: "passkey",
+      method: "google",
     },
     resumeAvailable: false,
   });
@@ -149,11 +153,11 @@ test("fake Account client exposes every semantic authentication intention", asyn
     method: "github",
   });
   assert.deepEqual(
-    await account.startReauthentication("passkey", "merge_accounts"),
+    await account.startReauthentication("google", "merge_accounts"),
     {
       phase: "started",
       intent: "reauthenticate",
-      method: "passkey",
+      method: "google",
     },
   );
   assert.deepEqual(await account.startIdentityLink("google"), {
@@ -161,11 +165,7 @@ test("fake Account client exposes every semantic authentication intention", asyn
     intent: "link_google",
     method: "google",
   });
-  assert.deepEqual(await account.startPasskeyRegistration(), {
-    phase: "started",
-    intent: "register_passkey",
-    method: "passkey",
-  });
+  assert.equal(typeof account.startPasskeyRegistration, "undefined");
   assert.deepEqual(await account.cancelAuthentication(), {
     phase: "cancelled",
   });
@@ -847,7 +847,7 @@ test("fake ownership transfer requires targeted reauthentication and departure i
     /reauthorization/u,
   );
   await account.startReauthentication(
-    "passkey",
+    "google",
     "transfer_workspace_ownership",
     { workspaceId, targetPunkId, expectedRevision: 1 },
   );

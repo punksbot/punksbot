@@ -20,7 +20,7 @@ const WORKER_CONFIGS = Object.freeze([
   "cloudflare/workers/api/wrangler.jsonc",
   "cloudflare/workers/bot-runtime/wrangler.jsonc",
 ]);
-const CONNECTION_METHODS = Object.freeze(["google", "github", "passkey"]);
+const CONNECTION_METHODS = Object.freeze(["google", "github"]);
 const SERVICE_AUTHORITIES = new Set([
   "erasure-registry",
   "internal-event-signature",

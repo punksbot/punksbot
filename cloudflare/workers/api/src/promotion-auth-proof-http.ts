@@ -7,7 +7,7 @@ const DEPLOYMENT_RE = /^sha256:[0-9a-f]{64}$/u;
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const VERIFIER_RE = /^[A-Za-z0-9_-]{43,128}$/u;
-const METHODS = ["google", "github", "passkey"] as const;
+const METHODS = ["google", "github"] as const;
 
 function exact(
   value: unknown,
@@ -148,7 +148,7 @@ function validMatrixProof(
       "negative",
       "observedAt",
     ]) ||
-    proof.schema !== "punks.live-staging-auth-matrix-proof.v2" ||
+    proof.schema !== "punks.live-staging-auth-matrix-proof.v3" ||
     proof.sourceSha !== input.sourceSha ||
     proof.stagingDeploymentId !== input.stagingDeploymentId ||
     typeof proof.authWorkerVersionId !== "string" ||
@@ -181,8 +181,7 @@ function validMatrixProof(
       ]) ||
       !validCommonMatrixFlow(success, method, input) ||
       success.flowId !== input.flows[method].successFlowId ||
-      success.outcomeCode !==
-        (method === "passkey" ? "passkey_authenticated" : "authenticated") ||
+      success.outcomeCode !== "authenticated" ||
       typeof success.punkId !== "string" ||
       !UUID_RE.test(success.punkId) ||
       typeof success.sessionId !== "string" ||
@@ -197,27 +196,12 @@ function validMatrixProof(
     }
     const methodEvidence = success.methodEvidence;
     const methodEvidenceValid =
-      method === "passkey"
-        ? exact(methodEvidence, [
-            "kind",
-            "challengeHash",
-            "credentialIdHash",
-          ]) &&
-          methodEvidence.kind === "passkey" &&
-          typeof methodEvidence.challengeHash === "string" &&
-          SHA256_RE.test(methodEvidence.challengeHash) &&
-          typeof methodEvidence.credentialIdHash === "string" &&
-          SHA256_RE.test(methodEvidence.credentialIdHash)
-        : exact(methodEvidence, [
-            "kind",
-            "oauthStateHash",
-            "providerPkceHash",
-          ]) &&
-          methodEvidence.kind === "oauth" &&
-          typeof methodEvidence.oauthStateHash === "string" &&
-          SHA256_RE.test(methodEvidence.oauthStateHash) &&
-          typeof methodEvidence.providerPkceHash === "string" &&
-          SHA256_RE.test(methodEvidence.providerPkceHash);
+      exact(methodEvidence, ["kind", "oauthStateHash", "providerPkceHash"]) &&
+      methodEvidence.kind === "oauth" &&
+      typeof methodEvidence.oauthStateHash === "string" &&
+      SHA256_RE.test(methodEvidence.oauthStateHash) &&
+      typeof methodEvidence.providerPkceHash === "string" &&
+      SHA256_RE.test(methodEvidence.providerPkceHash);
     if (!methodEvidenceValid) return false;
     if (
       !exact(cancellation, [
@@ -246,7 +230,7 @@ function validMatrixProof(
       "wrongOauthState",
       "wrongBrowserBinding",
       "wrongNativePkceVerifier",
-      "wrongPasskeyChallenge",
+      "retiredPasskeyMethod",
     ]) &&
     Object.values(proof.negative).every((value) => value === "refused") &&
     typeof proof.observedAt === "string" &&
@@ -304,7 +288,7 @@ export async function routePromotionAuthProof(
     };
   } else if (
     exact(value, ["contract", "sourceSha", "stagingDeploymentId", "flows"]) &&
-    value.contract === "promotion.auth-matrix-proof@2" &&
+    value.contract === "promotion.auth-matrix-proof@3" &&
     typeof value.sourceSha === "string" &&
     SHA1_RE.test(value.sourceSha) &&
     typeof value.stagingDeploymentId === "string" &&

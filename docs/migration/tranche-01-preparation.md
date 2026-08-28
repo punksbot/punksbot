@@ -50,7 +50,7 @@ peut pas présenter la relance comme preuve du candidat.
 
 ## Éléments manquants avant toute activation
 
-- cérémonie desktop Google, GitHub et passkey complète : navigateur système,
+- cérémonie desktop Google et GitHub complète : navigateur système,
   PKCE, deeplink par environnement, jar de quarantaine, confirmation de
   livraison et stockage sécurisé OS ;
 - preuve installée de la boucle sociale dans l’interface riche, incluant les

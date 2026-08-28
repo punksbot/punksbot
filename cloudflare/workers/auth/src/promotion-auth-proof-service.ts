@@ -3,6 +3,7 @@ import { WorkerEntrypoint } from "cloudflare:workers";
 import { deriveOpaqueUuid } from "@punks/core";
 
 import { hash, pkceChallenge, randomToken } from "./crypto";
+import { startDesktopAuth } from "./desktop-auth";
 import type { AuthEnv } from "./env";
 import { aggregateName } from "./session";
 
@@ -17,7 +18,7 @@ interface PromotionAuthProofInput {
   flowId: string;
 }
 
-const METHODS = ["google", "github", "passkey"] as const;
+const METHODS = ["google", "github"] as const;
 type PromotionAuthMethod = (typeof METHODS)[number];
 
 interface PromotionAuthMatrixCoordinates {
@@ -181,7 +182,7 @@ export class PromotionAuthProofService extends WorkerEntrypoint<AuthEnv> {
     );
     if (negative === null) return null;
     return {
-      schema: "punks.live-staging-auth-matrix-proof.v2",
+      schema: "punks.live-staging-auth-matrix-proof.v3",
       sourceSha: input.sourceSha,
       stagingDeploymentId: input.stagingDeploymentId,
       authWorkerVersionId: this.env.CF_VERSION_METADATA.id,
@@ -199,7 +200,7 @@ export class PromotionAuthProofService extends WorkerEntrypoint<AuthEnv> {
     wrongOauthState: "refused";
     wrongBrowserBinding: "refused";
     wrongNativePkceVerifier: "refused";
-    wrongPasskeyChallenge: "refused";
+    retiredPasskeyMethod: "refused";
   } | null> {
     const negativeFlowId = await deriveOpaqueUuid(
       "punks.promotion.auth-negative-flow.v1",
@@ -256,42 +257,37 @@ export class PromotionAuthProofService extends WorkerEntrypoint<AuthEnv> {
             await aggregateName("transaction", wrongState),
           ).begin(await hash(launched.browserBinding))
         : { ok: false as const, code: "missing" as const };
-    const passkeyFlowId = await deriveOpaqueUuid(
-      "punks.promotion.auth-negative-passkey-flow.v1",
-      `${sourceSha}:${stagingDeploymentId}:${crypto.randomUUID()}`,
+    const retiredVerifierCommitment = await pkceChallenge(randomToken(32));
+    const retiredStart = await startDesktopAuth(
+      new Request(`${this.env.AUTH_BASE_URL}/api/auth/v1/desktop/start`, {
+        method: "POST",
+        headers: {
+          origin: new URL(this.env.AUTH_BASE_URL).origin,
+          "sec-punks-desktop-environment": "staging",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          contract: "desktop-auth.start@1",
+          message: "request",
+          intent: "sign_in",
+          method: "passkey",
+          verifierCommitment: retiredVerifierCommitment,
+        }),
+      }),
+      this.env,
     );
-    const passkeyCommitment = await pkceChallenge(randomToken(32));
-    const passkey = this.env.DESKTOP_AUTH_FLOWS.getByName(passkeyFlowId);
-    const passkeyCreated = await passkey.create({
-      flowId: passkeyFlowId,
-      intent: "sign_in",
-      method: "passkey",
-      purpose: null,
-      workspaceOwnershipTransfer: null,
-      verifierCommitment: passkeyCommitment,
-      environment: "staging",
-      currentSessionId: null,
-      currentPunkId: null,
-      createdAt: new Date(now).toISOString(),
-      expiresAt: new Date(now + 5 * 60_000).toISOString(),
-      promotionSourceSha: sourceSha,
-      promotionStagingDeploymentId: stagingDeploymentId,
-    });
-    const passkeyLaunch = passkeyCreated ? await passkey.browserLaunch() : null;
-    const passkeyChallenge = randomToken(32);
-    const passkeyChallengeBound =
-      passkeyLaunch?.ok === true &&
-      (await passkey.setPasskeyChallenge({
-        browserBindingHash: await hash(passkeyLaunch.browserBinding),
-        challenge: passkeyChallenge,
-      }));
-    const wrongPasskeyChallenge = await passkey.setPasskeyChallenge({
-      browserBindingHash:
-        passkeyLaunch?.ok === true
-          ? await hash(passkeyLaunch.browserBinding)
-          : await hash(randomToken(32)),
-      challenge: randomToken(32),
-    });
+    const retiredResult = (await retiredStart.json()) as {
+      code?: string;
+      flowId?: string;
+    };
+    if (
+      retiredStart.status === 201 &&
+      UUID_RE.test(retiredResult.flowId ?? "")
+    ) {
+      await this.env.DESKTOP_AUTH_FLOWS.getByName(
+        retiredResult.flowId ?? "",
+      ).cancel(retiredVerifierCommitment);
+    }
     if (
       launched?.ok !== true ||
       !transactionCreated ||
@@ -300,20 +296,17 @@ export class PromotionAuthProofService extends WorkerEntrypoint<AuthEnv> {
       wrongBrowser !== null ||
       wrongReturnedState.ok ||
       wrongReturnedState.code !== "missing" ||
-      !passkeyChallengeBound ||
-      wrongPasskeyChallenge
+      retiredStart.status !== 400 ||
+      retiredResult.code !== "invalid_input"
     ) {
       return null;
     }
-    await Promise.all([
-      negative.cancel(verifierCommitment),
-      passkey.cancel(passkeyCommitment),
-    ]);
+    await negative.cancel(verifierCommitment);
     return {
       wrongOauthState: "refused",
       wrongBrowserBinding: "refused",
       wrongNativePkceVerifier: "refused",
-      wrongPasskeyChallenge: "refused",
+      retiredPasskeyMethod: "refused",
     };
   }
 }

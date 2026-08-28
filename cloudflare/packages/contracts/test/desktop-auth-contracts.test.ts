@@ -28,6 +28,8 @@ describe("desktop authentication contracts (issue #54)", () => {
       "punks://contracts/auth.desktop-start-response@1",
     );
     expect(ids).not.toContain("punks://contracts/auth.desktop-delivery@1");
+    expect(ids).not.toContain("punks://contracts/auth.passkey-options@1");
+    expect(ids).not.toContain("punks://contracts/auth.passkey-finish@1");
     expect(ids).not.toContain(
       "punks://contracts/auth.desktop-session-response@1",
     );
@@ -73,7 +75,7 @@ describe("desktop authentication contracts (issue #54)", () => {
         contract: "desktop-auth.start@1",
         message: "request",
         intent: "reauthenticate",
-        method: "passkey",
+        method: "google",
         verifierCommitment: COMMITMENT,
         purpose: "transfer_workspace_ownership",
         workspaceOwnershipTransfer: {
@@ -88,11 +90,32 @@ describe("desktop authentication contracts (issue #54)", () => {
         contract: "desktop-auth.start@1",
         message: "request",
         intent: "reauthenticate",
-        method: "passkey",
+        method: "google",
         verifierCommitment: COMMITMENT,
         purpose: "transfer_workspace_ownership",
       }).valid,
     ).toBe(true);
+  });
+
+  it("refuses retired passkey methods and registration purposes", () => {
+    for (const retired of [
+      { intent: "sign_in", method: "passkey" },
+      { intent: "register_passkey", method: "passkey" },
+      {
+        intent: "reauthenticate",
+        method: "google",
+        purpose: "register_passkey",
+      },
+    ]) {
+      expect(
+        validateContract("punks://contracts/desktop-auth.start@1", {
+          contract: "desktop-auth.start@1",
+          message: "request",
+          verifierCommitment: COMMITMENT,
+          ...retired,
+        }).valid,
+      ).toBe(false);
+    }
   });
 
   it("keeps verifier-bearing retry requests and all public results closed", () => {

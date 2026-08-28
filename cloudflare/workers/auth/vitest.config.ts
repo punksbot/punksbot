@@ -25,8 +25,6 @@ export default defineConfig({
           GITHUB_OAUTH_CLIENT_SECRET: "github-secret-test",
           PROMOTION_SESSION_ISSUANCE_ENABLED: "true",
           SESSION_TTL_SECONDS: "3600",
-          WEBAUTHN_RP_ID: "auth.punks.test",
-          WEBAUTHN_RP_NAME: "Punks Bot",
         },
         serviceBindings: {
           ACCOUNT_MERGE_RECEIPTS: {

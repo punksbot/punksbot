@@ -260,8 +260,7 @@ export async function confirmDesktopAuth(
   }
   if (
     confirmation.flow.intent === "link_google" ||
-    confirmation.flow.intent === "link_github" ||
-    confirmation.flow.intent === "register_passkey"
+    confirmation.flow.intent === "link_github"
   ) {
     const effect = await commitDesktopBrowserEffect(env, confirmation.flow);
     if (!effect.ok) {

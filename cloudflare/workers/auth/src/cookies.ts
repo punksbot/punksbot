@@ -69,19 +69,3 @@ export function oauthCookie(
 export function clearOauthCookie(state: string): string {
   return secureCookie(oauthCookieName(state), "deleted", 0);
 }
-
-export function passkeyCookieName(ceremonyId: string): string {
-  return `__Host-punks_passkey_${ceremonyId.slice(0, 16)}`;
-}
-
-export function passkeyCookie(
-  ceremonyId: string,
-  value: string,
-  maxAgeSeconds: number,
-): string {
-  return secureCookie(passkeyCookieName(ceremonyId), value, maxAgeSeconds);
-}
-
-export function clearPasskeyCookie(ceremonyId: string): string {
-  return secureCookie(passkeyCookieName(ceremonyId), "deleted", 0);
-}

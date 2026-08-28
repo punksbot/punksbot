@@ -159,7 +159,7 @@ function WorkspaceSidebar({
             className="grid grid-cols-3 gap-1"
           >
             <legend className="sr-only">Account switch methods</legend>
-            {(["google", "github", "passkey"] as const).map((method) => (
+            {(["google", "github"] as const).map((method) => (
               <button
                 className="rounded-md border border-border px-2 py-1.5 text-xs hover:bg-accent/60"
                 key={method}

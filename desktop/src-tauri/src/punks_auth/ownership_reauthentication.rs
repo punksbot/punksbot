@@ -101,7 +101,6 @@ pub(super) fn parse_reauthentication_purpose(
     match value {
         "link_google" => Ok(PendingAuthPurpose::LinkGoogle),
         "link_github" => Ok(PendingAuthPurpose::LinkGithub),
-        "register_passkey" => Ok(PendingAuthPurpose::RegisterPasskey),
         "transfer_workspace_ownership" => Ok(PendingAuthPurpose::TransferWorkspaceOwnership),
         _ => Err(invalid("unsupported reauthentication purpose")),
     }
@@ -111,7 +110,6 @@ pub(super) fn pending_purpose(value: PendingAuthPurpose) -> &'static str {
     match value {
         PendingAuthPurpose::LinkGoogle => "link_google",
         PendingAuthPurpose::LinkGithub => "link_github",
-        PendingAuthPurpose::RegisterPasskey => "register_passkey",
         PendingAuthPurpose::TransferWorkspaceOwnership => "transfer_workspace_ownership",
     }
 }

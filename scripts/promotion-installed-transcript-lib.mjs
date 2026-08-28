@@ -33,10 +33,9 @@ export const FOLLOW_SCENARIO_OUTCOMES = Object.freeze({
 export const AUTHENTICATION_SCENARIO_OUTCOMES = Object.freeze({
   "google-succes": "vert",
   "github-succes": "vert",
-  "passkey-succes": "vert",
   "google-annulation": "vert",
   "github-annulation": "vert",
-  "passkey-annulation": "vert",
+  "passkey-retiree": "refuse",
   "mauvaise-origine": "refuse",
   "deeplink-rejoue": "refuse",
   expiration: "expire",
@@ -139,10 +138,10 @@ export function validateInstalledTranscript(
     "installed authentication",
   );
   const liveAuth = transcript.authentication.proof;
-  const authMethods = ["google", "github", "passkey"];
+  const authMethods = ["google", "github"];
   if (
     transcript.authentication.contour !== "navigateur-systeme-provider-reel" ||
-    liveAuth?.schema !== "punks.live-staging-auth-matrix-proof.v2" ||
+    liveAuth?.schema !== "punks.live-staging-auth-matrix-proof.v3" ||
     liveAuth?.sourceSha !== candidateSha ||
     liveAuth?.stagingDeploymentId !== stagingDeploymentId ||
     JSON.stringify(Object.keys(liveAuth?.flows ?? {})) !==
@@ -157,7 +156,7 @@ export function validateInstalledTranscript(
     liveAuth?.negative?.wrongOauthState !== "refused" ||
     liveAuth?.negative?.wrongBrowserBinding !== "refused" ||
     liveAuth?.negative?.wrongNativePkceVerifier !== "refused" ||
-    liveAuth?.negative?.wrongPasskeyChallenge !== "refused"
+    liveAuth?.negative?.retiredPasskeyMethod !== "refused"
   ) {
     refuser("the complete real system-browser provider matrix is required");
   }

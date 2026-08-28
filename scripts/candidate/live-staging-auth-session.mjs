@@ -8,7 +8,7 @@ const SHA1_RE = /^[0-9a-f]{40}$/u;
 const DEPLOYMENT_RE = /^sha256:[0-9a-f]{64}$/u;
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
-const METHODS = ["google", "github", "passkey"];
+const METHODS = ["google", "github"];
 
 function fail(message) {
   throw new Error(`live staging Auth Session rejected: ${message}`);
@@ -230,10 +230,7 @@ export async function createLiveStagingAuthCancellation(
     redirect: "manual",
     headers: { "user-agent": "Punks-Promotion-Cancellation/1" },
   });
-  const expectedLaunch =
-    method === "passkey"
-      ? launched.status === 200
-      : launched.status >= 300 && launched.status < 400;
+  const expectedLaunch = launched.status >= 300 && launched.status < 400;
   if (!expectedLaunch) {
     fail(`desktop ${method} browser launch returned HTTP ${launched.status}`);
   }

@@ -4,7 +4,6 @@ import type { AuthProviderProfile } from "@punks/contracts";
 
 import { hash, randomToken } from "./crypto";
 import type { AuthEnv } from "./env";
-import { aggregateName } from "./session";
 import type { WorkspaceOwnershipTransferBinding } from "./desktop-reauth-grant-do";
 
 export type DesktopAuthIntent =
@@ -12,10 +11,9 @@ export type DesktopAuthIntent =
   | "switch_account"
   | "reauthenticate"
   | "link_google"
-  | "link_github"
-  | "register_passkey";
+  | "link_github";
 
-export type DesktopAuthMethod = "google" | "github" | "passkey";
+export type DesktopAuthMethod = "google" | "github";
 
 export type DesktopAuthPhase =
   | "started"
@@ -42,11 +40,6 @@ export type DesktopAuthOutcomeCode =
   | "link_pending"
   | "linked"
   | "merge_required"
-  | "passkey_authenticated"
-  | "passkey_invalid"
-  | "passkey_registration_pending"
-  | "passkey_registered"
-  | "passkey_unknown_or_invalid"
   | "provider_error"
   | "reauthenticated"
   | "reauthentication_failed"
@@ -60,13 +53,6 @@ export interface DesktopPendingIdentity {
   transactionId: string;
 }
 
-export interface DesktopPendingPasskey {
-  credentialId: string;
-  subjectHash: string;
-  emailHash: string;
-  transactionId: string;
-}
-
 export interface DesktopAuthFlowRecord {
   flowId: string;
   intent: DesktopAuthIntent;
@@ -74,7 +60,6 @@ export interface DesktopAuthFlowRecord {
   purpose:
     | "link_google"
     | "link_github"
-    | "register_passkey"
     | "transfer_workspace_ownership"
     | null;
   workspaceOwnershipTransfer: WorkspaceOwnershipTransferBinding | null;
@@ -93,10 +78,7 @@ export interface DesktopAuthFlowRecord {
   browserBindingHash: string | null;
   oauthState: string | null;
   codeVerifier: string | null;
-  passkeyChallenge: string | null;
-  passkeyCredentialIdHash: string | null;
   pendingIdentity: DesktopPendingIdentity | null;
-  pendingPasskey: DesktopPendingPasskey | null;
   browserEffectCommitted: boolean;
   deliveryId: string | null;
   authorizationId: string | null;
@@ -133,7 +115,7 @@ export interface CreateDesktopAuthFlow
 /** Redacted terminal facts proving one real desktop provider ceremony. */
 export interface DesktopPromotionAuthProof {
   flowId: string;
-  method: Exclude<DesktopAuthMethod, "passkey">;
+  method: DesktopAuthMethod;
   intent: DesktopAuthIntent;
   environment: "local" | "staging" | "production";
   outcomeCode: DesktopAuthOutcomeCode;
@@ -163,17 +145,11 @@ export interface DesktopPromotionAuthSuccessProof {
   nativeVerifierCommitment: string;
   sourceSha: string;
   stagingDeploymentId: string;
-  methodEvidence:
-    | {
-        kind: "oauth";
-        oauthStateHash: string;
-        providerPkceHash: string;
-      }
-    | {
-        kind: "passkey";
-        challengeHash: string;
-        credentialIdHash: string;
-      };
+  methodEvidence: {
+    kind: "oauth";
+    oauthStateHash: string;
+    providerPkceHash: string;
+  };
 }
 
 export interface DesktopPromotionAuthCancellationProof {
@@ -234,6 +210,19 @@ function terminal(phase: DesktopAuthPhase): boolean {
   return phase === "confirmed" || phase === "cancelled" || phase === "expired";
 }
 
+// Retired values can remain in pre-upgrade rows, but never regain authority.
+function usesRetiredAuthentication(flow: {
+  method: unknown;
+  intent: unknown;
+  purpose: unknown;
+}): boolean {
+  return (
+    (flow.method !== "google" && flow.method !== "github") ||
+    flow.intent === "register_passkey" ||
+    flow.purpose === "register_passkey"
+  );
+}
+
 function minIso(...timestamps: number[]): string {
   return new Date(Math.min(...timestamps)).toISOString();
 }
@@ -241,6 +230,7 @@ function minIso(...timestamps: number[]): string {
 export class DesktopAuthFlowDO extends DurableObject<AuthEnv> {
   async create(input: CreateDesktopAuthFlow): Promise<boolean> {
     if (
+      usesRetiredAuthentication(input) ||
       (await this.read()) !== null ||
       Date.parse(input.expiresAt) <= Date.now() ||
       !/^[A-Za-z0-9_-]{43}$/.test(input.verifierCommitment)
@@ -260,10 +250,7 @@ export class DesktopAuthFlowDO extends DurableObject<AuthEnv> {
       browserBindingHash: null,
       oauthState: null,
       codeVerifier: null,
-      passkeyChallenge: null,
-      passkeyCredentialIdHash: null,
       pendingIdentity: null,
-      pendingPasskey: null,
       browserEffectCommitted: false,
       deliveryId: null,
       authorizationId: null,
@@ -314,7 +301,6 @@ export class DesktopAuthFlowDO extends DurableObject<AuthEnv> {
   async recordBrowserComplete(input: {
     browserBindingHash: string;
     pendingIdentity?: DesktopPendingIdentity;
-    pendingPasskey?: DesktopPendingPasskey;
     outcomeCode?: DesktopAuthOutcomeCode;
   }): Promise<
     | { ok: true; flow: DesktopAuthFlowRecord }
@@ -337,7 +323,6 @@ export class DesktopAuthFlowDO extends DurableObject<AuthEnv> {
       flow.phase = "browser_complete";
       flow.result = "human_action_required";
       flow.pendingIdentity = input.pendingIdentity ?? null;
-      flow.pendingPasskey = input.pendingPasskey ?? null;
       flow.outcomeCode = input.outcomeCode ?? null;
       await this.write(flow);
     }
@@ -365,7 +350,7 @@ export class DesktopAuthFlowDO extends DurableObject<AuthEnv> {
       flow === null ||
       flow.phase !== "confirmed" ||
       flow.result !== "success" ||
-      flow.method === "passkey" ||
+      usesRetiredAuthentication(flow) ||
       !/^[0-9a-f]{40}$/u.test(flow.promotionSourceSha ?? "") ||
       !/^sha256:[0-9a-f]{64}$/u.test(flow.promotionStagingDeploymentId ?? "") ||
       flow.outcomeCode === null ||
@@ -400,11 +385,12 @@ export class DesktopAuthFlowDO extends DurableObject<AuthEnv> {
     };
   }
 
-  /** Redacted success facts for one source-bound OAuth or passkey ceremony. */
+  /** Redacted success facts for one source-bound OAuth ceremony. */
   async promotionSuccessProof(): Promise<DesktopPromotionAuthSuccessProof | null> {
     const flow = await this.read();
     if (
       flow === null ||
+      usesRetiredAuthentication(flow) ||
       flow.phase !== "confirmed" ||
       flow.result !== "success" ||
       !/^[0-9a-f]{40}$/u.test(flow.promotionSourceSha ?? "") ||
@@ -420,28 +406,12 @@ export class DesktopAuthFlowDO extends DurableObject<AuthEnv> {
     ) {
       return null;
     }
-    let methodEvidence: DesktopPromotionAuthSuccessProof["methodEvidence"];
-    if (flow.method === "passkey") {
-      if (
-        flow.passkeyChallenge === null ||
-        typeof flow.passkeyCredentialIdHash !== "string" ||
-        !/^[0-9a-f]{64}$/u.test(flow.passkeyCredentialIdHash)
-      ) {
-        return null;
-      }
-      methodEvidence = {
-        kind: "passkey",
-        challengeHash: await hash(flow.passkeyChallenge),
-        credentialIdHash: flow.passkeyCredentialIdHash,
-      };
-    } else {
-      if (flow.oauthState === null || flow.codeVerifier === null) return null;
-      methodEvidence = {
-        kind: "oauth",
-        oauthStateHash: await hash(flow.oauthState),
-        providerPkceHash: await hash(flow.codeVerifier),
-      };
-    }
+    if (flow.oauthState === null || flow.codeVerifier === null) return null;
+    const methodEvidence: DesktopPromotionAuthSuccessProof["methodEvidence"] = {
+      kind: "oauth",
+      oauthStateHash: await hash(flow.oauthState),
+      providerPkceHash: await hash(flow.codeVerifier),
+    };
     return {
       flowId: flow.flowId,
       method: flow.method,
@@ -465,6 +435,7 @@ export class DesktopAuthFlowDO extends DurableObject<AuthEnv> {
     const flow = await this.read();
     if (
       flow === null ||
+      usesRetiredAuthentication(flow) ||
       flow.phase !== "cancelled" ||
       flow.outcomeCode !== "cancelled" ||
       flow.cancelledAt === null ||
@@ -488,53 +459,6 @@ export class DesktopAuthFlowDO extends DurableObject<AuthEnv> {
       sourceSha: flow.promotionSourceSha,
       stagingDeploymentId: flow.promotionStagingDeploymentId,
     };
-  }
-
-  async setPasskeyChallenge(input: {
-    browserBindingHash: string;
-    challenge: string;
-  }): Promise<boolean> {
-    const flow = await this.current();
-    if (
-      flow === null ||
-      flow.method !== "passkey" ||
-      flow.phase !== "started" ||
-      flow.browserBindingHash !== input.browserBindingHash ||
-      (flow.passkeyChallenge !== null &&
-        flow.passkeyChallenge !== input.challenge)
-    ) {
-      return false;
-    }
-    if (flow.passkeyChallenge === null) {
-      flow.passkeyChallenge = input.challenge;
-      await this.write(flow);
-    }
-    return true;
-  }
-
-  /** Binds a verified passkey credential hash before the flow becomes ready. */
-  async recordPasskeyAuthentication(
-    credentialIdHash: string,
-  ): Promise<boolean> {
-    const flow = await this.current();
-    const existingCredentialIdHash = flow?.passkeyCredentialIdHash ?? null;
-    if (
-      flow === null ||
-      flow.method !== "passkey" ||
-      flow.phase !== "started" ||
-      flow.browserBindingHash === null ||
-      flow.passkeyChallenge === null ||
-      !/^[0-9a-f]{64}$/u.test(credentialIdHash) ||
-      (existingCredentialIdHash !== null &&
-        existingCredentialIdHash !== credentialIdHash)
-    ) {
-      return false;
-    }
-    if (existingCredentialIdHash === null) {
-      flow.passkeyCredentialIdHash = credentialIdHash;
-      await this.write(flow);
-    }
-    return true;
   }
 
   async pendingIdentity(browserBindingHash: string): Promise<
@@ -584,9 +508,6 @@ export class DesktopAuthFlowDO extends DurableObject<AuthEnv> {
     flow.punkId = input.punkId;
     if (flow.intent !== "link_google" && flow.intent !== "link_github") {
       flow.pendingIdentity = null;
-    }
-    if (flow.intent !== "register_passkey") {
-      flow.pendingPasskey = null;
     }
     if (!(await this.indexHandoff(flow, "prepared"))) return false;
     await this.write(flow);
@@ -785,11 +706,8 @@ export class DesktopAuthFlowDO extends DurableObject<AuthEnv> {
       flow.browserEffectCommitted = true;
       if (flow.intent === "link_google" || flow.intent === "link_github") {
         flow.outcomeCode = "linked";
-      } else if (flow.intent === "register_passkey") {
-        flow.outcomeCode = "passkey_registered";
       }
       flow.pendingIdentity = null;
-      flow.pendingPasskey = null;
       await this.write(flow);
     }
     return true;
@@ -906,6 +824,10 @@ export class DesktopAuthFlowDO extends DurableObject<AuthEnv> {
 
   private async current(): Promise<DesktopAuthFlowRecord | null> {
     const flow = await this.read();
+    if (flow !== null && usesRetiredAuthentication(flow)) {
+      if (!terminal(flow.phase)) await this.alarm();
+      return null;
+    }
     if (
       flow !== null &&
       !terminal(flow.phase) &&
@@ -936,17 +858,6 @@ export class DesktopAuthFlowDO extends DurableObject<AuthEnv> {
   private async revokePrepared(flow: DesktopAuthFlowRecord): Promise<void> {
     if (flow.sessionId !== null) {
       await this.env.SESSIONS.getByName(flow.sessionId).revoke();
-    }
-    if (flow.pendingPasskey !== null && flow.currentPunkId !== null) {
-      await this.env.PASSKEY_CREDENTIALS.getByName(
-        await aggregateName(
-          "passkey-credential",
-          flow.pendingPasskey.credentialId,
-        ),
-      ).release({
-        punkId: flow.currentPunkId,
-        transactionId: flow.pendingPasskey.transactionId,
-      });
     }
   }
 

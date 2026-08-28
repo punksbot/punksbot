@@ -58,7 +58,6 @@ import type {
 const authenticationMethods = new Set<AuthenticationMethod>([
   "google",
   "github",
-  "passkey",
 ]);
 const authenticationIntents = new Set([
   "sign_in",
@@ -66,7 +65,6 @@ const authenticationIntents = new Set([
   "reauthenticate",
   "link_google",
   "link_github",
-  "register_passkey",
 ]);
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -86,6 +84,11 @@ function hasExactKeys(
 
 function invalidNativeView(message: string): never {
   throw new PunksDesktopFailure("contract_violation", message);
+}
+
+function requireAuthenticationMethod(method: AuthenticationMethod): void {
+  if (!authenticationMethods.has(method))
+    invalidNativeView("Authentication method is not supported");
 }
 
 function requireCeremonyPhaseView(value: unknown): CeremonyPhaseView {
@@ -425,6 +428,7 @@ export class TauriPunksAccountClient implements PunksAccountClient {
   async startSignIn(
     provider: AuthenticationMethod,
   ): Promise<CeremonyPhaseView> {
+    requireAuthenticationMethod(provider);
     return requireCeremonyPhaseView(
       await invokePunks("punks_start_sign_in", { provider }),
     );
@@ -433,6 +437,7 @@ export class TauriPunksAccountClient implements PunksAccountClient {
   async startAccountSwitch(
     provider: AuthenticationMethod,
   ): Promise<CeremonyPhaseView> {
+    requireAuthenticationMethod(provider);
     return requireCeremonyPhaseView(
       await invokePunks("punks_start_account_switch", { provider }),
     );
@@ -443,6 +448,9 @@ export class TauriPunksAccountClient implements PunksAccountClient {
     purpose: string,
     workspaceOwnershipTransfer?: WorkspaceOwnershipTransferReauthenticationInput,
   ): Promise<CeremonyPhaseView> {
+    requireAuthenticationMethod(method);
+    if (purpose === "register_passkey")
+      invalidNativeView("Authentication purpose is not supported");
     return requireCeremonyPhaseView(
       await invokePunks("punks_start_reauthentication", {
         method,
@@ -455,14 +463,9 @@ export class TauriPunksAccountClient implements PunksAccountClient {
   async startIdentityLink(
     provider: IdentityLinkProvider,
   ): Promise<CeremonyPhaseView> {
+    requireAuthenticationMethod(provider);
     return requireCeremonyPhaseView(
       await invokePunks("punks_start_identity_link", { provider }),
-    );
-  }
-
-  async startPasskeyRegistration(): Promise<CeremonyPhaseView> {
-    return requireCeremonyPhaseView(
-      await invokePunks("punks_start_passkey_registration"),
     );
   }
 

@@ -245,7 +245,7 @@ function topologiePhase({ id, phase, sha }) {
     ],
     "generation-compatibilite": 1,
     "migration-stateful": { mode: "aucune" },
-    "moyens-connexion": ["oauth", "passkey"],
+    "moyens-connexion": ["google", "github"],
     inventaire: Object.fromEntries(
       [
         "manifest-staging-sha256",
@@ -2382,9 +2382,7 @@ test("la politique de promotion est explicitement immédiate et fondée sur les 
   };
   assert.deepEqual(erreurs(graph), []);
 
-  graph.politique["cadence-promotion"][
-    "duree-minimale-heures-par-etape"
-  ] = 1;
+  graph.politique["cadence-promotion"]["duree-minimale-heures-par-etape"] = 1;
   attendu(erreurs(graph), "zéro heure");
 });
 

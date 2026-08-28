@@ -112,7 +112,7 @@ function materials() {
       "export-sha256": exportDigest,
     };
   };
-  const connectionMethods = ["google", "github", "passkey"];
+  const connectionMethods = ["google", "github"];
   const verdicts = BUDGETS_PRODUCTION.map((budget) => {
     const dimensions =
       budget.nom === "connexion-desktop-echecs-par-moyen"

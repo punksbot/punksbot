@@ -39,7 +39,7 @@ function proof(accountRole: "survivor" | "absorbed"): AccountMergeFreshProof {
     punkId: survivor ? SURVIVOR_ID : ABSORBED_ID,
     accountRevision: survivor ? 12 : 7,
     holderBindingHash: digest("a"),
-    authenticationMethod: survivor ? "github" : "passkey",
+    authenticationMethod: survivor ? "github" : "google",
     providerSubjectBindingHash: survivor ? digest("b") : digest("c"),
     authenticatedAt: survivor
       ? "2026-08-24T11:58:00.000Z"
@@ -67,8 +67,8 @@ function punkSnapshots(): AccountMergePunkSnapshot[] {
         },
         {
           claimBindingHash: digest("e"),
-          kind: "passkey-credential",
-          provider: "passkey",
+          kind: "provider-subject",
+          provider: "google",
           punkId: SURVIVOR_ID,
           revision: 2,
         },

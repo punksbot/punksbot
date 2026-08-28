@@ -539,7 +539,7 @@ describe("Punk account-merge inventory coverage", () => {
 });
 
 describe("account-bound handoff inventory", () => {
-  it("keeps successful OAuth and passkey begins prepared until their alarms", async () => {
+  it("keeps a successful OAuth begin prepared until its alarm", async () => {
     const now = Date.now();
     const punkId = crypto.randomUUID();
     const punk = await provisionPunk(punkId, new Date(now).toISOString());
@@ -559,31 +559,10 @@ describe("account-bound handoff inventory", () => {
         expiresAt,
       }),
     ).resolves.toBe(true);
-    const ceremonyId = crypto.randomUUID();
-    const ceremony = authEnv.PASSKEY_CEREMONIES.getByName(ceremonyId);
-    await expect(
-      ceremony.create({
-        purpose: "registration",
-        challenge: "passkey-challenge",
-        browserBindingHash: digest("d"),
-        punkId,
-        sessionId: null,
-        createdAt: new Date(now).toISOString(),
-        expiresAt,
-      }),
-    ).resolves.toBe(true);
-
     await expect(transaction.begin(digest("c"))).resolves.toMatchObject({
       ok: true,
     });
-    await expect(ceremony.begin(digest("d"))).resolves.toMatchObject({
-      ok: true,
-    });
     await expect(transaction.begin(digest("c"))).resolves.toEqual({
-      ok: false,
-      code: "consumed",
-    });
-    await expect(ceremony.begin(digest("d"))).resolves.toEqual({
       ok: false,
       code: "consumed",
     });
@@ -596,31 +575,17 @@ describe("account-bound handoff inventory", () => {
           kind: "oauth-transaction",
           state: "prepared",
         }),
-        expect.objectContaining({
-          handoffId: ceremonyId,
-          kind: "passkey-ceremony",
-          state: "prepared",
-        }),
       ]),
     });
 
     await expect(runDurableObjectAlarm(transaction)).resolves.toBe(true);
-    await expect(punk.accountMergeInventory()).resolves.toMatchObject({
-      handoffs: [
-        expect.objectContaining({
-          handoffId: ceremonyId,
-          state: "prepared",
-        }),
-      ],
-    });
-    await expect(runDurableObjectAlarm(ceremony)).resolves.toBe(true);
     await expect(punk.accountMergeInventory()).resolves.toMatchObject({
       complete: true,
       handoffs: [],
     });
   });
 
-  it("deletes OAuth and passkey sources when handoff indexing throws", async () => {
+  it("deletes the OAuth source when handoff indexing throws", async () => {
     const now = Date.now();
     const expiresAt = new Date(now + 5 * 60_000).toISOString();
     const punkId = crypto.randomUUID();
@@ -661,35 +626,6 @@ describe("account-bound handoff inventory", () => {
       restoreTransactionBinding?.();
     }
     await expect(transaction.begin(digest("e"))).resolves.toEqual({
-      ok: false,
-      code: "missing",
-    });
-
-    const ceremony = authEnv.PASSKEY_CEREMONIES.getByName(crypto.randomUUID());
-    let restoreCeremonyBinding: (() => void) | undefined;
-    await runInDurableObject(ceremony, (instance) => {
-      restoreCeremonyBinding = replaceBinding(
-        Reflect.get(instance, "env") as object,
-        "PUNKS",
-        failingPunks,
-      );
-    });
-    try {
-      await expect(
-        ceremony.create({
-          purpose: "registration",
-          challenge: "passkey-challenge",
-          browserBindingHash: digest("f"),
-          punkId,
-          sessionId: null,
-          createdAt: new Date(now).toISOString(),
-          expiresAt,
-        }),
-      ).resolves.toBe(false);
-    } finally {
-      restoreCeremonyBinding?.();
-    }
-    await expect(ceremony.begin(digest("f"))).resolves.toEqual({
       ok: false,
       code: "missing",
     });

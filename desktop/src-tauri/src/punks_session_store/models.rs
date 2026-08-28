@@ -9,6 +9,9 @@ use punks_account_client::desktop_auth::WorkspaceOwnershipTransferBinding;
 
 pub(super) const ACCOUNT_STATE_VERSION: &str = "account-state-v1";
 pub(super) const MAX_REVOCATIONS: usize = 64;
+// One reserved slot lets an upgrade retire an already prepared Session even
+// when the ordinary queue is full. Normal writes keep their original limit.
+const MAX_STORED_REVOCATIONS: usize = MAX_REVOCATIONS + 1;
 const MAX_COOKIE_BYTES: usize = 4_096;
 
 pub(super) fn invalid_state() -> String {
@@ -20,7 +23,6 @@ pub(super) fn invalid_state() -> String {
 pub(crate) enum PendingAuthPurpose {
     LinkGoogle,
     LinkGithub,
-    RegisterPasskey,
     TransferWorkspaceOwnership,
 }
 
@@ -125,7 +127,7 @@ impl StoredAccountState {
 
     pub(super) fn validate(&self) -> Result<(), String> {
         if self.version != ACCOUNT_STATE_VERSION
-            || self.revocation_queue.len() > MAX_REVOCATIONS
+            || self.revocation_queue.len() > MAX_STORED_REVOCATIONS
             || (self.pending_auth_flow.is_some() && self.pending_renewal.is_some())
             || (self.staged_activation.is_some() && self.pending_renewal.is_some())
         {
@@ -591,7 +593,6 @@ impl TryFrom<StoredPendingReauthorization> for PendingReauthorization {
         let target_purpose = value.target_purpose.unwrap_or(match value.target_method {
             AuthenticationMethod::Google => PendingAuthPurpose::LinkGoogle,
             AuthenticationMethod::Github => PendingAuthPurpose::LinkGithub,
-            AuthenticationMethod::Passkey => PendingAuthPurpose::RegisterPasskey,
         });
         if !valid_reauthorization_binding(
             target_purpose,
@@ -661,6 +662,23 @@ pub(super) fn enqueue_stored_revocation(
     revocation: StoredQueuedRevocation,
     now: u64,
 ) -> Result<(), String> {
+    enqueue_revocation_with_limit(state, revocation, now, MAX_REVOCATIONS)
+}
+
+pub(super) fn enqueue_retired_revocation(
+    state: &mut StoredAccountState,
+    revocation: StoredQueuedRevocation,
+    now: u64,
+) -> Result<(), String> {
+    enqueue_revocation_with_limit(state, revocation, now, MAX_STORED_REVOCATIONS)
+}
+
+fn enqueue_revocation_with_limit(
+    state: &mut StoredAccountState,
+    revocation: StoredQueuedRevocation,
+    now: u64,
+    limit: usize,
+) -> Result<(), String> {
     state
         .revocation_queue
         .retain(|queued| queued.expires_at_seconds > now);
@@ -677,7 +695,7 @@ pub(super) fn enqueue_stored_revocation(
             Err("conflicting revocation capability for one Session".to_string())
         };
     }
-    if state.revocation_queue.len() >= MAX_REVOCATIONS {
+    if state.revocation_queue.len() >= limit {
         return Err("secure revocation queue is full".to_string());
     }
     state.revocation_queue.push(revocation);
@@ -732,10 +750,6 @@ fn validate_auth_coordinates(
         PendingAuthIntent::LinkGithub => {
             method == AuthenticationMethod::Github
                 && matches!(purpose, None | Some(PendingAuthPurpose::LinkGithub))
-        }
-        PendingAuthIntent::RegisterPasskey => {
-            method == AuthenticationMethod::Passkey
-                && matches!(purpose, None | Some(PendingAuthPurpose::RegisterPasskey))
         }
         PendingAuthIntent::Reauthenticate => purpose.is_some(),
         PendingAuthIntent::SignIn | PendingAuthIntent::SwitchAccount => purpose.is_none(),

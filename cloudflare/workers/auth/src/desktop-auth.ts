@@ -1,12 +1,3 @@
-import {
-  generateAuthenticationOptions,
-  generateRegistrationOptions,
-  verifyRegistrationResponse,
-} from "@simplewebauthn/server";
-import type {
-  AuthenticationResponseJSON,
-  RegistrationResponseJSON,
-} from "@simplewebauthn/server";
 import type {
   AuthProviderProfile,
   DesktopAuthStartRequest,
@@ -15,7 +6,7 @@ import type {
 import { validateContract } from "@punks/contracts";
 import { deriveOpaqueUuid } from "@punks/core";
 
-import { bytesToBase64Url, hash, pkceChallenge } from "./crypto";
+import { hash, pkceChallenge } from "./crypto";
 import type {
   DesktopAuthFlowRecord,
   DesktopAuthIntent,
@@ -28,7 +19,6 @@ import {
   confirmationPage,
   expiredDesktopAuthPage,
   existingBrowserSessionPage,
-  passkeyPage,
 } from "./desktop-auth-browser-page";
 import type { AuthEnv } from "./env";
 import { json, problem, readJson, redirect } from "./http";
@@ -119,7 +109,6 @@ function methodMatchesIntent(
 ): boolean {
   if (intent === "link_google") return method === "google";
   if (intent === "link_github") return method === "github";
-  if (intent === "register_passkey") return method === "passkey";
   return true;
 }
 
@@ -259,15 +248,11 @@ export async function startDesktopAuth(
       "This desktop intent requires the current native Session",
     );
   }
-  const target = ["link_google", "link_github", "register_passkey"].includes(
-    command.intent,
-  )
+  const target = ["link_google", "link_github"].includes(command.intent)
     ? (command.intent as DesktopReauthTarget)
     : null;
   const now = Date.now();
-  const expiresAt = new Date(
-    now + (command.method === "passkey" ? 5 : 10) * 60_000,
-  ).toISOString();
+  const expiresAt = new Date(now + 10 * 60_000).toISOString();
   const flowId = crypto.randomUUID();
   if (target !== null) {
     if (command.authorizationId === undefined || current === null) {
@@ -381,90 +366,33 @@ export async function launchDesktopBrowser(
       return page;
     }
   }
-  if (launched.flow.method === "google" || launched.flow.method === "github") {
-    const transaction: AuthTransaction = {
-      provider: launched.flow.method,
-      intent: "sign_in",
-      returnTo: "/",
-      browserBindingHash: await hash(launched.browserBinding),
-      codeVerifier: launched.codeVerifier,
-      currentPunkId: launched.flow.currentPunkId,
-      currentSessionId: launched.flow.currentSessionId,
-      createdAt: launched.flow.createdAt,
-      expiresAt: launched.flow.expiresAt,
-      desktop: { flowId },
-    };
-    const transactionId = await aggregateName("transaction", launched.state);
-    if (
-      !(await env.AUTH_TRANSACTIONS.getByName(transactionId).create(
-        transaction,
-      ))
-    ) {
-      return problem(
-        503,
-        "temporarily_unavailable",
-        "Desktop browser transaction could not start",
-      );
-    }
-    const target = authorizationUrl(env, launched.flow.method, {
-      state: launched.state,
-      challenge: await pkceChallenge(launched.codeVerifier),
-    });
-    return redirect(target, [cookie]);
-  }
-  let options: Awaited<ReturnType<typeof generateAuthenticationOptions>>;
-  let purpose: "authentication" | "registration" = "authentication";
-  if (launched.flow.intent === "register_passkey") {
-    if (launched.flow.currentPunkId === null) {
-      return problem(403, "forbidden", "Passkey registration is not bound");
-    }
-    purpose = "registration";
-    const ids = await env.PUNKS.getByName(
-      launched.flow.currentPunkId,
-    ).passkeyCredentialIds();
-    options = (await generateRegistrationOptions({
-      rpName: env.WEBAUTHN_RP_NAME,
-      rpID: env.WEBAUTHN_RP_ID,
-      userID: new TextEncoder().encode(launched.flow.currentPunkId),
-      userName: `punk:${launched.flow.currentPunkId}`,
-      userDisplayName: `punk:${launched.flow.currentPunkId}`,
-      timeout: 300_000,
-      attestationType: "none",
-      excludeCredentials: ids.map((id) => ({ id })),
-      authenticatorSelection: {
-        residentKey: "required",
-        userVerification: "required",
-      },
-      supportedAlgorithmIDs: [-7, -257],
-      challenge: launched.codeVerifier,
-    })) as Awaited<ReturnType<typeof generateAuthenticationOptions>>;
-  } else {
-    options = await generateAuthenticationOptions({
-      rpID: env.WEBAUTHN_RP_ID,
-      timeout: 300_000,
-      userVerification: "required",
-      challenge: launched.codeVerifier,
-    });
-  }
+  const transaction: AuthTransaction = {
+    provider: launched.flow.method,
+    intent: "sign_in",
+    returnTo: "/",
+    browserBindingHash: await hash(launched.browserBinding),
+    codeVerifier: launched.codeVerifier,
+    currentPunkId: launched.flow.currentPunkId,
+    currentSessionId: launched.flow.currentSessionId,
+    createdAt: launched.flow.createdAt,
+    expiresAt: launched.flow.expiresAt,
+    desktop: { flowId },
+  };
+  const transactionId = await aggregateName("transaction", launched.state);
   if (
-    !(await flowStub(env, flowId).setPasskeyChallenge({
-      browserBindingHash: await hash(launched.browserBinding),
-      challenge: options.challenge,
-    }))
+    !(await env.AUTH_TRANSACTIONS.getByName(transactionId).create(transaction))
   ) {
     return problem(
       503,
       "temporarily_unavailable",
-      "Passkey challenge could not be bound",
+      "Desktop browser transaction could not start",
     );
   }
-  const response = passkeyPage({
-    flowId,
-    purpose,
-    publicKey: options as unknown as Record<string, unknown>,
+  const target = authorizationUrl(env, launched.flow.method, {
+    state: launched.state,
+    challenge: await pkceChallenge(launched.codeVerifier),
   });
-  response.headers.set("set-cookie", cookie);
-  return response;
+  return redirect(target, [cookie]);
 }
 
 export async function confirmExistingBrowserSession(
@@ -654,38 +582,6 @@ export async function commitDesktopBrowserEffect(
       return { ok: false, code: "temporarily_unavailable" };
     }
     return commitDesktopIdentityLink(env, flow, flow.pendingIdentity);
-  }
-  if (flow.intent === "register_passkey") {
-    if (flow.pendingPasskey === null || flow.currentPunkId === null) {
-      return { ok: false, code: "temporarily_unavailable" };
-    }
-    const linked = await env.PUNKS.getByName(flow.currentPunkId).linkPasskey({
-      credentialId: flow.pendingPasskey.credentialId,
-      subjectHash: flow.pendingPasskey.subjectHash,
-      emailHash: flow.pendingPasskey.emailHash,
-      now: new Date().toISOString(),
-    });
-    if (!linked.ok) {
-      return {
-        ok: false,
-        code:
-          linked.code === "identity_conflict"
-            ? "merge_required"
-            : "temporarily_unavailable",
-      };
-    }
-    const activated = await env.PASSKEY_CREDENTIALS.getByName(
-      await aggregateName(
-        "passkey-credential",
-        flow.pendingPasskey.credentialId,
-      ),
-    ).activate({
-      punkId: flow.currentPunkId,
-      transactionId: flow.pendingPasskey.transactionId,
-    });
-    return activated
-      ? { ok: true }
-      : { ok: false, code: "temporarily_unavailable" };
   }
   return { ok: true };
 }
@@ -968,178 +864,4 @@ export async function confirmDesktopOAuthAccount(
     outcomeCode: "account_created",
   });
   return completionRedirect(pending.flow);
-}
-
-export async function completeDesktopPasskey(
-  request: Request,
-  env: AuthEnv,
-): Promise<Response> {
-  if (!sameOrigin(request, env)) {
-    return problem(
-      403,
-      "forbidden",
-      "Same-origin passkey completion is required",
-    );
-  }
-  let input: { flowId?: unknown; response?: unknown };
-  try {
-    input = (await readJson(request)) as typeof input;
-  } catch {
-    return problem(400, "invalid_input", "Passkey completion is invalid");
-  }
-  if (typeof input.flowId !== "string" || !validFlowId(input.flowId)) {
-    return problem(400, "invalid_input", "Passkey flow is invalid");
-  }
-  const stub = flowStub(env, input.flowId);
-  const launched = await stub.browserLaunch();
-  if (!launched.ok) {
-    return problem(400, "invalid_input", "Passkey flow is unavailable");
-  }
-  if (!(await boundSessionIsActive(env, launched.flow))) {
-    return problem(401, "unauthenticated", "Bound native Session expired");
-  }
-  const binding = browserBinding(launched.flow, request);
-  if (binding === null) {
-    return problem(400, "invalid_input", "Passkey browser binding is missing");
-  }
-  const bindingHash = await hash(binding);
-  if (launched.flow.intent === "register_passkey") {
-    if (launched.flow.currentPunkId === null) {
-      return problem(403, "forbidden", "Passkey registration is unbound");
-    }
-    let verification: Awaited<ReturnType<typeof verifyRegistrationResponse>>;
-    try {
-      verification = await verifyRegistrationResponse({
-        response: input.response as RegistrationResponseJSON,
-        expectedChallenge:
-          launched.flow.passkeyChallenge ?? launched.codeVerifier,
-        expectedOrigin: new URL(env.AUTH_BASE_URL).origin,
-        expectedRPID: env.WEBAUTHN_RP_ID,
-        requireUserPresence: true,
-        requireUserVerification: true,
-        supportedAlgorithmIDs: [-7, -257],
-      });
-    } catch {
-      await stub.fail({
-        browserBindingHash: bindingHash,
-        result: "security_failure",
-        outcomeCode: "passkey_invalid",
-      });
-      return problem(
-        400,
-        "invalid_input",
-        "Passkey registration proof is invalid",
-      );
-    }
-    if (!verification.verified || !verification.registrationInfo.userVerified) {
-      return problem(
-        400,
-        "invalid_input",
-        "Passkey registration was not verified",
-      );
-    }
-    const { credential, credentialDeviceType, credentialBackedUp } =
-      verification.registrationInfo;
-    const subjectHash = await hash(
-      `punks.passkey-subject.v1\n${credential.id}`,
-    );
-    const credentialObject = env.PASSKEY_CREDENTIALS.getByName(
-      await aggregateName("passkey-credential", credential.id),
-    );
-    const transactionId = input.flowId;
-    const reserved = await credentialObject.reserve({
-      credentialId: credential.id,
-      punkId: launched.flow.currentPunkId,
-      subjectHash,
-      publicKey: bytesToBase64Url(credential.publicKey),
-      counter: credential.counter,
-      transports: credential.transports ?? [],
-      deviceType: credentialDeviceType,
-      backedUp: credentialBackedUp,
-      transactionId,
-      now: new Date().toISOString(),
-    });
-    if (!reserved.ok) {
-      return problem(
-        409,
-        "identity_conflict",
-        "Passkey belongs to another Punk",
-      );
-    }
-    const recorded = await stub.recordBrowserComplete({
-      browserBindingHash: bindingHash,
-      pendingPasskey: {
-        credentialId: credential.id,
-        subjectHash,
-        emailHash: await hash(`punks.passkey-no-email.v1\n${credential.id}`),
-        transactionId,
-      },
-      outcomeCode: "passkey_registration_pending",
-    });
-    if (
-      !recorded.ok ||
-      !(await stub.ready({
-        punkId: launched.flow.currentPunkId,
-        outcomeCode: "passkey_registration_pending",
-      }))
-    ) {
-      await credentialObject.release({
-        punkId: launched.flow.currentPunkId,
-        transactionId,
-      });
-      return problem(
-        409,
-        "idempotency_conflict",
-        "Passkey registration was cancelled",
-      );
-    }
-  } else {
-    const response = input.response as { id?: string };
-    if (typeof response.id !== "string") {
-      return problem(400, "invalid_input", "Passkey assertion is invalid");
-    }
-    const verified = await env.PASSKEY_CREDENTIALS.getByName(
-      await aggregateName("passkey-credential", response.id),
-    ).verifyAuthentication({
-      ceremonyId: input.flowId,
-      challenge: launched.flow.passkeyChallenge ?? launched.codeVerifier,
-      origin: new URL(env.AUTH_BASE_URL).origin,
-      rpId: env.WEBAUTHN_RP_ID,
-      response: input.response as AuthenticationResponseJSON,
-    });
-    if (!verified.ok) {
-      await stub.fail({
-        browserBindingHash: bindingHash,
-        result: "security_failure",
-        outcomeCode: "passkey_unknown_or_invalid",
-      });
-      return problem(401, "unauthenticated", "Passkey authentication failed");
-    }
-    if (
-      launched.flow.intent === "reauthenticate" &&
-      (launched.flow.currentPunkId !== verified.punkId ||
-        launched.flow.currentSessionId === null)
-    ) {
-      return problem(403, "forbidden", "Passkey is bound to another Punk");
-    }
-    if (!(await stub.recordPasskeyAuthentication(await hash(response.id)))) {
-      return problem(
-        409,
-        "idempotency_conflict",
-        "Passkey authentication binding was not recorded",
-      );
-    }
-    await stub.recordBrowserComplete({ browserBindingHash: bindingHash });
-    await stub.ready({
-      punkId: verified.punkId,
-      outcomeCode: "passkey_authenticated",
-    });
-  }
-  return json(
-    { completionUrl: completionUrl(env.ENVIRONMENT, input.flowId) },
-    200,
-    launched.flow.oauthState === null
-      ? {}
-      : { "set-cookie": clearOauthCookie(launched.flow.oauthState) },
-  );
 }

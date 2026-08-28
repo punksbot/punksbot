@@ -25,7 +25,7 @@ function freshProof(
     punkId,
     accountRevision: accountRole === "survivor" ? 7 : 11,
     holderBindingHash,
-    authenticationMethod: accountRole === "survivor" ? "passkey" : "github",
+    authenticationMethod: accountRole === "survivor" ? "google" : "github",
     providerSubjectBindingHash:
       accountRole === "survivor" ? "b".repeat(64) : "c".repeat(64),
     authenticatedAt: "2026-08-24T09:00:00.000Z",

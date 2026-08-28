@@ -13,7 +13,7 @@ const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const SHA256_RE = /^[0-9a-f]{64}$/u;
 const VERIFIER_RE = /^[A-Za-z0-9_-]{43,128}$/u;
-const METHODS = Object.freeze(["google", "github", "passkey"]);
+const METHODS = Object.freeze(["google", "github"]);
 
 function fail(message) {
   throw new Error(`live staging Auth proof rejected: ${message}`);
@@ -130,8 +130,7 @@ function validSuccessFlow(flow, method, flowId, expected) {
     ]) ||
     !validCommonFlow(flow, method, expected) ||
     flow.flowId !== flowId ||
-    flow.outcomeCode !==
-      (method === "passkey" ? "passkey_authenticated" : "authenticated") ||
+    flow.outcomeCode !== "authenticated" ||
     !UUID_RE.test(flow.punkId ?? "") ||
     !UUID_RE.test(flow.sessionId ?? "") ||
     !Number.isFinite(Date.parse(flow.browserCompletedAt ?? "")) ||
@@ -140,23 +139,16 @@ function validSuccessFlow(flow, method, flowId, expected) {
   ) {
     return false;
   }
-  return method === "passkey"
-    ? exact(flow.methodEvidence, [
-        "kind",
-        "challengeHash",
-        "credentialIdHash",
-      ]) &&
-        flow.methodEvidence.kind === "passkey" &&
-        SHA256_RE.test(flow.methodEvidence.challengeHash ?? "") &&
-        SHA256_RE.test(flow.methodEvidence.credentialIdHash ?? "")
-    : exact(flow.methodEvidence, [
-        "kind",
-        "oauthStateHash",
-        "providerPkceHash",
-      ]) &&
-        flow.methodEvidence.kind === "oauth" &&
-        SHA256_RE.test(flow.methodEvidence.oauthStateHash ?? "") &&
-        SHA256_RE.test(flow.methodEvidence.providerPkceHash ?? "");
+  return (
+    exact(flow.methodEvidence, [
+      "kind",
+      "oauthStateHash",
+      "providerPkceHash",
+    ]) &&
+    flow.methodEvidence.kind === "oauth" &&
+    SHA256_RE.test(flow.methodEvidence.oauthStateHash ?? "") &&
+    SHA256_RE.test(flow.methodEvidence.providerPkceHash ?? "")
+  );
 }
 
 function validCancellationFlow(flow, method, flowId, expected) {
@@ -192,7 +184,7 @@ export function validateLiveAuthMatrixProof(proof, expected) {
       "negative",
       "observedAt",
     ]) ||
-    proof.schema !== "punks.live-staging-auth-matrix-proof.v2" ||
+    proof.schema !== "punks.live-staging-auth-matrix-proof.v3" ||
     proof.sourceSha !== expected.sourceSha ||
     proof.stagingDeploymentId !== expected.stagingDeploymentId ||
     proof.authWorkerVersionId !== expected.authWorkerVersionId ||
@@ -217,7 +209,7 @@ export function validateLiveAuthMatrixProof(proof, expected) {
       "wrongOauthState",
       "wrongBrowserBinding",
       "wrongNativePkceVerifier",
-      "wrongPasskeyChallenge",
+      "retiredPasskeyMethod",
     ]) ||
     Object.values(proof.negative).some((value) => value !== "refused") ||
     !Number.isFinite(Date.parse(proof.observedAt ?? ""))
@@ -288,7 +280,7 @@ export async function proveLiveStagingAuthMatrix(
     typeof input.operatorToken !== "string" ||
     input.operatorToken.length < 32
   ) {
-    fail("exact source, staging and six terminal flows are required");
+    fail("exact source, staging and four terminal OAuth flows are required");
   }
   const staging = validateStagingDeploymentProof(input.stagingProof, {
     accountId: CANONICAL_STAGING_ACCOUNT_ID,
@@ -312,7 +304,7 @@ export async function proveLiveStagingAuthMatrix(
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        contract: "promotion.auth-matrix-proof@2",
+        contract: "promotion.auth-matrix-proof@3",
         sourceSha: input.sourceSha,
         stagingDeploymentId: input.stagingDeploymentId,
         flows: input.matrix,
