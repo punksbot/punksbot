@@ -1,4 +1,5 @@
 import { canonicalJson, deriveOpaqueUuid } from "@punks/core";
+import { env, runInDurableObject } from "cloudflare:test";
 import { describe, expect, it, vi } from "vitest";
 
 import type { ApiEnv } from "../src/env";
@@ -126,5 +127,24 @@ describe("promotion operational state", () => {
         )
       )?.status,
     ).toBe(400);
+  });
+
+  it("refuses empty Durable Objects instead of reporting zero pending work", async () => {
+    const workspace = env.WORKSPACES.getByName(
+      "33333333-3333-8333-8333-333333333333",
+    );
+    const conversation = env.CONVERSATIONS.getByName(
+      "44444444-4444-8444-8444-444444444444",
+    );
+    await runInDurableObject(workspace, async (instance) => {
+      await expect(instance.observePromotionOperationalState()).rejects.toThrow(
+        /absent or inactive/u,
+      );
+    });
+    await runInDurableObject(conversation, async (instance) => {
+      await expect(instance.observePromotionOperationalState()).rejects.toThrow(
+        /absent or inactive/u,
+      );
+    });
   });
 });

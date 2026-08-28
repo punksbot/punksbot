@@ -297,6 +297,21 @@ jobs:
           rm -f "$token_file"
           trap - EXIT
 
+      - name: Reobserve staging after infrastructure proof
+        id: reobserve_final_staging
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.PUNKS_CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          node cloudflare/scripts/staging-deployment-proof.mjs \
+            --account-id 3a391620584c792dbbd8cfa148d7634a \
+            --environment staging \
+            --source-sha "$SOURCE_SHA" > "$RUNNER_TEMP/provider-final-staging.json"
+          cmp -s \
+            provider-input/staging-deployment-proof.json \
+            "$RUNNER_TEMP/provider-final-staging.json"
+
       - name: Derive the closed provider source set
         id: collect_sources
         shell: bash

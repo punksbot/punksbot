@@ -70,6 +70,7 @@ test("backend probes staging before Session loss and receives no R2 authority", 
 test("finalization verifies four legs and publishes one provider-owned v4 manifest", () => {
   const aggregate = step("finalize", "aggregate");
   const infrastructure = step("finalize", "observe_infrastructure");
+  const reobserve = step("finalize", "reobserve_final_staging");
   const collect = step("finalize", "collect_sources");
   const attest = step("finalize", "attest_sources");
   const verify = step("finalize", "verify_sources");
@@ -78,6 +79,15 @@ test("finalization verifies four legs and publishes one provider-owned v4 manife
   assert.match(aggregate.run, /artifacts\.mjs aggregate/);
   assert.match(infrastructure.run, /operational-infrastructure-probe\.mjs/);
   assert.match(infrastructure.run, /unset PUNKS_OPERATOR_PROVISIONING_TOKEN/);
+  assert.match(reobserve.run, /staging-deployment-proof\.mjs/);
+  assert.match(reobserve.run, /cmp -s/);
+  assert.ok(
+    provider.jobs.finalize.steps.indexOf(infrastructure) <
+      provider.jobs.finalize.steps.indexOf(reobserve) &&
+      provider.jobs.finalize.steps.indexOf(reobserve) <
+        provider.jobs.finalize.steps.indexOf(collect),
+    "infrastructure state is not fenced by a final staging reobservation",
+  );
   assert.match(collect.run, /--infrastructure-report/);
   assert.match(aggregate.run, /--input provider-input\/legs/);
   assert.match(collect.run, /operational-source-collect\.mjs/);

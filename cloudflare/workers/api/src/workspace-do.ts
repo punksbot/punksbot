@@ -473,6 +473,14 @@ export class WorkspaceDO extends PromotionFaultableDurableObject<ApiEnv> {
     archiveSegments: number;
     archiveHeadValid: boolean;
   }> {
+    const aggregate = this.state();
+    if (
+      aggregate === null ||
+      aggregate.id !== this.ctx.id.name ||
+      aggregate.status !== "active"
+    ) {
+      throw new Error("promotion Workspace aggregate is absent or inactive");
+    }
     const counts = this.ctx.storage.sql
       .exec<{
         outboxes_pending: number;
@@ -498,13 +506,12 @@ export class WorkspaceDO extends PromotionFaultableDurableObject<ApiEnv> {
       const object = await this.env.JOURNAL_ARCHIVE_BUCKET.head(
         latest.object_key,
       );
-      const workspaceId = this.state()?.id;
       archiveHeadValid =
         object !== null &&
         object.key === latest.object_key &&
         object.httpMetadata?.contentType === "application/json" &&
         object.customMetadata?.segmentHash === latest.segment_hash &&
-        object.customMetadata?.workspaceId === workspaceId;
+        object.customMetadata?.workspaceId === aggregate.id;
     }
     return {
       authority: "api-workspace",
