@@ -41,7 +41,13 @@ function destination(role, value) {
   return { role, compte, bucket };
 }
 
-async function publishBundle(frontieres, destinations, key, content, prefix) {
+async function verifyLockedProviderBundle(
+  frontieres,
+  destinations,
+  key,
+  content,
+  prefix,
+) {
   for (const target of destinations) {
     const lock = await frontieres.cloudflare.lireVerrouillage({
       ...target,
@@ -50,27 +56,12 @@ async function publishBundle(frontieres, destinations, key, content, prefix) {
     if (lock?.mode !== "compliance" || lock.actif !== true) {
       fail(`${target.role} operational observation prefix is not locked`);
     }
-    let existing = await frontieres.cloudflare.lireObjet({
+    const existing = await frontieres.cloudflare.lireObjet({
       ...target,
       cle: key,
     });
-    if (existing === null) {
-      try {
-        await frontieres.cloudflare.creerObjet({
-          ...target,
-          cle: key,
-          contenu: content,
-        });
-      } catch (error) {
-        if (error?.code !== "ALREADY_EXISTS") throw error;
-      }
-      existing = await frontieres.cloudflare.lireObjet({
-        ...target,
-        cle: key,
-      });
-    }
     if (existing === null || !Buffer.from(existing).equals(content)) {
-      fail(`${target.role} operational Sigstore bundle diverges after publish`);
+      fail(`${target.role} operational provider bundle is absent or diverges`);
     }
     const finalLock = await frontieres.cloudflare.lireVerrouillage({
       ...target,
@@ -78,15 +69,15 @@ async function publishBundle(frontieres, destinations, key, content, prefix) {
     });
     if (finalLock?.mode !== "compliance" || finalLock.actif !== true) {
       fail(
-        `${target.role} operational observation lock changed during publish`,
+        `${target.role} operational observation lock changed during verification`,
       );
     }
   }
 }
 
 /**
- * Authenticates every staged metric source as an exact GitHub OIDC subject,
- * then publishes the verified bundle create-only to both locked Punks buckets.
+ * Authenticates every staged metric source against a provider-owned GitHub OIDC
+ * bundle that was already published create-only in both locked Punks buckets.
  */
 export async function sealOperationalBudgetEvidence(
   input,
@@ -134,6 +125,9 @@ export async function sealOperationalBudgetEvidence(
     { minimum: 2 },
   );
   const bundleSha256 = digest(bundleContent);
+  if (bundleSha256 !== manifest.provenance.bundle.sha256) {
+    fail("operational provider bundle diverges from the locked manifest");
+  }
   const provenanceRoot = resolve(
     candidateRoot,
     "operational-budget-provenance",
@@ -187,7 +181,10 @@ export async function sealOperationalBudgetEvidence(
       input.stagingDeploymentId,
     );
     const key = `${prefix}provenance/${provenanceName}`;
-    await publishBundle(
+    if (key !== manifest.provenance.bundle.key) {
+      fail("operational provider bundle key diverges from the locked manifest");
+    }
+    await verifyLockedProviderBundle(
       frontieres,
       input.destinations,
       key,

@@ -19,7 +19,7 @@ export const OPERATIONAL_BUDGET_PROVENANCE = Object.freeze({
   repository: "punksbot/punksbot",
   sourceRef: "refs/heads/staging",
   signerWorkflow:
-    "github.com/punksbot/punksbot/.github/workflows/punks-desktop-candidate.yml",
+    "github.com/punksbot/punksbot/.github/workflows/punks-operational-observation.yml",
 });
 const PROVENANCE_DESCRIPTOR = "operational-budget-provenance.json";
 const PROVENANCE_DIRECTORY = "operational-budget-provenance";

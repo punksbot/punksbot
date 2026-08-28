@@ -4,6 +4,8 @@ import { resolve } from "node:path";
 import test from "node:test";
 import YAML from "yaml";
 
+import { OPERATIONAL_BUDGET_PROVENANCE } from "./candidate/operational-budget-evidence.mjs";
+
 const workflowPath = resolve(".github/workflows/punks-desktop-candidate.yml");
 const windowsSignerPath = resolve("scripts/windows-artifact-sign.ps1");
 const windowsSignerTestPath = resolve("scripts/windows-artifact-sign.test.ps1");
@@ -1063,9 +1065,12 @@ function validateWorkflow(workflow) {
   ]);
   invariant(
     String(attestComplete.with?.["subject-path"]).includes(
-      "candidate/operational-budget-sources/*",
-    ),
-    "operational provider sources are absent from the OIDC subject set",
+      "candidate/operational-budget-provider.sigstore.json",
+    ) &&
+      String(attestComplete.with?.["subject-path"]).includes(
+        "candidate/operational-budget-sources/*",
+      ),
+    "operational provider evidence is absent from the aggregate OIDC subject set",
   );
   requireRun(verifyComplete, [
     "candidate/operational-budget-sources",
@@ -1074,9 +1079,17 @@ function validateWorkflow(workflow) {
   ]);
   requireRun(sealBudgets, [
     "scripts/candidate/operational-budget-seal.mjs",
-    '--bundle "$ATTESTATION_BUNDLE"',
+    "--bundle candidate/operational-budget-provider.sigstore.json",
     "--candidate-root candidate",
   ]);
+  invariant(
+    OPERATIONAL_BUDGET_PROVENANCE.signerWorkflow ===
+      "github.com/punksbot/punksbot/.github/workflows/punks-operational-observation.yml" &&
+      !OPERATIONAL_BUDGET_PROVENANCE.signerWorkflow.endsWith(
+        "/punks-desktop-candidate.yml",
+      ),
+    "the candidate workflow can self-attest caller-provided operational samples",
+  );
   invariant(
     aggregate.steps.indexOf(stageBudgets) <
       aggregate.steps.indexOf(attestComplete) &&

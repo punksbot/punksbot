@@ -1732,6 +1732,7 @@ jobs:
             candidate/promotion-evidence/**/*
             candidate/operational-budget-observation.json
             candidate/operational-budget-r2-manifest.json
+            candidate/operational-budget-provider.sigstore.json
             candidate/operational-budget-exports/*
             candidate/operational-budget-sources/*
 
@@ -1757,7 +1758,7 @@ jobs:
             test -s "$output"
           done < <(find candidate/release-assets candidate/promotion-evidence \
             candidate/operational-budget-exports candidate/operational-budget-sources \
-            -type f -print0; printf '%s\0' candidate/aggregate-manifest.json candidate/staging-deployment-proof.json candidate/live-staging-auth-proof.json candidate/live-staging-follow-proof.json)
+            -type f -print0; printf '%s\0' candidate/aggregate-manifest.json candidate/staging-deployment-proof.json candidate/live-staging-auth-proof.json candidate/live-staging-follow-proof.json candidate/operational-budget-observation.json candidate/operational-budget-r2-manifest.json candidate/operational-budget-provider.sigstore.json)
           cp "$ATTESTATION_BUNDLE" candidate/promotion-evidence/pre-dossier-provenance.sigstore.json
 
       - name: Seal and publish authenticated operational budget sources
@@ -1765,7 +1766,6 @@ jobs:
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          ATTESTATION_BUNDLE: ${{ steps.attest_complete_evidence.outputs.bundle-path }}
           PUNKS_OPERATIONAL_BUDGET_MANIFEST_SHA256: ${{ vars.PUNKS_OPERATIONAL_BUDGET_MANIFEST_SHA256 }}
           PUNKS_R2_PRIMARY_API_TOKEN: ${{ secrets.PUNKS_R2_PRIMARY_API_TOKEN }}
           PUNKS_R2_PRIMARY_ACCESS_KEY_ID: ${{ secrets.PUNKS_R2_PRIMARY_ACCESS_KEY_ID }}
@@ -1777,13 +1777,13 @@ jobs:
           PUNKS_R2_RECOVERY_DESTINATION: ${{ vars.PUNKS_R2_RECOVERY_DESTINATION }}
         run: |
           set -euo pipefail
-          test -s "$ATTESTATION_BUNDLE"
+          test -s candidate/operational-budget-provider.sigstore.json
           node scripts/candidate/operational-budget-seal.mjs \
             --source-sha "$SOURCE_SHA" \
             --staging-deployment-id "$STAGING_DEPLOYMENT_ID" \
             --manifest-sha256 "$PUNKS_OPERATIONAL_BUDGET_MANIFEST_SHA256" \
             --candidate-root candidate \
-            --bundle "$ATTESTATION_BUNDLE" \
+            --bundle candidate/operational-budget-provider.sigstore.json \
             --r2-primaire "$PUNKS_R2_PRIMARY_DESTINATION" \
             --r2-secondaire "$PUNKS_R2_RECOVERY_DESTINATION" \
             --frontieres scripts/promotion-frontiers.mjs

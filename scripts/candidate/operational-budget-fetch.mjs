@@ -77,7 +77,7 @@ export function validateOperationalBudgetManifest(value, expected) {
   );
   const { sha256, ...content } = value;
   if (
-    value.schema !== "punks.operational-budget-r2-manifest.v3" ||
+    value.schema !== "punks.operational-budget-r2-manifest.v4" ||
     value.sourceSha !== expected.sourceSha ||
     value.stagingDeploymentId !== expected.stagingDeploymentId ||
     canonicalSha256(content) !== sha256 ||
@@ -92,8 +92,13 @@ export function validateOperationalBudgetManifest(value, expected) {
   const prefix = `operational-observations/tranche:1/${expected.sourceSha}/${expected.stagingDeploymentId.slice(7)}/`;
   exact(
     value.provenance,
-    ["repository", "sourceRef", "signerWorkflow"],
+    ["repository", "sourceRef", "signerWorkflow", "bundle"],
     "operational budget provenance",
+  );
+  exact(
+    value.provenance.bundle,
+    ["key", "sha256"],
+    "operational budget provider bundle",
   );
   if (
     value.provenance.repository !== OPERATIONAL_BUDGET_PROVENANCE.repository ||
@@ -103,7 +108,12 @@ export function validateOperationalBudgetManifest(value, expected) {
   ) {
     fail("operational budget provenance identity is invalid");
   }
-  const references = [value.observation, ...value.exports, ...value.sources];
+  const references = [
+    value.observation,
+    ...value.exports,
+    ...value.sources,
+    value.provenance.bundle,
+  ];
   for (const [index, reference] of references.entries()) {
     exact(reference, ["key", "sha256"], `budget object ${index}`);
     if (
@@ -120,7 +130,9 @@ export function validateOperationalBudgetManifest(value, expected) {
   if (
     new Set(references.map(({ key }) => key)).size !== references.length ||
     names.some((name) => !/^[0-9a-f]{64}\.json$/u.test(name)) ||
-    sourceNames.some((name) => !/^[0-9a-f]{64}\.json$/u.test(name))
+    sourceNames.some((name) => !/^[0-9a-f]{64}\.json$/u.test(name)) ||
+    value.provenance.bundle.key !==
+      `${prefix}provenance/${value.provenance.bundle.sha256}.sigstore.json`
   ) {
     fail("operational budget manifest repeats or renames an export");
   }
@@ -211,6 +223,12 @@ export async function fetchOperationalBudgetEvidence(input, { frontieres }) {
       ),
     ),
   );
+  const providerBundleBytes = await readRedundant(
+    frontieres,
+    input.destinations,
+    manifest.provenance.bundle,
+    "operational provider Sigstore bundle",
+  );
   const output = resolve(input.output);
   const exportsRoot = resolve(input.exportsOutput);
   const sourcesRoot = resolve(
@@ -221,9 +239,14 @@ export async function fetchOperationalBudgetEvidence(input, { frontieres }) {
     input.candidateRoot,
     "operational-budget-r2-manifest.json",
   );
+  const providerBundleOutput = resolve(
+    input.candidateRoot,
+    "operational-budget-provider.sigstore.json",
+  );
   let exportsRootCreated = false;
   let sourcesRootCreated = false;
   let manifestOutputCreated = false;
+  let providerBundleOutputCreated = false;
   let outputCreated = false;
   try {
     mkdirSync(exportsRoot, { mode: 0o700 });
@@ -244,6 +267,11 @@ export async function fetchOperationalBudgetEvidence(input, { frontieres }) {
         { flag: "wx", mode: 0o600 },
       );
     }
+    writeFileSync(providerBundleOutput, providerBundleBytes, {
+      flag: "wx",
+      mode: 0o600,
+    });
+    providerBundleOutputCreated = true;
     writeFileSync(manifestOutput, manifestBytes, {
       flag: "wx",
       mode: 0o600,
@@ -264,6 +292,9 @@ export async function fetchOperationalBudgetEvidence(input, { frontieres }) {
       rmSync(sourcesRoot, { recursive: true, force: true });
     }
     if (manifestOutputCreated) rmSync(manifestOutput, { force: true });
+    if (providerBundleOutputCreated) {
+      rmSync(providerBundleOutput, { force: true });
+    }
     if (outputCreated) rmSync(output, { force: true });
     throw error;
   }

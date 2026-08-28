@@ -135,11 +135,15 @@ leurs unités et maxima fermés. Pour un taux, le gate recalcule la borne
 supérieure unilatérale de Wilson à 95 % depuis les comptes bruts ; pour une
 latence ou un compteur, il recalcule la comparaison exacte à la limite. Les
 comptes bruts proviennent de sujets content-addressés lus identiquement dans
-deux buckets, puis attestés et vérifiés cryptographiquement dans le run protégé
-par un bundle Sigstore GitHub OIDC lié au dépôt, au workflow, au ref `staging`
-et au SHA exacts. Le bundle vérifié est ensuite publié create-only dans les deux
-copies. La simple présence de deux copies R2, d'un hash, d'un nom d'observateur
-ou d'un digest d'attestation déclaré ne constitue pas une provenance. Le verrou
+deux buckets et liés, avant le candidat, par un bundle Sigstore GitHub OIDC du
+workflow fournisseur dédié `punks-operational-observation.yml`. Ce workflow
+obtient les observations depuis leur autorité Cloudflare ou le candidat installé
+et n'accepte aucun document d'échantillons fourni par l'appelant. Le manifeste
+R2 v4 lie le bundle, ses sujets, le dépôt, le ref `staging` et le SHA exacts ; le
+workflow candidat vérifie ce bundle fournisseur puis atteste séparément son
+incorporation au dossier. Un ancien manifeste v3, une auto-attestation du
+candidat, la simple présence de deux copies R2, d'un hash, d'un nom
+d'observateur ou d'un digest déclaré ne constitue pas une provenance. Le verrou
 R2 Indefinite doit couvrir le préfixe `operational-observations/` effectivement
 lu, et pas seulement le préfixe des releases. Les
 dimensions imposées par moyen de connexion et plateforme sont exhaustives et

@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { OPERATIONAL_BUDGET_PROVENANCE } from "./operational-budget-evidence.mjs";
+
 /** Minimal structural bundle used only behind an injected test verifier. */
 export function operationalBudgetSigstoreFixture() {
   return Buffer.from(
@@ -34,10 +36,7 @@ export function writeOperationalBudgetProvenanceFixture(
       schema: "punks.operational-budget-provenance.v1",
       sourceSha,
       stagingDeploymentId,
-      repository: "punksbot/punksbot",
-      sourceRef: "refs/heads/staging",
-      signerWorkflow:
-        "github.com/punksbot/punksbot/.github/workflows/punks-desktop-candidate.yml",
+      ...OPERATIONAL_BUDGET_PROVENANCE,
       bundle: {
         path: `operational-budget-provenance/${sha256}.sigstore.json`,
         sha256,

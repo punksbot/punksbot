@@ -180,10 +180,21 @@ test("the aggregate validates, publishes and only then activates the exact draft
     attestComplete.with?.["subject-path"],
     /candidate\/operational-budget-sources\/\*/,
   );
-  assert.match(verifyComplete.run, /candidate\/operational-budget-sources/);
+  assert.match(
+    attestComplete.with?.["subject-path"],
+    /candidate\/operational-budget-provider\.sigstore\.json/,
+  );
+  assert.match(
+    verifyComplete.run,
+    /candidate\/operational-budget-provider\.sigstore\.json/,
+  );
   assert.match(
     sealBudgets.run,
     /scripts\/candidate\/operational-budget-seal\.mjs/,
+  );
+  assert.match(
+    sealBudgets.run,
+    /--bundle candidate\/operational-budget-provider\.sigstore\.json/,
   );
   assert.match(assemble.run, /pre-dossier-provenance\.sigstore\.json/);
   assert.match(validate.run, /pnpm promotion:valider/);

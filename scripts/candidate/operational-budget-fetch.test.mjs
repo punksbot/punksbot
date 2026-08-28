@@ -18,6 +18,7 @@ import {
   borneWilsonUnilaterale95,
   PLATEFORMES,
 } from "../release-graph-lib.mjs";
+import { OPERATIONAL_BUDGET_PROVENANCE } from "./operational-budget-evidence.mjs";
 import { fetchOperationalBudgetEvidence } from "./operational-budget-fetch.mjs";
 import { sealOperationalBudgetEvidence } from "./operational-budget-seal.mjs";
 import { operationalBudgetSigstoreFixture } from "./operational-budget-test-fixture.mjs";
@@ -163,14 +164,15 @@ function materials() {
   };
   objects.set(observationKey, observationBytes);
   const provenanceBytes = operationalBudgetSigstoreFixture();
+  const provenanceSha256 = sha256(provenanceBytes);
+  const provenanceKey = `${prefix}provenance/${provenanceSha256}.sigstore.json`;
+  objects.set(provenanceKey, provenanceBytes);
   const provenance = {
-    repository: "punksbot/punksbot",
-    sourceRef: "refs/heads/staging",
-    signerWorkflow:
-      "github.com/punksbot/punksbot/.github/workflows/punks-desktop-candidate.yml",
+    ...OPERATIONAL_BUDGET_PROVENANCE,
+    bundle: { key: provenanceKey, sha256: provenanceSha256 },
   };
   const manifestContent = {
-    schema: "punks.operational-budget-r2-manifest.v3",
+    schema: "punks.operational-budget-r2-manifest.v4",
     sourceSha,
     stagingDeploymentId,
     observation: observationReference,
@@ -245,8 +247,10 @@ async function stagedFixture(t, label) {
     },
     { frontieres: boundaries(material) },
   );
-  const bundle = join(root, "actions-attestation.sigstore.json");
-  writeFileSync(bundle, material.provenanceBytes);
+  const bundle = join(
+    candidateRoot,
+    "operational-budget-provider.sigstore.json",
+  );
   return { root, candidateRoot, material, destinations, bundle };
 }
 
@@ -278,8 +282,11 @@ test("downloads identical locked raw sources and recomputes every verdict", asyn
       frontieres: boundaries(material, publishedRoles),
     },
   );
-  const bundle = join(root, "actions-attestation.sigstore.json");
-  writeFileSync(bundle, material.provenanceBytes);
+  const bundle = join(
+    candidateRoot,
+    "operational-budget-provider.sigstore.json",
+  );
+  assert.equal(sha256(readFileSync(bundle)), sha256(material.provenanceBytes));
   const sealed = await sealOperationalBudgetEvidence(
     {
       sourceSha,
@@ -305,7 +312,7 @@ test("downloads identical locked raw sources and recomputes every verdict", asyn
         assert.equal(sourceRef, "refs/heads/staging");
         assert.equal(
           signerWorkflow,
-          "github.com/punksbot/punksbot/.github/workflows/punks-desktop-candidate.yml",
+          OPERATIONAL_BUDGET_PROVENANCE.signerWorkflow,
         );
         return [{ verified: true }];
       },
@@ -317,8 +324,91 @@ test("downloads identical locked raw sources and recomputes every verdict", asyn
   );
   assert.equal(result.observation.verdicts.length, 36);
   assert.equal(verifiedSubjects, material.manifest.sources.length);
-  assert.deepEqual(publishedRoles.sort(), ["primaire", "secondaire"]);
+  assert.deepEqual(publishedRoles, []);
   assert.equal(sealed.bundle.sha256, sha256(material.provenanceBytes));
+});
+
+test("rejects legacy self-declared provenance and an absent provider bundle", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "punks-budget-provider-proof-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const destinations = [
+    { role: "primaire", compte: "1".repeat(32), bucket: "primary" },
+    { role: "secondaire", compte: "2".repeat(32), bucket: "recovery" },
+  ];
+
+  const legacy = materials();
+  legacy.manifest.schema = "punks.operational-budget-r2-manifest.v3";
+  const { sha256: ignored, ...legacyContent } = legacy.manifest;
+  assert.match(ignored, /^[0-9a-f]{64}$/u);
+  legacy.manifest.sha256 = canonicalSha256(legacyContent);
+  legacy.manifestBytes = bytes(legacy.manifest);
+  legacy.objects.set(`${prefix}manifest.json`, legacy.manifestBytes);
+  const legacyRoot = join(root, "legacy");
+  mkdirSync(legacyRoot);
+  await assert.rejects(
+    fetchOperationalBudgetEvidence(
+      {
+        sourceSha,
+        stagingDeploymentId,
+        manifestSha256: sha256(legacy.manifestBytes),
+        candidateRoot: legacyRoot,
+        destinations,
+        output: join(legacyRoot, "observation.json"),
+        exportsOutput: join(legacyRoot, "exports"),
+      },
+      { frontieres: boundaries(legacy) },
+    ),
+    /manifest identity|schema|provenance/i,
+  );
+
+  const selfAttested = materials();
+  selfAttested.manifest.provenance.signerWorkflow =
+    "github.com/punksbot/punksbot/.github/workflows/punks-desktop-candidate.yml";
+  const { sha256: selfDigest, ...selfContent } = selfAttested.manifest;
+  assert.match(selfDigest, /^[0-9a-f]{64}$/u);
+  selfAttested.manifest.sha256 = canonicalSha256(selfContent);
+  selfAttested.manifestBytes = bytes(selfAttested.manifest);
+  selfAttested.objects.set(
+    `${prefix}manifest.json`,
+    selfAttested.manifestBytes,
+  );
+  const selfRoot = join(root, "self-attested");
+  mkdirSync(selfRoot);
+  await assert.rejects(
+    fetchOperationalBudgetEvidence(
+      {
+        sourceSha,
+        stagingDeploymentId,
+        manifestSha256: sha256(selfAttested.manifestBytes),
+        candidateRoot: selfRoot,
+        destinations,
+        output: join(selfRoot, "observation.json"),
+        exportsOutput: join(selfRoot, "exports"),
+      },
+      { frontieres: boundaries(selfAttested) },
+    ),
+    /provenance identity/i,
+  );
+
+  const missing = materials();
+  missing.objects.delete(missing.manifest.provenance.bundle.key);
+  const missingRoot = join(root, "missing");
+  mkdirSync(missingRoot);
+  await assert.rejects(
+    fetchOperationalBudgetEvidence(
+      {
+        sourceSha,
+        stagingDeploymentId,
+        manifestSha256: sha256(missing.manifestBytes),
+        candidateRoot: missingRoot,
+        destinations,
+        output: join(missingRoot, "observation.json"),
+        exportsOutput: join(missingRoot, "exports"),
+      },
+      { frontieres: boundaries(missing) },
+    ),
+    /provider.*bundle|absent|divergent/i,
+  );
 });
 
 test("rejects every metric source when its GitHub OIDC subject cannot be verified", async (t) => {
@@ -344,8 +434,10 @@ test("rejects every metric source when its GitHub OIDC subject cannot be verifie
     },
     { frontieres: boundaries(material) },
   );
-  const bundle = join(root, "actions-attestation.sigstore.json");
-  writeFileSync(bundle, material.provenanceBytes);
+  const bundle = join(
+    candidateRoot,
+    "operational-budget-provider.sigstore.json",
+  );
   await assert.rejects(
     sealOperationalBudgetEvidence(
       {
@@ -367,63 +459,7 @@ test("rejects every metric source when its GitHub OIDC subject cannot be verifie
   );
 });
 
-test("resumes when the primary bundle already exists and the secondary is absent", async (t) => {
-  const fixture = await stagedFixture(t, "punks-budget-partial-");
-  const bundleSha256 = sha256(fixture.material.provenanceBytes);
-  const key = `${prefix}provenance/${bundleSha256}.sigstore.json`;
-  fixture.material.published.set(
-    `primaire:${key}`,
-    fixture.material.provenanceBytes,
-  );
-  const publishedRoles = [];
-
-  await sealOperationalBudgetEvidence(
-    {
-      sourceSha,
-      stagingDeploymentId,
-      manifestSha256: sha256(fixture.material.manifestBytes),
-      candidateRoot: fixture.candidateRoot,
-      destinations: fixture.destinations,
-      bundle: fixture.bundle,
-    },
-    {
-      frontieres: boundaries(fixture.material, publishedRoles),
-      verifyProviderSubject: () => [{ verified: true }],
-    },
-  );
-  assert.deepEqual(publishedRoles, ["secondaire"]);
-});
-
-test("recovers an ALREADY_EXISTS race only when the concurrent bytes are exact", async (t) => {
-  const fixture = await stagedFixture(t, "punks-budget-race-");
-  const publishedRoles = [];
-  const frontieres = boundaries(fixture.material, publishedRoles);
-  frontieres.cloudflare.creerObjet = async ({ role, cle, contenu }) => {
-    publishedRoles.push(role);
-    fixture.material.published.set(`${role}:${cle}`, Buffer.from(contenu));
-    const error = new Error("concurrent create");
-    error.code = "ALREADY_EXISTS";
-    throw error;
-  };
-
-  await sealOperationalBudgetEvidence(
-    {
-      sourceSha,
-      stagingDeploymentId,
-      manifestSha256: sha256(fixture.material.manifestBytes),
-      candidateRoot: fixture.candidateRoot,
-      destinations: fixture.destinations,
-      bundle: fixture.bundle,
-    },
-    {
-      frontieres,
-      verifyProviderSubject: () => [{ verified: true }],
-    },
-  );
-  assert.deepEqual(publishedRoles.sort(), ["primaire", "secondaire"]);
-});
-
-test("rejects a divergent pre-existing bundle before publishing the other copy", async (t) => {
+test("rejects a divergent provider bundle from either locked copy", async (t) => {
   const fixture = await stagedFixture(t, "punks-budget-divergent-");
   const bundleSha256 = sha256(fixture.material.provenanceBytes);
   const key = `${prefix}provenance/${bundleSha256}.sigstore.json`;
@@ -445,12 +481,12 @@ test("rejects a divergent pre-existing bundle before publishing the other copy",
         verifyProviderSubject: () => [{ verified: true }],
       },
     ),
-    /primary operational Sigstore bundle diverges|primaire operational Sigstore bundle diverges/i,
+    /primaire operational provider bundle is absent or diverges/i,
   );
   assert.deepEqual(publishedRoles, []);
 });
 
-test("rejects when a prefix lock disappears during bundle publication", async (t) => {
+test("rejects when a prefix lock disappears during provider verification", async (t) => {
   const fixture = await stagedFixture(t, "punks-budget-lock-race-");
   const frontieres = boundaries(fixture.material);
   const lockReads = new Map();
@@ -479,7 +515,7 @@ test("rejects when a prefix lock disappears during bundle publication", async (t
         verifyProviderSubject: () => [{ verified: true }],
       },
     ),
-    /lock changed during publish/i,
+    /lock changed during verification/i,
   );
 });
 
