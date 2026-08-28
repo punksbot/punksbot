@@ -6,6 +6,7 @@ import { resolve } from "node:path";
 import WebSocket from "ws";
 
 import {
+  authAggregateUuid,
   deterministicUuid,
   prepareStagingFixture,
 } from "./staging-fixture.mjs";
@@ -216,12 +217,10 @@ async function waitForMessage(stream, messageId, shouldAcknowledge) {
   }
 }
 
-export async function proveLiveStagingFollow({
-  sourceSha,
-  stagingDeploymentId,
-  operatorToken,
-  fetchImpl = fetch,
-}) {
+export async function proveLiveStagingFollow(
+  { sourceSha, stagingDeploymentId, operatorToken, fetchImpl = fetch },
+  { prepareFixture = prepareStagingFixture } = {},
+) {
   if (!SHA_RE.test(sourceSha)) fail("exact source SHA required");
   if (!DEPLOYMENT_RE.test(stagingDeploymentId)) {
     fail("exact staging deployment ID required");
@@ -277,11 +276,15 @@ export async function proveLiveStagingFollow({
     revoked = true;
   };
   try {
-    const fixture = await prepareStagingFixture({
+    const fixture = await prepareFixture({
       sourceSha,
       origin: ORIGIN,
       cookie: session.cookie,
       operatorToken,
+      sessionRevocationId: authAggregateUuid(
+        "session-revocation",
+        session.revoke_capability,
+      ),
       fetchImpl,
       historyCount: 52,
     });
