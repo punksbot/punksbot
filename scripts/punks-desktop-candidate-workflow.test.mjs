@@ -729,7 +729,9 @@ function validateWorkflow(workflow) {
   );
   const macosFinalizer = readFileSync(macosFinalizerPath, "utf8");
   for (const required of [
-    '--wait --timeout "$notary_timeout" --output-format json',
+    "--no-wait --output-format json",
+    'notarytool wait "$submission_id"',
+    '--timeout "$notary_timeout" --output-format json',
     'notarize_and_staple "$app_zip" "$app" app',
     'COPYFILE_DISABLE=1 tar -czf "$updater_temporary"',
     'tauri signer sign "$updater"',

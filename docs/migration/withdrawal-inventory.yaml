@@ -533,7 +533,7 @@ actifs:
     verdict: conserve
     conservation: outillage
     note: coquille Tauri neutre (manifestes, plists, icônes, capabilities, build.rs)
-  - chemin: desktop/src-tauri/{capabilities/punks.json,signing/punks-linux-release.asc}
+  - chemin: desktop/src-tauri/{capabilities/punks.json,Info.punks.plist,signing/punks-linux-release.asc}
     classe: manifeste
     verdict: conserve
     conservation: actif-punks

@@ -36,6 +36,23 @@ test("the signed staging candidate is accepted by its backend and official updat
   assert.deepEqual(candidate.plugins?.updater?.endpoints, [
     "https://github.com/punksbot/punksbot/releases/latest/download/latest.json",
   ]);
+  assert.equal(candidate.bundle?.macOS?.infoPlist, "Info.punks.plist");
+});
+
+test("the public checker rejects the inherited Buzz Info.plist", () => {
+  const fixtureRoot = mkdtempSync(join(tmpdir(), "punks-candidate-config-"));
+  const fixture = join(fixtureRoot, "invalid.json");
+  const candidate = JSON.parse(readFileSync(flavor, "utf8"));
+  candidate.bundle.macOS.infoPlist = "Info.plist";
+  writeFileSync(fixture, JSON.stringify(candidate));
+  try {
+    assert.throws(
+      () => runChecker("--base", base, "--config", fixture),
+      /Punks-only Info\.plist is required/,
+    );
+  } finally {
+    rmSync(fixtureRoot, { recursive: true, force: true });
+  }
 });
 
 test("local, staging and production own distinct app and protocol identities", () => {

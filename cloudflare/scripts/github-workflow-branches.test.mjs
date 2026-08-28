@@ -38,7 +38,7 @@ test("active operator guidance targets the transferred repository identity", () 
   assert.doesNotMatch(guidance, /mabzadev\/punksbot/);
   assert.match(
     guidance,
-    /repo:punksbot\/punksbot:environment:punks-staging-promotion/,
+    /repo:punksbot@319779718\/punksbot@1340667113:environment:punks-staging-promotion/,
   );
 });
 

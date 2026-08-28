@@ -28,6 +28,9 @@
   },
   "bundle": {
     "createUpdaterArtifacts": true,
-    "externalBin": []
+    "externalBin": [],
+    "macOS": {
+      "infoPlist": "Info.punks.plist"
+    }
   }
 }

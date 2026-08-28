@@ -278,8 +278,11 @@ Provision the service:
    leaf signing certificate daily, so its subject, public key and thumbprint are
    not durable values to pin.
 
-Bind the Entra application to the exact environment subject
-`repo:punksbot/punksbot:environment:punks-staging-promotion`. Install the three
+Bind the Entra application to the exact immutable GitHub environment subject
+`repo:punksbot@319779718/punksbot@1340667113:environment:punks-staging-promotion`.
+The numeric owner/repository IDs come from the repository's authenticated OIDC
+customization response and must be updated in Entra if GitHub changes that
+prefix; the mutable-name-only subject is not accepted. Install the three
 non-secret Azure identifiers as protected environment secrets:
 
 ```sh

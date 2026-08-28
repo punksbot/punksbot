@@ -109,6 +109,8 @@ printf 'rebuilt-dmg' > "$before_previous"
     fakeCommand(
       "xcrun",
       `if [[ "$1 $2" = "notarytool submit" ]]; then
+  printf '%s\\n' '{"id":"11111111-1111-4111-8111-111111111111"}'
+elif [[ "$1 $2" = "notarytool wait" ]]; then
   printf '%s\\n' '{"id":"11111111-1111-4111-8111-111111111111","status":"${notaryStatus}"}'
 elif [[ "$1 $2" = "stapler staple" ]]; then
   subject="$3"
@@ -227,9 +229,14 @@ test("finalizes the stapled app before rebuilding and notarizing its updater and
       (line) =>
         line.startsWith("xcrun|notarytool submit") && line.includes(".dmg"),
     );
+    const appWait = calls.findIndex((line) =>
+      line.startsWith("xcrun|notarytool wait"),
+    );
     assert.ok(
       0 <= appSubmit &&
         appSubmit < appStaple &&
+        appSubmit < appWait &&
+        appWait < appStaple &&
         appStaple < archive &&
         archive < signer &&
         signer < dmgBuilder &&
@@ -237,7 +244,11 @@ test("finalizes the stapled app before rebuilding and notarizing its updater and
       calls.join("\n"),
     );
     assert.equal(
-      calls.filter((line) => line.includes("--wait --timeout 7m")).length,
+      calls.filter(
+        (line) =>
+          line.startsWith("xcrun|notarytool wait") &&
+          line.includes("--timeout 7m"),
+      ).length,
       2,
     );
   } finally {

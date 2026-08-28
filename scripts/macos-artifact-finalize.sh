@@ -31,18 +31,37 @@ notarize_and_staple() {
   local submission="$1"
   local subject="$2"
   local label="$3"
-  local result="$temporary_root/${label}-notarization.json"
+  local submit_result="$temporary_root/${label}-notarization-submit.json"
+  local wait_result="$temporary_root/${label}-notarization-wait.json"
   local status
   local submission_id
+  local wait_status
 
   xcrun notarytool submit "$submission" \
     --key "$APPLE_API_KEY_PATH" \
     --key-id "$APPLE_API_KEY" \
     --issuer "$APPLE_API_ISSUER" \
-    --wait --timeout "$notary_timeout" --output-format json > "$result"
+    --no-wait --output-format json > "$submit_result"
 
-  status="$(jq -er '.status' "$result")"
-  submission_id="$(jq -er '.id | select(type == "string" and length > 0)' "$result")"
+  submission_id="$(jq -er '.id | select(type == "string")' "$submit_result")"
+  [[ "$submission_id" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$ ]] \
+    || fail "$label notarization returned an invalid submission ID"
+  printf '%s notarization submitted (%s)\n' "$label" "$submission_id"
+
+  set +e
+  xcrun notarytool wait "$submission_id" \
+    --key "$APPLE_API_KEY_PATH" \
+    --key-id "$APPLE_API_KEY" \
+    --issuer "$APPLE_API_ISSUER" \
+    --timeout "$notary_timeout" --output-format json > "$wait_result"
+  wait_status=$?
+  set -e
+  if (( wait_status != 0 )); then
+    status="$(jq -r '.status // "unknown"' "$wait_result" 2>/dev/null || printf unknown)"
+    fail "$label notarization $submission_id wait exited $wait_status with status $status"
+  fi
+
+  status="$(jq -er '.status' "$wait_result")"
   [[ "$status" = "Accepted" ]] || fail "$label notarization $submission_id ended with status $status"
   printf '%s notarization accepted (%s)\n' "$label" "$submission_id"
   xcrun stapler staple "$subject"

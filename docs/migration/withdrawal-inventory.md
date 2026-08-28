@@ -3,7 +3,7 @@
 > Vue dérivée de [`withdrawal-inventory.yaml`](./withdrawal-inventory.yaml), qui est canonique.
 > Régénérée par `scripts/render-withdrawal-inventory.mjs` (`pnpm migration:render`) — ne pas éditer.
 > Décisions : issues [#13](https://github.com/punksbot/punksbot/issues/13), [#14](https://github.com/punksbot/punksbot/issues/14) et [#17](https://github.com/punksbot/punksbot/issues/17).
-> Checkpoint de récupération : `50e16de180dda4365f8001a8a73503f16977a175` — baseline Buzz gelée : `da818eddc2f470c006a1073c8c5452f8a989f272` — version 1 — sha256 canonique `c4178be6f0f587fba5bf788d05f00401ba3c4b1339ff530536c15d463e4c5025`.
+> Checkpoint de récupération : `50e16de180dda4365f8001a8a73503f16977a175` — baseline Buzz gelée : `da818eddc2f470c006a1073c8c5452f8a989f272` — version 1 — sha256 canonique `e3b3090f03d55daac3a0043b75782cc5b7a5f4738a28a4c21e38eb20cd2a5db3`.
 
 Chaque actif reçoit exactement un verdict. Un module partagé appartient à la tranche de
 son **dernier** consommateur ; ses parties antérieures disparaissent plus tôt (champ
@@ -153,7 +153,7 @@ L’entrée « Retrait global du serveur historique » s’ouvre uniquement lors
 - `desktop/src-tauri/src/punks*.rs` — commandes, runtime, lifecycle Message et store de Session Tauri Punks
 - `desktop/src-tauri/crates/punks-account-client/` — client sémantique Rust Punks (HTTP, cookies, FOLLOW, bail de génération)
 - `desktop/src-tauri/crates/punks-promotion-session/` — processus natif borné utilisé par la preuve de promotion Punks
-- `desktop/src-tauri/{capabilities/punks.json,signing/punks-linux-release.asc}` — capacité Tauri et identité de signature native du candidat Punks
+- `desktop/src-tauri/{capabilities/punks.json,Info.punks.plist,signing/punks-linux-release.asc}` — capacité Tauri et identité de signature native du candidat Punks
 - `desktop/src-tauri/tauri.punks*.json` — configurations Tauri fermées du produit et de la signature Windows Punks
 - `desktop/punks-product/` — entrée HTML/TypeScript isolée du produit desktop Punks
 - `desktop/{tailwind.punks.config.js,tsconfig.punks.json}` — configurations de build fermées de la surface Punks

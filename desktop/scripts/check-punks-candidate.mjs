@@ -13,6 +13,7 @@ const EXPECTED_UPDATER_PUBLIC_KEY =
   "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQ2MTFCOEFFQTQyRjBDQTUKUldTbERDK2tycmdSMXJINFZUSWt3bkFWS3o4Y1EyazRrazBCbXV1M2FSSUY4M1dqSDZBUlIrKzYK";
 const EXPECTED_PUNKS_BUILD =
   "pnpm exec tsc --project tsconfig.punks.json && pnpm exec vite build";
+const EXPECTED_MACOS_INFO_PLIST = "Info.punks.plist";
 const ENVIRONMENT_FLAVORS = [
   {
     environment: "staging",
@@ -119,6 +120,9 @@ function assertCandidate(config, platform) {
   if (config?.bundle?.createUpdaterArtifacts !== true) {
     throw new Error(`${platform}: signed updater artifacts must be enabled`);
   }
+  if (config?.bundle?.macOS?.infoPlist !== EXPECTED_MACOS_INFO_PLIST) {
+    throw new Error(`${platform}: the Punks-only Info.plist is required`);
+  }
   const csp = config?.app?.security?.csp;
   if (typeof csp !== "string" || /buzz/i.test(csp)) {
     throw new Error(
@@ -155,7 +159,8 @@ function assertEnvironmentIsolation(configRoot, stagingPatch) {
       config?.app?.security?.capabilities?.length !== 1 ||
       config.app.security.capabilities[0] !== "punks" ||
       config?.version !== EXPECTED_VERSION ||
-      config?.bundle?.externalBin?.length !== 0
+      config?.bundle?.externalBin?.length !== 0 ||
+      config?.bundle?.macOS?.infoPlist !== EXPECTED_MACOS_INFO_PLIST
     ) {
       throw new Error(
         `${expected.environment}: Punks application identity is not isolated`,
@@ -205,6 +210,18 @@ export function validateCandidateFiles({ base, config }) {
       candidatePatch,
     );
     assertCandidate(merged, platform);
+  }
+  const infoPlist = readFileSync(
+    join(configRoot, EXPECTED_MACOS_INFO_PLIST),
+    "utf8",
+  );
+  if (
+    !infoPlist.includes("<dict/>") ||
+    /buzz|nostr|relay|huddle|NS(?:Microphone|Camera|LocalNetwork)UsageDescription/iu.test(
+      infoPlist,
+    )
+  ) {
+    throw new Error("the Punks-only Info.plist retains a legacy capability");
   }
   assertEnvironmentIsolation(configRoot, candidatePatch);
 }
