@@ -171,8 +171,15 @@ async function catchUp(stream, expectedAfterCursor) {
   }
 }
 
-async function postMessage({ fetchImpl, fixture, cookie, sourceSha, domain }) {
-  const commandId = deterministicUuid(domain, sourceSha);
+async function postMessage({
+  fetchImpl,
+  fixture,
+  cookie,
+  sourceSha,
+  proofAttemptId,
+  domain,
+}) {
+  const commandId = deterministicUuid(`${domain}:${proofAttemptId}`, sourceSha);
   const result = await jsonRequest(
     fetchImpl,
     `${ORIGIN}/api/v1/workspaces/${fixture.workspaceId}` +
@@ -219,7 +226,10 @@ async function waitForMessage(stream, messageId, shouldAcknowledge) {
 
 export async function proveLiveStagingFollow(
   { sourceSha, stagingDeploymentId, operatorToken, fetchImpl = fetch },
-  { prepareFixture = prepareStagingFixture } = {},
+  {
+    prepareFixture = prepareStagingFixture,
+    openFollowStream = followStream,
+  } = {},
 ) {
   if (!SHA_RE.test(sourceSha)) fail("exact source SHA required");
   if (!DEPLOYMENT_RE.test(stagingDeploymentId)) {
@@ -251,6 +261,10 @@ export async function proveLiveStagingFollow(
   ) {
     fail("promotion Session missing");
   }
+  const proofAttemptId = authAggregateUuid(
+    "follow-proof-attempt",
+    session.revoke_capability,
+  );
   let revoked = false;
   const revoke = async () => {
     if (revoked) return;
@@ -275,6 +289,12 @@ export async function proveLiveStagingFollow(
     if (result.body?.revoked !== true) fail("Session revocation failed");
     revoked = true;
   };
+  const openedStreams = [];
+  const openBoundFollowStream = (input) => {
+    const stream = openFollowStream(input);
+    openedStreams.push(stream);
+    return stream;
+  };
   try {
     const fixture = await prepareFixture({
       sourceSha,
@@ -289,7 +309,7 @@ export async function proveLiveStagingFollow(
       historyCount: 52,
       fixtureScope: "follow",
     });
-    const initial = followStream({
+    const initial = openBoundFollowStream({
       workspaceId: fixture.workspaceId,
       conversationId: fixture.conversationId,
       afterCursor: 0,
@@ -305,13 +325,14 @@ export async function proveLiveStagingFollow(
       fixture,
       cookie: session.cookie,
       sourceSha,
+      proofAttemptId,
       domain: "follow-live",
     });
     const liveFrame = await waitForMessage(initial, liveId, true);
     const liveCursor = liveFrame.throughCursor;
     initial.socket.close(1000, "nominal proof complete");
 
-    const beforeCrash = followStream({
+    const beforeCrash = openBoundFollowStream({
       workspaceId: fixture.workspaceId,
       conversationId: fixture.conversationId,
       afterCursor: liveCursor,
@@ -326,12 +347,13 @@ export async function proveLiveStagingFollow(
       fixture,
       cookie: session.cookie,
       sourceSha,
+      proofAttemptId,
       domain: "follow-crash-before-ack",
     });
     const unacked = await waitForMessage(beforeCrash, crashId, false);
     beforeCrash.socket.terminate();
 
-    const replay = followStream({
+    const replay = openBoundFollowStream({
       workspaceId: fixture.workspaceId,
       conversationId: fixture.conversationId,
       afterCursor: liveCursor,
@@ -349,7 +371,7 @@ export async function proveLiveStagingFollow(
     if (replayCursor !== unacked.throughCursor) fail("replay cursor diverged");
     replay.socket.close(1000, "replay acknowledged");
 
-    const afterAck = followStream({
+    const afterAck = openBoundFollowStream({
       workspaceId: fixture.workspaceId,
       conversationId: fixture.conversationId,
       afterCursor: replayCursor,
@@ -395,6 +417,11 @@ export async function proveLiveStagingFollow(
       observedAt: new Date().toISOString(),
     };
   } finally {
+    for (const stream of openedStreams) {
+      try {
+        stream.socket.terminate();
+      } catch {}
+    }
     await revoke().catch(() => {});
   }
 }
