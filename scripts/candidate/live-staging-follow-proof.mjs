@@ -290,7 +290,7 @@ export async function proveLiveStagingFollow(
     revoked = true;
   };
   const openedStreams = [];
-  const openBoundFollowStream = (input) => {
+  const openTrackedFollowStream = (input) => {
     const stream = openFollowStream(input);
     openedStreams.push(stream);
     return stream;
@@ -309,7 +309,7 @@ export async function proveLiveStagingFollow(
       historyCount: 52,
       fixtureScope: "follow",
     });
-    const initial = openBoundFollowStream({
+    const initial = openTrackedFollowStream({
       workspaceId: fixture.workspaceId,
       conversationId: fixture.conversationId,
       afterCursor: 0,
@@ -332,7 +332,7 @@ export async function proveLiveStagingFollow(
     const liveCursor = liveFrame.throughCursor;
     initial.socket.close(1000, "nominal proof complete");
 
-    const beforeCrash = openBoundFollowStream({
+    const beforeCrash = openTrackedFollowStream({
       workspaceId: fixture.workspaceId,
       conversationId: fixture.conversationId,
       afterCursor: liveCursor,
@@ -353,7 +353,7 @@ export async function proveLiveStagingFollow(
     const unacked = await waitForMessage(beforeCrash, crashId, false);
     beforeCrash.socket.terminate();
 
-    const replay = openBoundFollowStream({
+    const replay = openTrackedFollowStream({
       workspaceId: fixture.workspaceId,
       conversationId: fixture.conversationId,
       afterCursor: liveCursor,
@@ -371,7 +371,7 @@ export async function proveLiveStagingFollow(
     if (replayCursor !== unacked.throughCursor) fail("replay cursor diverged");
     replay.socket.close(1000, "replay acknowledged");
 
-    const afterAck = openBoundFollowStream({
+    const afterAck = openTrackedFollowStream({
       workspaceId: fixture.workspaceId,
       conversationId: fixture.conversationId,
       afterCursor: replayCursor,

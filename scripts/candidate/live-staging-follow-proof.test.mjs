@@ -6,6 +6,11 @@ import { authAggregateUuid } from "./staging-fixture.mjs";
 
 const SOURCE_SHA = "84".repeat(20);
 const DEPLOYMENT_ID = `sha256:${"ab".repeat(32)}`;
+const FOLLOW_FIXTURE = Object.freeze({
+  punkId: "80000000-0000-8000-8000-000000000058",
+  workspaceId: "80000000-0000-8000-8000-000000000059",
+  conversationId: "80000000-0000-8000-8000-000000000060",
+});
 
 test("refuse une identité non exacte avant toute frontière distante", async () => {
   let calls = 0;
@@ -93,11 +98,6 @@ test("lie la fixture à l'autorité de révocation de la Session émise", async 
 });
 
 test("réexécute la preuve avec de nouvelles commandes sans attendre un Message idempotent déjà observé", async () => {
-  const fixture = {
-    punkId: "80000000-0000-8000-8000-000000000058",
-    workspaceId: "80000000-0000-8000-8000-000000000059",
-    conversationId: "80000000-0000-8000-8000-000000000060",
-  };
   const messagesByCommand = new Map();
   const commandIds = [];
   let issuedSessions = 0;
@@ -138,10 +138,67 @@ test("réexécute la preuve avec de nouvelles commandes sans attendre un Message
     throw new Error(`unexpected URL ${url}`);
   };
 
-  let streamCount = 0;
+  const seededCursor = 53;
+  const liveCursor = 54;
+  const crashCursor = 55;
+  const accepted = (afterCursor) => ({
+    type: "accepted",
+    resumeAfterCursor: afterCursor,
+  });
+  const ready = (highWaterCursor) => ({
+    type: "ready",
+    highWaterCursor,
+  });
+  const changes = (throughCursor, messageId) => ({
+    type: "changes",
+    throughCursor,
+    messages: [{ id: messageId }],
+  });
+  const requireFreshPost = (throughCursor) => {
+    if (latestPost?.fresh !== true) {
+      throw new Error("FOLLOW frame timeout");
+    }
+    return changes(throughCursor, latestPost.id);
+  };
+  const proofStreamPlans = () => [
+    {
+      name: "initial catch-up and live Message",
+      steps: (afterCursor) => [
+        () => accepted(afterCursor),
+        () => changes(seededCursor, "seed"),
+        () => ready(seededCursor),
+        () => requireFreshPost(liveCursor),
+      ],
+    },
+    {
+      name: "crash before acknowledgement",
+      steps: (afterCursor) => [
+        () => accepted(afterCursor),
+        () => ready(liveCursor),
+        () => requireFreshPost(crashCursor),
+      ],
+    },
+    {
+      name: "replay unacknowledged Message",
+      steps: (afterCursor) => [
+        () => accepted(afterCursor),
+        () => changes(crashCursor, latestPost.id),
+        () => ready(crashCursor),
+      ],
+    },
+    {
+      name: "no replay after acknowledgement",
+      steps: (afterCursor) => [
+        () => accepted(afterCursor),
+        () => ready(crashCursor),
+      ],
+    },
+  ];
+  const streamPlans = [...proofStreamPlans(), ...proofStreamPlans()];
   const openFollowStream = ({ afterCursor }) => {
-    const phase = streamCount % 4;
-    streamCount += 1;
+    const plan = streamPlans.shift();
+    assert.ok(plan, "unexpected extra FOLLOW stream");
+    const steps = plan.steps(afterCursor);
     let nextIndex = 0;
     const socket = {
       close() {},
@@ -152,64 +209,12 @@ test("réexécute la preuve avec de nouvelles commandes sans attendre un Message
       socket,
       opened: Promise.resolve(),
       async next() {
-        const index = nextIndex;
+        const step = steps[nextIndex];
         nextIndex += 1;
-        if (phase === 0) {
-          if (index === 0) {
-            return { type: "accepted", resumeAfterCursor: afterCursor };
-          }
-          if (index === 1) {
-            return {
-              type: "changes",
-              throughCursor: 53,
-              messages: [{ id: "seed" }],
-            };
-          }
-          if (index === 2) {
-            return { type: "ready", highWaterCursor: 53 };
-          }
-          if (latestPost?.fresh !== true) {
-            throw new Error("FOLLOW frame timeout");
-          }
-          return {
-            type: "changes",
-            throughCursor: 54,
-            messages: [{ id: latestPost.id }],
-          };
+        if (step === undefined) {
+          throw new Error(`unexpected frame request for ${plan.name}`);
         }
-        if (phase === 1) {
-          if (index === 0) {
-            return { type: "accepted", resumeAfterCursor: afterCursor };
-          }
-          if (index === 1) {
-            return { type: "ready", highWaterCursor: 54 };
-          }
-          if (latestPost?.fresh !== true) {
-            throw new Error("FOLLOW frame timeout");
-          }
-          return {
-            type: "changes",
-            throughCursor: 55,
-            messages: [{ id: latestPost.id }],
-          };
-        }
-        if (phase === 2) {
-          if (index === 0) {
-            return { type: "accepted", resumeAfterCursor: afterCursor };
-          }
-          if (index === 1) {
-            return {
-              type: "changes",
-              throughCursor: 55,
-              messages: [{ id: latestPost.id }],
-            };
-          }
-          return { type: "ready", highWaterCursor: 55 };
-        }
-        if (index === 0) {
-          return { type: "accepted", resumeAfterCursor: afterCursor };
-        }
-        return { type: "ready", highWaterCursor: 55 };
+        return step();
       },
     };
   };
@@ -222,7 +227,7 @@ test("réexécute la preuve avec de nouvelles commandes sans attendre un Message
   };
   const dependencies = {
     async prepareFixture() {
-      return fixture;
+      return FOLLOW_FIXTURE;
     },
     openFollowStream,
   };
@@ -231,6 +236,7 @@ test("réexécute la preuve avec de nouvelles commandes sans attendre un Message
 
   assert.equal(commandIds.length, 4);
   assert.equal(new Set(commandIds).size, 4);
+  assert.equal(streamPlans.length, 0);
 });
 
 test("termine le transport FOLLOW quand la preuve échoue en attente d'un frame", async () => {
@@ -264,11 +270,7 @@ test("termine le transport FOLLOW quand la preuve échoue en attente d'un frame"
       },
       {
         async prepareFixture() {
-          return {
-            punkId: "80000000-0000-8000-8000-000000000058",
-            workspaceId: "80000000-0000-8000-8000-000000000059",
-            conversationId: "80000000-0000-8000-8000-000000000060",
-          };
+          return FOLLOW_FIXTURE;
         },
         openFollowStream() {
           return {
