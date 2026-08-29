@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 import { lstatSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 const PLATFORMS = new Set([
   "macos-arm64",
@@ -25,7 +27,7 @@ function parseArguments(argv) {
 function parseBoolean(value, name) {
   if (value === "true") return true;
   if (value === "false") return false;
-  throw new Error(name + " must be exactly true or false");
+  throw new Error(`${name} must be exactly true or false`);
 }
 
 export function buildNativeProof(argumentsMap) {
@@ -113,7 +115,7 @@ export function writeNativeProof(argv = process.argv.slice(2)) {
     if (error?.code !== "ENOENT") throw error;
   }
   const proof = buildNativeProof(argumentsMap);
-  writeFileSync(output, JSON.stringify(proof, null, 2) + "\n", {
+  writeFileSync(output, `${JSON.stringify(proof, null, 2)}\n`, {
     encoding: "utf8",
     flag: "wx",
     mode: 0o600,
@@ -121,7 +123,10 @@ export function writeNativeProof(argv = process.argv.slice(2)) {
   return proof;
 }
 
-if (import.meta.url === new URL(process.argv[1], "file:").href) {
+if (
+  process.argv[1] !== undefined &&
+  import.meta.url === pathToFileURL(resolve(process.argv[1])).href
+) {
   try {
     writeNativeProof();
   } catch (error) {

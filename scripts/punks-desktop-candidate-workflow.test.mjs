@@ -19,24 +19,32 @@ const expectedMatrix = [
     runner: "macos-15",
     target: "aarch64-apple-darwin",
     bundles: "app,dmg",
+    session_method: "github",
+    session_secret: "PUNKS_PROMOTION_SESSION_GITHUB",
   },
   {
     platform: "macos-x64",
     runner: "macos-15-intel",
     target: "x86_64-apple-darwin",
     bundles: "app,dmg",
+    session_method: "github",
+    session_secret: "PUNKS_PROMOTION_SESSION_GITHUB",
   },
   {
     platform: "linux-x64",
     runner: "ubuntu-24.04",
     target: "x86_64-unknown-linux-gnu",
     bundles: "appimage,deb",
+    session_method: "google",
+    session_secret: "PUNKS_PROMOTION_SESSION",
   },
   {
     platform: "windows-x64",
     runner: "windows-2025",
     target: "x86_64-pc-windows-msvc",
     bundles: "nsis,msi",
+    session_method: "github",
+    session_secret: "PUNKS_PROMOTION_SESSION_GITHUB",
   },
 ];
 const appleMatrix = expectedMatrix.slice(0, 2);
@@ -77,6 +85,7 @@ const allowedSecretSteps = {
     "publish_promotion/observe_github_cadence",
   ],
   PUNKS_PROMOTION_SESSION: ["build/exercise_installed_candidate"],
+  PUNKS_PROMOTION_SESSION_GITHUB: ["build/exercise_installed_candidate"],
   PUNKS_OPERATOR_PROVISIONING_TOKEN: [
     "verify_staging/prove_live_staging_follow",
     "verify_staging/prove_live_staging_auth",
@@ -354,7 +363,7 @@ function requireCleanInstall(job, name) {
 }
 
 function collectSecretReferences(workflow) {
-  const expression = /\$\{\{\s*secrets\.([A-Z0-9_]+)\s*\}\}/g;
+  const expression = /secrets\.([A-Z0-9_]+)/g;
   const references = [];
   for (const [jobName, job] of Object.entries(workflow.jobs)) {
     const jobScope = JSON.stringify({
@@ -634,6 +643,10 @@ function validateWorkflow(workflow) {
     build.strategy?.matrix?.include,
     buildMatrixExpression,
     "platform matrix changed",
+  );
+  invariant(
+    build.strategy?.["max-parallel"] === 1,
+    "platform legs must not overlap shared authority fault windows",
   );
   requireCheckout(build);
   requireCleanInstall(build, "build");
@@ -1052,6 +1065,21 @@ function validateWorkflow(workflow) {
     "Tauri's base64-wrapped updater signature is passed directly to minisign",
   );
   const installedExercise = workflowStep(build, "exercise_installed_candidate");
+  same(
+    installedExercise.env,
+    {
+      PUNKS_PROMOTION_SESSION: workflowExpression(
+        "secrets[matrix.session_secret]",
+      ),
+      PUNKS_PROMOTION_SESSION_METHOD: workflowExpression(
+        "matrix.session_method",
+      ),
+      PUNKS_OPERATOR_PROVISIONING_TOKEN: workflowExpression(
+        "secrets.PUNKS_OPERATOR_PROVISIONING_TOKEN",
+      ),
+    },
+    "platform Session selection changed",
+  );
   const startLinuxSecretService = workflowStep(
     build,
     "start_linux_secret_service",
@@ -1079,7 +1107,7 @@ function validateWorkflow(workflow) {
   ]);
   requireRun(stopLinuxSecretService, [
     "trap 'rm -rf -- \"$service_root\"' EXIT",
-    'command_line="$(tr \'\\0\' \' \' < "/proc/$pid/cmdline" 2>/dev/null || true)"',
+    "command_line=\"$(tr '\\0' ' ' < \"/proc/$pid/cmdline\" 2>/dev/null || true)\"",
     'kill -KILL "$pid"',
     '"--control-directory=$control_root"',
     '"--address=unix:path=$service_root/bus"',
@@ -1101,12 +1129,26 @@ function validateWorkflow(workflow) {
     "a reviewer name cannot manufacture a manual accessibility review",
   );
   requireRun(installedExercise, [
+    'test -n "$PUNKS_PROMOTION_SESSION"',
+    'test -n "$PUNKS_PROMOTION_SESSION_METHOD"',
+    '--fixture-scope "candidate-$PLATFORM"',
+    '--session-method "$PUNKS_PROMOTION_SESSION_METHOD"',
     'screen_reader_binary="/System/Library/CoreServices/VoiceOver.app/Contents/MacOS/VoiceOver"',
     'screen_reader_binary="$(command -v orca)"',
     "steps.windows_dependencies.outputs.nvda_binary",
     '--screen-reader-binary "$screen_reader_binary"',
     '--operator-token-file "$operator_token_file"',
     '--manual-review-file "$manual_review_file"',
+  ]);
+  requireRunOrder(installedExercise, [
+    "remove_secret_files() {",
+    "trap remove_secret_files EXIT",
+    'node --input-type=module - "$session_bundle" "$operator_token_file"',
+    "unset PUNKS_PROMOTION_SESSION PUNKS_OPERATOR_PROVISIONING_TOKEN",
+    "cargo build",
+    "cleanup_session() {",
+    "trap cleanup_session EXIT",
+    '"$helper" --source-sha "$SOURCE_SHA"',
   ]);
   const reviewUpload = workflowStep(
     build,
@@ -1136,6 +1178,15 @@ function validateWorkflow(workflow) {
   );
 
   const secretReferences = collectSecretReferences(workflow);
+  for (const secret of new Set(
+    expectedMatrix.map(({ session_secret: sessionSecret }) => sessionSecret),
+  )) {
+    secretReferences.push({
+      jobName: "build",
+      stepId: "exercise_installed_candidate",
+      secret,
+    });
+  }
   const observedSecrets = new Set();
   for (const reference of secretReferences) {
     const location = reference.jobName + "/" + reference.stepId;
@@ -1535,6 +1586,51 @@ const mutations = [
     error: /punks-desktop-social-loop/,
   },
   {
+    name: "platform authority windows are allowed to overlap",
+    change(workflow) {
+      delete workflow.jobs.build.strategy["max-parallel"];
+    },
+    error: /must not overlap shared authority fault windows/,
+  },
+  {
+    name: "platform fixtures reuse one candidate scope",
+    change(workflow) {
+      const step = workflowStep(
+        workflow.jobs.build,
+        "exercise_installed_candidate",
+      );
+      step.run = step.run.replace(
+        '--fixture-scope "candidate-$PLATFORM"',
+        '--fixture-scope "candidate"',
+      );
+    },
+    error: /fixture-scope/,
+  },
+  {
+    name: "all platforms share the destructively tested Session",
+    change(workflow) {
+      const step = workflowStep(
+        workflow.jobs.build,
+        "exercise_installed_candidate",
+      );
+      step.env.PUNKS_PROMOTION_SESSION = workflowExpression(
+        "secrets.PUNKS_PROMOTION_SESSION",
+      );
+    },
+    error: /platform Session selection changed/,
+  },
+  {
+    name: "Session snapshot can partially persist before cleanup is armed",
+    change(workflow) {
+      const step = workflowStep(
+        workflow.jobs.build,
+        "exercise_installed_candidate",
+      );
+      step.run = step.run.replace("trap remove_secret_files EXIT", "");
+    },
+    error: /trap remove_secret_files EXIT/,
+  },
+  {
     name: "isolated dist proof is disabled",
     change(workflow) {
       workflowStep(workflow.jobs.build, "verify_product_dist").if = "false";
@@ -1599,10 +1695,7 @@ const mutations = [
         workflow.jobs.build,
         "stop_linux_secret_service",
       );
-      step.run = step.run.replaceAll(
-        "surviving_keyrings",
-        "ignored_survivors",
-      );
+      step.run = step.run.replaceAll("surviving_keyrings", "ignored_survivors");
     },
     error: /stop_linux_secret_service misses surviving_keyrings/,
   },

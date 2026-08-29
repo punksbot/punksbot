@@ -44,6 +44,84 @@ function findApplications(root, directory = root, found = []) {
   return found;
 }
 
+function findXctestruns(directory, found = []) {
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name);
+    const status = lstatSync(path);
+    if (status.isSymbolicLink()) continue;
+    if (status.isDirectory()) {
+      findXctestruns(path, found);
+    } else if (status.isFile() && entry.name.endsWith(".xctestrun")) {
+      found.push(realpathSync(path));
+    }
+  }
+  return found;
+}
+
+function exactXctestrun(buildRoot) {
+  const files = findXctestruns(realpathSync(buildRoot));
+  if (files.length !== 1) {
+    fail("build-for-testing must emit exactly one .xctestrun plan");
+  }
+  return files[0];
+}
+
+export function configureMacosXctestSchemeContent(content) {
+  if (typeof content !== "string") {
+    fail("generated XCTest scheme is not text");
+  }
+  const buildActions = [
+    ...content.matchAll(/<BuildAction\b[\s\S]*?<\/BuildAction>/gu),
+  ];
+  const testActions = [
+    ...content.matchAll(/<TestAction\b[\s\S]*?<\/TestAction>/gu),
+  ];
+  if (buildActions.length !== 1 || testActions.length !== 1) {
+    fail("generated XCTest scheme has no unique build/test actions");
+  }
+  const buildAction = buildActions[0][0];
+  const testAction = testActions[0][0];
+  const buildableReferences = [
+    ...buildAction.matchAll(/<BuildableReference\b[\s\S]*?\/>/gu),
+  ];
+  if (
+    buildableReferences.length !== 1 ||
+    !buildableReferences[0][0].includes(
+      'BlueprintName="PunksPromotionUITests"',
+    ) ||
+    !testAction.includes('buildConfiguration="Release"') ||
+    !testAction.includes("<Testables/>")
+  ) {
+    fail("generated XCTest scheme does not match the closed UI-test target");
+  }
+  const configuredTestAction = testAction.replace(
+    "<Testables/>",
+    `<Testables>\n         <TestableReference skipped="NO">\n${buildableReferences[0][0]}\n         </TestableReference>\n      </Testables>`,
+  );
+  return content.replace(testAction, configuredTestAction);
+}
+
+function configureGeneratedXctestScheme(buildRoot) {
+  const path = join(
+    buildRoot,
+    "PunksPromotionDriver.xcodeproj",
+    "xcshareddata",
+    "xcschemes",
+    "PunksPromotionUITests.xcscheme",
+  );
+  const status = lstatSync(path);
+  if (!status.isFile() || status.isSymbolicLink()) {
+    fail("generated XCTest scheme must be one regular file");
+  }
+  const configured = configureMacosXctestSchemeContent(
+    readFileSync(path, "utf8"),
+  );
+  writeFileSync(path, configured, { encoding: "utf8" });
+  if (readFileSync(path, "utf8") !== configured) {
+    fail("generated XCTest scheme write did not persist");
+  }
+}
+
 function exactKeys(value, keys, label) {
   if (
     value === null ||
@@ -67,8 +145,11 @@ async function runCommand(command, args, options) {
   });
 }
 
-export function macosXctestCommands(buildRoot) {
-  const common = [
+export function macosXctestCommands(
+  buildRoot,
+  xctestrun = join(buildRoot, "PunksPromotionUITests.xctestrun"),
+) {
+  const build = [
     "-project",
     join(buildRoot, "PunksPromotionDriver.xcodeproj"),
     "-scheme",
@@ -82,8 +163,18 @@ export function macosXctestCommands(buildRoot) {
     "CODE_SIGNING_ALLOWED=NO",
   ];
   return [
-    { command: "xcodebuild", args: [...common, "build-for-testing"] },
-    { command: "xcodebuild", args: [...common, "test-without-building"] },
+    { command: "xcodebuild", args: [...build, "build-for-testing"] },
+    {
+      command: "xcodebuild",
+      args: [
+        "-xctestrun",
+        xctestrun,
+        "-destination",
+        "platform=macOS",
+        "CODE_SIGNING_ALLOWED=NO",
+        "test-without-building",
+      ],
+    },
   ];
 }
 
@@ -127,12 +218,20 @@ async function runReviewedXctest({
     ["-S", projectRoot, "-B", buildRoot, "-G", "Xcode"],
     { env: environment, stdio: ["ignore", log, log] },
   );
-  for (const invocation of macosXctestCommands(buildRoot)) {
-    await runCommand(invocation.command, invocation.args, {
-      env: environment,
-      stdio: ["ignore", log, log],
-    });
-  }
+  configureGeneratedXctestScheme(buildRoot);
+  const buildInvocation = macosXctestCommands(buildRoot)[0];
+  await runCommand(buildInvocation.command, buildInvocation.args, {
+    env: environment,
+    stdio: ["ignore", log, log],
+  });
+  const testInvocation = macosXctestCommands(
+    buildRoot,
+    exactXctestrun(buildRoot),
+  )[1];
+  await runCommand(testInvocation.command, testInvocation.args, {
+    env: environment,
+    stdio: ["ignore", log, log],
+  });
 }
 
 async function runIndependentAccessibilityXctest({
@@ -167,7 +266,10 @@ async function runIndependentAccessibilityXctest({
     PUNKS_PROMOTION_IPC_LOG: input.outputs.ipc,
     PUNKS_PROMOTION_NETWORK_LOG: input.outputs.network,
   };
-  const invocation = macosXctestCommands(buildRoot)[1];
+  const invocation = macosXctestCommands(
+    buildRoot,
+    exactXctestrun(buildRoot),
+  )[1];
   await runCommand(
     invocation.command,
     [

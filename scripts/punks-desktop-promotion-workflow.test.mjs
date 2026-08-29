@@ -65,7 +65,17 @@ test("a full candidate proves the installed social loop before collecting a leg"
   assert.match(seal.run, /--raw-evidence/);
   assert.equal(
     exercise.env?.PUNKS_PROMOTION_SESSION,
-    "${{ secrets.PUNKS_PROMOTION_SESSION }}",
+    "${{ secrets[matrix.session_secret] }}",
+    "each platform must read only the secret selected by its closed matrix entry",
+  );
+  assert.equal(
+    exercise.env?.PUNKS_PROMOTION_SESSION_METHOD,
+    "${{ matrix.session_method }}",
+    "the installed proof must receive the provider selected by the same matrix entry",
+  );
+  assert.match(
+    exercise.run,
+    /--session-method "\$PUNKS_PROMOTION_SESSION_METHOD"/,
   );
   assert.equal(
     exercise.env?.PUNKS_OPERATOR_PROVISIONING_TOKEN,
@@ -123,8 +133,17 @@ test("a full candidate proves the installed social loop before collecting a leg"
     "secret-file cleanup must run and remain observable on every exit",
   );
   assert.ok(
-    exercise.run.indexOf("trap cleanup_session EXIT") <
+    exercise.run.indexOf("trap remove_secret_files EXIT") <
       exercise.run.indexOf("writeFileSync(path, value") &&
+      exercise.run.indexOf("writeFileSync(path, value") <
+        exercise.run.indexOf(
+          "unset PUNKS_PROMOTION_SESSION PUNKS_OPERATOR_PROVISIONING_TOKEN",
+        ) &&
+      exercise.run.indexOf(
+        "unset PUNKS_PROMOTION_SESSION PUNKS_OPERATOR_PROVISIONING_TOKEN",
+      ) < exercise.run.indexOf("cargo build") &&
+      exercise.run.indexOf("trap cleanup_session EXIT") <
+        exercise.run.indexOf('"$helper" --source-sha') &&
       exercise.run.indexOf("scripts/candidate/staging-fixture.mjs") <
         exercise.run.lastIndexOf('test ! -e "$session_bundle"') &&
       exercise.run.lastIndexOf('test ! -e "$session_bundle"') <

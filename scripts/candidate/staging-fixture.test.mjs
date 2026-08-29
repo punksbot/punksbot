@@ -4,6 +4,7 @@ import { test } from "node:test";
 import {
   deterministicUuid,
   authAggregateUuid,
+  INSTALLED_FIXTURE_PLATFORMS,
   parsePromotionSessionBundle,
   prepareStagingFixture,
 } from "./staging-fixture.mjs";
@@ -181,6 +182,53 @@ test("isole la fixture FOLLOW du candidat installé", async () => {
     workspaceCommand.commandId,
     deterministicUuid("workspace", sourceSha),
   );
+});
+
+test("isole chaque fixture installée par plateforme", async () => {
+  const commands = [];
+  for (const platform of INSTALLED_FIXTURE_PLATFORMS) {
+    let workspaceCommand;
+    await assert.rejects(
+      prepareStagingFixture({
+        sourceSha,
+        origin,
+        cookie,
+        operatorToken,
+        sessionRevocationId,
+        fixtureScope: `candidate-${platform}`,
+        fetchImpl: async (url, init = {}) => {
+          if (new URL(url).pathname === "/api/auth/v1/session") {
+            return response(200, {
+              session: {
+                sessionId,
+                punkId,
+                expiresAt: "2026-09-24T00:00:00Z",
+                punk: {
+                  id: punkId,
+                  displayName: "Proof Punk",
+                  avatarUrl: null,
+                },
+              },
+            });
+          }
+          workspaceCommand = JSON.parse(init.body);
+          return response(409, { code: "conflict" });
+        },
+      }),
+      /workspace provisioning failed with HTTP 409/,
+    );
+    assert.equal(
+      workspaceCommand.commandId,
+      deterministicUuid(`candidate-${platform}-workspace`, sourceSha),
+    );
+    assert.equal(
+      workspaceCommand.payload.slug,
+      `promotion-${platform}-${sourceSha.slice(0, 12)}`,
+    );
+    commands.push(workspaceCommand);
+  }
+  assert.equal(new Set(commands.map(({ commandId }) => commandId)).size, 4);
+  assert.equal(new Set(commands.map(({ payload }) => payload.slug)).size, 4);
 });
 
 test("fails closed on wrong origin, bad session and partial fixture writes", async () => {

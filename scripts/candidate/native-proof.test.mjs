@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import { buildNativeProof, writeNativeProof } from "./native-proof.mjs";
 
 function argumentsMap(values) {
@@ -114,4 +116,47 @@ test("native proof output is create-only", (context) => {
     /already exists/,
   );
   assert.equal(readFileSync(preexisting, "utf8"), "do not replace\n");
+});
+
+test("native proof CLI executes its filesystem entrypoint", (context) => {
+  const directory = mkdtempSync(join(tmpdir(), "punks-native-proof-cli-"));
+  context.after(() => rmSync(directory, { force: true, recursive: true }));
+  const output = join(directory, "proof.json");
+  const result = spawnSync(
+    process.execPath,
+    [
+      fileURLToPath(new URL("./native-proof.mjs", import.meta.url)),
+      "--platform",
+      "windows-x64",
+      "--identity",
+      "CN=Punks Bot",
+      "--thumbprint",
+      "A".repeat(40),
+      "--timestamped",
+      "true",
+      "--output",
+      output,
+    ],
+    { encoding: "utf8" },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(
+    JSON.parse(readFileSync(output, "utf8")).platform,
+    "windows-x64",
+  );
+});
+
+test("candidate CLIs resolve Windows filesystem entrypoints as file URLs", () => {
+  for (const name of [
+    "native-proof.mjs",
+    "artifacts.mjs",
+    "promotion-dossier.mjs",
+  ]) {
+    const source = readFileSync(new URL(`./${name}`, import.meta.url), "utf8");
+    assert.match(
+      source,
+      /pathToFileURL\(resolve\(process\.argv\[1\]\)\)\.href/u,
+    );
+    assert.doesNotMatch(source, /new URL\(process\.argv\[1\]/u);
+  }
 });

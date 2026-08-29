@@ -34,6 +34,7 @@ const WORKSPACE_ID = "11111111-1111-4111-8111-111111111111";
 const FOLLOW_WORKSPACE_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const PUNK_ID = "22222222-2222-4222-8222-222222222222";
 const SESSION_ID = "66666666-6666-4666-8666-666666666666";
+const GITHUB_SESSION_ID = "99999999-9999-4999-8999-999999999999";
 const SESSION_REVOCATION_ID = "77777777-7777-4777-8777-777777777777";
 const CONVERSATION_ID = "33333333-3333-4333-8333-333333333333";
 const FOLLOW_CONVERSATION_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -105,8 +106,8 @@ function liveAuthMatrixProof() {
             ...common,
             flowId: `${index + 1}0000000-0000-8000-8000-000000000058`,
             outcomeCode: "authenticated",
-            punkId: method === "github" ? PUNK_ID : crypto.randomUUID(),
-            sessionId: method === "github" ? SESSION_ID : crypto.randomUUID(),
+            punkId: PUNK_ID,
+            sessionId: method === "google" ? SESSION_ID : GITHUB_SESSION_ID,
             browserCompletedAt: `2026-08-26T17:0${index}:00.000Z`,
             confirmedAt: `2026-08-26T17:0${index}:01.000Z`,
             methodEvidence: {
@@ -373,6 +374,7 @@ function observation(artifactSha256) {
 function exerciseRequest(input) {
   return {
     platform: PLATFORM,
+    sessionMethod: "google",
     candidateSha: SOURCE_SHA,
     stagingDeploymentProof: input.stagingProof,
     liveAuthProof: input.liveAuthProof,
@@ -570,6 +572,22 @@ test("rejects cross-role UUID reuse between FOLLOW and installed fixtures", asyn
   assert.throws(() => readFileSync(input.output), /ENOENT/);
 });
 
+test("rejects a provider Session inverted for the installed platform", async (t) => {
+  const input = fixture();
+  t.after(() => rmSync(input.root, { recursive: true, force: true }));
+  const installedFixture = JSON.parse(
+    readFileSync(input.stagingFixture, "utf8"),
+  );
+  installedFixture.sessionId = GITHUB_SESSION_ID;
+  writeFileSync(input.stagingFixture, `${JSON.stringify(installedFixture)}\n`);
+
+  await assert.rejects(
+    exerciseInstalledSocialLoop(exerciseRequest(input), boundaries(input)),
+    /live Auth proof does not own the expected provider Session/i,
+  );
+  assert.throws(() => readFileSync(input.output), /ENOENT/);
+});
+
 test("writes no transcript when a story lacks an observed IPC crossing", async (t) => {
   const input = fixture();
   t.after(() => rmSync(input.root, { recursive: true, force: true }));
@@ -589,6 +607,8 @@ test("the CLI accepts no transcript, driver binary, boundary or skip", async () 
     run([
       "--platform",
       PLATFORM,
+      "--session-method",
+      "google",
       "--source-sha",
       SOURCE_SHA,
       "--staging-deployment-proof",

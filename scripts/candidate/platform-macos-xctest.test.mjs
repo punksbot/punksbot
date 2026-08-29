@@ -11,12 +11,46 @@ import {
 } from "../promotion-installed-transcript-lib.mjs";
 import { MATRICE_ACCESSIBILITE } from "../promotion-resilience-lib.mjs";
 import {
+  configureMacosXctestSchemeContent,
   exerciseMacosInstalledCandidate,
   macosXctestCommands,
 } from "./platform-macos-xctest.mjs";
 
+test("adds the exact UI-test target to the generated Release scheme", () => {
+  const reference = `<BuildableReference
+               BuildableIdentifier="primary"
+               BlueprintIdentifier="ABC123"
+               BuildableName="PunksPromotionUITests.xctest/Contents/MacOS/PunksPromotionUITests"
+               BlueprintName="PunksPromotionUITests"
+               ReferencedContainer="container:/tmp/PunksPromotionDriver.xcodeproj"/>`;
+  const buildAction = `<BuildAction><BuildActionEntries><BuildActionEntry>${reference}</BuildActionEntry></BuildActionEntries></BuildAction>`;
+  const testAction =
+    '<TestAction buildConfiguration="Release"><Testables/></TestAction>';
+  const scheme = `<Scheme>${buildAction}${testAction}</Scheme>`;
+  const configured = configureMacosXctestSchemeContent(scheme);
+  assert.match(configured, /<TestableReference skipped="NO">/u);
+  assert.equal(configured.match(/BlueprintIdentifier="ABC123"/gu)?.length, 2);
+  assert.doesNotMatch(configured, /<Testables\/>/u);
+  assert.throws(
+    () =>
+      configureMacosXctestSchemeContent(
+        `<Scheme>${buildAction}${buildAction}${testAction}</Scheme>`,
+      ),
+    /unique build\/test actions/,
+  );
+  assert.throws(
+    () =>
+      configureMacosXctestSchemeContent(
+        `<Scheme>${buildAction}${testAction}${testAction}</Scheme>`,
+      ),
+    /unique build\/test actions/,
+  );
+});
+
 test("builds the reviewed XCTest bundle before running it without rebuilding", () => {
-  const commands = macosXctestCommands("/tmp/punks-xctest-build");
+  const xctestrun =
+    "/tmp/punks-xctest-build/DerivedData/Build/Products/PunksPromotionUITests.xctestrun";
+  const commands = macosXctestCommands("/tmp/punks-xctest-build", xctestrun);
   assert.equal(commands.length, 2);
   assert.equal(commands[0].command, "xcodebuild");
   assert.ok(commands[0].args.includes("build-for-testing"));
@@ -24,11 +58,9 @@ test("builds the reviewed XCTest bundle before running it without rebuilding", (
   assert.equal(commands[1].command, "xcodebuild");
   assert.ok(commands[1].args.includes("test-without-building"));
   assert.equal(commands[1].args.includes("build-for-testing"), false);
-  assert.ok(
-    commands.every(({ args }) =>
-      args.includes("/tmp/punks-xctest-build/PunksPromotionDriver.xcodeproj"),
-    ),
-  );
+  assert.deepEqual(commands[1].args.slice(0, 2), ["-xctestrun", xctestrun]);
+  assert.equal(commands[1].args.includes("-project"), false);
+  assert.equal(commands[1].args.includes("-scheme"), false);
 });
 
 test("accepts only a create-only XCTest result emitted for the installed app", async (t) => {

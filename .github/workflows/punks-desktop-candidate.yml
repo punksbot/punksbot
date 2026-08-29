@@ -374,8 +374,9 @@ jobs:
       id-token: write
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
-        include: ${{ fromJSON(inputs.validation_scope == 'apple-only' && '[{"platform":"macos-arm64","runner":"macos-15","target":"aarch64-apple-darwin","bundles":"app,dmg"},{"platform":"macos-x64","runner":"macos-15-intel","target":"x86_64-apple-darwin","bundles":"app,dmg"}]' || '[{"platform":"macos-arm64","runner":"macos-15","target":"aarch64-apple-darwin","bundles":"app,dmg"},{"platform":"macos-x64","runner":"macos-15-intel","target":"x86_64-apple-darwin","bundles":"app,dmg"},{"platform":"linux-x64","runner":"ubuntu-24.04","target":"x86_64-unknown-linux-gnu","bundles":"appimage,deb"},{"platform":"windows-x64","runner":"windows-2025","target":"x86_64-pc-windows-msvc","bundles":"nsis,msi"}]') }}
+        include: ${{ fromJSON(inputs.validation_scope == 'apple-only' && '[{"platform":"macos-arm64","runner":"macos-15","target":"aarch64-apple-darwin","bundles":"app,dmg","session_method":"github","session_secret":"PUNKS_PROMOTION_SESSION_GITHUB"},{"platform":"macos-x64","runner":"macos-15-intel","target":"x86_64-apple-darwin","bundles":"app,dmg","session_method":"github","session_secret":"PUNKS_PROMOTION_SESSION_GITHUB"}]' || '[{"platform":"macos-arm64","runner":"macos-15","target":"aarch64-apple-darwin","bundles":"app,dmg","session_method":"github","session_secret":"PUNKS_PROMOTION_SESSION_GITHUB"},{"platform":"macos-x64","runner":"macos-15-intel","target":"x86_64-apple-darwin","bundles":"app,dmg","session_method":"github","session_secret":"PUNKS_PROMOTION_SESSION_GITHUB"},{"platform":"linux-x64","runner":"ubuntu-24.04","target":"x86_64-unknown-linux-gnu","bundles":"appimage,deb","session_method":"google","session_secret":"PUNKS_PROMOTION_SESSION"},{"platform":"windows-x64","runner":"windows-2025","target":"x86_64-pc-windows-msvc","bundles":"nsis,msi","session_method":"github","session_secret":"PUNKS_PROMOTION_SESSION_GITHUB"}]') }}
     env:
       PLATFORM: ${{ matrix.platform }}
       TARGET: ${{ matrix.target }}
@@ -1354,12 +1355,37 @@ jobs:
         if: inputs.validation_scope == 'full-candidate'
         shell: bash
         env:
-          PUNKS_PROMOTION_SESSION: ${{ secrets.PUNKS_PROMOTION_SESSION }}
+          PUNKS_PROMOTION_SESSION: ${{ secrets[matrix.session_secret] }}
+          PUNKS_PROMOTION_SESSION_METHOD: ${{ matrix.session_method }}
           PUNKS_OPERATOR_PROVISIONING_TOKEN: ${{ secrets.PUNKS_OPERATOR_PROVISIONING_TOKEN }}
         run: |
           set -euo pipefail
           test -n "$PUNKS_PROMOTION_SESSION"
+          test -n "$PUNKS_PROMOTION_SESSION_METHOD"
           test -n "$PUNKS_OPERATOR_PROVISIONING_TOKEN"
+          session_bundle="$RUNNER_TEMP/punks-promotion-session.json"
+          operator_token_file="$RUNNER_TEMP/punks-operator-token"
+          manual_review_file="$RUNNER_TEMP/punks-manual-accessibility-review.json"
+          remove_secret_files() {
+            node --input-type=module - "$session_bundle" "$operator_token_file" "$manual_review_file" <<'NODE'
+          import { rmSync } from "node:fs";
+          for (const path of process.argv.slice(2)) rmSync(path, { force: true });
+          NODE
+          }
+          trap remove_secret_files EXIT
+          node --input-type=module - "$session_bundle" "$operator_token_file" <<'NODE'
+          import { writeFileSync } from "node:fs";
+          const materials = [
+            [process.argv[2], process.env.PUNKS_PROMOTION_SESSION],
+            [process.argv[3], process.env.PUNKS_OPERATOR_PROVISIONING_TOKEN],
+          ];
+          for (const [path, value] of materials) {
+            if (typeof value !== "string" || value.length === 0) process.exit(1);
+            writeFileSync(path, value, { flag: "wx", mode: 0o600 });
+          }
+          NODE
+          unset PUNKS_PROMOTION_SESSION PUNKS_OPERATOR_PROVISIONING_TOKEN
+
           staging_proof="$RUNNER_TEMP/punks-staging-proof/staging-deployment-proof.json"
           live_auth_proof="$RUNNER_TEMP/punks-staging-proof/live-staging-auth-proof.json"
           live_follow_proof="$RUNNER_TEMP/punks-staging-proof/live-staging-follow-proof.json"
@@ -1374,15 +1400,6 @@ jobs:
             --package punks-promotion-session
           helper="desktop/src-tauri/target/$TARGET/release/punks-promotion-session"
           if [[ "$PLATFORM" == "windows-x64" ]]; then helper="${helper}.exe"; fi
-          session_bundle="$RUNNER_TEMP/punks-promotion-session.json"
-          operator_token_file="$RUNNER_TEMP/punks-operator-token"
-          manual_review_file="$RUNNER_TEMP/punks-manual-accessibility-review.json"
-          remove_secret_files() {
-            node --input-type=module - "$session_bundle" "$operator_token_file" "$manual_review_file" <<'NODE'
-          import { rmSync } from "node:fs";
-          for (const path of process.argv.slice(2)) rmSync(path, { force: true });
-          NODE
-          }
           cleanup_session() {
             local main_status=$?
             trap - EXIT
@@ -1395,23 +1412,12 @@ jobs:
             exit "$cleanup_status"
           }
           trap cleanup_session EXIT
-          node --input-type=module - "$session_bundle" "$operator_token_file" <<'NODE'
-          import { writeFileSync } from "node:fs";
-          const materials = [
-            [process.argv[2], process.env.PUNKS_PROMOTION_SESSION],
-            [process.argv[3], process.env.PUNKS_OPERATOR_PROVISIONING_TOKEN],
-          ];
-          for (const [path, value] of materials) {
-            if (typeof value !== "string" || value.length === 0) process.exit(1);
-            writeFileSync(path, value, { flag: "wx", mode: 0o600 });
-          }
-          NODE
-          unset PUNKS_PROMOTION_SESSION PUNKS_OPERATOR_PROVISIONING_TOKEN
           "$helper" --source-sha "$SOURCE_SHA" < "$session_bundle"
           staging_fixture="$RUNNER_TEMP/punks-staging-fixture.json"
           node scripts/candidate/staging-fixture.mjs \
             --source-sha "$SOURCE_SHA" \
             --origin "https://staging.punks.bot" \
+            --fixture-scope "candidate-$PLATFORM" \
             --session-file "$session_bundle" \
             --operator-token-file "$operator_token_file" \
             --output "$staging_fixture"
@@ -1495,6 +1501,7 @@ jobs:
           fi
           "${driver_command[@]}" scripts/candidate/exercise-installed-social-loop.mjs \
               --platform "$PLATFORM" \
+              --session-method "$PUNKS_PROMOTION_SESSION_METHOD" \
               --source-sha "$SOURCE_SHA" \
               --staging-deployment-proof "$staging_proof" \
               --live-auth-proof "$live_auth_proof" \

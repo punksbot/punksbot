@@ -14,7 +14,17 @@ const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const COOKIE_RE = /^__Host-punks_session=[^;\s]{32,4096}$/;
 const CAPABILITY_RE = /^[A-Za-z0-9_-]{43,128}$/;
-const FIXTURE_SCOPES = new Set(["candidate", "follow"]);
+export const INSTALLED_FIXTURE_PLATFORMS = Object.freeze([
+  "macos-arm64",
+  "macos-x64",
+  "linux-x64",
+  "windows-x64",
+]);
+const FIXTURE_SCOPES = new Set([
+  "candidate",
+  "follow",
+  ...INSTALLED_FIXTURE_PLATFORMS.map((platform) => `candidate-${platform}`),
+]);
 
 function invariant(condition, message) {
   if (!condition) throw new Error(message);
@@ -153,7 +163,7 @@ export async function prepareStagingFixture({
   invariant(SHA_RE.test(sourceSha), "exact 40-character source SHA required");
   invariant(
     FIXTURE_SCOPES.has(fixtureScope),
-    "staging fixture scope must be candidate or follow",
+    "staging fixture scope is not one closed candidate/FOLLOW scope",
   );
   let parsedOrigin;
   try {
@@ -209,10 +219,13 @@ export async function prepareStagingFixture({
     fixtureDomain(fixtureScope, "workspace"),
     sourceSha,
   );
+  const slugScope = fixtureScope.startsWith("candidate-")
+    ? fixtureScope.slice("candidate-".length)
+    : fixtureScope;
   const slug =
-    fixtureScope === "candidate"
+    slugScope === "candidate"
       ? `promotion-${sourceSha.slice(0, 12)}`
-      : `promotion-follow-${sourceSha.slice(0, 12)}`;
+      : `promotion-${slugScope}-${sourceSha.slice(0, 12)}`;
   const workspaceCommand = {
     contract: "workspace.create@1",
     commandId: workspaceCommandId,
@@ -426,6 +439,7 @@ export async function main(argv = process.argv.slice(2)) {
       "session-revocation",
       session.revoke_capability,
     ),
+    fixtureScope: values.get("fixture-scope") ?? "candidate",
   });
   const output = resolve(required("output"));
   const descriptor = openSync(output, "wx", 0o600);

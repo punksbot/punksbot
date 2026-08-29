@@ -205,6 +205,10 @@ export function validateLiveAuthMatrixProof(proof, expected) {
           expected,
         ),
     ) ||
+    new Set(METHODS.map((method) => proof.flows[method].success.punkId))
+      .size !== 1 ||
+    new Set(METHODS.map((method) => proof.flows[method].success.sessionId))
+      .size !== METHODS.length ||
     !exact(proof.negative, [
       "wrongOauthState",
       "wrongBrowserBinding",

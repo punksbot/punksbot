@@ -145,7 +145,7 @@ test("accepts only Google/GitHub success and cancellation, with passkey explicit
             ...common,
             flowId: matrix[method].successFlowId,
             outcomeCode: "authenticated",
-            punkId: `${methodIndex + 7}0000000-0000-8000-8000-000000000058`,
+            punkId: "70000000-0000-8000-8000-000000000058",
             sessionId: `${methodIndex + 1}1000000-0000-8000-8000-000000000058`,
             browserCompletedAt: `2026-08-26T17:0${methodIndex}:00.000Z`,
             confirmedAt: `2026-08-26T17:0${methodIndex}:01.000Z`,
@@ -221,6 +221,14 @@ test("accepts only Google/GitHub success and cancellation, with passkey explicit
     },
     (value) => {
       delete value.flows.github;
+    },
+    (value) => {
+      value.flows.google.success.punkId =
+        "80000000-0000-8000-8000-000000000058";
+    },
+    (value) => {
+      value.flows.github.success.sessionId =
+        value.flows.google.success.sessionId;
     },
   ]) {
     const invalid = structuredClone(proof);

@@ -42,6 +42,12 @@ const PLATFORMS = Object.freeze([
   "linux-x64",
   "windows-x64",
 ]);
+const SESSION_METHOD_BY_PLATFORM = Object.freeze({
+  "macos-arm64": "github",
+  "macos-x64": "github",
+  "linux-x64": "google",
+  "windows-x64": "github",
+});
 const REQUIRED_CAPABILITIES = Object.freeze([
   "account-session",
   "workspace-mount",
@@ -257,7 +263,13 @@ function loadLiveFollowProof(
 
 function loadLiveAuthProof(
   path,
-  { candidateSha, stagingDeploymentId, fixture, stagingWorkers },
+  {
+    candidateSha,
+    stagingDeploymentId,
+    fixture,
+    stagingWorkers,
+    expectedMethod,
+  },
 ) {
   const proof = parseJsonFile(path, "live staging Auth proof").value;
   const authWorker = stagingWorkers.find(
@@ -298,8 +310,11 @@ function loadLiveAuthProof(
       proof.flows[method].success.sessionId === fixture.sessionId &&
       proof.flows[method].success.punkId === fixture.punkId,
   );
-  if (installedSessions.length !== 1) {
-    fail("live Auth proof does not own the installed promotion Session");
+  if (
+    installedSessions.length !== 1 ||
+    installedSessions[0] !== expectedMethod
+  ) {
+    fail("live Auth proof does not own the expected provider Session");
   }
   return proof;
 }
@@ -620,6 +635,7 @@ const reviewedInstalledDriver = Object.freeze({
 export async function exerciseInstalledSocialLoop(
   {
     platform,
+    sessionMethod,
     candidateSha,
     stagingDeploymentProof,
     liveAuthProof,
@@ -647,6 +663,9 @@ export async function exerciseInstalledSocialLoop(
   } = {},
 ) {
   if (!PLATFORMS.includes(platform)) fail("unsupported platform");
+  if (sessionMethod !== SESSION_METHOD_BY_PLATFORM[platform]) {
+    fail("platform Session provider does not match the closed mapping");
+  }
   if (!SHA1_RE.test(candidateSha ?? "")) fail("exact source SHA required");
   const fixture = loadStagingFixture(stagingFixture, candidateSha);
   const promotionProfileFile = stableFile(
@@ -720,6 +739,7 @@ export async function exerciseInstalledSocialLoop(
     stagingDeploymentId: staging.deploymentId,
     fixture,
     stagingWorkers: staging.workers,
+    expectedMethod: sessionMethod,
   });
   if (existsSync(resolve(networkLog))) {
     fail("Rust promotion network log must be created by this installed run");
@@ -869,6 +889,7 @@ export async function exerciseInstalledSocialLoop(
 function parseOptions(argv) {
   const expected = new Set([
     "--platform",
+    "--session-method",
     "--source-sha",
     "--staging-deployment-proof",
     "--live-auth-proof",
@@ -917,6 +938,7 @@ export async function run(argv = process.argv.slice(2)) {
   const { required } = parseOptions(argv);
   return await exerciseInstalledSocialLoop({
     platform: required("--platform"),
+    sessionMethod: required("--session-method"),
     candidateSha: required("--source-sha"),
     stagingDeploymentProof: required("--staging-deployment-proof"),
     liveAuthProof: required("--live-auth-proof"),

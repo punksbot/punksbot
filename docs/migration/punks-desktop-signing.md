@@ -23,15 +23,18 @@ four-platform candidate passed.
 
 ## Protected staging fixture and installed driver
 
-The full candidate additionally requires three protected environment secrets.
+The full candidate additionally requires four protected environment secrets.
 They are never exposed to the renderer or copied into a proof:
 
-- `PUNKS_PROMOTION_SESSION` — one fresh JSON bundle for the dedicated staging
+- `PUNKS_PROMOTION_SESSION` — the fresh Google JSON bundle for the dedicated staging
   Compte Punks, containing its `__Host-punks_session` cookie, bounded metadata
   and revoke-only capability in the closed shape accepted by
   `punks-promotion-session`. The Auth Worker issues it only through the
   operator-protected staging endpoint and binds it to the exact candidate in
-  `source_sha`;
+  `source_sha`; only the Linux leg receives this Session;
+- `PUNKS_PROMOTION_SESSION_GITHUB` — the fresh GitHub bundle from the same live
+  matrix and the same Punk; the two macOS legs and Windows receive this Session,
+  so Linux's terminal Session-loss proof cannot revoke another leg's authority;
 - `PUNKS_OPERATOR_PROVISIONING_TOKEN` — the narrow operator credential used
   only to create or replay the source-bound promotion Workspace and drive the
   operator-only authority fault boundary;
@@ -41,8 +44,15 @@ They are never exposed to the renderer or copied into a proof:
   the exact staging deployment. The value contains no cookie, verifier,
   provider credential or authentication secret.
 
-The workflow snapshots both values into create-once runner files (`0600` where
+The workflow runs the four platform legs with `max-parallel: 1`, and gives each
+leg a distinct `candidate-<platform>` fixture scope. This prevents overlapping
+fixture writes and authority-fault windows even if a future runner mix changes
+relative build duration. It snapshots the selected Session and operator value
+into create-once runner files (`0600` where
 the host supports POSIX modes), immediately unsets their environment variables,
+and arms cleanup before the first create-only write. Cargo, build scripts and
+the installed application therefore inherit neither Session bundle nor operator
+token. The workflow then
 installs the Session in the operating-system credential store, and creates the
 bounded fixture through public staging contracts. It deletes the Session bundle
 before starting the installed driver and attempts the same deletion plus
@@ -82,8 +92,10 @@ candidate manifest instead of accepting a platform/hash/size declaration.
 remote adapter or skip flag. The reviewed platform driver must install and
 exercise the exact updater artifact, emit UI/IPC/public-contract observations,
 and produce its assigned fault/recovery observations. The macOS adapter builds
-its reviewed XCTest bundle and then runs it with `test-without-building`
-against the extracted `.app`; Linux and Windows use `tauri-driver` against the
+its reviewed XCTest bundle, requires exactly one generated `.xctestrun` plan,
+and runs that plan with `-xctestrun ... test-without-building` against the
+extracted `.app`; it does not assume that CMake's generated scheme owns a Test
+action. Linux and Windows use `tauri-driver` against the
 installed native executable. Each adapter starts the platform's real screen
 reader (VoiceOver, Orca or the SHA-256-verified portable NVDA) around the whole
 installed action and requires a create-only raw log that names the Punks
@@ -109,9 +121,11 @@ The diagnostic FOLLOW proof and the installed candidate deliberately use
 different source-derived Workspace and Conversation UUIDs; the installed
 validator rejects any collision between those two fixture scopes.
 
-The promotion Session is delivered by exactly one of the two successful
-system-browser flows in the live Auth matrix; the helper stores that exact Session
-in the operating-system credential store before launch. The proof is read from
+Each platform Session is delivered by exactly one of the two successful
+system-browser flows in the live Auth matrix: Linux uses Google, while macOS and
+Windows use GitHub. The helper stores that platform's exact Session in the
+operating-system credential store before launch. Both success flows resolve to
+the same Punk, but keep distinct Session authorities. The proof is read from
 the terminal `DesktopAuthFlowDO` and binds provider callback, returned OAuth
 state, browser binding, provider PKCE, native verifier, Punk and Session to the
 exact Auth Worker version, source SHA and staging deployment. The live Worker
@@ -352,7 +366,10 @@ added to `GITHUB_PATH`, and the bundle step requires `Get-Command` to resolve
 exactly to that path before invoking Tauri. This absolute repository handoff is
 also inherited by NSIS `!uninstfinalize`, whose working directory differs from
 Tauri's normal signing calls. Every HSM call is appended to a create-once
-ledger. The workflow requires
+ledger. The native-proof CLI resolves its entrypoint through
+`pathToFileURL(resolve())`, so a Windows `D:\...` runner path executes the
+writer instead of being interpreted as a URL scheme and silently omitting
+`native-proof.json`. The workflow requires
 exactly two patched-main signatures, five NSIS plugin signatures, two WiX
 extension signatures and one each for the NSIS uninstaller, NSIS installer and
 MSI installer. It then compares every stable path and digest to the exact
