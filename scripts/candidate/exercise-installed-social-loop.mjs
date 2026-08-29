@@ -220,8 +220,12 @@ function loadLiveFollowProof(
     proof.sourceSha !== candidateSha ||
     proof.stagingDeploymentId !== stagingDeploymentId ||
     proof.staging !== "https://staging.punks.bot" ||
-    proof.workspaceId !== fixture.workspaceId ||
-    proof.conversationId !== fixture.conversationId ||
+    !UUID_RE.test(proof.workspaceId ?? "") ||
+    !UUID_RE.test(proof.conversationId ?? "") ||
+    proof.workspaceId === proof.conversationId ||
+    [proof.workspaceId, proof.conversationId].some(
+      (id) => id === fixture.workspaceId || id === fixture.conversationId,
+    ) ||
     !Number.isSafeInteger(proof.catchUpFrames) ||
     proof.catchUpFrames < 1 ||
     !Number.isSafeInteger(proof.initialCursor) ||

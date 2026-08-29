@@ -31,10 +31,12 @@ import {
 const SOURCE_SHA = "6b".repeat(20);
 const PLATFORM = "linux-x64";
 const WORKSPACE_ID = "11111111-1111-4111-8111-111111111111";
+const FOLLOW_WORKSPACE_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const PUNK_ID = "22222222-2222-4222-8222-222222222222";
 const SESSION_ID = "66666666-6666-4666-8666-666666666666";
 const SESSION_REVOCATION_ID = "77777777-7777-4777-8777-777777777777";
 const CONVERSATION_ID = "33333333-3333-4333-8333-333333333333";
+const FOLLOW_CONVERSATION_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const REPLY_MESSAGE_ID = "55555555-5555-4555-8555-555555555555";
 const WORKERS = CANONICAL_STAGING_WORKER_NAMES.map((name, index) => ({
   name,
@@ -190,8 +192,8 @@ function fixture() {
       sourceSha: SOURCE_SHA,
       stagingDeploymentId: DEPLOYMENT_ID,
       staging: "https://staging.punks.bot",
-      workspaceId: WORKSPACE_ID,
-      conversationId: CONVERSATION_ID,
+      workspaceId: FOLLOW_WORKSPACE_ID,
+      conversationId: FOLLOW_CONVERSATION_ID,
       catchUpFrames: 53,
       initialCursor: 54,
       liveCursor: 55,
@@ -368,6 +370,32 @@ function observation(artifactSha256) {
   };
 }
 
+function exerciseRequest(input) {
+  return {
+    platform: PLATFORM,
+    candidateSha: SOURCE_SHA,
+    stagingDeploymentProof: input.stagingProof,
+    liveAuthProof: input.liveAuthProof,
+    liveFollowProof: input.liveFollowProof,
+    stagingFixture: input.stagingFixture,
+    bundle: input.bundle,
+    installedRoot: input.bundle,
+    installedArtifact: input.artifact,
+    networkLog: input.networkLog,
+    output: input.output,
+    resilienceOutput: input.resilienceOutput,
+    rawEvidenceOutput: input.rawEvidenceOutput,
+    nativeBinary: input.nativeBinary,
+    nativeProof: input.nativeProof,
+    faultObservation: input.faultObservation,
+    operatorTokenFile: input.operatorTokenFile,
+    manualReviewFile: input.manualReviewFile,
+    gateReport: input.gateReport,
+    gateLog: input.gateLog,
+    screenReaderBinary: input.screenReaderBinary,
+  };
+}
+
 function boundaries(input, mutate = () => {}) {
   return {
     installedDriver: {
@@ -471,29 +499,7 @@ test("derives the transcript from installed UI, IPC, contracts and the Rust netw
   t.after(() => rmSync(input.root, { recursive: true, force: true }));
 
   const transcript = await exerciseInstalledSocialLoop(
-    {
-      platform: PLATFORM,
-      candidateSha: SOURCE_SHA,
-      stagingDeploymentProof: input.stagingProof,
-      liveAuthProof: input.liveAuthProof,
-      liveFollowProof: input.liveFollowProof,
-      stagingFixture: input.stagingFixture,
-      bundle: input.bundle,
-      installedRoot: input.bundle,
-      installedArtifact: input.artifact,
-      networkLog: input.networkLog,
-      output: input.output,
-      resilienceOutput: input.resilienceOutput,
-      rawEvidenceOutput: input.rawEvidenceOutput,
-      nativeBinary: input.nativeBinary,
-      nativeProof: input.nativeProof,
-      faultObservation: input.faultObservation,
-      operatorTokenFile: input.operatorTokenFile,
-      manualReviewFile: input.manualReviewFile,
-      gateReport: input.gateReport,
-      gateLog: input.gateLog,
-      screenReaderBinary: input.screenReaderBinary,
-    },
+    exerciseRequest(input),
     boundaries(input),
   );
 
@@ -534,6 +540,36 @@ test("derives the transcript from installed UI, IPC, contracts and the Rust netw
   });
 });
 
+test("requires the diagnostic FOLLOW proof to use an isolated fixture", async (t) => {
+  const input = fixture();
+  t.after(() => rmSync(input.root, { recursive: true, force: true }));
+  const proof = JSON.parse(readFileSync(input.liveFollowProof, "utf8"));
+  proof.workspaceId = WORKSPACE_ID;
+  proof.conversationId = CONVERSATION_ID;
+  writeFileSync(input.liveFollowProof, `${JSON.stringify(proof)}\n`);
+
+  await assert.rejects(
+    exerciseInstalledSocialLoop(exerciseRequest(input), boundaries(input)),
+    /live staging FOLLOW proof is not exact and green/i,
+  );
+  assert.throws(() => readFileSync(input.output), /ENOENT/);
+});
+
+test("rejects cross-role UUID reuse between FOLLOW and installed fixtures", async (t) => {
+  const input = fixture();
+  t.after(() => rmSync(input.root, { recursive: true, force: true }));
+  const proof = JSON.parse(readFileSync(input.liveFollowProof, "utf8"));
+  proof.workspaceId = CONVERSATION_ID;
+  proof.conversationId = WORKSPACE_ID;
+  writeFileSync(input.liveFollowProof, `${JSON.stringify(proof)}\n`);
+
+  await assert.rejects(
+    exerciseInstalledSocialLoop(exerciseRequest(input), boundaries(input)),
+    /live staging FOLLOW proof is not exact and green/i,
+  );
+  assert.throws(() => readFileSync(input.output), /ENOENT/);
+});
+
 test("writes no transcript when a story lacks an observed IPC crossing", async (t) => {
   const input = fixture();
   t.after(() => rmSync(input.root, { recursive: true, force: true }));
@@ -542,32 +578,7 @@ test("writes no transcript when a story lacks an observed IPC crossing", async (
   });
 
   await assert.rejects(
-    exerciseInstalledSocialLoop(
-      {
-        platform: PLATFORM,
-        candidateSha: SOURCE_SHA,
-        stagingDeploymentProof: input.stagingProof,
-        liveAuthProof: input.liveAuthProof,
-        liveFollowProof: input.liveFollowProof,
-        stagingFixture: input.stagingFixture,
-        bundle: input.bundle,
-        installedRoot: input.bundle,
-        installedArtifact: input.artifact,
-        networkLog: input.networkLog,
-        output: input.output,
-        resilienceOutput: input.resilienceOutput,
-        rawEvidenceOutput: input.rawEvidenceOutput,
-        nativeBinary: input.nativeBinary,
-        nativeProof: input.nativeProof,
-        faultObservation: input.faultObservation,
-        operatorTokenFile: input.operatorTokenFile,
-        manualReviewFile: input.manualReviewFile,
-        gateReport: input.gateReport,
-        gateLog: input.gateLog,
-        screenReaderBinary: input.screenReaderBinary,
-      },
-      invalid,
-    ),
+    exerciseInstalledSocialLoop(exerciseRequest(input), invalid),
     /connexion.*IPC/i,
   );
   assert.throws(() => readFileSync(input.output), /ENOENT/);

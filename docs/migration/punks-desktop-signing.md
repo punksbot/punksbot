@@ -57,6 +57,20 @@ The subsequent evidence-sealing step is a separate process boundary: only that
 step receives the read-only Cloudflare token needed to reobserve the seven
 deployed Worker versions after the installed transcript has closed.
 
+The Ubuntu runner installs the real GNOME Secret Service implementation before
+the installed exercise. It starts one private D-Bus session and an unlocked,
+foreground `gnome-keyring-daemon` whose PID is captured immediately, then
+proves a `secret-tool` store/read/delete round
+trip, and pins `XDG_DATA_HOME`, the control sockets and the bus below one `0700`
+directory in `RUNNER_TEMP`. It then gives the promotion helper only the
+resulting bus, data and control coordinates. The random keyring password is
+never written to `GITHUB_ENV` or an artifact. The promotion helper still
+performs its own write/read-back/delete cycle through `keyring`'s synchronous
+Secret Service backend. On success or failure, the workflow verifies both
+process identities against those private paths, applies bounded TERM then KILL
+cleanup, refuses a surviving process and deletes the entire directory through
+an exit trap.
+
 After the installed run, `installed-artifact-scan.mjs` reads the exact native
 executable, updater artifact, complete extracted installation and embedded
 runtime-asset manifest with the closed legacy-marker policy. Its raw report
@@ -91,8 +105,11 @@ and crash-before/after-ACK controls use the real captured cursor and payload,
 not an embedded fixture. Distributed Session revocation/reconnect remains an
 independent live observation. The installed trace is restricted to one native
 `operationId`, so concurrent subscriptions cannot be spliced together.
+The diagnostic FOLLOW proof and the installed candidate deliberately use
+different source-derived Workspace and Conversation UUIDs; the installed
+validator rejects any collision between those two fixture scopes.
 
-The promotion Session is delivered by exactly one of the three successful
+The promotion Session is delivered by exactly one of the two successful
 system-browser flows in the live Auth matrix; the helper stores that exact Session
 in the operating-system credential store before launch. The proof is read from
 the terminal `DesktopAuthFlowDO` and binds provider callback, returned OAuth

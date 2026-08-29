@@ -442,8 +442,9 @@ jobs:
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            build-essential curl desktop-file-utils file gnupg \
-            libasound2-dev libayatana-appindicator3-dev libgtk-3-dev \
+            build-essential curl dbus desktop-file-utils file gnupg \
+            gnome-keyring libasound2-dev libayatana-appindicator3-dev libgtk-3-dev \
+            libsecret-tools \
             librsvg2-dev libssl-dev libwebkit2gtk-4.1-dev libxdo-dev \
             minisign orca patchelf pkg-config squashfs-tools \
             webkit2gtk-driver xdg-utils xvfb
@@ -456,6 +457,88 @@ jobs:
             "$validator" | sha256sum --check --strict
           chmod 0755 "$validator"
           echo "validator=$validator" >> "$GITHUB_OUTPUT"
+
+      - name: Start the Linux Secret Service
+        id: start_linux_secret_service
+        if: inputs.validation_scope == 'full-candidate' && runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          service_root="$RUNNER_TEMP/punks-linux-secret-service"
+          control_root="$service_root/keyring-control"
+          data_root="$service_root/data"
+          address_file="$service_root/dbus-address"
+          pid_file="$service_root/dbus-pid"
+          keyring_pid_file="$service_root/keyring-pid"
+          mkdir -p "$control_root" "$data_root"
+          chmod 0700 "$service_root" "$control_root" "$data_root"
+          XDG_DATA_HOME="$data_root"
+          export XDG_DATA_HOME
+          printf '%s\n' "XDG_DATA_HOME=$XDG_DATA_HOME" >> "$GITHUB_ENV"
+          dbus-daemon \
+            --session \
+            --fork \
+            --address="unix:path=$service_root/bus" \
+            --print-address=3 \
+            --print-pid=4 \
+            3> "$address_file" \
+            4> "$pid_file"
+          DBUS_SESSION_BUS_ADDRESS="$(< "$address_file")"
+          PUNKS_LINUX_DBUS_PID="$(< "$pid_file")"
+          [[ "$DBUS_SESSION_BUS_ADDRESS" == unix:path="$service_root/bus"* ]]
+          [[ "$PUNKS_LINUX_DBUS_PID" =~ ^[0-9]+$ ]]
+          test "$(readlink -f "/proc/$PUNKS_LINUX_DBUS_PID/exe")" = "$(command -v dbus-daemon)"
+          dbus_command="$(tr '\0' ' ' < "/proc/$PUNKS_LINUX_DBUS_PID/cmdline")"
+          [[ "$dbus_command" == *"--address=unix:path=$service_root/bus"* ]]
+          export DBUS_SESSION_BUS_ADDRESS
+          printf '%s\n' "DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS" >> "$GITHUB_ENV"
+          printf '%s\n' "PUNKS_LINUX_DBUS_PID=$PUNKS_LINUX_DBUS_PID" >> "$GITHUB_ENV"
+
+          keyring_password="$(openssl rand -hex 32)"
+          printf '%s' "$keyring_password" | gnome-keyring-daemon \
+            --foreground \
+            --unlock \
+            --components=secrets \
+            --control-directory="$control_root" \
+            > "$service_root/keyring.log" \
+            2>&1 &
+          PUNKS_LINUX_KEYRING_PID=$!
+          unset keyring_password
+          test "$(readlink -f "/proc/$PUNKS_LINUX_KEYRING_PID/exe")" = "$(command -v gnome-keyring-daemon)"
+          keyring_command="$(tr '\0' ' ' < "/proc/$PUNKS_LINUX_KEYRING_PID/cmdline")"
+          [[ "$keyring_command" == *"--foreground"* ]]
+          [[ "$keyring_command" == *"--control-directory=$control_root"* ]]
+          printf '%s\n' "$PUNKS_LINUX_KEYRING_PID" > "$keyring_pid_file"
+          printf '%s\n' "PUNKS_LINUX_KEYRING_PID=$PUNKS_LINUX_KEYRING_PID" >> "$GITHUB_ENV"
+          secret_service_ready=false
+          for _ in {1..100}; do
+            if dbus-send \
+              --session \
+              --print-reply \
+              --dest=org.freedesktop.DBus \
+              /org/freedesktop/DBus \
+              org.freedesktop.DBus.NameHasOwner \
+              string:org.freedesktop.secrets 2>/dev/null | grep -Fq 'boolean true'; then
+              secret_service_ready=true
+              break
+            fi
+            if ! kill -0 "$PUNKS_LINUX_KEYRING_PID" 2>/dev/null; then break; fi
+            sleep 0.1
+          done
+          test "$secret_service_ready" = true
+          GNOME_KEYRING_CONTROL="$control_root"
+          export GNOME_KEYRING_CONTROL
+          printf '%s\n' "GNOME_KEYRING_CONTROL=$GNOME_KEYRING_CONTROL" >> "$GITHUB_ENV"
+
+          probe_user="punks-ci-$(openssl rand -hex 16)"
+          probe_secret="$(openssl rand -hex 32)"
+          printf '%s' "$probe_secret" | secret-tool store \
+            --label='Punks CI Secret Service probe' \
+            service punks-ci \
+            username "$probe_user"
+          test "$(secret-tool lookup service punks-ci username "$probe_user")" = "$probe_secret"
+          secret-tool clear service punks-ci username "$probe_user"
+          unset probe_secret probe_user
 
       - name: Install macOS signature verifier
         id: macos_dependencies
@@ -1433,6 +1516,104 @@ jobs:
               --resilience-output "$resilience_observation" \
               --raw-evidence-output "$raw_evidence"
           remove_secret_files
+
+      - name: Stop the Linux Secret Service
+        id: stop_linux_secret_service
+        if: always() && inputs.validation_scope == 'full-candidate' && runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          service_root="$RUNNER_TEMP/punks-linux-secret-service"
+          control_root="$service_root/keyring-control"
+          cleanup_status=0
+          trap 'rm -rf -- "$service_root"' EXIT
+
+          terminate_process() {
+            local label="$1"
+            local pid="$2"
+            local expected_executable="$3"
+            local expected_argument="$4"
+            if [[ -z "$pid" ]]; then return; fi
+            if [[ ! "$pid" =~ ^[0-9]+$ ]]; then
+              echo "$label PID is malformed" >&2
+              cleanup_status=1
+              return
+            fi
+            if ! kill -0 "$pid" 2>/dev/null; then return; fi
+            local actual_executable command_line
+            actual_executable="$(readlink -f "/proc/$pid/exe" 2>/dev/null || true)"
+            command_line="$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)"
+            if [[ "$actual_executable" != "$expected_executable" || "$command_line" != *"$expected_argument"* ]]; then
+              echo "$label process identity does not match its private service" >&2
+              cleanup_status=1
+              return
+            fi
+            kill "$pid" 2>/dev/null || true
+            for _ in {1..50}; do
+              if ! kill -0 "$pid" 2>/dev/null; then break; fi
+              sleep 0.1
+            done
+            if kill -0 "$pid" 2>/dev/null; then
+              kill -KILL "$pid" 2>/dev/null || true
+              for _ in {1..20}; do
+                if ! kill -0 "$pid" 2>/dev/null; then break; fi
+                sleep 0.1
+              done
+            fi
+            if kill -0 "$pid" 2>/dev/null; then cleanup_status=1; fi
+          }
+
+          dbus_pid="${PUNKS_LINUX_DBUS_PID:-}"
+          if [[ -z "$dbus_pid" && -s "$service_root/dbus-pid" ]]; then
+            dbus_pid="$(< "$service_root/dbus-pid")"
+          fi
+          keyring_pid="${PUNKS_LINUX_KEYRING_PID:-}"
+          if [[ -z "$keyring_pid" && -s "$service_root/keyring-pid" ]]; then
+            keyring_pid="$(< "$service_root/keyring-pid")"
+          fi
+          if [[ -z "$keyring_pid" ]]; then
+            mapfile -t keyring_candidates < <(
+              for command_file in /proc/[0-9]*/cmdline; do
+                [[ -r "$command_file" ]] || continue
+                command_line="$(tr '\0' ' ' < "$command_file" 2>/dev/null || true)"
+                [[ -n "$command_line" ]] || continue
+                if [[ "$command_line" == *"gnome-keyring-daemon"* && "$command_line" == *"--control-directory=$control_root"* ]]; then
+                  basename "$(dirname "$command_file")"
+                fi
+              done
+            )
+            if [[ "${#keyring_candidates[@]}" -gt 1 ]]; then
+              echo "multiple GNOME keyring processes match the private control directory" >&2
+              cleanup_status=1
+            elif [[ "${#keyring_candidates[@]}" = "1" ]]; then
+              keyring_pid="${keyring_candidates[0]}"
+            fi
+          fi
+          terminate_process \
+            "GNOME keyring" \
+            "$keyring_pid" \
+            "$(command -v gnome-keyring-daemon)" \
+            "--control-directory=$control_root"
+          terminate_process \
+            "D-Bus" \
+            "$dbus_pid" \
+            "$(command -v dbus-daemon)" \
+            "--address=unix:path=$service_root/bus"
+          mapfile -t surviving_keyrings < <(
+            for command_file in /proc/[0-9]*/cmdline; do
+              [[ -r "$command_file" ]] || continue
+              command_line="$(tr '\0' ' ' < "$command_file" 2>/dev/null || true)"
+              [[ -n "$command_line" ]] || continue
+              if [[ "$command_line" == *"gnome-keyring-daemon"* && "$command_line" == *"--control-directory=$control_root"* ]]; then
+                basename "$(dirname "$command_file")"
+              fi
+            done
+          )
+          if [[ "${#surviving_keyrings[@]}" -ne 0 ]]; then
+            echo "a GNOME keyring process survived cleanup for the private control directory" >&2
+            cleanup_status=1
+          fi
+          exit "$cleanup_status"
 
       - name: Upload source-bound material for independent accessibility review
         id: upload_accessibility_review_material

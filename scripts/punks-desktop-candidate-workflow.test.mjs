@@ -972,6 +972,8 @@ function validateWorkflow(workflow) {
     "--detach-sign",
     '--verify "${deb}.asc" "$deb"',
   ]);
+  const linuxDependencies = workflowStep(build, "linux_dependencies");
+  requireRun(linuxDependencies, ["gnome-keyring", "libsecret-tools"]);
   const windowsDependencies = workflowStep(build, "windows_dependencies");
   requireRun(windowsDependencies, [
     "Start-Process -FilePath $nvdaInstaller",
@@ -1050,6 +1052,50 @@ function validateWorkflow(workflow) {
     "Tauri's base64-wrapped updater signature is passed directly to minisign",
   );
   const installedExercise = workflowStep(build, "exercise_installed_candidate");
+  const startLinuxSecretService = workflowStep(
+    build,
+    "start_linux_secret_service",
+  );
+  const stopLinuxSecretService = workflowStep(
+    build,
+    "stop_linux_secret_service",
+  );
+  requireRun(startLinuxSecretService, [
+    "dbus-daemon",
+    'XDG_DATA_HOME="$data_root"',
+    '"XDG_DATA_HOME=$XDG_DATA_HOME" >> "$GITHUB_ENV"',
+    "gnome-keyring-daemon \\",
+    "--foreground",
+    "--unlock",
+    "org.freedesktop.DBus.NameHasOwner",
+    "string:org.freedesktop.secrets",
+    '"/proc/$PUNKS_LINUX_DBUS_PID/exe"',
+    "PUNKS_LINUX_KEYRING_PID=$!",
+    '"PUNKS_LINUX_KEYRING_PID=$PUNKS_LINUX_KEYRING_PID" >> "$GITHUB_ENV"',
+    "secret-tool store",
+    "secret-tool lookup",
+    "secret-tool clear",
+    '"DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS" >> "$GITHUB_ENV"',
+  ]);
+  requireRun(stopLinuxSecretService, [
+    "trap 'rm -rf -- \"$service_root\"' EXIT",
+    'command_line="$(tr \'\\0\' \' \' < "/proc/$pid/cmdline" 2>/dev/null || true)"',
+    'kill -KILL "$pid"',
+    '"--control-directory=$control_root"',
+    '"--address=unix:path=$service_root/bus"',
+    '"$command_file" 2>/dev/null || true',
+    "surviving_keyrings",
+    "a GNOME keyring process survived cleanup for the private control directory",
+  ]);
+  invariant(
+    String(startLinuxSecretService.if).includes("runner.os == 'Linux'") &&
+      String(stopLinuxSecretService.if).includes("always()") &&
+      build.steps.indexOf(startLinuxSecretService) <
+        build.steps.indexOf(installedExercise) &&
+      build.steps.indexOf(installedExercise) <
+        build.steps.indexOf(stopLinuxSecretService),
+    "the Linux installed Session lacks one bounded Secret Service lifetime",
+  );
   invariant(
     !JSON.stringify(installedExercise).includes("PUNKS_ACCESSIBILITY_REVIEWER"),
     "a reviewer name cannot manufacture a manual accessibility review",
@@ -1501,6 +1547,64 @@ const mutations = [
       workflowStep(workflow.jobs.build, "verify_native_artifact").if = "false";
     },
     error: /verify_native_artifact is disabled/,
+  },
+  {
+    name: "Linux Secret Service package is removed",
+    change(workflow) {
+      const step = workflowStep(workflow.jobs.build, "linux_dependencies");
+      step.run = step.run.replace("gnome-keyring", "ignored-keyring");
+    },
+    error: /linux_dependencies misses gnome-keyring/,
+  },
+  {
+    name: "Linux Secret Service persistence probe is removed",
+    change(workflow) {
+      const step = workflowStep(
+        workflow.jobs.build,
+        "start_linux_secret_service",
+      );
+      step.run = step.run.replace("secret-tool lookup", "ignored-tool lookup");
+    },
+    error: /start_linux_secret_service misses secret-tool lookup/,
+  },
+  {
+    name: "Linux Secret Service data escapes the private root",
+    change(workflow) {
+      const step = workflowStep(
+        workflow.jobs.build,
+        "start_linux_secret_service",
+      );
+      step.run = step.run.replace(
+        'XDG_DATA_HOME="$data_root"',
+        'IGNORED_DATA_HOME="$data_root"',
+      );
+    },
+    error: /start_linux_secret_service misses XDG_DATA_HOME/,
+  },
+  {
+    name: "Linux Secret Service forced cleanup is removed",
+    change(workflow) {
+      const step = workflowStep(
+        workflow.jobs.build,
+        "stop_linux_secret_service",
+      );
+      step.run = step.run.replace('kill -KILL "$pid"', 'kill -0 "$pid"');
+    },
+    error: /stop_linux_secret_service misses kill -KILL/,
+  },
+  {
+    name: "Linux Secret Service survivor scan is removed",
+    change(workflow) {
+      const step = workflowStep(
+        workflow.jobs.build,
+        "stop_linux_secret_service",
+      );
+      step.run = step.run.replaceAll(
+        "surviving_keyrings",
+        "ignored_survivors",
+      );
+    },
+    error: /stop_linux_secret_service misses surviving_keyrings/,
   },
   {
     name: "Windows HSM signer is replaced by an unpinned action",
