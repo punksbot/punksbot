@@ -14,7 +14,31 @@ import {
   configureMacosXctestSchemeContent,
   exerciseMacosInstalledCandidate,
   macosXctestCommands,
+  macosXctestrunEnvironmentCommands,
 } from "./platform-macos-xctest.mjs";
+
+const XCTEST_ENVIRONMENT = {
+  PUNKS_XCTEST_APPLICATION: '/tmp/Punks & "Staging".app',
+  PUNKS_XCTEST_RESULT: "/tmp/result.json",
+  PUNKS_XCTEST_SCREENSHOTS: "/tmp/screenshots",
+  PUNKS_XCTEST_PLATFORM: "macos-arm64",
+  PUNKS_XCTEST_FIXTURE: '{"workspaceSlug":"A&B"}',
+  PUNKS_XCTEST_NATIVE_BINARY:
+    "/tmp/Punks Bot Staging.app/Contents/MacOS/punks-bot-staging",
+  PUNKS_PROMOTION_ASSET_MANIFEST: "/tmp/assets.json",
+  PUNKS_PROMOTION_IPC_LOG: "/tmp/ipc.jsonl",
+  PUNKS_PROMOTION_NETWORK_LOG: "/tmp/network.jsonl",
+  PUNKS_XCTEST_ACCESSIBILITY_REVIEW_RESULT: "/tmp/accessibility.json",
+  PUNKS_XCTEST_ARTIFACT_SHA256: "ef".repeat(32),
+};
+const ACCESSIBILITY_XCTEST_ENVIRONMENT = {
+  ...XCTEST_ENVIRONMENT,
+  PUNKS_XCTEST_RESULT: "/tmp/accessibility.json",
+  PUNKS_XCTEST_SCREENSHOTS: "/tmp/accessibility-screenshots",
+  PUNKS_PROMOTION_ASSET_MANIFEST: "/tmp/accessibility-assets.json",
+  PUNKS_PROMOTION_IPC_LOG: "/tmp/accessibility-ipc.jsonl",
+  PUNKS_PROMOTION_NETWORK_LOG: "/tmp/accessibility-network.jsonl",
+};
 
 test("adds the exact UI-test target to the generated Release scheme", () => {
   const reference = `<BuildableReference
@@ -25,16 +49,37 @@ test("adds the exact UI-test target to the generated Release scheme", () => {
                ReferencedContainer="container:/tmp/PunksPromotionDriver.xcodeproj"/>`;
   const buildAction = `<BuildAction><BuildActionEntries><BuildActionEntry>${reference}</BuildActionEntry></BuildActionEntries></BuildAction>`;
   const testAction =
-    '<TestAction buildConfiguration="Release"><Testables/></TestAction>';
+    '<TestAction buildConfiguration="Release" shouldUseLaunchSchemeArgsEnv="YES"><Testables/><AdditionalOptions/></TestAction>';
   const scheme = `<Scheme>${buildAction}${testAction}</Scheme>`;
-  const configured = configureMacosXctestSchemeContent(scheme);
+  const configured = configureMacosXctestSchemeContent(
+    scheme,
+    XCTEST_ENVIRONMENT,
+  );
   assert.match(configured, /<TestableReference skipped="NO">/u);
+  assert.match(configured, /shouldUseLaunchSchemeArgsEnv="NO"/u);
+  assert.doesNotMatch(configured, /shouldUseLaunchSchemeArgsEnv="YES"/u);
   assert.equal(configured.match(/BlueprintIdentifier="ABC123"/gu)?.length, 2);
   assert.doesNotMatch(configured, /<Testables\/>/u);
+  assert.match(configured, /<EnvironmentVariables>/u);
+  for (const name of Object.keys(XCTEST_ENVIRONMENT)) {
+    assert.equal(
+      configured.match(new RegExp(`key="${name}"`, "gu"))?.length,
+      1,
+    );
+  }
+  assert.match(
+    configured,
+    /value="\/tmp\/Punks &amp; &quot;Staging&quot;\.app"/u,
+  );
+  assert.match(
+    configured,
+    /value="\{&quot;workspaceSlug&quot;:&quot;A&amp;B&quot;\}"/u,
+  );
   assert.throws(
     () =>
       configureMacosXctestSchemeContent(
         `<Scheme>${buildAction}${buildAction}${testAction}</Scheme>`,
+        XCTEST_ENVIRONMENT,
       ),
     /unique build\/test actions/,
   );
@@ -42,8 +87,23 @@ test("adds the exact UI-test target to the generated Release scheme", () => {
     () =>
       configureMacosXctestSchemeContent(
         `<Scheme>${buildAction}${testAction}${testAction}</Scheme>`,
+        XCTEST_ENVIRONMENT,
       ),
     /unique build\/test actions/,
+  );
+  assert.throws(
+    () =>
+      configureMacosXctestSchemeContent(scheme, {
+        ...XCTEST_ENVIRONMENT,
+        UNREVIEWED_VARIABLE: "forbidden",
+      }),
+    /closed XCTest environment/u,
+  );
+  const missing = { ...XCTEST_ENVIRONMENT };
+  delete missing.PUNKS_XCTEST_APPLICATION;
+  assert.throws(
+    () => configureMacosXctestSchemeContent(scheme, missing),
+    /closed XCTest environment/u,
   );
 });
 
@@ -61,6 +121,55 @@ test("builds the reviewed XCTest bundle before running it without rebuilding", (
   assert.deepEqual(commands[1].args.slice(0, 2), ["-xctestrun", xctestrun]);
   assert.equal(commands[1].args.includes("-project"), false);
   assert.equal(commands[1].args.includes("-scheme"), false);
+  assert.ok(
+    commands[1].args.includes(
+      "-only-testing:PunksPromotionUITests/PunksPromotionUITests/testInstalledSocialLoop",
+    ),
+  );
+  const accessibility = macosXctestCommands(
+    "/tmp/punks-xctest-build",
+    xctestrun,
+    "accessibility",
+  )[1];
+  assert.ok(
+    accessibility.args.includes(
+      "-only-testing:PunksPromotionUITests/PunksPromotionUITests/testIndependentAccessibilityReview",
+    ),
+  );
+  assert.equal(
+    accessibility.args.includes(
+      "-only-testing:PunksPromotionUITests/PunksPromotionUITests/testInstalledSocialLoop",
+    ),
+    false,
+  );
+  assert.throws(
+    () =>
+      macosXctestCommands("/tmp/punks-xctest-build", xctestrun, "unreviewed"),
+    /closed reviewed test kind/u,
+  );
+});
+
+test("rebinds the independent XCTest plan to separate review evidence", () => {
+  const xctestrun = "/tmp/punks-independent-accessibility.xctestrun";
+  const commands = macosXctestrunEnvironmentCommands(
+    xctestrun,
+    ACCESSIBILITY_XCTEST_ENVIRONMENT,
+  );
+  assert.equal(commands.length, Object.keys(XCTEST_ENVIRONMENT).length);
+  assert.ok(commands.every(({ command }) => command === "/usr/bin/plutil"));
+  assert.ok(commands.every(({ args }) => args.at(-1) === xctestrun));
+  const ipc = commands.find(({ key }) => key === "PUNKS_PROMOTION_IPC_LOG");
+  assert.equal(ipc?.value, "/tmp/accessibility-ipc.jsonl");
+  assert.deepEqual(ipc?.args.slice(0, 4), [
+    "-replace",
+    "PunksPromotionUITests.EnvironmentVariables.PUNKS_PROMOTION_IPC_LOG",
+    "-string",
+    "/tmp/accessibility-ipc.jsonl",
+  ]);
+  assert.notEqual(
+    ACCESSIBILITY_XCTEST_ENVIRONMENT.PUNKS_PROMOTION_NETWORK_LOG,
+    XCTEST_ENVIRONMENT.PUNKS_PROMOTION_NETWORK_LOG,
+  );
 });
 
 test("accepts only a create-only XCTest result emitted for the installed app", async (t) => {
