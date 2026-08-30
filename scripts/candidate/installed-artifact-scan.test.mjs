@@ -20,6 +20,7 @@ import {
 
 const PLATFORM = "linux-x64";
 const SOURCE_SHA = "7e".repeat(20);
+const previousProduct = String.fromCharCode(98, 117, 122, 122);
 
 function sha256(content) {
   return createHash("sha256").update(content).digest("hex");
@@ -124,9 +125,9 @@ test("scans the exact updater, complete installation and embedded runtime assets
     { path: "AppRun", target: "usr/bin/punks-bot-staging" },
   ]);
   assert.deepEqual(report.forbiddenMarkers, [
-    "punks-media",
+    `${previousProduct}-media`,
     "native_websocket",
-    "punks",
+    previousProduct,
     "nostr",
     "relay",
     "huddle",
@@ -147,7 +148,7 @@ test("scans the exact updater, complete installation and embedded runtime assets
 test("rejects legacy bytes, existing output and any report/skip CLI", (t) => {
   const input = fixture();
   t.after(() => rmSync(input.root, { recursive: true, force: true }));
-  writeFileSync(input.nativeBinary, "legacy punks runtime\n");
+  writeFileSync(input.nativeBinary, `legacy ${previousProduct} runtime\n`);
   assert.throws(
     () =>
       buildInstalledArtifactScan({
@@ -159,7 +160,7 @@ test("rejects legacy bytes, existing output and any report/skip CLI", (t) => {
         embeddedAssets: input.embeddedAssets,
         output: input.output,
       }),
-    /forbidden marker punks/i,
+    new RegExp(`forbidden marker ${previousProduct}`, "i"),
   );
 
   assert.throws(

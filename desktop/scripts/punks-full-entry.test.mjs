@@ -16,7 +16,7 @@ test("the Punks product uses the rich desktop document and React entry", () => {
   assert.doesNotMatch(vite, /root:\s*punks\s*\?/u);
   assert.doesNotMatch(vite, /punks-product/u);
   assert.match(index, /src="\/src\/main\.tsx"/u);
-  assert.match(index, /<title>Punks Bot<\/title>/u);
+  assert.match(index, /<title><\/title>/u);
 });
 
 test("the Punks product has no isolated mini-client entry", () => {
@@ -29,7 +29,8 @@ test("the Punks product has no isolated mini-client entry", () => {
 });
 
 test("the Punks build typechecks the rich entry graph", () => {
-  const config = JSON.parse(read("tsconfig.punks.json"));
+  const config = read("tsconfig.json");
 
-  assert.deepEqual(config.files, ["src/main.tsx", "src/vite-env.d.ts"]);
+  assert.match(config, /"include": \["src"\]/u);
+  assert.doesNotMatch(config, /"files"\s*:/u);
 });

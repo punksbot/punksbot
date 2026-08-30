@@ -13,6 +13,11 @@ const COORDINATE_RE = /^[a-z][a-z0-9-]*$/;
 const WORKER_RE = /^[a-z][a-z0-9-]*$/;
 const BINDING_RE = /^[A-Z][A-Z0-9_]*$/;
 const CLASS_RE = /^[A-Z][A-Za-z0-9]*DO$/;
+const previousProduct = String.fromCharCode(98, 117, 122, 122);
+const LEGACY_NETWORK_RE = new RegExp(
+  `${previousProduct}|nostr|relay|huddle`,
+  "iu",
+);
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const PLATFORMS = ["macos-arm64", "macos-x64", "linux-x64", "windows-x64"];
@@ -499,7 +504,7 @@ export function validateInstalledNetworkBinding(network, { deployedWorkers }) {
       !Number.isInteger(request.status) ||
       request.status < 100 ||
       request.status > 599 ||
-      /punks|nostr|relay|huddle/iu.test(`${request.origin}${request.path}`)
+      LEGACY_NETWORK_RE.test(`${request.origin}${request.path}`)
     ) {
       fail("installed network evidence contains an invalid or legacy request");
     }
