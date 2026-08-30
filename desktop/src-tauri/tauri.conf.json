@@ -1,8 +1,9 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Punks",
+  "productName": "Punks Bot",
+  "mainBinaryName": "punks-bot",
   "version": "0.5.20",
-  "identifier": "xyz.block.punks.app",
+  "identifier": "bot.punks.desktop",
   "build": {
     "beforeDevCommand": {
       "script": "exec ./node_modules/.bin/vite",
@@ -52,13 +53,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "externalBin": [
-      "binaries/punks-acp",
-      "binaries/punks-agent",
-      "binaries/punks-dev-mcp",
-      "binaries/git-credential-nostr",
-      "binaries/punks"
-    ],
+    "externalBin": [],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

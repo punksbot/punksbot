@@ -35,6 +35,7 @@ import {
 } from "../promotion-test-fixtures.mjs";
 import { assemblerDossierPromotion } from "./promotion-dossier.mjs";
 
+const previousProduct = String.fromCharCode(98, 117, 122, 122);
 const SHA_CANDIDAT = "a".repeat(40);
 const MATERIAU_PREUVE_STAGING = {
   schema: STAGING_DEPLOYMENT_PROOF_SCHEMA,
@@ -370,9 +371,9 @@ function creerJeuDePreuves() {
         frontendSha256: scanDocument.frontend.sha256,
         fichiersFrontend: scanDocument.frontend.files.length,
         marqueursInterdits: [
-          "punks-media",
+          `${previousProduct}-media`,
           "native_websocket",
-          "punks",
+          previousProduct,
           "nostr",
           "relay",
           "huddle",

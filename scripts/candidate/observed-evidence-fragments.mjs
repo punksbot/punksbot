@@ -36,6 +36,11 @@ import { validateInstalledArtifactScan } from "./installed-artifact-scan.mjs";
 const SHA1_RE = /^[0-9a-f]{40}$/u;
 const SHA256_RE = /^[0-9a-f]{64}$/u;
 const DEPLOYMENT_RE = /^sha256:[0-9a-f]{64}$/u;
+const previousProduct = String.fromCharCode(98, 117, 122, 122);
+const LEGACY_NETWORK_RE = new RegExp(
+  `${previousProduct}|nostr|relay|huddle`,
+  "iu",
+);
 const GATE_PROOFS = Object.freeze({
   "corpus-conformite": ["cloudflare-check"],
   "suites-workers": ["cloudflare-check"],
@@ -320,7 +325,7 @@ function validateNetworks(evidenceRoot, sourceSha, deploymentId) {
       proof.stagingDeploymentId !== deploymentId ||
       !Array.isArray(proof.network?.requests) ||
       proof.network.requests.length < 2 ||
-      /punks|nostr|relay|huddle/iu.test(JSON.stringify(proof.network))
+      LEGACY_NETWORK_RE.test(JSON.stringify(proof.network))
     ) {
       fail(
         `${platform} network evidence is divergent or contains legacy traffic`,

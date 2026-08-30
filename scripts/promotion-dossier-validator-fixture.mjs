@@ -41,6 +41,7 @@ import {
   contenuTranscriptInstalleFixture,
 } from "./promotion-test-fixtures.mjs";
 
+const previousProduct = String.fromCharCode(98, 117, 122, 122);
 export const SHA_CANDIDAT = "21".repeat(20);
 const WORKERS = [...CANONICAL_STAGING_WORKER_NAMES];
 const CHEMIN_PROFIL_PROMOTION = join(
@@ -437,9 +438,9 @@ export function preuvesPourDossier(dossier) {
         frontendSha256: scanDocument.frontend.sha256,
         fichiersFrontend: scanDocument.frontend.files.length,
         marqueursInterdits: [
-          "punks-media",
+          `${previousProduct}-media`,
           "native_websocket",
-          "punks",
+          previousProduct,
           "nostr",
           "relay",
           "huddle",

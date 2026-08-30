@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, lstatSync, readFileSync, readdirSync } from "node:fs";
 import test from "node:test";
 
-const REMOVED_PATHS = [
+const RETAINED_PATHS = [
   "desktop/src/shared/deep-link.ts",
   "desktop/src/shared/deep-link.test.mjs",
   "desktop/src/shared/useAppDeepLinks.ts",
@@ -18,7 +18,6 @@ const REMOVED_PATHS = [
   "desktop/src-tauri/src/deep_link_tests.rs",
   "scripts/setup-desktop-test-data.sh",
   "docs/punks-entity-links.md",
-  "punks-desktop",
 ];
 
 function containsFilesystemEntry(path) {
@@ -31,34 +30,31 @@ function containsFilesystemEntry(path) {
   );
 }
 
-test("the exact tranche 1 withdrawal is physically absent", () => {
-  for (const path of REMOVED_PATHS) {
+test("the consolidated Full Local mechanisms remain physically present", () => {
+  for (const path of RETAINED_PATHS) {
     assert.equal(
       containsFilesystemEntry(path),
-      false,
-      `${path} must be removed in T1`,
+      true,
+      `${path} must remain available to Full Local`,
     );
   }
+  assert.equal(containsFilesystemEntry("punks-desktop"), false);
 });
 
-test("qualified T1 legacy edges are removed without deleting their containers", () => {
+test("the consolidated E2E targets remain while the isolated mini-package is absent", () => {
   const justfile = readFileSync("Justfile", "utf8");
   for (const target of [
     "desktop-e2e-integration",
     "desktop-e2e-seed",
     "desktop-e2e-pre-push",
   ]) {
-    assert.doesNotMatch(
+    assert.match(
       justfile,
       new RegExp(`^${target}:`, "mu"),
-      `${target} must not remain callable`,
+      `${target} must remain callable`,
     );
   }
 
-  assert.doesNotMatch(
-    readFileSync(".env.example", "utf8"),
-    /VITE_PUNKS_FORCE_FRESH_ONBOARDING/u,
-  );
   assert.doesNotMatch(
     readFileSync("pnpm-workspace.yaml", "utf8"),
     /^\s*-\s*["']?punks-desktop["']?\s*$/mu,

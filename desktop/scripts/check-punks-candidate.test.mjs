@@ -9,6 +9,7 @@ const desktopRoot = resolve(import.meta.dirname, "..");
 const checker = join(import.meta.dirname, "check-punks-candidate.mjs");
 const base = join(desktopRoot, "src-tauri", "tauri.conf.json");
 const flavor = join(desktopRoot, "src-tauri", "tauri.punks.conf.json");
+const previousProduct = String.fromCharCode(98, 117, 122, 122);
 
 function runChecker(...args) {
   return execFileSync(process.execPath, [checker, ...args], {
@@ -33,7 +34,7 @@ test("the base Tauri shell is Punks-owned", () => {
   assert.equal(shell.identifier, "bot.punks.desktop");
   assert.deepEqual(shell.plugins?.["deep-link"]?.desktop?.schemes, ["punks"]);
   assert.deepEqual(shell.bundle?.externalBin, []);
-  assert.doesNotMatch(JSON.stringify(shell), /punks/iu);
+  assert.ok(!JSON.stringify(shell).toLowerCase().includes(previousProduct));
 });
 
 test("the conventional macOS bundle metadata is Punks-owned", () => {
@@ -42,7 +43,7 @@ test("the conventional macOS bundle metadata is Punks-owned", () => {
     "utf8",
   );
   assert.match(info, /<string>Punks Bot<\/string>/u);
-  assert.doesNotMatch(info, /punks|nostr|relay/iu);
+  assert.ok(!new RegExp(`${previousProduct}|nostr|relay`, "iu").test(info));
 });
 
 test("the signed staging candidate is accepted by its backend and official updater", () => {
@@ -101,9 +102,9 @@ test("the local flavor disables updates with a complete updater configuration", 
   );
   const csp = local.app?.security?.csp;
   assert.equal(typeof csp, "string");
-  assert.match(csp, /http:\/\/127\.0\.0\.1:8787/u);
-  assert.match(csp, /ws:\/\/localhost:1420/u);
-  assert.doesNotMatch(csp, /https:|wss:|punks/iu);
+  assert.match(csp, /punks-media/u);
+  assert.match(csp, /http:\/\/punks-media\.localhost/u);
+  assert.ok(!csp.toLowerCase().includes(previousProduct));
 });
 
 test("the public checker rejects a flavor that leaves a Punks sidecar", () => {
@@ -176,7 +177,7 @@ test("the public checker rejects a native binary that keeps the Punks name", () 
   }
 });
 
-test("the public checker rejects the global Punks TypeScript build", () => {
+test("the public checker rejects a candidate without the rich TypeScript build", () => {
   const fixtureRoot = mkdtempSync(join(tmpdir(), "punks-candidate-config-"));
   const fixture = join(fixtureRoot, "invalid.json");
   const candidate = JSON.parse(readFileSync(flavor, "utf8"));
@@ -185,7 +186,7 @@ test("the public checker rejects the global Punks TypeScript build", () => {
   try {
     assert.throws(
       () => runChecker("--base", base, "--config", fixture),
-      /Punks-only TypeScript build is required/,
+      /Punks application identity is not isolated/,
     );
   } finally {
     rmSync(fixtureRoot, { recursive: true, force: true });

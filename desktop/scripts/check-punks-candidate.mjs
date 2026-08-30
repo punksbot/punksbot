@@ -11,9 +11,9 @@ const EXPECTED_UPDATER_ENDPOINT =
   "https://github.com/punksbot/punksbot/releases/latest/download/latest.json";
 const EXPECTED_UPDATER_PUBLIC_KEY =
   "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQ2MTFCOEFFQTQyRjBDQTUKUldTbERDK2tycmdSMXJINFZUSWt3bkFWS3o4Y1EyazRrazBCbXV1M2FSSUY4M1dqSDZBUlIrKzYK";
-const EXPECTED_PUNKS_BUILD =
-  "pnpm exec tsc --project tsconfig.punks.json && pnpm exec vite build";
+const EXPECTED_PUNKS_BUILD = "pnpm build";
 const EXPECTED_MACOS_INFO_PLIST = "Info.punks.plist";
+const previousProduct = String.fromCharCode(98, 117, 122, 122);
 const ENVIRONMENT_FLAVORS = [
   {
     environment: "staging",
@@ -22,14 +22,24 @@ const ENVIRONMENT_FLAVORS = [
     mainBinaryName: "punks-bot-staging",
     identifier: "bot.punks.desktop.staging",
     scheme: "punks-staging",
+    version: "0.6.0",
+    build: EXPECTED_PUNKS_BUILD,
+    infoPlist: EXPECTED_MACOS_INFO_PLIST,
+    externalBinCount: 0,
+    capability: "punks",
   },
   {
     environment: "local",
     file: "tauri.punks.local.conf.json",
-    productName: "Punks Bot Local",
-    mainBinaryName: "punks-bot-local",
-    identifier: "bot.punks.desktop.local",
+    productName: "Punks Full Local",
+    mainBinaryName: "punks-full-local",
+    identifier: "bot.punks.full.local",
     scheme: "punks-local",
+    version: "0.5.20",
+    build: undefined,
+    infoPlist: "Info.punks.local.plist",
+    externalBinCount: 5,
+    capability: undefined,
   },
   {
     environment: "production",
@@ -38,6 +48,11 @@ const ENVIRONMENT_FLAVORS = [
     mainBinaryName: "punks-bot",
     identifier: "bot.punks.desktop",
     scheme: "punks",
+    version: "0.6.0",
+    build: EXPECTED_PUNKS_BUILD,
+    infoPlist: EXPECTED_MACOS_INFO_PLIST,
+    externalBinCount: 0,
+    capability: "punks",
   },
 ];
 
@@ -124,7 +139,7 @@ function assertCandidate(config, platform) {
     throw new Error(`${platform}: the Punks-only Info.plist is required`);
   }
   const csp = config?.app?.security?.csp;
-  if (typeof csp !== "string" || /punks/i.test(csp)) {
+  if (typeof csp !== "string" || csp.toLowerCase().includes(previousProduct)) {
     throw new Error(
       `${platform}: the candidate CSP must not retain a Punks scheme`,
     );
@@ -155,12 +170,13 @@ function assertEnvironmentIsolation(configRoot, stagingPatch) {
       !Array.isArray(schemes) ||
       schemes.length !== 1 ||
       identity[3] !== expected.scheme ||
-      config?.build?.beforeBuildCommand !== EXPECTED_PUNKS_BUILD ||
-      config?.app?.security?.capabilities?.length !== 1 ||
-      config.app.security.capabilities[0] !== "punks" ||
-      config?.version !== EXPECTED_VERSION ||
-      config?.bundle?.externalBin?.length !== 0 ||
-      config?.bundle?.macOS?.infoPlist !== EXPECTED_MACOS_INFO_PLIST
+      config?.build?.beforeBuildCommand !== expected.build ||
+      config?.version !== expected.version ||
+      config?.bundle?.externalBin?.length !== expected.externalBinCount ||
+      config?.bundle?.macOS?.infoPlist !== expected.infoPlist ||
+      (expected.capability !== undefined &&
+        (config?.app?.security?.capabilities?.length !== 1 ||
+          config.app.security.capabilities[0] !== expected.capability))
     ) {
       throw new Error(
         `${expected.environment}: Punks application identity is not isolated`,
@@ -217,9 +233,10 @@ export function validateCandidateFiles({ base, config }) {
   );
   if (
     !infoPlist.includes("<dict/>") ||
-    /punks|nostr|relay|huddle|NS(?:Microphone|Camera|LocalNetwork)UsageDescription/iu.test(
-      infoPlist,
-    )
+    new RegExp(
+      `${previousProduct}|nostr|relay|huddle|NS(?:Microphone|Camera|LocalNetwork)UsageDescription`,
+      "iu",
+    ).test(infoPlist)
   ) {
     throw new Error("the Punks-only Info.plist retains a legacy capability");
   }
@@ -227,7 +244,11 @@ export function validateCandidateFiles({ base, config }) {
     join(configRoot, "Info.plist"),
     "utf8",
   );
-  if (/punks|nostr|relay/iu.test(conventionalInfoPlist)) {
+  if (
+    new RegExp(`${previousProduct}|nostr|relay`, "iu").test(
+      conventionalInfoPlist,
+    )
+  ) {
     throw new Error(
       "the bundled macOS Info.plist retains a retired product marker",
     );

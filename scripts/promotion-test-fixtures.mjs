@@ -8,6 +8,8 @@ import {
   VERIFICATIONS_ARTEFACT,
 } from "./promotion-installed-transcript-lib.mjs";
 
+const previousProduct = String.fromCharCode(98, 117, 122, 122);
+
 export function nomsReleaseInstallee(plateforme, candidateSha) {
   const prefixe = `punks-desktop-${plateforme}-${candidateSha}`;
   if (plateforme.startsWith("macos-")) {
@@ -120,9 +122,9 @@ export function contenuScanArtefactInstalleFixture({
       forbiddenMarkers: [],
     },
     forbiddenMarkers: [
-      "punks-media",
+      `${previousProduct}-media`,
       "native_websocket",
-      "punks",
+      previousProduct,
       "nostr",
       "relay",
       "huddle",

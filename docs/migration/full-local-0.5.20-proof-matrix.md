@@ -30,7 +30,8 @@ persisté.
 | Rust desktop | `2943 passed`, `19 ignored`, `0 failed` avec `punks-local,mesh-llm` après les correctifs TTL, recherche, Fil et adhésion Agent |
 | Clippy `punks-local,mesh-llm` | Vert avec `-D warnings` après les correctifs TTL, recherche, Fil et adhésion Agent |
 | Frontière CI managed-only | Verte ; 14 workflows Punks actifs |
-| Manifestes de migration + graphe de release | Vert ; 167 actifs / 5 566 fichiers, 12 invariants / 52 sources, 999 tests figés, graphe relié |
+| Manifestes de migration + graphe de release | Vert ; 167 actifs / 5 570 fichiers, 12 invariants / 52 sources, 999 tests figés, graphe relié |
+| Suite de migration et promotion | `466 passed`, `0 failed` ; flavors Full Local/staging/production, scans installés, dossiers, publication et workflows candidats couverts |
 | Lancement natif | Bundle `.app` + DMG reconstruits après renommage, signature ad hoc profonde et checksum DMG vérifiés ; données et Codex relus après deux relaunchs réels |
 
 ## Matrice 1–31

@@ -338,7 +338,7 @@ test("la publication initiale refuse un graphe intégralement invalide avant sig
       }),
       frontieres,
     ),
-    /graphe de release est invalide.*retour-punks/s,
+    /graphe de release est invalide.*produit précédent/s,
   );
   assert.deepEqual(journal, []);
 });
