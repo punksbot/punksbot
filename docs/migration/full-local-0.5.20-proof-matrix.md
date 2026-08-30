@@ -59,7 +59,7 @@ frais n’a pas produit les observations correspondantes.
 | 17 | Home | projection Home existante | À prouver | À prouver | À prouver | À prouver | NON TERMINALE |
 | 18 | Pièces jointes | `local_authority_media`, `local_authority_media_tests` | À prouver | À prouver | À prouver | À prouver | NON TERMINALE |
 | 19 | Identités visuelles | profils, emoji et média locaux | À prouver | À prouver | À prouver | À prouver | NON TERMINALE |
-| 20 | Canvas | `local_authority_canvas` | À prouver | À prouver | À prouver | À prouver | NON TERMINALE |
+| 20 | Canvas | `local_authority_canvas` | Canvas créé puis édité en deux révisions Markdown depuis les réglages de `#general` | Seconde révision acceptée avec précondition autoritaire ; conflits et historique couverts par le test Rust dédié | Vue rendue avec titre et trois items, dont `second authoritative revision` | Résumé dans les réglages et contenu complet exact relus après fermeture/relaunch du `.app` | PARTIELLE — conflit natif, resynchronisation et chiffrement/versionnement restent à prouver |
 | 21 | Repositories humains | `local_authority_git` et parcours Projects | À prouver sur un dépôt réel choisi | À prouver | À prouver | À prouver | NON TERMINALE |
 | 22 | Corps local d’une Installation | sidecars Punks + runtime ACP local | À prouver | À prouver | À prouver | À prouver | NON TERMINALE |
 | 23 | Workflows essentiels | `local_authority_workflows`, approbations et traces | À prouver | À prouver | À prouver | À prouver | NON TERMINALE |
