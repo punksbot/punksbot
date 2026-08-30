@@ -1,4 +1,5 @@
 import * as React from "react";
+import { relaunch } from "@tauri-apps/plugin-process";
 import {
   Check,
   Download,
@@ -23,6 +24,7 @@ import {
 } from "@/shared/api/tauriLocalAccounts";
 import { truncatePubkey } from "@/shared/lib/pubkey";
 import { MIN_PASSPHRASE_LEN } from "@/features/settings/lib/encryptedBackup";
+import { switchLocalAccountWithRelaunch } from "./localAccountSwitch";
 
 const ITEM_CLASS =
   "flex min-h-9 w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm outline-hidden transition-colors hover:bg-muted/50 focus-visible:bg-muted/50";
@@ -63,9 +65,10 @@ export function LocalAccountSwitcher({ onClose }: { onClose(): void }) {
     setPendingId(account.id);
     setError(null);
     try {
-      await switchLocalAccount(account.id, generation);
-      onClose();
-      window.location.reload();
+      await switchLocalAccountWithRelaunch(
+        { accountId: account.id, expectedGeneration: generation },
+        { close: onClose, relaunch, switchAccount: switchLocalAccount },
+      );
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
       await refresh();
