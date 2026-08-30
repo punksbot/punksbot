@@ -22,6 +22,17 @@ class AgentCredential:
 
 
 @dataclass(frozen=True, slots=True)
+class DirectoryIdentity:
+    """Public identity metadata exported with verifier evidence."""
+
+    name: str
+    role: str
+    pubkey: str
+    identity_id: str | None = None
+    about: str = ""
+
+
+@dataclass(frozen=True, slots=True)
 class TrialHandle:
     """Provisioned Punks resources owned by one Harbor trial."""
 
@@ -39,6 +50,8 @@ class TrialHandle:
     # identity and the harness run. ``relay_ws_url`` is the view from the
     # agents' runtime (the task container). Empty means both views coincide.
     user_relay_url: str = ""
+    task_name: str | None = None
+    directory: tuple[DirectoryIdentity, ...] = ()
 
 
 @runtime_checkable
