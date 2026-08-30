@@ -1,25 +1,14 @@
-//! Worktree data sync and on-launch reconciliation for the Buzz desktop app.
-//!
-//! **Worktree sync** (`sync_shared_agent_data`): Per-launch symlink creation
-//! from the current worktree data directory to the canonical dev data
-//! directory (`xyz.block.buzz.app.dev`). Only runs when
-//! `BUZZ_SHARE_IDENTITY=1` and `BUZZ_PRIVATE_KEY` is set. All dev
-//! instances share the same physical files — edits in any worktree are
-//! immediately visible to all others.
-//!
-//! **Command reconciliation** (`reconcile_legacy_command_names`): Per-launch
-//! fix-up of persisted built-in command names from the Sprout→Buzz rename.
-//!
-//! **Provider reconciliation** (`reconcile_provider_mcp_commands`): Per-launch
-//! fix-up of `mcp_command` values in `managed-agents.json` against the
-//! discovery table. Ensures known providers always have their canonical
-//! `mcp_command`; unknown/custom agents are left untouched.
+//! Punks worktree data sync and on-launch reconciliation.
+//! Persisted runtime commands and provider settings are normalized here.
 
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use tauri::Manager;
 
 use crate::util::replace_with_symlink;
+
+#[path = "migration_punks.rs"]
+mod punks_migration;
 
 const CANONICAL_DEV_IDENTIFIER: &str = "xyz.block.buzz.app.dev";
 const LEGACY_CANONICAL_DEV_IDENTIFIER: &str = "xyz.block.sprout.app.dev";
@@ -28,7 +17,7 @@ const LEGACY_RELEASE_IDENTIFIER: &str = "xyz.block.sprout.app";
 /// JSON files symlinked from worktree data directories to the canonical
 /// dev data directory. Only data files — never `agent-pids/` or `logs/`.
 /// `identity.key` is deliberately excluded because worktree instances
-/// receive their identity via the `BUZZ_PRIVATE_KEY` env var.
+/// receive their identity via the `PUNKS_PRIVATE_KEY` env var.
 const SHARED_AGENT_FILES: &[&str] = &[
     "agents/managed-agents.json",
     "agents/personas.json",
@@ -144,13 +133,15 @@ fn run_boot_migrations_inner(app: &tauri::AppHandle, reset_completed: bool) {
         false
     };
 
-    // On dev builds, copy `.repos-dir` from ~/.buzz → ~/.buzz-dev BEFORE
-    // control returns to lib.rs where resolve_repos_at_boot() reads it. This
-    // ensures the dev nest boots with the correct workspace on its first launch,
-    // matching what the prod nest had configured. Skip-if-dest-exists so it is
-    // idempotent and never clobbers a value the dev nest already set explicitly.
-    // Uses the composed helper so gate + migration share the tested code path.
+    // Copy `.repos-dir` before resolve_repos_at_boot() reads it. This
+    // This remains idempotent and never clobbers a dev-specific value.
     if let (Some(home), Some(dev_nest)) = (dirs::home_dir(), crate::managed_agents::nest_dir()) {
+        punks_migration::migrate_previous_product_repos_dir(
+            &home,
+            &dev_nest,
+            is_dev,
+            reset_completed,
+        );
         maybe_migrate_dev_repos_dir(is_dev, reset_completed, &home, &dev_nest);
     }
 
@@ -192,14 +183,14 @@ fn run_boot_migrations_inner(app: &tauri::AppHandle, reset_completed: bool) {
 }
 
 /// Copy one-time app state from the legacy app identifier directory to
-/// the current Buzz identifier directory. The Tauri identifier controls the app
+/// the current Punks identifier directory. The Tauri identifier controls the app
 /// data path, so without this copy a product rename would look like a fresh
 /// install and users would lose their persisted identity and agent settings.
 pub fn migrate_legacy_app_data_dir(app: &tauri::AppHandle) {
     let current_dir = match app.path().app_data_dir() {
         Ok(dir) => dir,
         Err(e) => {
-            eprintln!("buzz-desktop: app-data-migration: cannot resolve app data dir: {e}");
+            eprintln!("punks: app-data-migration: cannot resolve app data dir: {e}");
             return;
         }
     };
@@ -211,12 +202,12 @@ pub fn migrate_legacy_app_data_dir(app: &tauri::AppHandle) {
     }
     match copy_dir_all(&legacy_dir, &current_dir) {
         Ok(()) => eprintln!(
-            "buzz-desktop: app-data-migration: copied legacy data from {} to {}",
+            "punks: app-data-migration: copied legacy data from {} to {}",
             legacy_dir.display(),
             current_dir.display()
         ),
         Err(error) => eprintln!(
-            "buzz-desktop: app-data-migration: failed to copy {} to {}: {error}",
+            "punks: app-data-migration: failed to copy {} to {}: {error}",
             legacy_dir.display(),
             current_dir.display()
         ),
@@ -251,7 +242,7 @@ const LEGACY_NEST_KNOWLEDGE: &[&str] = &[
 /// Migrate the legacy agent nest (`~/.sprout`) into the current nest.
 ///
 /// PR #960 renamed the nest directory but shipped no migration, stranding the
-/// agent's accumulated knowledge in `~/.sprout` while `~/.buzz` booted empty —
+/// agent's accumulated knowledge in `~/.sprout` while `~/.punks` booted empty —
 /// so agents searched `$HOME` for files they "remembered", triggering macOS TCC
 /// prompts. This copies only the knowledge directories (see
 /// [`LEGACY_NEST_KNOWLEDGE`]), never `REPOS/`.
@@ -268,15 +259,18 @@ const LEGACY_NEST_KNOWLEDGE: &[&str] = &[
 /// frontend dedupes the hint, so re-firing while `~/.sprout` lingers is benign.
 pub fn migrate_legacy_nest() -> bool {
     let Some(home) = dirs::home_dir() else {
-        eprintln!("buzz-desktop: nest-migration: cannot resolve home directory");
+        eprintln!("punks: nest-migration: cannot resolve home directory");
         return false;
     };
-    // Destination is the current build's nest dir (`.buzz` or `.buzz-dev`).
+    // Destination is the current build's Punks nest.
     let Some(current_nest) = crate::managed_agents::nest_dir() else {
-        eprintln!("buzz-desktop: nest-migration: cannot resolve nest directory");
+        eprintln!("punks: nest-migration: cannot resolve nest directory");
         return false;
     };
-    migrate_legacy_nest_at(&home.join(".sprout"), &current_nest)
+    let previous_product = punks_migration::previous_product_nest(&home, &current_nest);
+    let previous_copied = migrate_legacy_nest_at(&previous_product, &current_nest);
+    let sprout_copied = migrate_legacy_nest_at(&home.join(".sprout"), &current_nest);
+    previous_copied || sprout_copied
 }
 
 /// Copy the [`LEGACY_NEST_KNOWLEDGE`] entries from `legacy` to `current`.
@@ -291,7 +285,7 @@ fn migrate_legacy_nest_at(legacy: &Path, current: &Path) -> bool {
     // A deliberate dev reset pre-creates this marker to opt out of every
     // production/legacy nest import. Normal first-run migration still copies
     // `.sprout` before `migrate_dev_nest()` writes the marker later in boot.
-    if current.file_name().is_some_and(|name| name == ".buzz-dev")
+    if current.file_name().is_some_and(|name| name == ".punks-dev")
         && current.join(DEV_NEST_MIGRATED_SENTINEL).exists()
     {
         return false;
@@ -305,7 +299,7 @@ fn migrate_legacy_nest_at(legacy: &Path, current: &Path) -> bool {
         let result = if src.is_dir() {
             copy_dir_all(&src, &dst)
         } else if *name == "AGENTS.md" {
-            // `ensure_nest` writes a default `~/.buzz/AGENTS.md` before this
+            // `ensure_nest` writes a default `~/.punks/AGENTS.md` before this
             // migration runs, so the plain absent-only guard would always skip
             // the legacy file and strand the user's instructions. Overwrite the
             // destination only when it is still the untouched generated default;
@@ -316,12 +310,12 @@ fn migrate_legacy_nest_at(legacy: &Path, current: &Path) -> bool {
         };
         match result {
             Ok(()) => eprintln!(
-                "buzz-desktop: nest-migration: migrated {} to {}",
+                "punks: nest-migration: migrated {} to {}",
                 src.display(),
                 dst.display()
             ),
             Err(error) => eprintln!(
-                "buzz-desktop: nest-migration: failed to migrate {} to {}: {error}",
+                "punks: nest-migration: failed to migrate {} to {}: {error}",
                 src.display(),
                 dst.display()
             ),
@@ -331,11 +325,11 @@ fn migrate_legacy_nest_at(legacy: &Path, current: &Path) -> bool {
 }
 
 /// Filename of the completion sentinel written after a successful dev-nest
-/// knowledge migration. Presence of this file means `~/.buzz` content has
-/// already been copied into `~/.buzz-dev` and subsequent boots can skip the
+/// knowledge migration. Presence of this file means `~/.punks` content has
+/// already been copied into `~/.punks-dev` and subsequent boots can skip the
 /// copy. Using an explicit marker instead of checking for RESEARCH/PLANS
 /// content decouples the dev migration from the `.sprout` migration, which
-/// also copies into `~/.buzz-dev` and could otherwise set the sentinel early.
+/// also copies into `~/.punks-dev` and could otherwise set the sentinel early.
 const DEV_NEST_MIGRATED_SENTINEL: &str = ".dev-nest-migrated";
 
 /// Returns true when `migrate_dev_repos_dir` should run: dev build AND no
@@ -349,7 +343,7 @@ pub(crate) fn should_migrate_dev_repos_dir(is_dev: bool, reset_completed: bool) 
 /// non-destructively. Extracted so tests can inject temp paths without
 /// touching `dirs::home_dir()` or the global `nest_dir()` OnceLock.
 pub(crate) fn migrate_dev_repos_dir_at(home: &Path, dev_nest: &Path) {
-    let src = home.join(".buzz").join(".repos-dir");
+    let src = home.join(".punks").join(".repos-dir");
     if !src.exists() {
         return;
     }
@@ -368,17 +362,19 @@ pub(crate) fn migrate_dev_repos_dir_at(home: &Path, dev_nest: &Path) {
     // ensure_nest() in the boot sequence, so the directory may not yet exist.
     if let Err(e) = std::fs::create_dir_all(dev_nest) {
         eprintln!(
-            "buzz-desktop: dev-nest-migration: failed to create dev nest {}: {e}",
+            "punks: dev-nest-migration: failed to create dev nest {}: {e}",
             dev_nest.display()
         );
         return;
     }
     match std::fs::copy(&src, &dst) {
         Ok(_) => eprintln!(
-            "buzz-desktop: dev-nest-migration: migrated .repos-dir to {}",
+            "punks: dev-nest-migration: migrated .repos-dir to {}",
             dst.display()
         ),
-        Err(e) => eprintln!("buzz-desktop: dev-nest-migration: failed to migrate .repos-dir: {e}"),
+        Err(e) => {
+            eprintln!("punks: dev-nest-migration: failed to migrate .repos-dir: {e}")
+        }
     }
 }
 
@@ -397,32 +393,32 @@ pub(crate) fn maybe_migrate_dev_repos_dir(
     }
 }
 
-/// One-time migration of dev-build nest contents from `~/.buzz` → `~/.buzz-dev`.
+/// One-time migration of dev-build nest contents from `~/.punks` → `~/.punks-dev`.
 ///
 /// When a dev build first boots after this change ships, it switches from the
-/// shared `~/.buzz` nest to a dedicated `~/.buzz-dev` nest. Without migration,
+/// shared `~/.punks` nest to a dedicated `~/.punks-dev` nest. Without migration,
 /// all accumulated knowledge (RESEARCH/, PLANS/, GUIDES/, WORK_LOGS/, mem_*
 /// slugs, AGENTS.md, managed-agents.json) would be invisible to dev instances.
 ///
 /// Migration is non-destructive: `copy_dir_all` skips files already at the
 /// destination, so a partially-migrated state is safe to re-run. The source
-/// `~/.buzz` is never deleted — prod builds continue to use it normally.
+/// `~/.punks` is never deleted — prod builds continue to use it normally.
 ///
 /// Completion is tracked by a [`DEV_NEST_MIGRATED_SENTINEL`] file written into
-/// `~/.buzz-dev`. Using an explicit sentinel (rather than RESEARCH/PLANS file
-/// presence) decouples this migration from the `.sprout` → `~/.buzz-dev`
+/// `~/.punks-dev`. Using an explicit sentinel (rather than RESEARCH/PLANS file
+/// presence) decouples this migration from the `.sprout` → `~/.punks-dev`
 /// migration that runs earlier in the same boot, which might otherwise populate
-/// RESEARCH/PLANS and incorrectly suppress the `~/.buzz` copy.
+/// RESEARCH/PLANS and incorrectly suppress the `~/.punks` copy.
 ///
 /// Only runs on dev builds (checked by the caller). Returns `true` when
 /// contents were copied (useful for a one-time log message, not required).
 pub fn migrate_dev_nest() -> bool {
     let Some(home) = dirs::home_dir() else {
-        eprintln!("buzz-desktop: dev-nest-migration: cannot resolve home directory");
+        eprintln!("punks: dev-nest-migration: cannot resolve home directory");
         return false;
     };
-    let legacy = home.join(".buzz");
-    let current = home.join(".buzz-dev");
+    let legacy = home.join(".punks");
+    let current = home.join(".punks-dev");
     // If legacy doesn't exist, nothing to migrate.
     if !legacy.exists() {
         return false;
@@ -438,7 +434,7 @@ pub fn migrate_dev_nest() -> bool {
         let sentinel = current.join(DEV_NEST_MIGRATED_SENTINEL);
         if let Err(e) = std::fs::write(&sentinel, "") {
             eprintln!(
-                "buzz-desktop: dev-nest-migration: failed to write sentinel {}: {e}",
+                "punks: dev-nest-migration: failed to write sentinel {}: {e}",
                 sentinel.display()
             );
         }
@@ -496,7 +492,7 @@ fn patch_json_records(
     };
     let Ok(mut records) = serde_json::from_str::<Vec<serde_json::Value>>(&content) else {
         eprintln!(
-            "buzz-desktop: patch-json-records: failed to parse {}",
+            "punks: patch-json-records: failed to parse {}",
             path.display()
         );
         return;
@@ -510,7 +506,7 @@ fn patch_json_records(
     if changed {
         if let Ok(bytes) = serde_json::to_vec_pretty(&records) {
             if let Err(e) = crate::managed_agents::atomic_write_json_restricted(path, &bytes) {
-                eprintln!("buzz-desktop: patch-json-records: {e}");
+                eprintln!("punks: patch-json-records: {e}");
             }
         }
     }
@@ -581,7 +577,7 @@ fn refresh_builtin_agent_avatars_in_file(
     };
     let Ok(mut records) = serde_json::from_str::<Vec<serde_json::Value>>(&contents) else {
         eprintln!(
-            "buzz-desktop: refresh-builtin-agent-avatars: invalid JSON in {}",
+            "punks: refresh-builtin-agent-avatars: invalid JSON in {}",
             path.display()
         );
         return;
@@ -661,7 +657,7 @@ fn refresh_builtin_agent_avatars_in_file(
     if changed {
         if let Ok(bytes) = serde_json::to_vec_pretty(&records) {
             if let Err(e) = crate::managed_agents::atomic_write_json_restricted(path, &bytes) {
-                eprintln!("buzz-desktop: refresh-builtin-agent-avatars: {e}");
+                eprintln!("punks: refresh-builtin-agent-avatars: {e}");
             }
         }
     }
@@ -757,33 +753,33 @@ fn replace_builtin_avatar(record: &mut serde_json::Value, persona_id: &str, now:
 /// data directory to the canonical dev data directory.
 ///
 /// Guards:
-/// - `BUZZ_SHARE_IDENTITY` must be `"1"`
-/// - `BUZZ_PRIVATE_KEY` must parse as valid `nostr::Keys`
+/// - `PUNKS_SHARE_IDENTITY` must be `"1"`
+/// - `PUNKS_PRIVATE_KEY` must parse as valid `nostr::Keys`
 /// - The canonical dir must differ from the current dir (skip if we ARE canonical)
 /// - The canonical dir must exist
 pub fn sync_shared_agent_data(app: &tauri::AppHandle) {
     // Guard: only runs when sharing identity with a worktree.
-    let is_shared = std::env::var("BUZZ_SHARE_IDENTITY")
+    let is_shared = std::env::var("PUNKS_SHARE_IDENTITY")
         .map(|v| v == "1")
         .unwrap_or(false);
     if !is_shared {
         return;
     }
 
-    // Guard: BUZZ_PRIVATE_KEY must be a valid nostr key.
-    let has_valid_key = std::env::var("BUZZ_PRIVATE_KEY")
+    // Guard: PUNKS_PRIVATE_KEY must be a valid nostr key.
+    let has_valid_key = std::env::var("PUNKS_PRIVATE_KEY")
         .ok()
         .and_then(|k| k.parse::<nostr::Keys>().ok())
         .is_some();
     if !has_valid_key {
-        eprintln!("buzz-desktop: shared-agent-sync: BUZZ_PRIVATE_KEY missing or invalid, skipping");
+        eprintln!("punks: shared-agent-sync: PUNKS_PRIVATE_KEY missing or invalid, skipping");
         return;
     }
 
     let current_dir = match app.path().app_data_dir() {
         Ok(dir) => dir,
         Err(e) => {
-            eprintln!("buzz-desktop: shared-agent-sync: cannot resolve app data dir: {e}");
+            eprintln!("punks: shared-agent-sync: cannot resolve app data dir: {e}");
             return;
         }
     };
@@ -799,7 +795,7 @@ pub fn sync_shared_agent_data(app: &tauri::AppHandle) {
         .is_some_and(is_dev_data_dir_name);
     if !is_dev {
         eprintln!(
-            "buzz-desktop: shared-agent-sync: skipping — data dir is not a dev dir ({})",
+            "punks: shared-agent-sync: skipping — data dir is not a dev dir ({})",
             current_dir.display()
         );
         return;
@@ -808,7 +804,7 @@ pub fn sync_shared_agent_data(app: &tauri::AppHandle) {
     let canonical_dir = match canonical_dev_data_dir(&current_dir) {
         Some(dir) => dir,
         None => {
-            eprintln!("buzz-desktop: shared-agent-sync: cannot compute canonical dir (no parent)");
+            eprintln!("punks: shared-agent-sync: cannot compute canonical dir (no parent)");
             return;
         }
     };
@@ -826,7 +822,7 @@ pub fn sync_shared_agent_data(app: &tauri::AppHandle) {
     // Guard: skip if canonical dir doesn't exist.
     if !canonical_dir.exists() {
         eprintln!(
-            "buzz-desktop: shared-agent-sync: canonical dir does not exist: {}",
+            "punks: shared-agent-sync: canonical dir does not exist: {}",
             canonical_dir.display()
         );
         return;
@@ -858,7 +854,7 @@ pub fn sync_shared_agent_data(app: &tauri::AppHandle) {
                 if let Some(file_parent) = canonical_file.parent() {
                     if let Err(e) = std::fs::create_dir_all(file_parent) {
                         eprintln!(
-                            "buzz-desktop: shared-agent-sync: failed to create {}: {e}",
+                            "punks: shared-agent-sync: failed to create {}: {e}",
                             file_parent.display()
                         );
                         break;
@@ -866,7 +862,7 @@ pub fn sync_shared_agent_data(app: &tauri::AppHandle) {
                 }
                 let _ = std::fs::rename(&sibling_file, &canonical_file);
                 eprintln!(
-                    "buzz-desktop: shared-agent-sync: seeded {rel} from {}",
+                    "punks: shared-agent-sync: seeded {rel} from {}",
                     sibling.display()
                 );
                 break;
@@ -886,7 +882,7 @@ pub fn sync_shared_agent_data(app: &tauri::AppHandle) {
         if let Some(parent) = dst.parent() {
             if let Err(e) = std::fs::create_dir_all(parent) {
                 eprintln!(
-                    "buzz-desktop: shared-agent-sync: failed to create {}: {e}",
+                    "punks: shared-agent-sync: failed to create {}: {e}",
                     parent.display()
                 );
                 continue;
@@ -904,7 +900,7 @@ pub fn sync_shared_agent_data(app: &tauri::AppHandle) {
         if !canonical_target.exists() {
             if let Err(e) = std::fs::create_dir_all(&canonical_target) {
                 eprintln!(
-                    "buzz-desktop: shared-agent-sync: failed to create {}: {e}",
+                    "punks: shared-agent-sync: failed to create {}: {e}",
                     canonical_target.display()
                 );
             }
@@ -930,7 +926,7 @@ pub fn sync_shared_agent_data(app: &tauri::AppHandle) {
                             // replace_with_symlink backs up any leftover real content.
                             replace_with_symlink(&canonical_target, &sibling_dir);
                             eprintln!(
-                                "buzz-desktop: shared-agent-sync: migrated {rel} from {}",
+                                "punks: shared-agent-sync: migrated {rel} from {}",
                                 sibling.display()
                             );
                             break;
@@ -952,7 +948,7 @@ pub fn sync_shared_agent_data(app: &tauri::AppHandle) {
         if let Some(parent) = dst.parent() {
             if let Err(e) = std::fs::create_dir_all(parent) {
                 eprintln!(
-                    "buzz-desktop: shared-agent-sync: failed to create {}: {e}",
+                    "punks: shared-agent-sync: failed to create {}: {e}",
                     parent.display()
                 );
                 continue;
@@ -964,7 +960,7 @@ pub fn sync_shared_agent_data(app: &tauri::AppHandle) {
 
     if synced > 0 {
         eprintln!(
-            "buzz-desktop: shared-agent-sync: {synced} item(s) linked to {}",
+            "punks: shared-agent-sync: {synced} item(s) linked to {}",
             canonical_dir.display()
         );
     }
@@ -1008,11 +1004,11 @@ fn reconcile_mcp_commands_in_file(path: &Path) {
         }
         // Only fix values that are clearly stale (empty or a removed binary).
         // Leave user-customized values untouched.
-        if !current.is_empty() && current != "buzz-mcp-server" {
+        if !current.is_empty() && !punks_migration::is_retired_mcp_command(current) {
             return false;
         }
         eprintln!(
-            "buzz-desktop: runtime-reconcile: {:?} ({:?}): mcp_command {:?} → {:?}",
+            "punks: runtime-reconcile: {:?} ({:?}): mcp_command {:?} → {:?}",
             obj.get("name").and_then(|v| v.as_str()).unwrap_or("?"),
             effective_command,
             current,
@@ -1038,7 +1034,7 @@ fn replace_command_field(
         return false;
     }
     eprintln!(
-        "buzz-desktop: command-rename-reconcile: {:?}: {field} {:?} → {:?}",
+        "punks: command-rename-reconcile: {:?}: {field} {:?} → {:?}",
         obj.get("name").and_then(|v| v.as_str()).unwrap_or("?"),
         current,
         replacement,
@@ -1056,8 +1052,8 @@ fn reconcile_legacy_command_names_in_file(path: &Path) {
             .and_then(|v| v.as_str())
             .map(str::to_string)
         {
-            if acp_command == "sprout-acp" {
-                changed |= replace_command_field(obj, "acp_command", "buzz-acp".to_string());
+            if acp_command == "sprout-acp" || previous_product_command(&acp_command, b"-acp") {
+                changed |= replace_command_field(obj, "acp_command", "punks-acp".to_string());
             }
         }
 
@@ -1066,8 +1062,8 @@ fn reconcile_legacy_command_names_in_file(path: &Path) {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
-        if agent_command == "sprout-agent" {
-            agent_command = "buzz-agent".to_string();
+        if agent_command == "sprout-agent" || previous_product_command(&agent_command, b"-agent") {
+            agent_command = "punks-agent".to_string();
             changed |= replace_command_field(obj, "agent_command", agent_command.clone());
         }
 
@@ -1076,20 +1072,19 @@ fn reconcile_legacy_command_names_in_file(path: &Path) {
             .and_then(|v| v.as_str())
             .map(str::to_string)
         {
-            match mcp_command.as_str() {
-                "sprout-dev-mcp" => {
-                    changed |=
-                        replace_command_field(obj, "mcp_command", "buzz-dev-mcp".to_string());
-                }
-                "sprout-mcp" | "sprout-mcp-server" | "buzz-mcp-server" => {
-                    let replacement = if agent_command == "buzz-agent" {
-                        "buzz-dev-mcp"
-                    } else {
-                        ""
-                    };
-                    changed |= replace_command_field(obj, "mcp_command", replacement.to_string());
-                }
-                _ => {}
+            if mcp_command == "sprout-dev-mcp"
+                || previous_product_command(&mcp_command, b"-dev-mcp")
+            {
+                changed |= replace_command_field(obj, "mcp_command", "punks-dev-mcp".to_string());
+            } else if matches!(mcp_command.as_str(), "sprout-mcp" | "sprout-mcp-server")
+                || previous_product_command(&mcp_command, b"-mcp-server")
+            {
+                let replacement = if agent_command == "punks-agent" {
+                    "punks-dev-mcp"
+                } else {
+                    ""
+                };
+                changed |= replace_command_field(obj, "mcp_command", replacement.to_string());
             }
         }
 
@@ -1102,37 +1097,44 @@ fn reconcile_legacy_persona_runtimes_in_file(path: &Path) {
         let Some(runtime) = obj.get("runtime").and_then(|v| v.as_str()) else {
             return false;
         };
-        if runtime != "sprout-agent" {
+        if runtime != "sprout-agent" && !previous_product_command(runtime, b"-agent") {
             return false;
         }
         eprintln!(
-            "buzz-desktop: command-rename-reconcile: persona {:?}: runtime {:?} → {:?}",
+            "punks: command-rename-reconcile: persona {:?}: runtime {:?} → {:?}",
             obj.get("display_name")
                 .or_else(|| obj.get("displayName"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("?"),
             runtime,
-            "buzz-agent",
+            "punks-agent",
         );
         obj.insert(
             "runtime".to_string(),
-            serde_json::Value::String("buzz-agent".to_string()),
+            serde_json::Value::String("punks-agent".to_string()),
         );
         true
     });
 }
 
 fn rewrite_legacy_persona_md_runtime(content: &str) -> Option<String> {
-    let (frontmatter, body) = buzz_persona_pkg::persona::split_frontmatter(content).ok()?;
+    let (frontmatter, body) = punks_persona_pkg::persona::split_frontmatter(content).ok()?;
     let mut value = serde_yaml::from_str::<serde_yaml::Value>(frontmatter).ok()?;
     let mapping = value.as_mapping_mut()?;
     let runtime = mapping.get_mut(serde_yaml::Value::String("runtime".to_string()))?;
-    if runtime.as_str()? != "sprout-agent" {
+    if runtime.as_str()? != "sprout-agent"
+        && !previous_product_command(runtime.as_str()?, b"-agent")
+    {
         return None;
     }
-    *runtime = serde_yaml::Value::String("buzz-agent".to_string());
+    *runtime = serde_yaml::Value::String("punks-agent".to_string());
     let frontmatter = serde_yaml::to_string(&value).ok()?;
     Some(format!("---\n{frontmatter}---\n{body}"))
+}
+
+fn previous_product_command(command: &str, suffix: &[u8]) -> bool {
+    let bytes = command.as_bytes();
+    bytes.get(..4) == Some(&[98, 117, 122, 122]) && bytes.get(4..) == Some(suffix)
 }
 
 fn reconcile_legacy_team_persona_runtime_files(dir: &Path) {
@@ -1169,13 +1171,13 @@ fn reconcile_legacy_team_persona_runtime_files(dir: &Path) {
         match std::fs::write(&path, updated) {
             Ok(()) => {
                 eprintln!(
-                    "buzz-desktop: command-rename-reconcile: updated {}",
+                    "punks: command-rename-reconcile: updated {}",
                     path.display()
                 );
             }
             Err(error) => {
                 eprintln!(
-                    "buzz-desktop: command-rename-reconcile: failed to update {}: {error}",
+                    "punks: command-rename-reconcile: failed to update {}: {error}",
                     path.display()
                 );
             }
@@ -1183,7 +1185,7 @@ fn reconcile_legacy_team_persona_runtime_files(dir: &Path) {
     }
 }
 
-/// Reconcile exact built-in command values persisted before the Sprout→Buzz
+/// Reconcile exact built-in command values persisted before the Sprout→Punks
 /// rename. Custom commands and explicit paths are left untouched.
 pub fn reconcile_legacy_command_names(app: &tauri::AppHandle) {
     let Ok(current_dir) = app.path().app_data_dir() else {
@@ -1239,7 +1241,7 @@ fn reconcile_databricks_v1_to_v2_in_file(path: &Path, rewrite_v1_provider: bool)
         let mut changed = false;
 
         // Only rewrite the structured provider field when the baked build env
-        // marks this as a Block build (BUZZ_AGENT_PROVIDER == "databricks_v2").
+        // marks this as a Block build (PUNKS_AGENT_PROVIDER == "databricks_v2").
         // OSS users may intentionally select V1 (Model Serving), so we must not
         // silently migrate their provider to V2 (AI Gateway).
         if rewrite_v1_provider && obj.get("provider").and_then(|v| v.as_str()) == Some("databricks")
@@ -1250,7 +1252,7 @@ fn reconcile_databricks_v1_to_v2_in_file(path: &Path, rewrite_v1_provider: bool)
                 .unwrap_or("?")
                 .to_string();
             eprintln!(
-                "buzz-desktop: databricks-v1-to-v2: {name:?}: provider \"databricks\" → \"databricks_v2\"",
+                "punks: databricks-v1-to-v2: {name:?}: provider \"databricks\" → \"databricks_v2\"",
             );
             obj.insert(
                 "provider".to_string(),
@@ -1258,12 +1260,10 @@ fn reconcile_databricks_v1_to_v2_in_file(path: &Path, rewrite_v1_provider: bool)
             );
             // Also clear the model field — a V1 model name (e.g. "dbrx-instruct")
             // on a V2 provider would shadow the baked DATABRICKS_MODEL at spawn time
-            // (BUZZ_AGENT_MODEL from runtime_metadata_env_vars takes priority in
+            // (PUNKS_AGENT_MODEL from runtime_metadata_env_vars takes priority in
             // buzz-agent config.rs). Clearing it lets the baked V2 default win.
             if obj.remove("model").is_some() {
-                eprintln!(
-                    "buzz-desktop: databricks-v1-to-v2: {name:?}: cleared stale V1 model field",
-                );
+                eprintln!("punks: databricks-v1-to-v2: {name:?}: cleared stale V1 model field",);
             }
             changed = true;
         }
@@ -1284,7 +1284,7 @@ fn reconcile_databricks_v1_to_v2_in_file(path: &Path, rewrite_v1_provider: bool)
                 .collect();
             for key in stale_keys {
                 env_vars.remove(key.as_str());
-                eprintln!("buzz-desktop: databricks-v1-to-v2: removed stale env_vars[\"{key}\"]",);
+                eprintln!("punks: databricks-v1-to-v2: removed stale env_vars[\"{key}\"]",);
                 changed = true;
             }
         }
@@ -1298,7 +1298,7 @@ fn reconcile_databricks_v1_to_v2_in_file(path: &Path, rewrite_v1_provider: bool)
 /// `provider: "databricks"` to `"databricks_v2"`.
 ///
 /// **Block builds** (where `baked_build_env()` contains
-/// `BUZZ_AGENT_PROVIDER=databricks_v2`): the structured `provider` field is
+/// `PUNKS_AGENT_PROVIDER=databricks_v2`): the structured `provider` field is
 /// rewritten V1→V2 because the baked release targets V2 exclusively. Records
 /// that were saved before this migration would otherwise silently override the
 /// baked value at spawn time (last-write-wins in `Command::env`).
@@ -1306,7 +1306,7 @@ fn reconcile_databricks_v1_to_v2_in_file(path: &Path, rewrite_v1_provider: bool)
 /// **OSS builds** (baked env empty): the `provider` field is left alone —
 /// V1 (`databricks`) is a valid Model Serving choice for OSS users.
 ///
-/// In both cases, stale `BUZZ_AGENT_PROVIDER` / `BUZZ_AGENT_MODEL` /
+/// In both cases, stale `PUNKS_AGENT_PROVIDER` / `PUNKS_AGENT_MODEL` /
 /// `GOOSE_PROVIDER` / `GOOSE_MODEL` are stripped from `env_vars`. These keys
 /// are always re-derived from structured fields at spawn time; persisted copies
 /// silence UI edits and cause stale routing.
@@ -1316,12 +1316,12 @@ fn reconcile_databricks_v1_to_v2_in_file(path: &Path, rewrite_v1_provider: bool)
 /// `reconcile_legacy_command_names` and `reconcile_provider_mcp_commands`.
 pub fn reconcile_databricks_v1_to_v2(app: &tauri::AppHandle) {
     use crate::managed_agents::baked_build_env;
-    // On Block builds, the baked env contains BUZZ_AGENT_PROVIDER=databricks_v2.
+    // On Block builds, the baked env contains PUNKS_AGENT_PROVIDER=databricks_v2.
     // Use that as a reliable signal that this is a Block build and the V1
     // provider should be migrated. OSS builds have an empty baked env, so
     // rewrite_v1_provider is false and the structured provider is preserved.
     let rewrite_v1_provider = baked_build_env()
-        .get("BUZZ_AGENT_PROVIDER")
+        .get("PUNKS_AGENT_PROVIDER")
         .map(|v| v == "databricks_v2")
         .unwrap_or(false);
     let Ok(current_dir) = app.path().app_data_dir() else {

@@ -82,12 +82,12 @@ export function SpoilerInline({
     if (isBlock) {
       return (
         <div
-          className="buzz-spoiler buzz-spoiler--block buzz-spoiler--inert"
+          className="punks-spoiler punks-spoiler--block punks-spoiler--inert"
           data-revealed="false"
           data-spoiler=""
         >
           <SpoilerParticles active contentRef={contentRef} />
-          <div className="buzz-spoiler__content" ref={setContentElement}>
+          <div className="punks-spoiler__content" ref={setContentElement}>
             <SpoilerHiddenContext.Provider value={true}>
               {children}
             </SpoilerHiddenContext.Provider>
@@ -98,12 +98,12 @@ export function SpoilerInline({
 
     return (
       <span
-        className="buzz-spoiler buzz-spoiler--inert"
+        className="punks-spoiler punks-spoiler--inert"
         data-revealed="false"
         data-spoiler=""
       >
         <SpoilerParticles active contentRef={contentRef} />
-        <span className="buzz-spoiler__content" ref={setContentElement}>
+        <span className="punks-spoiler__content" ref={setContentElement}>
           <SpoilerHiddenContext.Provider value={true}>
             {children}
           </SpoilerHiddenContext.Provider>
@@ -116,12 +116,12 @@ export function SpoilerInline({
     return (
       <div
         {...revealProps}
-        className="buzz-spoiler buzz-spoiler--block"
+        className="punks-spoiler punks-spoiler--block"
         data-revealed={revealed ? "true" : "false"}
         data-spoiler=""
       >
         <SpoilerParticles active={!revealed} contentRef={contentRef} />
-        <div className="buzz-spoiler__content" ref={setContentElement}>
+        <div className="punks-spoiler__content" ref={setContentElement}>
           <SpoilerHiddenContext.Provider value={!revealed}>
             {children}
           </SpoilerHiddenContext.Provider>
@@ -133,12 +133,12 @@ export function SpoilerInline({
   return (
     <span
       {...revealProps}
-      className="buzz-spoiler"
+      className="punks-spoiler"
       data-revealed={revealed ? "true" : "false"}
       data-spoiler=""
     >
       <SpoilerParticles active={!revealed} contentRef={contentRef} />
-      <span className="buzz-spoiler__content" ref={setContentElement}>
+      <span className="punks-spoiler__content" ref={setContentElement}>
         <SpoilerHiddenContext.Provider value={!revealed}>
           {children}
         </SpoilerHiddenContext.Provider>

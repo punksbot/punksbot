@@ -13,7 +13,7 @@ use crate::{
     events,
     managed_agents::{find_managed_agent_mut, load_managed_agents, ManagedAgentRecord},
     models::{
-        FeedItemInfo, FeedMeta, FeedResponse, FeedSections, SearchResponse,
+        FeedItemCategory, FeedItemInfo, FeedMeta, FeedResponse, FeedSections, SearchResponse,
         SendChannelMessageResponse, ThreadRepliesResponse,
     },
     nostr_convert,
@@ -43,7 +43,7 @@ const TIMELINE_KINDS: [u32; 11] = [
     43004,
     43005,
     43006,
-    buzz_core_pkg::kind::KIND_HUDDLE_STARTED,
+    punks_core_pkg::kind::KIND_HUDDLE_STARTED,
 ];
 
 #[tauri::command]
@@ -79,13 +79,13 @@ pub async fn get_feed(
             1,
             45001,
             45003,
-            buzz_core_pkg::kind::KIND_GIT_PULL_REQUEST,
-            buzz_core_pkg::kind::KIND_GIT_PR_UPDATE,
-            buzz_core_pkg::kind::KIND_GIT_ISSUE,
-            buzz_core_pkg::kind::KIND_GIT_STATUS_OPEN,
-            buzz_core_pkg::kind::KIND_GIT_STATUS_MERGED,
-            buzz_core_pkg::kind::KIND_GIT_STATUS_CLOSED,
-            buzz_core_pkg::kind::KIND_GIT_STATUS_DRAFT,
+            punks_core_pkg::kind::KIND_GIT_PULL_REQUEST,
+            punks_core_pkg::kind::KIND_GIT_PR_UPDATE,
+            punks_core_pkg::kind::KIND_GIT_ISSUE,
+            punks_core_pkg::kind::KIND_GIT_STATUS_OPEN,
+            punks_core_pkg::kind::KIND_GIT_STATUS_MERGED,
+            punks_core_pkg::kind::KIND_GIT_STATUS_CLOSED,
+            punks_core_pkg::kind::KIND_GIT_STATUS_DRAFT,
         ],
         "#p": [my_pubkey],
         "limit": cap,
@@ -138,14 +138,14 @@ pub async fn get_feed(
     let mentions: Vec<FeedItemInfo> = mention_events
         .iter()
         .map(|ev| {
-            let mut item = feed_item_from_event(ev, "mentions");
+            let mut item = feed_item_from_event(ev, FeedItemCategory::Mention);
             apply_link_preview_suppression(&mut item.tags, &item.id, &suppressed_mentions);
             item
         })
         .collect();
     let needs_action: Vec<FeedItemInfo> = approval_events
         .iter()
-        .map(|ev| feed_item_from_event(ev, "needs_action"))
+        .map(|ev| feed_item_from_event(ev, FeedItemCategory::NeedsAction))
         .collect();
 
     let total = (mentions.len() + needs_action.len()) as u64;
@@ -236,22 +236,11 @@ fn search_messages_limit(limit: Option<u32>) -> u32 {
     limit.unwrap_or(20).min(500)
 }
 
-/// Fetch the full reply subtree under a thread root, server-side.
-///
-/// Unlike the channel timeline (which the desktop assembles from its local
-/// cache by grouping on `e`-root tags), this walks `thread_metadata` on the
-/// relay via `get_thread_replies`, so a thread renders complete even when its
-/// replies fell outside the channel cold-load window. Results are chronological
-/// (oldest first) and are the *replies* under the root (depth >= 1); the root
-/// event itself is NOT returned (the relay query keys on `root_event_id`, and a
-/// root row has no `root_event_id`). Callers already hold the root — it is the
-/// open thread head — so this closes the descendant gap without re-fetching it.
+/// Fetch the reply subtree and its auxiliary events under a thread root.
 ///
 /// Paging is forward keyset on `(created_at, event_id)`: pass the `next_cursor`
 /// from a previous page back as `cursor` to fetch the next batch. The event-id
-/// tiebreak is required because replies routinely share a `created_at` second;
-/// a timestamp-only cursor would skip every tied reply past the page limit.
-/// `next_cursor` is `Some` only when a full page was returned.
+/// tiebreak prevents same-second replies from being skipped.
 #[tauri::command]
 pub async fn get_thread_replies(
     root_event_id: String,
@@ -275,8 +264,12 @@ pub async fn get_thread_replies(
     // A full page implies there may be more; hand back the last event's
     // composite key as the next cursor (the DB returns replies strictly after
     // it, tiebroken by event_id so same-second replies are not skipped).
-    let next_cursor = if events.len() as u32 >= cap {
-        events.last().map(|ev| crate::models::ThreadCursor {
+    let reply_events: Vec<_> = events
+        .iter()
+        .filter(|event| TIMELINE_KINDS.contains(&(event.kind.as_u16() as u32)))
+        .collect();
+    let next_cursor = if reply_events.len() as u32 >= cap {
+        reply_events.last().map(|ev| crate::models::ThreadCursor {
             created_at: ev.created_at.as_secs() as i64,
             event_id: ev.id.to_hex(),
         })
@@ -295,21 +288,9 @@ pub async fn get_thread_replies(
     })
 }
 
-/// Build the relay `/query` filter for the server-side thread-subtree read.
-///
-/// The relay routes a filter to `get_thread_replies` purely off a single `#e`
-/// (root) tag plus `depth_limit` — kind is NOT part of that routing or the
-/// underlying DB query (it keys on `root_event_id`). Yet `kinds` is still
-/// required here: the bridge runs the p-gate (`p_gated_filters_authorized`) on
-/// every filter *before* routing, and a kindless filter "could match" a p-gated
-/// kind, so the gate demands a `#p` tag we don't send -> HTTP 403
-/// `restricted: p-gated kinds require #p tag`, before the thread query ever
-/// runs. Carrying non-p-gated [`TIMELINE_KINDS`] makes the filter provably
-/// un-p-gated so it clears the gate. `build_channel_messages_before_filter` is
-/// the sibling that already does this, which is why the dense-second channel
-/// pager was never gated and this reader was. Extracted so a unit test can pin
-/// that `kinds` is present (the e2e mock does not model p-gating, so only a
-/// unit test guards this contract).
+/// Build the relay `/query` filter for a thread-subtree read.
+/// `kinds` is required to prove the filter cannot match p-gated events; without
+/// it, relay authorization rejects this otherwise kindless query.
 fn build_thread_replies_filter(
     root_event_id: &str,
     channel_id: Option<&str>,
@@ -324,6 +305,7 @@ fn build_thread_replies_filter(
     // defaults it to a deep-but-bounded value so nested replies aren't dropped.
     filter.insert("depth_limit".to_string(), serde_json::json!(depth_limit));
     filter.insert("limit".to_string(), serde_json::json!(cap));
+    filter.insert("include_aux".to_string(), serde_json::json!(true));
     if let Some(cid) = channel_id {
         filter.insert("#h".to_string(), serde_json::json!([cid]));
     }
@@ -414,28 +396,13 @@ pub async fn get_channel_messages_before(
     })
 }
 
-#[tauri::command]
-pub async fn get_event(event_id: String, state: State<'_, AppState>) -> Result<String, String> {
-    let events = query_relay(
-        &state,
-        &[serde_json::json!({
-            "ids": [event_id],
-            "kinds": [0, 1, 3, 5, 7, 9, 30078, 40002, 40003, 40008, 40099, 40100, 45001, 45003, buzz_core_pkg::kind::KIND_HUDDLE_STARTED],
-            "limit": 1
-        })],
-    )
-    .await?;
-
-    let ev = events
-        .first()
-        .ok_or_else(|| "event not found".to_string())?;
-    serde_json::to_string(ev).map_err(|e| format!("serialize event: {e}"))
-}
+mod event_batch;
+pub use event_batch::{get_event, get_events};
 
 // ── Writes ──────────────────────────────────────────────────────────────────
 
 mod thread_ref;
-use thread_ref::resolve_thread_ref;
+use thread_ref::{resolve_thread_ref, thread_ref};
 
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
@@ -443,6 +410,7 @@ pub async fn send_channel_message(
     channel_id: String,
     content: String,
     parent_event_id: Option<String>,
+    root_event_id: Option<String>,
     media_tags: Option<Vec<Vec<String>>>,
     emoji_tags: Option<Vec<Vec<String>>>,
     mention_tags: Option<Vec<Vec<String>>>,
@@ -479,27 +447,36 @@ pub async fn send_channel_message(
         expected_signer_pubkey.as_deref(),
         &signing_keys.public_key().to_hex(),
     )?;
-    let kind_num = kind.unwrap_or(buzz_core_pkg::kind::KIND_STREAM_MESSAGE);
-    if sent_from_thread_tag.is_some() && kind_num != buzz_core_pkg::kind::KIND_STREAM_MESSAGE {
+    let kind_num = kind.unwrap_or(punks_core_pkg::kind::KIND_STREAM_MESSAGE);
+    if sent_from_thread_tag.is_some() && kind_num != punks_core_pkg::kind::KIND_STREAM_MESSAGE {
         return Err("sent-from-thread provenance requires a stream message".into());
+    }
+    if root_event_id.is_some() && parent_event_id.is_none() {
+        return Err("root_event_id requires parent_event_id".into());
     }
 
     let mut resolved_root: Option<String> = None;
 
     let builder = match kind_num {
-        buzz_core_pkg::kind::KIND_FORUM_POST => events::build_forum_post(
+        punks_core_pkg::kind::KIND_FORUM_POST => events::build_forum_post(
             channel_uuid,
             content.trim(),
             &mention_refs,
             &media,
             &mention_refs_only,
         )?,
-        buzz_core_pkg::kind::KIND_FORUM_COMMENT => {
+        punks_core_pkg::kind::KIND_FORUM_COMMENT => {
             let parent_id = parent_event_id
                 .as_deref()
                 .ok_or("forum comment requires parent_event_id")?;
-            let thread_ref =
-                resolve_thread_ref(parent_id, &state, &relay_base, Some(&signing_keys)).await?;
+            let thread_ref = thread_ref(
+                parent_id,
+                root_event_id.as_deref(),
+                &state,
+                &relay_base,
+                Some(&signing_keys),
+            )
+            .await?;
             resolved_root = Some(thread_ref.root_event_id.to_hex());
             events::build_forum_comment(
                 channel_uuid,
@@ -513,8 +490,14 @@ pub async fn send_channel_message(
         _ => {
             let thread_ref = match parent_event_id.as_deref() {
                 Some(pid) => {
-                    let tr =
-                        resolve_thread_ref(pid, &state, &relay_base, Some(&signing_keys)).await?;
+                    let tr = thread_ref(
+                        pid,
+                        root_event_id.as_deref(),
+                        &state,
+                        &relay_base,
+                        Some(&signing_keys),
+                    )
+                    .await?;
                     resolved_root = Some(tr.root_event_id.to_hex());
                     Some(tr)
                 }
@@ -581,7 +564,7 @@ async fn find_managed_agent_channel_message_by_marker(
 
     for _ in 0..10 {
         let mut filter = serde_json::json!({
-            "kinds": [buzz_core_pkg::kind::KIND_STREAM_MESSAGE],
+            "kinds": [punks_core_pkg::kind::KIND_STREAM_MESSAGE],
             "#h": [channel_id],
             "limit": 500,
         });
@@ -669,7 +652,7 @@ fn legacy_managed_agent_auth_tag(
         return Ok(None);
     }
 
-    buzz_sdk_pkg::nip_oa::compute_auth_tag(owner_keys, agent_pubkey, "")
+    punks_sdk_pkg::nip_oa::compute_auth_tag(owner_keys, agent_pubkey, "")
         .map(Some)
         .map_err(|error| format!("failed to compute managed agent auth tag: {error}"))
 }
@@ -841,7 +824,7 @@ pub async fn add_reaction(
         // Custom-emoji reaction (NIP-30): kind:7 with `:shortcode:` content and
         // an `["emoji", shortcode, url]` tag. Delegates to the SDK builder so
         // shortcode normalization + validation match the relay exactly.
-        Some(url) => buzz_sdk_pkg::build_custom_emoji_reaction(target_eid, emoji.trim(), &url)
+        Some(url) => punks_sdk_pkg::build_custom_emoji_reaction(target_eid, emoji.trim(), &url)
             .map_err(|e| format!("invalid custom emoji reaction: {e}"))?,
         None => events::build_reaction(target_eid, emoji.trim())?,
     };
@@ -968,7 +951,7 @@ fn tags_to_vec(ev: &nostr::Event) -> Vec<Vec<String>> {
     ev.tags.iter().map(|t| t.as_slice().to_vec()).collect()
 }
 
-fn feed_item_from_event(ev: &nostr::Event, category: &str) -> FeedItemInfo {
+fn feed_item_from_event(ev: &nostr::Event, category: FeedItemCategory) -> FeedItemInfo {
     let channel_id = channel_id_from_tags(ev);
     FeedItemInfo {
         id: ev.id.to_hex(),
@@ -980,7 +963,7 @@ fn feed_item_from_event(ev: &nostr::Event, category: &str) -> FeedItemInfo {
         channel_name: String::new(),
         channel_type: None,
         tags: tags_to_vec(ev),
-        category: category.to_string(),
+        category,
     }
 }
 #[cfg(test)]

@@ -46,11 +46,12 @@ pub async fn get_canvas(
 pub async fn set_canvas(
     channel_id: String,
     content: String,
+    expected_revision: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
     let uuid = uuid::Uuid::parse_str(&channel_id)
         .map_err(|_| format!("invalid channel UUID: {channel_id}"))?;
-    let builder = events::build_set_canvas(uuid, &content)?;
+    let builder = events::build_set_canvas(uuid, &content, expected_revision.as_deref())?;
     let result = submit_event(builder, &state).await?;
 
     Ok(serde_json::json!({

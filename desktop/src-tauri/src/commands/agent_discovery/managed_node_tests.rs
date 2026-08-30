@@ -1,10 +1,10 @@
 use super::*;
 
 #[test]
-fn test_npm_eacces_hint_guidance_mentions_buzz_private_dir() {
+fn test_npm_eacces_hint_guidance_mentions_punks_private_dir() {
     let hint = npm_eacces_hint("EACCES: permission denied", "npm install -g foo").unwrap();
     assert!(
-        hint.contains("Buzz's private Node tools directory"),
+        hint.contains("Punks's private Node tools directory"),
         "hint: {hint}"
     );
 }
@@ -14,9 +14,9 @@ fn test_rewrite_npm_install_uses_private_prefix() {
     assert_eq!(
         rewrite_npm_global_install(
             "npm install -g @agentclientprotocol/codex-acp",
-            "'/tmp/Buzz Node'"
+            "'/tmp/Punks Node'"
         ),
-        "npm install --global --prefix '/tmp/Buzz Node' @agentclientprotocol/codex-acp"
+        "npm install --global --prefix '/tmp/Punks Node' @agentclientprotocol/codex-acp"
     );
 }
 
@@ -47,8 +47,8 @@ fn test_rewrite_ignores_non_global_command() {
 #[test]
 fn test_shell_quote_escapes_single_quotes() {
     assert_eq!(
-        shell_quote(std::path::Path::new("/tmp/Buzz's Node")),
-        "'/tmp/Buzz'\\''s Node'"
+        shell_quote(std::path::Path::new("/tmp/Punks's Node")),
+        "'/tmp/Punks'\\''s Node'"
     );
 }
 
@@ -464,7 +464,7 @@ fn test_probe_node_windows_returns_false_on_wrong_version_output() {
 /// Returns false when the node binary path does not exist (fast path, no spawn).
 #[test]
 fn test_managed_node_runtime_ready_returns_false_when_binary_absent() {
-    let Some(node) = crate::managed_agents::buzz_managed_node_bin_path() else {
+    let Some(node) = crate::managed_agents::punks_managed_node_bin_path() else {
         assert!(
             !managed_node_runtime_ready(),
             "managed_node_runtime_ready must return false when no path resolves"

@@ -2,7 +2,7 @@
 //! process-tree helpers shared with the periodic orphan sweeps in `runtime.rs`.
 //!
 //! The env-var and PID-file sweeps cannot see a harness whose receipt is gone
-//! or that predates `BUZZ_MANAGED_AGENT` injection. This sweep derives the
+//! or that predates `PUNKS_MANAGED_AGENT` injection. This sweep derives the
 //! expected `buzz-acp` path from the running executable and kills any process
 //! whose exe matches exactly, minus the tracked set. The PID enumeration,
 //! procargs, parent/PGID lookups, and live-descendant classification helpers
@@ -289,7 +289,7 @@ pub fn select_untracked_bundle_harnesses(
 /// The buffer layout is: `[i32 argc][exec_path\0][null-pad][argv\0…][env\0…]`.
 /// The exec path is therefore the first null-terminated string immediately
 /// after the leading `i32` — no argv traversal is needed, unlike
-/// `extract_buzz_marker_value` / `process_has_buzz_marker` which must skip
+/// `extract_punks_marker_value` / `process_has_punks_marker` which must skip
 /// past both argv and the exec path to reach the environment entries.
 ///
 /// Returns `None` if the buffer is unreadable or malformed.
@@ -406,7 +406,7 @@ fn collect_process_snapshots(harness_name: &str) -> Vec<ProcessSnapshot> {
         }
         let upid = pid as u32;
         // Cheap name pre-filter via /proc/<pid>/comm (15-char truncated, but
-        // "buzz-acp" is 8 chars so it's always preserved).
+        // "punks-acp" is 8 chars so it's always preserved).
         let Ok(comm) = std::fs::read_to_string(format!("/proc/{upid}/comm")) else {
             continue;
         };
@@ -459,18 +459,18 @@ fn collect_process_snapshots(harness_name: &str) -> Vec<ProcessSnapshot> {
 /// incorrectly killed. Similarly, an orphan spawned by an older install of
 /// the same app (different bundle path, e.g. a prior DMG) will not match
 /// this path — that class is handled by `sweep_system_agent_processes`, which
-/// scopes by `BUZZ_MANAGED_AGENT` instance ID rather than exe path.
+/// scopes by `PUNKS_MANAGED_AGENT` instance ID rather than exe path.
 pub fn expected_harness_exe_path() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let dir = exe.parent()?;
-    let raw = dir.join("buzz-acp");
+    let raw = dir.join("punks-acp");
     // Canonicalize if possible; fall back to the raw path on failure.
     Some(std::fs::canonicalize(&raw).unwrap_or(raw))
 }
 
 /// The basename of the harness binary — used for the cheap name pre-filter in
 /// `collect_process_snapshots` before the expensive exe-path lookup.
-const HARNESS_BINARY_NAME: &str = "buzz-acp";
+const HARNESS_BINARY_NAME: &str = "punks-acp";
 
 // ── sweep_untracked_bundle_harnesses ─────────────────────────────────────
 
@@ -478,7 +478,7 @@ const HARNESS_BINARY_NAME: &str = "buzz-acp";
 /// executable path but are not in `skip_pids`.
 ///
 /// Complements the env-var-based `sweep_system_agent_processes`: this sweep
-/// catches orphans that predate the `BUZZ_MANAGED_AGENT` env var injection
+/// catches orphans that predate the `PUNKS_MANAGED_AGENT` env var injection
 /// and any that lost their PID-file receipt.
 ///
 /// **Boot-time only.** This function is called once, under the store lock,
@@ -505,7 +505,7 @@ pub(crate) fn sweep_untracked_bundle_harnesses(skip_pids: &[u32]) {
         return;
     }
     eprintln!(
-        "buzz-desktop: sweep_untracked_bundle_harnesses: reaping {} stale harness process(es) {:?} (exe: {})",
+        "punks-full-local: sweep_untracked_bundle_harnesses: reaping {} stale harness process(es) {:?} (exe: {})",
         to_kill.len(),
         to_kill,
         harness_exe.display(),
@@ -534,16 +534,16 @@ mod tests {
     fn strip_deleted_suffix_removes_kernel_suffix() {
         // Linux appends " (deleted)" when the binary has been replaced since
         // launch — this is exactly the stale orphan class we want to reap.
-        let p = PathBuf::from("/Applications/Buzz.app/Contents/MacOS/buzz-acp (deleted)");
+        let p = PathBuf::from("/Applications/Punks.app/Contents/MacOS/buzz-acp (deleted)");
         assert_eq!(
             strip_deleted_suffix(p),
-            PathBuf::from("/Applications/Buzz.app/Contents/MacOS/buzz-acp")
+            PathBuf::from("/Applications/Punks.app/Contents/MacOS/buzz-acp")
         );
     }
 
     #[test]
     fn strip_deleted_suffix_leaves_normal_path_unchanged() {
-        let p = PathBuf::from("/Applications/Buzz.app/Contents/MacOS/buzz-acp");
+        let p = PathBuf::from("/Applications/Punks.app/Contents/MacOS/buzz-acp");
         assert_eq!(strip_deleted_suffix(p.clone()), p,);
     }
 
@@ -556,7 +556,7 @@ mod tests {
 
     // ── select_untracked_bundle_harnesses ────────────────────────────────
 
-    const BUNDLE_HARNESS: &str = "/Applications/Buzz.app/Contents/MacOS/buzz-acp";
+    const BUNDLE_HARNESS: &str = "/Applications/Punks.app/Contents/MacOS/buzz-acp";
     const DEV_HARNESS: &str = "/Users/dev/buzz/.worktrees/main/target/debug/buzz-acp";
 
     fn snap(pid: u32, path: &str) -> ProcessSnapshot {
@@ -593,7 +593,7 @@ mod tests {
     #[test]
     fn child_of_tracked_parent_not_directly_targeted() {
         // A non-harness binary is never selected regardless of tracked state.
-        let snapshots = vec![snap(1004, "/Applications/Buzz.app/Contents/MacOS/goose")];
+        let snapshots = vec![snap(1004, "/Applications/Punks.app/Contents/MacOS/goose")];
         let result =
             select_untracked_bundle_harnesses(&snapshots, &PathBuf::from(BUNDLE_HARNESS), &[]);
         assert!(result.is_empty());
@@ -622,7 +622,7 @@ mod tests {
     #[test]
     fn deleted_suffix_stripped_path_matches_expected() {
         // Snapshot with " (deleted)" suffix stripped → should match the clean expected path.
-        let raw = PathBuf::from("/Applications/Buzz.app/Contents/MacOS/buzz-acp (deleted)");
+        let raw = PathBuf::from("/Applications/Punks.app/Contents/MacOS/buzz-acp (deleted)");
         let snaps = vec![ProcessSnapshot {
             pid: 3001,
             exe_path: strip_deleted_suffix(raw),

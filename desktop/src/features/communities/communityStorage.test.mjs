@@ -27,35 +27,35 @@ function createMemoryStorage(initial = {}) {
   };
 }
 
-test("migrateLegacyCommunityStorage promotes current Buzz workspace state", () => {
+test("migrateLegacyCommunityStorage promotes current Punks workspace state", () => {
   const storage = createMemoryStorage({
-    "buzz-workspaces": '[{"id":"current"}]',
-    "buzz-active-workspace-id": "current",
+    "punks-workspaces": '[{"id":"current"}]',
+    "punks-active-workspace-id": "current",
   });
 
   migrateLegacyCommunityStorage(storage);
 
-  assert.equal(storage.getItem("buzz-communities"), '[{"id":"current"}]');
-  assert.equal(storage.getItem("buzz-active-community-id"), "current");
+  assert.equal(storage.getItem("punks-communities"), '[{"id":"current"}]');
+  assert.equal(storage.getItem("punks-active-community-id"), "current");
 });
 
 test("migrateLegacyCommunityStorage does not overwrite new community state", () => {
   const storage = createMemoryStorage({
-    "buzz-communities": '[{"id":"new"}]',
-    "buzz-active-community-id": "new",
-    "buzz-workspaces": '[{"id":"old"}]',
-    "buzz-active-workspace-id": "old",
+    "punks-communities": '[{"id":"new"}]',
+    "punks-active-community-id": "new",
+    "punks-workspaces": '[{"id":"old"}]',
+    "punks-active-workspace-id": "old",
   });
 
   migrateLegacyCommunityStorage(storage);
 
-  assert.equal(storage.getItem("buzz-communities"), '[{"id":"new"}]');
-  assert.equal(storage.getItem("buzz-active-community-id"), "new");
+  assert.equal(storage.getItem("punks-communities"), '[{"id":"new"}]');
+  assert.equal(storage.getItem("punks-active-community-id"), "new");
 });
 
 test("signed-build relay defaults auto-connect during first-run onboarding", () => {
   assert.equal(
-    shouldAutoConnectDefaultRelay("wss://buzz.block.builderlab.xyz"),
+    shouldAutoConnectDefaultRelay("wss://punks.block.builderlab.xyz"),
     true,
   );
   assert.equal(shouldAutoConnectDefaultRelay("ws://localhost:3000"), false);
@@ -73,12 +73,12 @@ test("signed-build relay defaults auto-connect during first-run onboarding", () 
 
 test("failed first-community write preserves existing community data", () => {
   const storage = createMemoryStorage({
-    "buzz-communities": '[{"id":"existing"}]',
-    "buzz-workspaces": '[{"id":"legacy"}]',
-    "buzz-active-workspace-id": "legacy",
+    "punks-communities": '[{"id":"existing"}]',
+    "punks-workspaces": '[{"id":"legacy"}]',
+    "punks-active-workspace-id": "legacy",
   });
   storage.setItem = (key, value) => {
-    if (key === "buzz-communities") {
+    if (key === "punks-communities") {
       throw new Error("QuotaExceededError");
     }
     storage.values.set(key, String(value));
@@ -87,22 +87,31 @@ test("failed first-community write preserves existing community data", () => {
   globalThis.window = { localStorage: storage };
 
   assert.equal(initFirstCommunity("wss://relay.example.com", "pubkey"), null);
-  assert.equal(storage.getItem("buzz-communities"), '[{"id":"existing"}]');
-  assert.equal(storage.getItem("buzz-active-community-id"), null);
-  assert.equal(storage.getItem("buzz-workspaces"), '[{"id":"legacy"}]');
-  assert.equal(storage.getItem("buzz-active-workspace-id"), "legacy");
+  assert.equal(storage.getItem("punks-communities"), '[{"id":"existing"}]');
+  assert.equal(storage.getItem("punks-active-community-id"), null);
+  assert.equal(storage.getItem("punks-workspaces"), '[{"id":"legacy"}]');
+  assert.equal(storage.getItem("punks-active-workspace-id"), "legacy");
 });
 
 test("loading an existing community clears stale final-leave discovery", () => {
   const storage = createMemoryStorage({
-    "buzz-communities": '[{"id":"joined"}]',
-    "buzz-community-discovery-after-leave": "1",
+    "punks-communities": '[{"id":"joined"}]',
+    "punks-community-discovery-after-leave": "1",
   });
   globalThis.localStorage = storage;
   globalThis.window = { localStorage: storage };
 
   assert.deepEqual(loadCommunities(), [{ id: "joined" }]);
   assert.equal(loadCommunityDiscoveryAfterLeave(storage), false);
+});
+
+test("Workspace subdomains remain local instead of being classified as hosted", () => {
+  assert.equal(
+    shouldAutoConnectDefaultRelay(
+      "ws://9f601569-d786-4e2f-bfc1-b9411f5bb399.localhost:18787",
+    ),
+    false,
+  );
 });
 
 test("completed final leave persists discovery until a community is saved", () => {
@@ -119,11 +128,11 @@ test("completed final leave persists discovery until a community is saved", () =
 
 test("clearCommunityStorage preserves completed final-leave discovery", () => {
   const storage = createMemoryStorage({
-    "buzz-communities": "new",
-    "buzz-active-community-id": "new",
-    "buzz-workspaces": "old",
-    "buzz-active-workspace-id": "old",
-    "buzz-community-discovery-after-leave": "1",
+    "punks-communities": "new",
+    "punks-active-community-id": "new",
+    "punks-workspaces": "old",
+    "punks-active-workspace-id": "old",
+    "punks-community-discovery-after-leave": "1",
   });
 
   clearCommunityStorage(storage);

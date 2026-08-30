@@ -4,6 +4,11 @@
 //! 1000-line gate; `#[path]`-included from there.
 
 use super::*;
+
+#[test]
+fn previous_product_discriminator_remains_importable() {
+    assert!(is_agent_snapshot_format("buzz-agent-snapshot"));
+}
 use crate::managed_agents::types::{BackendKind, ManagedAgentRecord, RespondTo};
 use std::collections::BTreeMap;
 

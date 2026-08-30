@@ -10,7 +10,6 @@ import {
   useManagedAgentsQuery,
   useRelayAgentsQuery,
 } from "@/features/agents/hooks";
-import { useCapabilityAvailable } from "@/shared/capabilities";
 import { normalizePubkey, truncatePubkey } from "@/shared/lib/pubkey";
 import { useNow } from "@/shared/lib/useNow";
 import { formatElapsed } from "@/features/agents/ui/agentSessionUtils";
@@ -31,7 +30,7 @@ type TrayAction =
 const MAX_RECENT_TRAY_ACTIVITIES = 5;
 
 /**
- * Keeps Buzz's native tray menu synchronized with active agent turns and
+ * Keeps Punks's native tray menu synchronized with active agent turns and
  * forwards its navigation actions into the React app.
  */
 export function useTrayMenu({
@@ -43,9 +42,6 @@ export function useTrayMenu({
   goChannel: (channelId: string) => Promise<unknown>;
   openCreateChannel: () => void;
 }): void {
-  const conversationManagementAvailable = useCapabilityAvailable(
-    "conversation-management",
-  );
   const activeTurns = useActiveAgentTurnsByChannel();
   const now = useNow(1000);
   const managedAgents = useManagedAgentsQuery().data;
@@ -137,11 +133,7 @@ export function useTrayMenu({
       }
       for (const action of actions) {
         if (action.kind === "newChannel") {
-          // Garde de capacité : l'action de création n'est pas relaissée vers
-          // une surface indisponible.
-          if (conversationManagementAvailable) {
-            openCreateChannel();
-          }
+          openCreateChannel();
         } else {
           void goChannel(action.channelId);
         }
@@ -164,5 +156,5 @@ export function useTrayMenu({
       disposed = true;
       unlisten?.();
     };
-  }, [conversationManagementAvailable, goChannel, openCreateChannel]);
+  }, [goChannel, openCreateChannel]);
 }

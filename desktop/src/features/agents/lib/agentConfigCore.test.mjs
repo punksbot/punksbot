@@ -6,10 +6,10 @@ import {
   deriveNumericDescriptors,
   structuredEnvKeys,
 } from "./agentConfigCore.ts";
-import { NUMERIC_KIND_MIN } from "../ui/buzzAgentModelTuningFields.tsx";
+import { NUMERIC_KIND_MIN } from "../ui/punksAgentModelTuningFields.tsx";
 
 const config = {
-  env_vars: { BUZZ_AGENT_THINKING_EFFORT: "high" },
+  env_vars: { PUNKS_AGENT_THINKING_EFFORT: "high" },
   model: "test-model",
   preferred_runtime: null,
   provider: "anthropic",
@@ -46,13 +46,13 @@ function field(model, kind) {
   return model.fields.find((candidate) => candidate.kind === kind);
 }
 
-test("Buzz Agent exposes provider, model, and Buzz-owned effort", () => {
+test("Punks Agent exposes provider, model, and Punks-owned effort", () => {
   const model = deriveAgentConfigFieldModel({
     config,
-    runtime: runtime("buzz-agent", {
-      modelEnvVar: "BUZZ_AGENT_MODEL",
-      providerEnvVar: "BUZZ_AGENT_PROVIDER",
-      thinkingEnvVar: "BUZZ_AGENT_THINKING_EFFORT",
+    runtime: runtime("punks-agent", {
+      modelEnvVar: "PUNKS_AGENT_MODEL",
+      providerEnvVar: "PUNKS_AGENT_PROVIDER",
+      thinkingEnvVar: "PUNKS_AGENT_THINKING_EFFORT",
     }),
     scope: "global",
   });
@@ -61,10 +61,10 @@ test("Buzz Agent exposes provider, model, and Buzz-owned effort", () => {
     model.fields.map((item) => item.kind),
     ["provider", "model", "effort"],
   );
-  assert.equal(field(model, "effort").optionSource, "buzzAgentCatalog");
+  assert.equal(field(model, "effort").optionSource, "punksAgentCatalog");
   assert.deepEqual(field(model, "effort").targetApplication, {
     kind: "envVar",
-    key: "BUZZ_AGENT_THINKING_EFFORT",
+    key: "PUNKS_AGENT_THINKING_EFFORT",
   });
 });
 
@@ -85,7 +85,7 @@ test("Goose exposes provider, model, and its real effort application key", () =>
   );
   assert.deepEqual(field(model, "effort").currentPersistence, {
     kind: "envVar",
-    key: "BUZZ_AGENT_THINKING_EFFORT",
+    key: "PUNKS_AGENT_THINKING_EFFORT",
   });
   assert.deepEqual(field(model, "effort").targetApplication, {
     kind: "envVar",
@@ -135,10 +135,10 @@ test("Codex omits separate effort because model IDs own it", () => {
 });
 
 test("catalog mismatch cleanup is named and restricted to onboarding", () => {
-  const selectedRuntime = runtime("buzz-agent", {
-    modelEnvVar: "BUZZ_AGENT_MODEL",
-    providerEnvVar: "BUZZ_AGENT_PROVIDER",
-    thinkingEnvVar: "BUZZ_AGENT_THINKING_EFFORT",
+  const selectedRuntime = runtime("punks-agent", {
+    modelEnvVar: "PUNKS_AGENT_MODEL",
+    providerEnvVar: "PUNKS_AGENT_PROVIDER",
+    thinkingEnvVar: "PUNKS_AGENT_THINKING_EFFORT",
   });
   const onboarding = deriveAgentConfigFieldModel({
     config,
@@ -168,16 +168,16 @@ test("catalog mismatch cleanup is named and restricted to onboarding", () => {
 // model. Capability facts flow catalog → descriptor → UI; no runtime-ID
 // comparison decides numeric-field visibility.
 
-test("buzz-agent derives three numeric descriptors from catalog fields", () => {
+test("punks-agent derives three numeric descriptors from catalog fields", () => {
   const model = deriveAgentConfigFieldModel({
     config,
-    runtime: runtime("buzz-agent", {
-      modelEnvVar: "BUZZ_AGENT_MODEL",
-      providerEnvVar: "BUZZ_AGENT_PROVIDER",
-      thinkingEnvVar: "BUZZ_AGENT_THINKING_EFFORT",
-      maxTokensEnvVar: "BUZZ_AGENT_MAX_OUTPUT_TOKENS",
-      contextLimitEnvVar: "BUZZ_AGENT_MAX_CONTEXT_TOKENS",
-      maxRoundsEnvVar: "BUZZ_AGENT_MAX_ROUNDS",
+    runtime: runtime("punks-agent", {
+      modelEnvVar: "PUNKS_AGENT_MODEL",
+      providerEnvVar: "PUNKS_AGENT_PROVIDER",
+      thinkingEnvVar: "PUNKS_AGENT_THINKING_EFFORT",
+      maxTokensEnvVar: "PUNKS_AGENT_MAX_OUTPUT_TOKENS",
+      contextLimitEnvVar: "PUNKS_AGENT_MAX_CONTEXT_TOKENS",
+      maxRoundsEnvVar: "PUNKS_AGENT_MAX_ROUNDS",
     }),
     scope: "global",
   });
@@ -197,23 +197,23 @@ test("buzz-agent derives three numeric descriptors from catalog fields", () => {
   assert.equal(maxOutput.render, "control");
   assert.deepEqual(maxOutput.currentPersistence, {
     kind: "envVar",
-    key: "BUZZ_AGENT_MAX_OUTPUT_TOKENS",
+    key: "PUNKS_AGENT_MAX_OUTPUT_TOKENS",
   });
   assert.deepEqual(maxOutput.targetApplication, {
     kind: "envVar",
-    key: "BUZZ_AGENT_MAX_OUTPUT_TOKENS",
+    key: "PUNKS_AGENT_MAX_OUTPUT_TOKENS",
   });
 
   const ctx = field(model, "contextLimit");
   assert.deepEqual(ctx.currentPersistence, {
     kind: "envVar",
-    key: "BUZZ_AGENT_MAX_CONTEXT_TOKENS",
+    key: "PUNKS_AGENT_MAX_CONTEXT_TOKENS",
   });
 
   const rounds = field(model, "maxRounds");
   assert.deepEqual(rounds.currentPersistence, {
     kind: "envVar",
-    key: "BUZZ_AGENT_MAX_ROUNDS",
+    key: "PUNKS_AGENT_MAX_ROUNDS",
   });
 });
 
@@ -282,9 +282,9 @@ test("Codex derives no numeric descriptors", () => {
 test("numeric descriptor value is read from env_vars when set", () => {
   const cfgWithTuning = {
     env_vars: {
-      BUZZ_AGENT_MAX_OUTPUT_TOKENS: "8192",
-      BUZZ_AGENT_MAX_CONTEXT_TOKENS: "100000",
-      BUZZ_AGENT_MAX_ROUNDS: "25",
+      PUNKS_AGENT_MAX_OUTPUT_TOKENS: "8192",
+      PUNKS_AGENT_MAX_CONTEXT_TOKENS: "100000",
+      PUNKS_AGENT_MAX_ROUNDS: "25",
     },
     model: "test-model",
     preferred_runtime: null,
@@ -292,10 +292,10 @@ test("numeric descriptor value is read from env_vars when set", () => {
   };
   const model = deriveAgentConfigFieldModel({
     config: cfgWithTuning,
-    runtime: runtime("buzz-agent", {
-      maxTokensEnvVar: "BUZZ_AGENT_MAX_OUTPUT_TOKENS",
-      contextLimitEnvVar: "BUZZ_AGENT_MAX_CONTEXT_TOKENS",
-      maxRoundsEnvVar: "BUZZ_AGENT_MAX_ROUNDS",
+    runtime: runtime("punks-agent", {
+      maxTokensEnvVar: "PUNKS_AGENT_MAX_OUTPUT_TOKENS",
+      contextLimitEnvVar: "PUNKS_AGENT_MAX_CONTEXT_TOKENS",
+      maxRoundsEnvVar: "PUNKS_AGENT_MAX_ROUNDS",
     }),
     scope: "global",
   });
@@ -314,10 +314,10 @@ test("numeric descriptor value is null when env var is absent", () => {
   };
   const model = deriveAgentConfigFieldModel({
     config: cfgEmpty,
-    runtime: runtime("buzz-agent", {
-      maxTokensEnvVar: "BUZZ_AGENT_MAX_OUTPUT_TOKENS",
-      contextLimitEnvVar: "BUZZ_AGENT_MAX_CONTEXT_TOKENS",
-      maxRoundsEnvVar: "BUZZ_AGENT_MAX_ROUNDS",
+    runtime: runtime("punks-agent", {
+      maxTokensEnvVar: "PUNKS_AGENT_MAX_OUTPUT_TOKENS",
+      contextLimitEnvVar: "PUNKS_AGENT_MAX_CONTEXT_TOKENS",
+      maxRoundsEnvVar: "PUNKS_AGENT_MAX_ROUNDS",
     }),
     scope: "global",
   });
@@ -336,80 +336,83 @@ test("numeric descriptor value is null when env var is absent", () => {
 //
 // Critical invariant: per-agent Goose passes only its two numeric descriptors
 // (no effort descriptor, because no effort control renders there). The effort
-// key (BUZZ_AGENT_THINKING_EFFORT) must NOT appear in the output — it must
+// key (PUNKS_AGENT_THINKING_EFFORT) must NOT appear in the output — it must
 // stay a visible generic env row where any saved value can be edited.
 
 test("structuredEnvKeys_global_includes_effort_key_and_numeric_keys", () => {
   // Global surface renders effort + all numeric descriptors.
-  const buzzAgentModel = deriveAgentConfigFieldModel({
+  const punksAgentModel = deriveAgentConfigFieldModel({
     config,
-    runtime: runtime("buzz-agent", {
-      modelEnvVar: "BUZZ_AGENT_MODEL",
-      providerEnvVar: "BUZZ_AGENT_PROVIDER",
-      thinkingEnvVar: "BUZZ_AGENT_THINKING_EFFORT",
-      maxTokensEnvVar: "BUZZ_AGENT_MAX_OUTPUT_TOKENS",
-      contextLimitEnvVar: "BUZZ_AGENT_MAX_CONTEXT_TOKENS",
-      maxRoundsEnvVar: "BUZZ_AGENT_MAX_ROUNDS",
+    runtime: runtime("punks-agent", {
+      modelEnvVar: "PUNKS_AGENT_MODEL",
+      providerEnvVar: "PUNKS_AGENT_PROVIDER",
+      thinkingEnvVar: "PUNKS_AGENT_THINKING_EFFORT",
+      maxTokensEnvVar: "PUNKS_AGENT_MAX_OUTPUT_TOKENS",
+      contextLimitEnvVar: "PUNKS_AGENT_MAX_CONTEXT_TOKENS",
+      maxRoundsEnvVar: "PUNKS_AGENT_MAX_ROUNDS",
     }),
     scope: "global",
   });
 
   // Global renders all renderable descriptors.
-  const renderedDescriptors = buzzAgentModel.fields.filter(
+  const renderedDescriptors = punksAgentModel.fields.filter(
     (f) => f.render === "control",
   );
   const keys = structuredEnvKeys(renderedDescriptors);
 
   assert.ok(
-    keys.includes("BUZZ_AGENT_THINKING_EFFORT"),
+    keys.includes("PUNKS_AGENT_THINKING_EFFORT"),
     "effort key must be hidden on global (effort control renders)",
   );
   assert.ok(
-    keys.includes("BUZZ_AGENT_MAX_OUTPUT_TOKENS"),
+    keys.includes("PUNKS_AGENT_MAX_OUTPUT_TOKENS"),
     "maxOutputTokens key must be hidden on global",
   );
   assert.ok(
-    keys.includes("BUZZ_AGENT_MAX_CONTEXT_TOKENS"),
+    keys.includes("PUNKS_AGENT_MAX_CONTEXT_TOKENS"),
     "contextLimit key must be hidden on global",
   );
   assert.ok(
-    keys.includes("BUZZ_AGENT_MAX_ROUNDS"),
+    keys.includes("PUNKS_AGENT_MAX_ROUNDS"),
     "maxRounds key must be hidden on global",
   );
 });
 
-test("structuredEnvKeys_per_agent_buzz_agent_includes_effort_and_numeric_keys", () => {
-  // Per-agent buzz-agent renders effort + all 3 numeric descriptors.
-  const buzzAgentModel = deriveAgentConfigFieldModel({
+test("structuredEnvKeys_per_agent_punks_agent_includes_effort_and_numeric_keys", () => {
+  // Per-agent punks-agent renders effort + all 3 numeric descriptors.
+  const punksAgentModel = deriveAgentConfigFieldModel({
     config,
-    runtime: runtime("buzz-agent", {
-      thinkingEnvVar: "BUZZ_AGENT_THINKING_EFFORT",
-      maxTokensEnvVar: "BUZZ_AGENT_MAX_OUTPUT_TOKENS",
-      contextLimitEnvVar: "BUZZ_AGENT_MAX_CONTEXT_TOKENS",
-      maxRoundsEnvVar: "BUZZ_AGENT_MAX_ROUNDS",
+    runtime: runtime("punks-agent", {
+      thinkingEnvVar: "PUNKS_AGENT_THINKING_EFFORT",
+      maxTokensEnvVar: "PUNKS_AGENT_MAX_OUTPUT_TOKENS",
+      contextLimitEnvVar: "PUNKS_AGENT_MAX_CONTEXT_TOKENS",
+      maxRoundsEnvVar: "PUNKS_AGENT_MAX_ROUNDS",
     }),
     scope: "definition",
   });
 
-  const renderedDescriptors = buzzAgentModel.fields.filter(
+  const renderedDescriptors = punksAgentModel.fields.filter(
     (f) => f.render === "control",
   );
   const keys = structuredEnvKeys(renderedDescriptors);
 
-  assert.ok(keys.includes("BUZZ_AGENT_THINKING_EFFORT"), "effort key present");
-  assert.ok(keys.includes("BUZZ_AGENT_MAX_OUTPUT_TOKENS"), "maxTokens present");
+  assert.ok(keys.includes("PUNKS_AGENT_THINKING_EFFORT"), "effort key present");
   assert.ok(
-    keys.includes("BUZZ_AGENT_MAX_CONTEXT_TOKENS"),
+    keys.includes("PUNKS_AGENT_MAX_OUTPUT_TOKENS"),
+    "maxTokens present",
+  );
+  assert.ok(
+    keys.includes("PUNKS_AGENT_MAX_CONTEXT_TOKENS"),
     "contextLimit present",
   );
-  assert.ok(keys.includes("BUZZ_AGENT_MAX_ROUNDS"), "maxRounds present");
+  assert.ok(keys.includes("PUNKS_AGENT_MAX_ROUNDS"), "maxRounds present");
 });
 
 test("structuredEnvKeys_per_agent_goose_excludes_effort_key_discriminating_invariant", () => {
   // Per-agent Goose: effort migration is out of scope, so no effort control
   // renders on the per-agent surface for Goose. Only the 2 numeric descriptors
   // are passed as the rendered set. The effort persistence key
-  // (BUZZ_AGENT_THINKING_EFFORT) must NOT appear in the output — any saved
+  // (PUNKS_AGENT_THINKING_EFFORT) must NOT appear in the output — any saved
   // value must remain visible and editable as a generic env row.
   const gooseModel = deriveAgentConfigFieldModel({
     config,
@@ -430,7 +433,7 @@ test("structuredEnvKeys_per_agent_goose_excludes_effort_key_discriminating_invar
   const keys = structuredEnvKeys(numericDescriptorsOnly);
 
   assert.equal(
-    keys.includes("BUZZ_AGENT_THINKING_EFFORT"),
+    keys.includes("PUNKS_AGENT_THINKING_EFFORT"),
     false,
     "effort persistence key must NOT be hidden for Goose per-agent — no editor would replace it",
   );
@@ -478,10 +481,10 @@ test("deriveNumericDescriptors_undefined_runtime_returns_empty", () => {
 
 test("deriveNumericDescriptors_runtime_with_all_three_fields", () => {
   const ds = deriveNumericDescriptors(
-    runtime("buzz-agent", {
-      maxTokensEnvVar: "BUZZ_AGENT_MAX_OUTPUT_TOKENS",
-      contextLimitEnvVar: "BUZZ_AGENT_MAX_CONTEXT_TOKENS",
-      maxRoundsEnvVar: "BUZZ_AGENT_MAX_ROUNDS",
+    runtime("punks-agent", {
+      maxTokensEnvVar: "PUNKS_AGENT_MAX_OUTPUT_TOKENS",
+      contextLimitEnvVar: "PUNKS_AGENT_MAX_CONTEXT_TOKENS",
+      maxRoundsEnvVar: "PUNKS_AGENT_MAX_ROUNDS",
     }),
   );
   assert.deepEqual(
@@ -514,10 +517,10 @@ test("deriveNumericDescriptors_matches_deriveAgentConfigFieldModel_numeric_subse
   // The standalone helper must produce the same descriptor set (without values)
   // that deriveAgentConfigFieldModel embeds, so surfaces that call the helper
   // directly get a consistent policy with the full field model.
-  const runtimeEntry = runtime("buzz-agent", {
-    maxTokensEnvVar: "BUZZ_AGENT_MAX_OUTPUT_TOKENS",
-    contextLimitEnvVar: "BUZZ_AGENT_MAX_CONTEXT_TOKENS",
-    maxRoundsEnvVar: "BUZZ_AGENT_MAX_ROUNDS",
+  const runtimeEntry = runtime("punks-agent", {
+    maxTokensEnvVar: "PUNKS_AGENT_MAX_OUTPUT_TOKENS",
+    contextLimitEnvVar: "PUNKS_AGENT_MAX_CONTEXT_TOKENS",
+    maxRoundsEnvVar: "PUNKS_AGENT_MAX_ROUNDS",
   });
 
   const standalone = deriveNumericDescriptors(runtimeEntry);
@@ -547,7 +550,7 @@ test("deriveNumericDescriptors_matches_deriveAgentConfigFieldModel_numeric_subse
 
 // ── NUMERIC_KIND_MIN: kind-specific input minima ──────────────────────────
 //
-// max output tokens and context limit must have min=1 (buzz-agent rejects 0).
+// max output tokens and context limit must have min=1 (punks-agent rejects 0).
 // max rounds allows 0 (meaning unlimited).
 
 test("NUMERIC_KIND_MIN_maxOutputTokens_is_1", () => {

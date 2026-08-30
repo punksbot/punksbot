@@ -443,7 +443,7 @@ fn canonical_dev_data_dir_returns_self_for_canonical_instance() {
     // When the current app data dir IS the canonical dev identifier,
     // canonical_dev_data_dir returns the exact same path — the caller
     // (sync_shared_agent_data) uses this equality to skip the sync.
-    // The env-var guards (BUZZ_SHARE_IDENTITY, BUZZ_PRIVATE_KEY)
+    // The env-var guards (PUNKS_SHARE_IDENTITY, PUNKS_PRIVATE_KEY)
     // require a live Tauri AppHandle and are covered by integration
     // testing only.
     let current = PathBuf::from("/Users/me/Library/Application Support/xyz.block.buzz.app.dev");
@@ -627,7 +627,7 @@ fn rename_provider_to_runtime_preserves_existing_runtime_over_provider() {
 }
 
 #[test]
-fn reconcile_mcp_commands_clears_stale_buzz_mcp_server() {
+fn reconcile_mcp_commands_clears_stale_punks_mcp_server() {
     let dir = tempfile::tempdir().unwrap();
     write_agents_json(
         dir.path(),
@@ -643,19 +643,19 @@ fn reconcile_mcp_commands_clears_stale_buzz_mcp_server() {
 }
 
 #[test]
-fn reconcile_mcp_commands_sets_canonical_for_buzz_agent() {
+fn reconcile_mcp_commands_sets_canonical_for_punks_agent() {
     let dir = tempfile::tempdir().unwrap();
     write_agents_json(
         dir.path(),
         &serde_json::json!([{
             "name": "Stilgar",
-            "agent_command": "buzz-agent",
+            "agent_command": "punks-agent",
             "mcp_command": "buzz-mcp-server"
         }]),
     );
     reconcile_mcp_commands_in_file(&dir.path().join("agents/managed-agents.json"));
     let records = read_agents_json(dir.path());
-    assert_eq!(records[0]["mcp_command"], "buzz-dev-mcp");
+    assert_eq!(records[0]["mcp_command"], "punks-dev-mcp");
 }
 
 #[test]
@@ -715,7 +715,7 @@ fn reconcile_mcp_commands_handles_mixed_agents() {
             {"name": "Stale Goose", "agent_command": "goose", "mcp_command": "buzz-mcp-server"},
             {"name": "Clean Goose", "agent_command": "goose", "mcp_command": ""},
             {"name": "Custom Agent", "agent_command": "goose", "mcp_command": "my-custom-mcp"},
-            {"name": "Stale Buzz", "agent_command": "buzz-agent", "mcp_command": "buzz-mcp-server"}
+            {"name": "Stale Punks", "agent_command": "punks-agent", "mcp_command": "buzz-mcp-server"}
         ]),
     );
     reconcile_mcp_commands_in_file(&dir.path().join("agents/managed-agents.json"));
@@ -723,7 +723,7 @@ fn reconcile_mcp_commands_handles_mixed_agents() {
     assert_eq!(records[0]["mcp_command"], "");
     assert_eq!(records[1]["mcp_command"], "");
     assert_eq!(records[2]["mcp_command"], "my-custom-mcp");
-    assert_eq!(records[3]["mcp_command"], "buzz-dev-mcp");
+    assert_eq!(records[3]["mcp_command"], "punks-dev-mcp");
 }
 
 #[test]
@@ -737,7 +737,7 @@ fn reconcile_mcp_commands_resolves_persona_runtime_over_stale_snapshot() {
         &serde_json::json!([{
             "name": "Fizz",
             "persona_id": "p1",
-            "agent_command": "buzz-agent",
+            "agent_command": "punks-agent",
             "mcp_command": "buzz-mcp-server"
         }]),
     );
@@ -765,7 +765,7 @@ fn reconcile_mcp_commands_sees_team_dir_runtime_edit_same_launch() {
         &serde_json::json!([{
             "name": "Fizz",
             "persona_id": "p1",
-            "agent_command": "buzz-agent",
+            "agent_command": "punks-agent",
             "mcp_command": ""
         }]),
     );
@@ -787,12 +787,12 @@ fn reconcile_mcp_commands_sees_team_dir_runtime_edit_same_launch() {
     // must derive the NEW buzz-agent mcp_command without a second launch.
     write_personas_json(
         dir.path(),
-        &serde_json::json!([{"id": "p1", "runtime": "buzz-agent"}]),
+        &serde_json::json!([{"id": "p1", "runtime": "punks-agent"}]),
     );
     reconcile_mcp_commands_in_file(&dir.path().join("agents/managed-agents.json"));
     assert_eq!(
         read_agents_json(dir.path())[0]["mcp_command"],
-        "buzz-dev-mcp",
+        "punks-dev-mcp",
         "writer-before-reader must surface the new runtime's mcp_command same launch"
     );
 }
@@ -809,7 +809,7 @@ fn reconcile_mcp_commands_honors_explicit_override_over_persona() {
             "name": "Fizz",
             "persona_id": "p1",
             "agent_command": "goose",
-            "agent_command_override": "buzz-agent",
+            "agent_command_override": "punks-agent",
             "mcp_command": ""
         }]),
     );
@@ -819,7 +819,7 @@ fn reconcile_mcp_commands_honors_explicit_override_over_persona() {
     );
     reconcile_mcp_commands_in_file(&dir.path().join("agents/managed-agents.json"));
     let records = read_agents_json(dir.path());
-    assert_eq!(records[0]["mcp_command"], "buzz-dev-mcp");
+    assert_eq!(records[0]["mcp_command"], "punks-dev-mcp");
 }
 
 #[test]
@@ -932,7 +932,7 @@ fn migrate_legacy_nest_noops_when_legacy_absent() {
 fn migrate_legacy_nest_respects_deliberate_dev_reset() {
     let dir = tempfile::tempdir().unwrap();
     let legacy = dir.path().join(".sprout");
-    let current = dir.path().join(".buzz-dev");
+    let current = dir.path().join(".punks-dev");
 
     std::fs::create_dir_all(legacy.join("RESEARCH")).unwrap();
     std::fs::write(legacy.join("RESEARCH/NOTES.md"), "legacy-notes").unwrap();

@@ -1,7 +1,7 @@
 //! Shared git subprocess plumbing for the project commands.
 //!
 //! Runs the system `git` with an ephemeral, env-only auth configuration:
-//! the identity nsec is handed to `git-credential-nostr` via environment
+//! the identity nsec is handed to `git-credential-punks` via environment
 //! variables so nothing key-related ever touches disk or global git config.
 
 use crate::{app_state::AppState, managed_agents::resolve_command};
@@ -221,6 +221,9 @@ pub(crate) fn build_git_clone_auth_config(
 
 pub(crate) fn build_git_auth_config_for_keys(keys: &Keys) -> Result<GitAuthConfig, String> {
     let git_path = resolve_command("git").ok_or_else(|| "git was not found on PATH".to_string())?;
+    #[cfg(feature = "punks-local")]
+    let credential_helper = resolve_command("git-credential-punks");
+    #[cfg(not(feature = "punks-local"))]
     let credential_helper = resolve_command("git-credential-nostr");
     let nsec = keys
         .secret_key()
@@ -281,14 +284,14 @@ pub(crate) fn validate_clone_url(clone_url: &str) -> Result<(), String> {
     if !matches!(parsed.scheme(), "http" | "https") {
         return Err("clone URL must be http or https".into());
     }
-    // Buzz git remotes are served at `…/git/<owner-pubkey>/<repo-id>` — a
+    // Punks git remotes are served at `…/git/<owner-pubkey>/<repo-id>` — a
     // literal `git` segment followed by the 64-hex owner pubkey and a
     // non-empty repository id (the relay may live under a path prefix).
     let segments = parsed
         .path_segments()
         .map(|segments| segments.filter(|s| !s.is_empty()).collect::<Vec<_>>())
         .unwrap_or_default();
-    let is_buzz_repo_path = segments
+    let is_punks_repo_path = segments
         .iter()
         .rposition(|segment| *segment == "git")
         .filter(|index| segments.len() == index + 3)
@@ -298,8 +301,8 @@ pub(crate) fn validate_clone_url(clone_url: &str) -> Result<(), String> {
                 && !segments[index + 2].is_empty()
         })
         .unwrap_or(false);
-    if !is_buzz_repo_path {
-        return Err("clone URL must point at a Buzz git repository".into());
+    if !is_punks_repo_path {
+        return Err("clone URL must point at a Punks git repository".into());
     }
     Ok(())
 }
@@ -341,7 +344,7 @@ pub(crate) fn validate_local_clone_url(clone_url: &str) -> Result<(), String> {
     if validate_clone_url(clone_url).is_ok() || validate_github_clone_url(clone_url).is_ok() {
         return Ok(());
     }
-    Err("clone URL must point at a Buzz repository or public GitHub repository".into())
+    Err("clone URL must point at a Punks repository or public GitHub repository".into())
 }
 
 pub(crate) fn validate_local_clone_url_for_workspace(
@@ -401,10 +404,10 @@ mod tests {
     #[test]
     fn credential_helper_config_value_uses_forward_slashes() {
         let path =
-            std::path::PathBuf::from(r"C:\Users\x\AppData\Local\Buzz\git-credential-nostr.exe");
+            std::path::PathBuf::from(r"C:\Users\x\AppData\Local\Punks\git-credential-nostr.exe");
         assert_eq!(
             credential_helper_config_value(&path),
-            "C:/Users/x/AppData/Local/Buzz/git-credential-nostr.exe",
+            "C:/Users/x/AppData/Local/Punks/git-credential-nostr.exe",
         );
     }
 
@@ -413,7 +416,7 @@ mod tests {
         assert_eq!(
             git_subcommand(&[
                 "-c",
-                "user.name=Buzz User",
+                "user.name=Punks User",
                 "-c",
                 "user.email=user@example.com",
                 "merge",
@@ -432,7 +435,7 @@ mod tests {
         assert!(git_needs_credentials(&["fetch", "origin"]));
         assert!(git_needs_credentials(&[
             "-c",
-            "user.name=Buzz User",
+            "user.name=Punks User",
             "merge",
             "HEAD"
         ]));
@@ -477,7 +480,7 @@ mod tests {
     }
 
     #[test]
-    fn validate_clone_url_requires_buzz_repo_shape() {
+    fn validate_clone_url_requires_punks_repo_shape() {
         let owner = "a".repeat(64);
         assert!(validate_clone_url(&format!("https://relay.example/git/{owner}/repo")).is_ok());
         assert!(

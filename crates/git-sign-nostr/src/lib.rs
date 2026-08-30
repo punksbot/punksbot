@@ -451,7 +451,7 @@ fn load_key() -> Result<zeroize::Zeroizing<String>, Error> {
 
 /// Load the NIP-OA auth tag from env or git config.
 ///
-/// Priority per NIP-GS spec: `BUZZ_AUTH_TAG` env var > `nostr.authtag` git config.
+/// Priority per NIP-GS spec: `PUNKS_AUTH_TAG` env var > `nostr.authtag` git config.
 /// The env var takes precedence so that CI/CD pipelines and agent harnesses can
 /// inject auth tags without modifying repo config.
 ///
@@ -464,7 +464,7 @@ fn load_auth_tag() -> Result<Option<(String, String, String)>, Error> {
     // NIP-GS spec: check env var first, then git config.
     // Use git_config_strict for auth tag to fail closed on read errors —
     // a configured-but-unreadable auth tag must not be silently omitted.
-    let json_str = match std::env::var("BUZZ_AUTH_TAG")
+    let json_str = match std::env::var("PUNKS_AUTH_TAG")
         .ok()
         .filter(|s| !s.is_empty())
     {
@@ -489,39 +489,39 @@ fn load_auth_tag() -> Result<Option<(String, String, String)>, Error> {
 
     // Parse: ["auth", "<owner>", "<conditions>", "<sig>"]
     let arr: serde_json::Value = serde_json::from_str(&json_str)
-        .map_err(|e| Error::Fatal(format!("BUZZ_AUTH_TAG is not valid JSON: {e}")))?;
+        .map_err(|e| Error::Fatal(format!("PUNKS_AUTH_TAG is not valid JSON: {e}")))?;
     let arr = arr
         .as_array()
-        .ok_or_else(|| Error::Fatal("BUZZ_AUTH_TAG must be a JSON array".to_string()))?;
+        .ok_or_else(|| Error::Fatal("PUNKS_AUTH_TAG must be a JSON array".to_string()))?;
     if arr.len() != 4 {
         return Err(Error::Fatal(
-            "BUZZ_AUTH_TAG must have exactly 4 elements".to_string(),
+            "PUNKS_AUTH_TAG must have exactly 4 elements".to_string(),
         ));
     }
     if arr[0].as_str() != Some("auth") {
         return Err(Error::Fatal(
-            "BUZZ_AUTH_TAG[0] must be \"auth\"".to_string(),
+            "PUNKS_AUTH_TAG[0] must be \"auth\"".to_string(),
         ));
     }
 
     let owner = arr[1]
         .as_str()
-        .ok_or_else(|| Error::Fatal("BUZZ_AUTH_TAG[1] must be a string".to_string()))?
+        .ok_or_else(|| Error::Fatal("PUNKS_AUTH_TAG[1] must be a string".to_string()))?
         .to_string();
     let conditions = arr[2]
         .as_str()
-        .ok_or_else(|| Error::Fatal("BUZZ_AUTH_TAG[2] must be a string".to_string()))?
+        .ok_or_else(|| Error::Fatal("PUNKS_AUTH_TAG[2] must be a string".to_string()))?
         .to_string();
     let sig = arr[3]
         .as_str()
-        .ok_or_else(|| Error::Fatal("BUZZ_AUTH_TAG[3] must be a string".to_string()))?
+        .ok_or_else(|| Error::Fatal("PUNKS_AUTH_TAG[3] must be a string".to_string()))?
         .to_string();
 
     // Validate conditions character class per NIP-OA: empty string is valid,
     // otherwise only ASCII alphanumeric + '_' + '=' + '<' + '>' + '&' allowed.
     if !validate_conditions(&conditions) {
         return Err(Error::Fatal(
-            "BUZZ_AUTH_TAG conditions contain invalid characters".to_string(),
+            "PUNKS_AUTH_TAG conditions contain invalid characters".to_string(),
         ));
     }
 
@@ -532,7 +532,7 @@ fn load_auth_tag() -> Result<Option<(String, String, String)>, Error> {
             .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
     {
         return Err(Error::Fatal(
-            "BUZZ_AUTH_TAG owner must be 64 lowercase hex chars".to_string(),
+            "PUNKS_AUTH_TAG owner must be 64 lowercase hex chars".to_string(),
         ));
     }
     if sig.len() != 128
@@ -541,7 +541,7 @@ fn load_auth_tag() -> Result<Option<(String, String, String)>, Error> {
             .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
     {
         return Err(Error::Fatal(
-            "BUZZ_AUTH_TAG signature must be 128 lowercase hex chars".to_string(),
+            "PUNKS_AUTH_TAG signature must be 128 lowercase hex chars".to_string(),
         ));
     }
 
@@ -1032,7 +1032,7 @@ fn do_sign(key_id: &str, status: &mut StatusWriter) -> Result<(), Error> {
         if !verify_oa(&pk_hex, oa_val) {
             return Err(Error::Fatal(
                 "auth tag owner signature (oa[2]) verification failed — \
-                 the configured BUZZ_AUTH_TAG is invalid or stale"
+                 the configured PUNKS_AUTH_TAG is invalid or stale"
                     .to_string(),
             ));
         }
@@ -1243,7 +1243,10 @@ fn do_verify(sig_file: &str, status: &mut StatusWriter) -> Result<(), Error> {
     let oa_result = if let Some(ref oa) = envelope.oa {
         // Validate oa[0] is a valid BIP-340 public key. Per NIP-GS spec,
         // an invalid owner pubkey is a structural error → ERRSIG.
-        if PublicKey::from_hex(&oa.0).is_err() {
+        if PublicKey::from_hex(&oa.0)
+            .and_then(|public_key| public_key.xonly().map(|_| public_key))
+            .is_err()
+        {
             write_errsig(status, Some(&envelope.pk));
             return Err(Error::VerifyFailed {
                 pk: Some(envelope.pk),
@@ -1421,6 +1424,7 @@ fn parse_envelope(json_str: &str) -> Result<Envelope, String> {
 
         // Validate oa[0] is a valid BIP-340 x-only public key (not just hex)
         PublicKey::from_hex(owner)
+            .and_then(|public_key| public_key.xonly().map(|_| public_key))
             .map_err(|e| format!("oa[0] is not a valid BIP-340 public key: {e}"))?;
 
         // Self-attestation is meaningless — owner must differ from signer
@@ -1946,7 +1950,7 @@ Initial commit"
     fn test_load_auth_tag_rejects_bad_conditions() {
         // Valid conditions → Ok(Some(...))
         std::env::set_var(
-            "BUZZ_AUTH_TAG",
+            "PUNKS_AUTH_TAG",
             format!(
                 r#"["auth","{}","kind=9&created_at<1700000000","{}"]"#,
                 "a".repeat(64),
@@ -1961,7 +1965,7 @@ Initial commit"
 
         // Empty conditions (valid) → Ok(Some(...))
         std::env::set_var(
-            "BUZZ_AUTH_TAG",
+            "PUNKS_AUTH_TAG",
             format!(r#"["auth","{}","","{}"]"#, "a".repeat(64), "b".repeat(128)),
         );
         let result = load_auth_tag();
@@ -1972,7 +1976,7 @@ Initial commit"
 
         // Conditions with spaces → Err (fail closed)
         std::env::set_var(
-            "BUZZ_AUTH_TAG",
+            "PUNKS_AUTH_TAG",
             format!(
                 r#"["auth","{}","kind = 9","{}"]"#,
                 "a".repeat(64),
@@ -1987,7 +1991,7 @@ Initial commit"
 
         // Conditions with special chars → Err (fail closed)
         std::env::set_var(
-            "BUZZ_AUTH_TAG",
+            "PUNKS_AUTH_TAG",
             format!(
                 r#"["auth","{}","kind=9;rm -rf /","{}"]"#,
                 "a".repeat(64),
@@ -2001,7 +2005,7 @@ Initial commit"
         );
 
         // No auth tag set → Ok(None)
-        std::env::remove_var("BUZZ_AUTH_TAG");
+        std::env::remove_var("PUNKS_AUTH_TAG");
         let result = load_auth_tag();
         assert!(
             matches!(result, Ok(None)),

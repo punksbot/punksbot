@@ -232,9 +232,9 @@ pub struct LlmResponse {
 /// Publisher-side billing identity for a turn.
 ///
 /// Mirrors `buzz_core::agent_turn_metric::PricingIdentity` but is local to
-/// `buzz-agent` (which does not depend on `buzz-core`). The two structs have
+/// `punks-agent` (which does not depend on `buzz-core`). The two structs have
 /// the same camelCase wire representation and are deserialized identically by
-/// `buzz-acp`.
+/// `punks-acp`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PricingIdentity {

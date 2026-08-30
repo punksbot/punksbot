@@ -22,9 +22,11 @@ const HEX = [
 ] as const;
 
 const GLYPHS: Readonly<Record<string, readonly string[]>> = {
-  b: ["██     ", "██▄▄▄  ", "██▀▀██ ", "██  ██ ", "██████ "],
+  p: ["       ", "█████  ", "██  ██ ", "█████  ", "██     "],
   u: ["       ", "██  ██ ", "██  ██ ", "██  ██ ", "▀█████ "],
-  z: ["       ", "██████ ", "   ▄██ ", " ▄██▀  ", "██████ "],
+  n: ["       ", "██▄ ██ ", "██▀███ ", "██  ██ ", "██  ██ "],
+  k: ["██     ", "██  ██ ", "████▀  ", "██ ▀██ ", "██  ██ "],
+  s: ["       ", " ▄████ ", "██▄▄   ", "  ▀▀██ ", "████▀  "],
   t: [" ██    ", "█████  ", " ██    ", " ██    ", "  ███  "],
   e: ["       ", " ▄███▄ ", "██▄▄▄█ ", "██     ", " ▀███▀ "],
   r: ["       ", "██ ▄██ ", "███▀▀  ", "██     ", "██     "],
@@ -70,10 +72,10 @@ function trimRight(value: string): string {
 
 function wordmark(gap: number): readonly string[] {
   const rows = Array.from({ length: 5 }, () => "");
-  for (const [index, letter] of [..."buzz term"].entries()) {
+  for (const [index, letter] of [..."punks term"].entries()) {
     const glyph = GLYPHS[letter];
     for (let row = 0; row < rows.length; row += 1) {
-      rows[row] += glyph[row] + (index < 8 ? " ".repeat(gap) : "");
+      rows[row] += glyph[row] + (index < 9 ? " ".repeat(gap) : "");
     }
   }
   return rows.map(trimRight).filter((row) => row.trim());

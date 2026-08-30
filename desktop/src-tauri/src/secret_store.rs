@@ -14,7 +14,7 @@
 //! feature gates the whole store; when it is off, [`SecretStore`] is unusable
 //! and callers fall back to their own `0o600` file storage.
 //!
-//! The store is deliberately NOT on any env-read path. `BUZZ_PRIVATE_KEY`
+//! The store is deliberately NOT on any env-read path. `PUNKS_PRIVATE_KEY`
 //! resolution for harnessed agents and CI is handled upstream (an env
 //! short-circuit for the human key, child-process env injection for agents);
 //! adding an env tier here would duplicate that precedence and create a
@@ -45,7 +45,7 @@ const BLOB_KEY: &str = "secrets";
 
 // ── Interprocess advisory lock ─────────────────────────────────────────────
 //
-// Two concurrent Buzz processes (e.g. the signed DMG build and an unsigned dev
+// Two concurrent Punks processes (e.g. the signed DMG build and an unsigned dev
 // build via `just staging`) share the same OS keychain blob because the
 // service name `"buzz-desktop"` is a constant — it does not key off the bundle
 // identifier. Each process holds its own in-memory cache, so without an
@@ -56,13 +56,13 @@ const BLOB_KEY: &str = "secrets";
 // performs a fresh `read_blob_raw()` inside the lock, applies the mutation,
 // writes back, and releases. The cache is still updated after a successful
 // write, so same-process reads remain fast. The lock is file-based at a fixed
-// per-user path `/tmp/buzz-keychain-<uid>-<service>.lock` on Unix — a path
+// per-user path `/tmp/punks-keychain-<uid>-<service>.lock` on Unix — a path
 // that is invariant to `$TMPDIR`/process environment, so both the GUI-launched
 // signed DMG and a terminal-launched dev build always take the same lock.
 
 /// Return the path of the advisory lockfile for `service`.
 ///
-/// The path is `/tmp/buzz-keychain-<uid>-<service>.lock` on Unix — a
+/// The path is `/tmp/punks-keychain-<uid>-<service>.lock` on Unix — a
 /// deterministic per-user path that is invariant to `$TMPDIR`/process
 /// environment. Both a GUI-launched signed DMG (`launchd`, env-stripped) and a
 /// terminal-launched dev build resolve `/tmp` to the same inode, so they
@@ -76,13 +76,13 @@ fn blob_lockfile_path(service: &str) -> PathBuf {
         // Use the real UID so distinct users get distinct lockfiles.
         // SAFETY: getuid() is always safe on Unix — it never fails.
         let uid = unsafe { libc::getuid() };
-        PathBuf::from(format!("/tmp/buzz-keychain-{uid}-{service}.lock"))
+        PathBuf::from(format!("/tmp/punks-keychain-{uid}-{service}.lock"))
     }
     #[cfg(not(unix))]
     {
         // Windows: no lockfile used (named mutex instead); this path is only
         // used to derive the mutex name and for test assertions.
-        std::env::temp_dir().join(format!("buzz-keychain-{service}.lock"))
+        std::env::temp_dir().join(format!("punks-keychain-{service}.lock"))
     }
 }
 
@@ -141,7 +141,7 @@ impl BlobLockGuard {
             // needed. Derive a unique mutex name from the lockfile path so
             // distinct services get distinct mutexes.
             let name_str = format!(
-                "Local\\BuzzKeychain-{}",
+                "Local\\PunksKeychain-{}",
                 path.file_stem()
                     .and_then(|s| s.to_str())
                     .unwrap_or("default")
@@ -396,9 +396,9 @@ impl SecretStore {
     where
         F: FnOnce(&mut HashMap<String, String>),
     {
-        // Acquire the interprocess advisory lock first. All Buzz processes
+        // Acquire the interprocess advisory lock first. All Punks processes
         // using the same service name contend on the same lockfile at
-        // /tmp/buzz-keychain-<uid>-<service>.lock (a deterministic per-user
+        // /tmp/punks-keychain-<uid>-<service>.lock (a deterministic per-user
         // path invariant to $TMPDIR), so only one process performs a
         // read-modify-write at a time.
         let _lock = acquire_blob_lock(&self.service)?;
@@ -1072,8 +1072,8 @@ mod tests {
                 "lockfile {path:?} must contain uid {uid}"
             );
             assert!(
-                name.contains("buzz-keychain"),
-                "lockfile name must contain 'buzz-keychain'"
+                name.contains("punks-keychain"),
+                "lockfile name must contain 'punks-keychain'"
             );
         }
         #[cfg(not(unix))]
@@ -1081,8 +1081,8 @@ mod tests {
             assert!(
                 path.file_name()
                     .and_then(|n| n.to_str())
-                    .is_some_and(|n| n.contains("buzz-keychain")),
-                "lockfile name must contain 'buzz-keychain'"
+                    .is_some_and(|n| n.contains("punks-keychain")),
+                "lockfile name must contain 'punks-keychain'"
             );
         }
     }
@@ -1117,7 +1117,7 @@ mod tests {
         // against the durable cache, not an unpersisted candidate.
         //
         // This is a real-keychain integration test. Run locally with:
-        //   cargo test -p desktop-shell -- --ignored mutate_blob_does_not_advance
+        //   cargo test -p buzz-desktop -- --ignored mutate_blob_does_not_advance
         //
         // On a machine with a reachable keychain the `store()` call succeeds
         // (result.is_ok()) and the write-failure branch is skipped — the test
@@ -1187,7 +1187,7 @@ mod tests {
 
     // Integration tests that exercise the real OS keychain. Skipped in CI
     // (unsigned builds lack keychain entitlements); run locally with:
-    //   cargo test -p desktop-shell -- --ignored blob_
+    //   cargo test -p buzz-desktop -- --ignored blob_
     //
     // Each test uses a unique service name to avoid cross-test pollution.
 

@@ -12,17 +12,13 @@ import { eventToProjectPullRequest } from "@/features/projects/projectPullReques
 import {
   KIND_GIT_ISSUE,
   KIND_GIT_PULL_REQUEST,
-  KIND_GIT_STATUS_CLOSED,
-  KIND_GIT_STATUS_DRAFT,
-  KIND_GIT_STATUS_MERGED,
-  KIND_GIT_STATUS_OPEN,
   KIND_PROJECT_ANNOUNCEMENT,
   KIND_REPO_ANNOUNCEMENT,
 } from "@/shared/constants/kinds";
 
 import { isEntityLink, parseEntityLink } from "./entityLink";
 import {
-  buzzEntityFallbackTitle,
+  punksEntityFallbackTitle,
   type SupportedLinkPreview,
 } from "./linkPreview";
 
@@ -244,13 +240,6 @@ export async function loadLinkPreviewMetadata(
 ): Promise<LinkPreviewMetadata | null> {
   return (await metadataLoader.load(href)).metadata;
 }
-const ENTITY_STATUS_KINDS = [
-  KIND_GIT_STATUS_OPEN,
-  KIND_GIT_STATUS_MERGED,
-  KIND_GIT_STATUS_CLOSED,
-  KIND_GIT_STATUS_DRAFT,
-];
-
 type EntityEventFetcher = (
   filter: Parameters<typeof relayClient.fetchEvents>[0],
 ) => Promise<RelayEvent[]>;
@@ -263,7 +252,7 @@ function compactMetadata(
 }
 
 /** Resolve builder-focused metadata only from the active relay. */
-export async function fetchBuzzEntityMetadata(
+export async function fetchPunksEntityMetadata(
   href: string,
   fetchEvents: EntityEventFetcher = (filter) => relayClient.fetchEvents(filter),
 ): Promise<LinkPreviewMetadata | null> {
@@ -279,9 +268,6 @@ export async function fetchBuzzEntityMetadata(
       "#d": [dtag],
       limit: 1,
     });
-    // Repository maps are only needed to resolve a project's repository read
-    // models, which the card does not show — empty maps still validate the
-    // announcement envelope and resolve name/description.
     const project = projectEvents
       .map((event) => eventToExplicitProject(event, new Map(), new Map()))
       .find((candidate) => candidate?.projectAddress === projectAddress);
@@ -347,39 +333,30 @@ export async function fetchBuzzEntityMetadata(
   });
   if (!root) return null;
 
-  const trustedAuthors = [...new Set([root.pubkey.toLowerCase(), owner])];
-  const statusEvents = await fetchEvents({
-    kinds: ENTITY_STATUS_KINDS,
-    authors: trustedAuthors,
-    "#e": [id],
-    limit: 20,
-  });
-  if (type === "issue") {
-    const issue = eventToProjectIssue(root, statusEvents);
-    return {
-      ...base,
-      title: issue.title,
-      description: compactMetadata([issue.status, ...issue.labels.slice(0, 2)]),
-    };
-  }
-
-  const pullRequest = eventToProjectPullRequest(root, [], [], statusEvents);
-  const source = pullRequest.branchName;
-  const target = pullRequest.targetBranch ?? repository.defaultBranch;
+  const title =
+    type === "issue"
+      ? eventToProjectIssue(root).title
+      : eventToProjectPullRequest(root).title;
   return {
     ...base,
-    title: pullRequest.title,
-    description: compactMetadata([
-      pullRequest.status,
-      source ? `${source} → ${target}` : null,
-      pullRequest.commit?.slice(0, 7),
-    ]),
+    title,
+    // Issue and PR bodies are markdown and often begin with headings. Keep
+    // their fetched subject as tooltip/card context without fetching or
+    // flattening body/status metadata into an unrendered description string.
+    description: null,
   };
 }
 
 const entityMetadataLoader = createMetadataLoader({
-  fetcher: fetchBuzzEntityMetadata,
+  fetcher: fetchPunksEntityMetadata,
 });
+
+/** Share deduplicated relay-native entity metadata across cards and inline tooltips. */
+export async function loadPunksEntityMetadata(
+  href: string,
+): Promise<LinkPreviewMetadata | null> {
+  return (await entityMetadataLoader.load(href)).metadata;
+}
 
 /** Clear ephemeral metadata when the active relay/community changes. */
 export function resetLinkPreviewMetadataCache(): void {
@@ -406,7 +383,7 @@ type ResolvedMetadataByHref = Record<
 export function shouldResolveTitle(preview: SupportedLinkPreview): boolean {
   if (!isEntityLink(preview.href)) return true;
   const parsed = parseEntityLink(preview.href);
-  return parsed.ok && preview.title === buzzEntityFallbackTitle(parsed.value);
+  return parsed.ok && preview.title === punksEntityFallbackTitle(parsed.value);
 }
 
 export function resolveLinkPreview(
@@ -416,7 +393,7 @@ export function resolveLinkPreview(
   if (metadata === undefined) {
     return {
       ...preview,
-      imageState: isBuzzEntityPreview(preview) ? "none" : "pending",
+      imageState: isPunksEntityPreview(preview) ? "none" : "pending",
     };
   }
   if (metadata === null) {
@@ -433,12 +410,12 @@ export function resolveLinkPreview(
       : "none";
   return {
     ...preview,
-    snapshotReady: !preview.href.startsWith("buzz://"),
+    snapshotReady: !preview.href.startsWith("punks-local://"),
     title: shouldResolveTitle(preview) ? metadata.title : preview.title,
     description: metadata.description,
     faviconDataUrl: metadata.faviconDataUrl,
     provider:
-      (preview.kind === "generic-link" || isBuzzEntityPreview(preview)) &&
+      (preview.kind === "generic-link" || isPunksEntityPreview(preview)) &&
       metadata.siteName
         ? metadata.siteName
         : preview.provider,
@@ -448,21 +425,21 @@ export function resolveLinkPreview(
   };
 }
 
-export function isBuzzEntityPreview(preview: SupportedLinkPreview): boolean {
+export function isPunksEntityPreview(preview: SupportedLinkPreview): boolean {
   return (
-    preview.kind === "buzz-pull-request" ||
-    preview.kind === "buzz-issue" ||
-    preview.kind === "buzz-repository" ||
-    preview.kind === "buzz-project"
+    preview.kind === "punks-pull-request" ||
+    preview.kind === "punks-issue" ||
+    preview.kind === "punks-repository" ||
+    preview.kind === "punks-project"
   );
 }
 
 /**
- * Recipient-side `buzz://` entity cards must render even when the relay
+ * Recipient-side `punks-local://` entity cards must render even when the relay
  * lookup yields no metadata: `useResolvedLinkPreviews` drops null-metadata
  * previews (correct for external links — no metadata means no card), but
  * entity links always carry a usable fallback title (the repo d-tag, or
- * `<dtag> #<id8>` for PRs/issues — see `buzzEntityFallbackTitle`). Re-adds
+ * `<dtag> #<id8>` for PRs/issues — see `punksEntityFallbackTitle`). Re-adds
  * recognized entity previews on their fallback title; non-entity previews
  * keep the hook's drop behavior.
  */
@@ -474,7 +451,7 @@ export function withEntityFallbacks(
   return previews.flatMap((preview) => {
     const match = byHref.get(preview.href);
     if (match) return [match];
-    return isBuzzEntityPreview(preview)
+    return isPunksEntityPreview(preview)
       ? [{ ...preview, imageState: "none" as const }]
       : [];
   });
@@ -537,7 +514,7 @@ export function useResolvedLinkPreviews(
     if (refetchNewNegatives) {
       // Invalidate first, before the peek/load loop below reads the cache, so a
       // newly-present href loads fresh instead of resolving to its stale miss.
-      // buzz:// entity links resolve off the relay, not this cache — skip them.
+      // punks-local:// entity links resolve off the relay, not this cache — skip them.
       // Newness is judged against the live href set when supplied (so a
       // debounce-swallowed leave/re-entry still counts), else against previews.
       const seen = seenHrefsRef.current;
@@ -563,7 +540,7 @@ export function useResolvedLinkPreviews(
         if (
           alreadyHandled ||
           !liveNow.includes(preview.href) ||
-          preview.href.startsWith("buzz://")
+          preview.href.startsWith("punks-local://")
         ) {
           continue;
         }
@@ -629,7 +606,7 @@ export function useResolvedLinkPreviews(
 
     const cancelScheduledLoads: Array<() => void> = [];
     for (const preview of previews) {
-      const loader = preview.href.startsWith("buzz://")
+      const loader = preview.href.startsWith("punks-local://")
         ? entityMetadataLoader
         : metadataLoader;
       const cached = loader.peek(preview.href);

@@ -30,7 +30,7 @@ export function useProjectRepoSyncStatusQuery(
   const host = useProjectRepoHost(project);
 
   return useQuery({
-    enabled: Boolean(host.kind === "buzz" && project?.cloneUrls[0]),
+    enabled: Boolean(host.kind === "punks" && project?.cloneUrls[0]),
     queryKey: [
       "project",
       project?.id ?? "none",

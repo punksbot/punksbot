@@ -5,220 +5,16 @@
 //!   - cancellation leaves history valid for the next prompt
 //!   - empty-content assistant turn doesn't poison OpenAI history
 
-use std::collections::VecDeque;
 use std::process::Stdio;
-use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
-use tokio::net::TcpListener;
-use tokio::sync::Mutex;
 
-struct CapturingLlm {
-    url: String,
-    captured: Arc<Mutex<Vec<Value>>>,
-}
-
-async fn spawn_capturing_llm(responses: Vec<Value>) -> CapturingLlm {
-    spawn_capturing_llm_with_status(responses.into_iter().map(|v| (200u16, v)).collect()).await
-}
-
-/// Like `spawn_capturing_llm` but each canned response carries its own HTTP
-/// status, so a test can serve a real provider rejection (e.g. a context-window
-/// 400) instead of only success bodies.
-async fn spawn_capturing_llm_with_status(responses: Vec<(u16, Value)>) -> CapturingLlm {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let url = format!("http://{}", listener.local_addr().unwrap());
-    let queue = Arc::new(Mutex::new(VecDeque::from(responses)));
-    let captured: Arc<Mutex<Vec<Value>>> = Arc::new(Mutex::new(Vec::new()));
-    let cap2 = captured.clone();
-    tokio::spawn(async move {
-        loop {
-            let (mut sock, _) = match listener.accept().await {
-                Ok(p) => p,
-                Err(_) => return,
-            };
-            let queue = queue.clone();
-            let captured = cap2.clone();
-            tokio::spawn(async move {
-                let mut buf = Vec::new();
-                let mut tmp = [0u8; 8192];
-                // Read until headers complete.
-                while !buf.windows(4).any(|w| w == b"\r\n\r\n") {
-                    match sock.read(&mut tmp).await {
-                        Ok(0) | Err(_) => return,
-                        Ok(n) => buf.extend_from_slice(&tmp[..n]),
-                    }
-                    if buf.len() > 4_000_000 {
-                        return;
-                    }
-                }
-                // Parse Content-Length and read body.
-                let header_end = buf.windows(4).position(|w| w == b"\r\n\r\n").unwrap() + 4;
-                let headers = &buf[..header_end];
-                let mut body_len = 0usize;
-                for line in headers.split(|b| *b == b'\n') {
-                    let line = std::str::from_utf8(line).unwrap_or("");
-                    if let Some(rest) = line.to_ascii_lowercase().strip_prefix("content-length:") {
-                        body_len = rest.trim().trim_end_matches('\r').parse().unwrap_or(0);
-                    }
-                }
-                while buf.len() < header_end + body_len {
-                    match sock.read(&mut tmp).await {
-                        Ok(0) | Err(_) => return,
-                        Ok(n) => buf.extend_from_slice(&tmp[..n]),
-                    }
-                }
-                if let Ok(req) = serde_json::from_slice::<Value>(&buf[header_end..]) {
-                    captured.lock().await.push(req);
-                }
-                let (status, body) = queue
-                    .lock()
-                    .await
-                    .pop_front()
-                    .unwrap_or_else(|| (200, json!({ "error": "no canned response" })));
-                let body_s = serde_json::to_string(&body).unwrap();
-                let reason = match status {
-                    200 => "OK",
-                    400 => "Bad Request",
-                    _ => "Error",
-                };
-                let resp = format!(
-                    "HTTP/1.1 {status} {reason}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                    body_s.len(), body_s,
-                );
-                let _ = sock.write_all(resp.as_bytes()).await;
-                let _ = sock.shutdown().await;
-            });
-        }
-    });
-    CapturingLlm { url, captured }
-}
-
-struct Harness {
-    child: tokio::process::Child,
-    stdin: tokio::process::ChildStdin,
-    stdout: BufReader<tokio::process::ChildStdout>,
-    stderr: Arc<StdMutex<String>>,
-    next_id: i64,
-}
-
-impl Harness {
-    async fn spawn_with_env(base_url: &str, extra: &[(&str, &str)]) -> Self {
-        let bin = env!("CARGO_BIN_EXE_buzz-agent");
-        let mut cmd = tokio::process::Command::new(bin);
-        cmd.env("BUZZ_AGENT_PROVIDER", "openai")
-            .env("OPENAI_COMPAT_API_KEY", "test")
-            .env("OPENAI_COMPAT_MODEL", "fake-model")
-            .env("OPENAI_COMPAT_BASE_URL", base_url)
-            .env("BUZZ_AGENT_LLM_TIMEOUT_SECS", "5")
-            .env("BUZZ_AGENT_TOOL_TIMEOUT_SECS", "5")
-            .env("BUZZ_AGENT_MAX_ROUNDS", "8")
-            .env("BUZZ_AGENT_MCP_INIT_TIMEOUT_SECS", "2");
-        for (k, v) in extra {
-            cmd.env(k, v);
-        }
-        cmd.stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true);
-        let mut child = cmd.spawn().expect("spawn buzz-agent");
-        let stdin = child.stdin.take().unwrap();
-        let stdout = BufReader::new(child.stdout.take().unwrap());
-        let stderr = child.stderr.take().unwrap();
-        let stderr_buf = Arc::new(StdMutex::new(String::new()));
-        let stderr_out = Arc::clone(&stderr_buf);
-        tokio::spawn(async move {
-            let mut reader = BufReader::new(stderr);
-            let mut line = String::new();
-            loop {
-                line.clear();
-                let n = match reader.read_line(&mut line).await {
-                    Ok(n) => n,
-                    Err(_) => break,
-                };
-                if n == 0 {
-                    break;
-                }
-                if let Ok(mut out) = stderr_out.lock() {
-                    out.push_str(&line);
-                }
-            }
-        });
-        Self {
-            child,
-            stdin,
-            stdout,
-            stderr: stderr_buf,
-            next_id: 1,
-        }
-    }
-
-    async fn spawn(base_url: &str) -> Self {
-        Self::spawn_with_env(base_url, &[]).await
-    }
-
-    async fn send(&mut self, method: &str, params: Value) -> i64 {
-        let id = self.next_id;
-        self.next_id += 1;
-        self.write(json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params }))
-            .await;
-        id
-    }
-
-    async fn notify(&mut self, method: &str, params: Value) {
-        self.write(json!({ "jsonrpc": "2.0", "method": method, "params": params }))
-            .await;
-    }
-
-    async fn write(&mut self, msg: Value) {
-        let mut s = serde_json::to_string(&msg).unwrap();
-        s.push('\n');
-        self.stdin.write_all(s.as_bytes()).await.unwrap();
-        self.stdin.flush().await.unwrap();
-    }
-
-    async fn recv(&mut self) -> Value {
-        let mut line = String::new();
-        let n = tokio::time::timeout(Duration::from_secs(15), self.stdout.read_line(&mut line))
-            .await
-            .expect("recv timeout")
-            .expect("read line");
-        assert!(n > 0, "agent EOF");
-        serde_json::from_str(&line).expect("non-JSON line")
-    }
-
-    async fn recv_until<F: FnMut(&Value) -> bool>(&mut self, mut pred: F) -> Value {
-        loop {
-            let v = self.recv().await;
-            if pred(&v) {
-                return v;
-            }
-        }
-    }
-
-    async fn shutdown(mut self) {
-        drop(self.stdin);
-        let _ = tokio::time::timeout(Duration::from_secs(2), self.child.wait()).await;
-        let _ = self.child.start_kill();
-    }
-
-    fn stderr_text(&self) -> String {
-        self.stderr.lock().map(|s| s.clone()).unwrap_or_default()
-    }
-}
-
-fn openai_text(content: &str) -> Value {
-    json!({
-        "id": "cc-1", "object": "chat.completion", "model": "fake-model",
-        "choices": [{
-            "index": 0,
-            "message": { "role": "assistant", "content": content },
-            "finish_reason": "stop",
-        }],
-    })
-}
+mod common;
+use common::{
+    approve_permission, openai_text, openai_tool_call, spawn_capturing_llm,
+    spawn_capturing_llm_with_status, Harness,
+};
 
 /// Like [`openai_text`] but attaches a `usage` block so tests can drive the
 /// token-based handoff gate. `prompt_tokens` is the input-token count the
@@ -250,23 +46,6 @@ fn openai_max_tokens(content: &str, tool_calls: Value) -> Value {
             "completion_tokens": 100,
             "total_tokens": 110,
         },
-    })
-}
-
-fn openai_tool_call(id: &str, name: &str, args: Value) -> Value {
-    json!({
-        "id": "cc-2", "object": "chat.completion", "model": "fake-model",
-        "choices": [{
-            "index": 0,
-            "message": {
-                "role": "assistant", "content": null,
-                "tool_calls": [{
-                    "id": id, "type": "function",
-                    "function": { "name": name, "arguments": args.to_string() },
-                }],
-            },
-            "finish_reason": "tool_calls",
-        }],
     })
 }
 
@@ -595,8 +374,8 @@ async fn history_budget_evicts_old_turns() {
     let mut h = Harness::spawn_with_env(
         &llm.url,
         &[
-            ("BUZZ_AGENT_MAX_HISTORY_BYTES", &BUDGET.to_string()),
-            ("BUZZ_AGENT_MAX_HANDOFFS", "0"), // exercise truncation, not handoff
+            ("PUNKS_AGENT_MAX_HISTORY_BYTES", &BUDGET.to_string()),
+            ("PUNKS_AGENT_MAX_HANDOFFS", "0"), // exercise truncation, not handoff
         ],
     )
     .await;
@@ -676,13 +455,7 @@ async fn per_turn_tool_call_cap_enforced() {
     loop {
         let v = h.recv().await;
         if v.get("method") == Some(&json!("session/request_permission")) {
-            let id = v["id"].clone();
-            h.write(json!({
-                "jsonrpc": "2.0",
-                "id": id,
-                "result": { "outcome": { "outcome": "selected", "optionId": "allow" } },
-            }))
-            .await;
+            h.write(approve_permission(&v)).await;
             continue;
         }
         if v.get("method") == Some(&json!("session/update"))
@@ -835,7 +608,7 @@ async fn hook_stop_blocks_premature_end() {
         &llm.url,
         &[
             ("MCP_HOOK_SERVERS", "fake"),
-            ("BUZZ_AGENT_STOP_MAX_REJECTIONS", "10"),
+            ("PUNKS_AGENT_STOP_MAX_REJECTIONS", "10"),
         ],
     )
     .await;
@@ -858,7 +631,7 @@ async fn hook_stop_blocks_premature_end() {
             json!({"sessionId": sid, "prompt": [{"type":"text","text":"go"}]}),
         )
         .await;
-    let r = h.recv_until(|v| v["id"] == json!(p)).await;
+    let r = h.recv_until_approving(|v| v["id"] == json!(p)).await;
     assert!(r.get("result").is_some(), "errored: {r}");
     assert_eq!(r["result"]["stopReason"], "end_turn");
 
@@ -916,7 +689,7 @@ async fn hook_stop_budget_exhausted() {
         &llm.url,
         &[
             ("MCP_HOOK_SERVERS", "fake"),
-            ("BUZZ_AGENT_STOP_MAX_REJECTIONS", "1"),
+            ("PUNKS_AGENT_STOP_MAX_REJECTIONS", "1"),
         ],
     )
     .await;
@@ -936,7 +709,7 @@ async fn hook_stop_budget_exhausted() {
             json!({"sessionId": sid, "prompt": [{"type":"text","text":"go"}]}),
         )
         .await;
-    let r = h.recv_until(|v| v["id"] == json!(p)).await;
+    let r = h.recv_until_approving(|v| v["id"] == json!(p)).await;
     assert!(r.get("result").is_some(), "errored: {r}");
     assert_eq!(r["result"]["stopReason"], "end_turn");
 
@@ -969,7 +742,7 @@ async fn hook_stop_consecutive_end_turn_uses_rejection_budget() {
         &llm.url,
         &[
             ("MCP_HOOK_SERVERS", "fake"),
-            ("BUZZ_AGENT_STOP_MAX_REJECTIONS", "2"),
+            ("PUNKS_AGENT_STOP_MAX_REJECTIONS", "2"),
         ],
     )
     .await;
@@ -1023,7 +796,7 @@ async fn hook_stop_budget_resets_per_prompt() {
         &llm.url,
         &[
             ("MCP_HOOK_SERVERS", "fake"),
-            ("BUZZ_AGENT_STOP_MAX_REJECTIONS", "1"),
+            ("PUNKS_AGENT_STOP_MAX_REJECTIONS", "1"),
         ],
     )
     .await;
@@ -1163,9 +936,9 @@ async fn hook_post_compact_injects_after_handoff() {
         &llm.url,
         &[
             ("MCP_HOOK_SERVERS", "fake"),
-            ("BUZZ_AGENT_MAX_HISTORY_BYTES", &(1024 * 1024).to_string()),
+            ("PUNKS_AGENT_MAX_HISTORY_BYTES", &(1024 * 1024).to_string()),
             // Allow at least one handoff.
-            ("BUZZ_AGENT_MAX_HANDOFFS", "3"),
+            ("PUNKS_AGENT_MAX_HANDOFFS", "3"),
         ],
     )
     .await;
@@ -1263,11 +1036,11 @@ async fn handoff_summary_prompt_includes_full_history_within_context_budget() {
     let mut h = Harness::spawn_with_env(
         &llm.url,
         &[
-            ("BUZZ_AGENT_MAX_CONTEXT_TOKENS", "10000"),
-            ("BUZZ_AGENT_MAX_OUTPUT_TOKENS", "1000"),
-            ("BUZZ_AGENT_MAX_HANDOFFS", "3"),
+            ("PUNKS_AGENT_MAX_CONTEXT_TOKENS", "10000"),
+            ("PUNKS_AGENT_MAX_OUTPUT_TOKENS", "1000"),
+            ("PUNKS_AGENT_MAX_HANDOFFS", "3"),
             (
-                "BUZZ_AGENT_MAX_HISTORY_BYTES",
+                "PUNKS_AGENT_MAX_HISTORY_BYTES",
                 &(16 * 1024 * 1024).to_string(),
             ),
         ],
@@ -1331,11 +1104,11 @@ async fn handoff_summary_prompt_keeps_latest_item_when_one_item_exceeds_budget()
     let mut h = Harness::spawn_with_env(
         &llm.url,
         &[
-            ("BUZZ_AGENT_MAX_CONTEXT_TOKENS", "10000"),
-            ("BUZZ_AGENT_MAX_OUTPUT_TOKENS", "1000"),
-            ("BUZZ_AGENT_MAX_HANDOFFS", "3"),
+            ("PUNKS_AGENT_MAX_CONTEXT_TOKENS", "10000"),
+            ("PUNKS_AGENT_MAX_OUTPUT_TOKENS", "1000"),
+            ("PUNKS_AGENT_MAX_HANDOFFS", "3"),
             (
-                "BUZZ_AGENT_MAX_HISTORY_BYTES",
+                "PUNKS_AGENT_MAX_HISTORY_BYTES",
                 &(16 * 1024 * 1024).to_string(),
             ),
         ],
@@ -1400,13 +1173,13 @@ async fn token_usage_over_budget_triggers_handoff() {
     let mut h = Harness::spawn_with_env(
         &llm.url,
         &[
-            ("BUZZ_AGENT_MAX_CONTEXT_TOKENS", "1000"),
-            ("BUZZ_AGENT_MAX_OUTPUT_TOKENS", "100"),
-            ("BUZZ_AGENT_MAX_HANDOFFS", "3"),
+            ("PUNKS_AGENT_MAX_CONTEXT_TOKENS", "1000"),
+            ("PUNKS_AGENT_MAX_OUTPUT_TOKENS", "100"),
+            ("PUNKS_AGENT_MAX_HANDOFFS", "3"),
             // Huge byte budget so the byte path can NOT be what fires — only
             // the token gate can explain a handoff on these tiny prompts.
             (
-                "BUZZ_AGENT_MAX_HISTORY_BYTES",
+                "PUNKS_AGENT_MAX_HISTORY_BYTES",
                 &(16 * 1024 * 1024).to_string(),
             ),
         ],
@@ -1490,13 +1263,13 @@ async fn stale_usage_plus_history_growth_triggers_handoff() {
     let mut h = Harness::spawn_with_env(
         &llm.url,
         &[
-            ("BUZZ_AGENT_MAX_CONTEXT_TOKENS", "10000"),
-            ("BUZZ_AGENT_MAX_OUTPUT_TOKENS", "1000"),
-            ("BUZZ_AGENT_MAX_HANDOFFS", "3"),
+            ("PUNKS_AGENT_MAX_CONTEXT_TOKENS", "10000"),
+            ("PUNKS_AGENT_MAX_OUTPUT_TOKENS", "1000"),
+            ("PUNKS_AGENT_MAX_HANDOFFS", "3"),
             // Huge byte budget so the None-path byte fallback can't be what
             // fires — only the token-mode growth estimate can explain it.
             (
-                "BUZZ_AGENT_MAX_HISTORY_BYTES",
+                "PUNKS_AGENT_MAX_HISTORY_BYTES",
                 &(16 * 1024 * 1024).to_string(),
             ),
         ],
@@ -1517,7 +1290,7 @@ async fn stale_usage_plus_history_growth_triggers_handoff() {
             json!({"sessionId": sid, "prompt": [{"type":"text","text":"go"}]}),
         )
         .await;
-    let _ = h.recv_until(|v| v["id"] == json!(p)).await;
+    let _ = h.recv_until_approving(|v| v["id"] == json!(p)).await;
     // req1 (tool_call) + summarize (handoff) + req2 (done) = 3. Without the
     // growth estimate we'd see only 2 (stale 8500 < 9000, no handoff).
     let captured = llm.captured.lock().await.len();
@@ -1529,7 +1302,7 @@ async fn stale_usage_plus_history_growth_triggers_handoff() {
     h.shutdown().await;
 }
 
-/// `_Stop` hook that takes longer than `BUZZ_AGENT_HOOK_TIMEOUT_MS`
+/// `_Stop` hook that takes longer than `PUNKS_AGENT_HOOK_TIMEOUT_MS`
 /// must be treated as no-objection (fail-open). Agent stops normally.
 ///
 /// Note on server-kill-on-timeout: `call_hooks` calls `kill_server` on a
@@ -1550,7 +1323,7 @@ async fn hook_stop_timeout_failopen() {
         &[
             ("MCP_HOOK_SERVERS", "fake"),
             // Hook delay (3s) >> hook timeout (200ms) → fail-open.
-            ("BUZZ_AGENT_HOOK_TIMEOUT_MS", "200"),
+            ("PUNKS_AGENT_HOOK_TIMEOUT_MS", "200"),
         ],
     )
     .await;
@@ -1672,7 +1445,7 @@ async fn cancel_kills_inflight_tool_via_mcp_notification() {
         .await;
 
     // Wait for the tool call to be in-progress.
-    h.recv_until(|v| {
+    h.recv_until_approving(|v| {
         v.get("params")
             .and_then(|p| p.get("update"))
             .and_then(|u| u.get("status"))
@@ -1788,7 +1561,7 @@ async fn cancel_sends_notifications_cancelled_to_any_mcp_server() {
         .await;
 
     // Wait for tool call to be in-progress.
-    h.recv_until(|v| {
+    h.recv_until_approving(|v| {
         v.get("params")
             .and_then(|p| p.get("update"))
             .and_then(|u| u.get("status"))
@@ -1853,7 +1626,7 @@ async fn cancel_sends_notifications_cancelled_to_any_mcp_server() {
 }
 
 // ---------------------------------------------------------------------------
-// Reply guard (`BUZZ_AGENT_REQUIRE_REPLY`)
+// Reply guard (`PUNKS_AGENT_REQUIRE_REPLY`)
 //
 // The guard reminds the model to publish when a turn is about to end without
 // any recognized attempt to post to Buzz. It rides the existing `_Stop` gate
@@ -1864,7 +1637,7 @@ async fn cancel_sends_notifications_cancelled_to_any_mcp_server() {
 /// Number of reply-guard reminders present in one captured LLM request.
 ///
 /// A reminder is a tool-role message whose JSON body is attributed to the
-/// in-process guard (`server: "buzz-agent"`) at the `_Stop` hook point — the
+/// in-process guard (`server: "punks-agent"`) at the `_Stop` hook point — the
 /// same lower-trust shape as real hook output.
 fn reply_nag_count(request: &Value) -> usize {
     request["messages"]
@@ -1874,7 +1647,7 @@ fn reply_nag_count(request: &Value) -> usize {
                 .filter(|m| {
                     m["role"] == "tool"
                         && serde_json::from_str::<Value>(m["content"].as_str().unwrap_or(""))
-                            .map(|p| p["hook"] == "_Stop" && p["server"] == "buzz-agent")
+                            .map(|p| p["hook"] == "_Stop" && p["server"] == "punks-agent")
                             .unwrap_or(false)
                 })
                 .count()
@@ -1903,13 +1676,7 @@ async fn prompt_to_completion(h: &mut Harness, sid: &str) -> Value {
     loop {
         let v = h.recv().await;
         if v.get("method") == Some(&json!("session/request_permission")) {
-            let id = v["id"].clone();
-            h.write(json!({
-                "jsonrpc": "2.0",
-                "id": id,
-                "result": { "outcome": { "outcome": "selected", "optionId": "allow" } },
-            }))
-            .await;
+            h.write(approve_permission(&v)).await;
             continue;
         }
         if v["id"] == json!(p) {
@@ -1940,12 +1707,12 @@ async fn reply_guard_off_by_default() {
     h.shutdown().await;
 }
 
-/// `BUZZ_AGENT_REQUIRE_REPLY=0` is off too — the toggle is numeric, so a
+/// `PUNKS_AGENT_REQUIRE_REPLY=0` is off too — the toggle is numeric, so a
 /// literal `0` must not read as "set, therefore on".
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn reply_guard_explicit_zero_is_off() {
     let llm = spawn_capturing_llm(vec![openai_text("done"), openai_text("unexpected")]).await;
-    let mut h = Harness::spawn_with_env(&llm.url, &[("BUZZ_AGENT_REQUIRE_REPLY", "0")]).await;
+    let mut h = Harness::spawn_with_env(&llm.url, &[("PUNKS_AGENT_REQUIRE_REPLY", "0")]).await;
     let sid = init_session(&mut h, json!([])).await;
 
     let r = prompt_to_completion(&mut h, &sid).await;
@@ -1974,7 +1741,7 @@ async fn reply_guard_nags_twice_then_lets_the_turn_end() {
         openai_text("must-not-be-requested"),
     ])
     .await;
-    let mut h = Harness::spawn_with_env(&llm.url, &[("BUZZ_AGENT_REQUIRE_REPLY", "1")]).await;
+    let mut h = Harness::spawn_with_env(&llm.url, &[("PUNKS_AGENT_REQUIRE_REPLY", "1")]).await;
     let sid = init_session(&mut h, json!([])).await;
 
     let r = prompt_to_completion(&mut h, &sid).await;
@@ -2001,11 +1768,11 @@ async fn reply_guard_nags_twice_then_lets_the_turn_end() {
     let nag = msgs
         .iter()
         .filter_map(|m| serde_json::from_str::<Value>(m["content"].as_str().unwrap_or("")).ok())
-        .find(|p| p["server"] == "buzz-agent")
+        .find(|p| p["server"] == "punks-agent")
         .expect("reminder body");
     let text = nag["text"].as_str().unwrap_or("");
     assert!(
-        text.contains("buzz messages send"),
+        text.contains("punks messages send"),
         "reminder should name the command: {text}"
     );
     assert!(
@@ -2025,7 +1792,7 @@ async fn reply_guard_satisfied_by_registered_shell_send() {
         openai_text("must-not-be-requested"),
     ])
     .await;
-    let mut h = Harness::spawn_with_env(&llm.url, &[("BUZZ_AGENT_REQUIRE_REPLY", "1")]).await;
+    let mut h = Harness::spawn_with_env(&llm.url, &[("PUNKS_AGENT_REQUIRE_REPLY", "1")]).await;
     let sid = init_session_with_fake_mcp(
         &mut h,
         &[("FAKE_MCP_TOOL_COUNT", "1"), ("FAKE_MCP_SHELL_TOOL", "1")],
@@ -2061,8 +1828,8 @@ async fn reply_guard_ignores_unregistered_shell_tool() {
     let mut h = Harness::spawn_with_env(
         &llm.url,
         &[
-            ("BUZZ_AGENT_REQUIRE_REPLY", "1"),
-            ("BUZZ_AGENT_STOP_MAX_REJECTIONS", "1"),
+            ("PUNKS_AGENT_REQUIRE_REPLY", "1"),
+            ("PUNKS_AGENT_STOP_MAX_REJECTIONS", "1"),
         ],
     )
     .await;
@@ -2132,8 +1899,8 @@ async fn reply_guard_ignores_calls_lost_to_the_turn_cap() {
     let mut h = Harness::spawn_with_env(
         &llm.url,
         &[
-            ("BUZZ_AGENT_REQUIRE_REPLY", "1"),
-            ("BUZZ_AGENT_STOP_MAX_REJECTIONS", "1"),
+            ("PUNKS_AGENT_REQUIRE_REPLY", "1"),
+            ("PUNKS_AGENT_STOP_MAX_REJECTIONS", "1"),
         ],
     )
     .await;
@@ -2170,8 +1937,8 @@ async fn reply_guard_bounded_by_stop_rejection_budget() {
     let mut h = Harness::spawn_with_env(
         &llm.url,
         &[
-            ("BUZZ_AGENT_REQUIRE_REPLY", "1"),
-            ("BUZZ_AGENT_STOP_MAX_REJECTIONS", "1"),
+            ("PUNKS_AGENT_REQUIRE_REPLY", "1"),
+            ("PUNKS_AGENT_STOP_MAX_REJECTIONS", "1"),
         ],
     )
     .await;
@@ -2198,8 +1965,8 @@ async fn reply_guard_off_when_stop_budget_is_zero() {
     let mut h = Harness::spawn_with_env(
         &llm.url,
         &[
-            ("BUZZ_AGENT_REQUIRE_REPLY", "1"),
-            ("BUZZ_AGENT_STOP_MAX_REJECTIONS", "0"),
+            ("PUNKS_AGENT_REQUIRE_REPLY", "1"),
+            ("PUNKS_AGENT_STOP_MAX_REJECTIONS", "0"),
         ],
     )
     .await;
@@ -2236,9 +2003,9 @@ async fn reply_guard_combines_with_stop_hook_objection() {
     let mut h = Harness::spawn_with_env(
         &llm.url,
         &[
-            ("BUZZ_AGENT_REQUIRE_REPLY", "1"),
+            ("PUNKS_AGENT_REQUIRE_REPLY", "1"),
             ("MCP_HOOK_SERVERS", "fake"),
-            ("BUZZ_AGENT_STOP_MAX_REJECTIONS", "10"),
+            ("PUNKS_AGENT_STOP_MAX_REJECTIONS", "10"),
         ],
     )
     .await;
@@ -2295,10 +2062,10 @@ async fn reply_guard_combines_with_stop_hook_objection() {
 #[test]
 fn reply_guard_rejects_unparseable_toggle() {
     let out = std::process::Command::new(env!("CARGO_BIN_EXE_buzz-agent"))
-        .env("BUZZ_AGENT_PROVIDER", "openai")
+        .env("PUNKS_AGENT_PROVIDER", "openai")
         .env("OPENAI_COMPAT_API_KEY", "test")
         .env("OPENAI_COMPAT_MODEL", "fake-model")
-        .env("BUZZ_AGENT_REQUIRE_REPLY", "true")
+        .env("PUNKS_AGENT_REQUIRE_REPLY", "true")
         .stdin(Stdio::null())
         .output()
         .expect("run buzz-agent");
@@ -2309,7 +2076,7 @@ fn reply_guard_rejects_unparseable_toggle() {
     );
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
-        stderr.contains("BUZZ_AGENT_REQUIRE_REPLY"),
+        stderr.contains("PUNKS_AGENT_REQUIRE_REPLY"),
         "expected the offending key in the error, got: {stderr}"
     );
 }
@@ -2317,10 +2084,10 @@ fn reply_guard_rejects_unparseable_toggle() {
 #[test]
 fn max_token_recoveries_rejects_unparseable_value() {
     let out = std::process::Command::new(env!("CARGO_BIN_EXE_buzz-agent"))
-        .env("BUZZ_AGENT_PROVIDER", "openai")
+        .env("PUNKS_AGENT_PROVIDER", "openai")
         .env("OPENAI_COMPAT_API_KEY", "test")
         .env("OPENAI_COMPAT_MODEL", "fake-model")
-        .env("BUZZ_AGENT_MAX_TOKEN_RECOVERIES", "unbounded")
+        .env("PUNKS_AGENT_MAX_TOKEN_RECOVERIES", "unbounded")
         .stdin(Stdio::null())
         .output()
         .expect("run buzz-agent");
@@ -2330,7 +2097,7 @@ fn max_token_recoveries_rejects_unparseable_value() {
     );
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
-        stderr.contains("BUZZ_AGENT_MAX_TOKEN_RECOVERIES"),
+        stderr.contains("PUNKS_AGENT_MAX_TOKEN_RECOVERIES"),
         "expected offending key in config error: {stderr}"
     );
 }
@@ -2415,15 +2182,15 @@ async fn context_window_400_recovers_instead_of_sticking() {
             // Large window + large byte budget: neither proactive gate can be
             // what produces the handoff, so a handoff here is attributable to
             // the reactive path alone.
-            ("BUZZ_AGENT_MAX_CONTEXT_TOKENS", "200000"),
-            ("BUZZ_AGENT_MAX_OUTPUT_TOKENS", "8192"),
+            ("PUNKS_AGENT_MAX_CONTEXT_TOKENS", "200000"),
+            ("PUNKS_AGENT_MAX_OUTPUT_TOKENS", "8192"),
             (
-                "BUZZ_AGENT_MAX_HISTORY_BYTES",
+                "PUNKS_AGENT_MAX_HISTORY_BYTES",
                 &(16 * 1024 * 1024).to_string(),
             ),
             // Cap of 0: proves the forced path bypasses `max_handoffs`. Any
             // gated handoff is impossible under this setting.
-            ("BUZZ_AGENT_MAX_HANDOFFS", "0"),
+            ("PUNKS_AGENT_MAX_HANDOFFS", "0"),
         ],
     )
     .await;
@@ -2539,7 +2306,7 @@ async fn max_tokens_recovery_respects_finite_round_cap() {
         openai_text("must not be requested"),
     ])
     .await;
-    let mut h = Harness::spawn_with_env(&llm.url, &[("BUZZ_AGENT_MAX_ROUNDS", "1")]).await;
+    let mut h = Harness::spawn_with_env(&llm.url, &[("PUNKS_AGENT_MAX_ROUNDS", "1")]).await;
     let sid = init_session(&mut h, json!([])).await;
     let prompt_id = h
         .send(
@@ -2568,8 +2335,8 @@ async fn repeated_max_tokens_is_bounded() {
     let mut h = Harness::spawn_with_env(
         &llm.url,
         &[
-            ("BUZZ_AGENT_MAX_ROUNDS", "0"),
-            ("BUZZ_AGENT_MAX_TOKEN_RECOVERIES", "2"),
+            ("PUNKS_AGENT_MAX_ROUNDS", "0"),
+            ("PUNKS_AGENT_MAX_TOKEN_RECOVERIES", "2"),
         ],
     )
     .await;
@@ -2629,7 +2396,7 @@ async fn zero_max_token_recoveries_disables_retry() {
     ])
     .await;
     let mut h =
-        Harness::spawn_with_env(&llm.url, &[("BUZZ_AGENT_MAX_TOKEN_RECOVERIES", "0")]).await;
+        Harness::spawn_with_env(&llm.url, &[("PUNKS_AGENT_MAX_TOKEN_RECOVERIES", "0")]).await;
     let sid = init_session(&mut h, json!([])).await;
     let prompt_id = h
         .send(
@@ -2664,7 +2431,9 @@ async fn max_tokens_recovery_can_proceed_to_tool_call() {
             json!({"sessionId": sid, "prompt": [{"type":"text","text":"go"}]}),
         )
         .await;
-    let reply = h.recv_until(|v| v["id"] == json!(prompt_id)).await;
+    let reply = h
+        .recv_until_approving(|v| v["id"] == json!(prompt_id))
+        .await;
     assert_eq!(reply["result"]["stopReason"], "end_turn", "{reply}");
     let requests = llm.captured.lock().await;
     assert_eq!(requests.len(), 3);
@@ -2682,7 +2451,7 @@ async fn max_tokens_recovery_can_proceed_to_tool_call() {
 /// `max_rounds` is finite. `round` is incremented BEFORE the completion that
 /// gets rejected, so a naive `continue` after recovery re-enters the loop with
 /// the rejected attempt already charged against the cap: with
-/// `BUZZ_AGENT_MAX_ROUNDS=1` the turn would return `max_turn_requests` after
+/// `PUNKS_AGENT_MAX_ROUNDS=1` the turn would return `max_turn_requests` after
 /// destructively resetting history, having never sent the retry. That silently
 /// converts "recovered" into "history destroyed, question unanswered" — worse
 /// than the error it replaced, because the user gets a stop reason rather than a
@@ -2708,15 +2477,15 @@ async fn recovery_retry_is_sent_under_a_finite_round_cap() {
     let mut h = Harness::spawn_with_env(
         &llm.url,
         &[
-            ("BUZZ_AGENT_MAX_CONTEXT_TOKENS", "200000"),
-            ("BUZZ_AGENT_MAX_OUTPUT_TOKENS", "8192"),
+            ("PUNKS_AGENT_MAX_CONTEXT_TOKENS", "200000"),
+            ("PUNKS_AGENT_MAX_OUTPUT_TOKENS", "8192"),
             (
-                "BUZZ_AGENT_MAX_HISTORY_BYTES",
+                "PUNKS_AGENT_MAX_HISTORY_BYTES",
                 &(16 * 1024 * 1024).to_string(),
             ),
-            ("BUZZ_AGENT_MAX_HANDOFFS", "0"),
+            ("PUNKS_AGENT_MAX_HANDOFFS", "0"),
             // The whole point: a finite cap, at its tightest.
-            ("BUZZ_AGENT_MAX_ROUNDS", "1"),
+            ("PUNKS_AGENT_MAX_ROUNDS", "1"),
         ],
     )
     .await;
@@ -2778,8 +2547,8 @@ async fn finite_round_cap_still_binds_without_a_context_overflow() {
     let mut h = Harness::spawn_with_env(
         &llm.url,
         &[
-            ("BUZZ_AGENT_MAX_CONTEXT_TOKENS", "200000"),
-            ("BUZZ_AGENT_MAX_ROUNDS", "1"),
+            ("PUNKS_AGENT_MAX_CONTEXT_TOKENS", "200000"),
+            ("PUNKS_AGENT_MAX_ROUNDS", "1"),
         ],
     )
     .await;
@@ -2828,12 +2597,12 @@ async fn forced_handoff_retains_live_prompt_exactly_once() {
     let mut h = Harness::spawn_with_env(
         &llm.url,
         &[
-            ("BUZZ_AGENT_MAX_CONTEXT_TOKENS", "200000"),
+            ("PUNKS_AGENT_MAX_CONTEXT_TOKENS", "200000"),
             (
-                "BUZZ_AGENT_MAX_HISTORY_BYTES",
+                "PUNKS_AGENT_MAX_HISTORY_BYTES",
                 &(16 * 1024 * 1024).to_string(),
             ),
-            ("BUZZ_AGENT_MAX_HANDOFFS", "0"),
+            ("PUNKS_AGENT_MAX_HANDOFFS", "0"),
         ],
     )
     .await;
@@ -2893,8 +2662,8 @@ async fn ordinary_400_stays_terminal_and_triggers_no_recovery() {
     let mut h = Harness::spawn_with_env(
         &llm.url,
         &[
-            ("BUZZ_AGENT_MAX_CONTEXT_TOKENS", "200000"),
-            ("BUZZ_AGENT_MAX_HANDOFFS", "3"),
+            ("PUNKS_AGENT_MAX_CONTEXT_TOKENS", "200000"),
+            ("PUNKS_AGENT_MAX_HANDOFFS", "3"),
         ],
     )
     .await;
@@ -2947,12 +2716,12 @@ async fn context_recovery_budget_exhaustion_surfaces_the_error() {
     let mut h = Harness::spawn_with_env(
         &llm.url,
         &[
-            ("BUZZ_AGENT_MAX_CONTEXT_TOKENS", "200000"),
+            ("PUNKS_AGENT_MAX_CONTEXT_TOKENS", "200000"),
             (
-                "BUZZ_AGENT_MAX_HISTORY_BYTES",
+                "PUNKS_AGENT_MAX_HISTORY_BYTES",
                 &(16 * 1024 * 1024).to_string(),
             ),
-            ("BUZZ_AGENT_MAX_HANDOFFS", "0"),
+            ("PUNKS_AGENT_MAX_HANDOFFS", "0"),
         ],
     )
     .await;
@@ -3021,12 +2790,12 @@ async fn small_history_context_400_refuses_rescue_at_the_prompt_floor() {
     let mut h = Harness::spawn_with_env(
         &llm.url,
         &[
-            ("BUZZ_AGENT_MAX_CONTEXT_TOKENS", "200000"),
+            ("PUNKS_AGENT_MAX_CONTEXT_TOKENS", "200000"),
             (
-                "BUZZ_AGENT_MAX_HISTORY_BYTES",
+                "PUNKS_AGENT_MAX_HISTORY_BYTES",
                 &(16 * 1024 * 1024).to_string(),
             ),
-            ("BUZZ_AGENT_MAX_HANDOFFS", "0"),
+            ("PUNKS_AGENT_MAX_HANDOFFS", "0"),
         ],
     )
     .await;
@@ -3089,12 +2858,12 @@ async fn recovery_shrinks_the_summarize_prompt_below_the_rejected_size() {
     let mut h = Harness::spawn_with_env(
         &llm.url,
         &[
-            ("BUZZ_AGENT_MAX_CONTEXT_TOKENS", "200000"),
+            ("PUNKS_AGENT_MAX_CONTEXT_TOKENS", "200000"),
             (
-                "BUZZ_AGENT_MAX_HISTORY_BYTES",
+                "PUNKS_AGENT_MAX_HISTORY_BYTES",
                 &(16 * 1024 * 1024).to_string(),
             ),
-            ("BUZZ_AGENT_MAX_HANDOFFS", "0"),
+            ("PUNKS_AGENT_MAX_HANDOFFS", "0"),
         ],
     )
     .await;
@@ -3173,12 +2942,12 @@ async fn recovery_shrinks_further_on_each_rung() {
     let mut h = Harness::spawn_with_env(
         &llm.url,
         &[
-            ("BUZZ_AGENT_MAX_CONTEXT_TOKENS", "200000"),
+            ("PUNKS_AGENT_MAX_CONTEXT_TOKENS", "200000"),
             (
-                "BUZZ_AGENT_MAX_HISTORY_BYTES",
+                "PUNKS_AGENT_MAX_HISTORY_BYTES",
                 &(16 * 1024 * 1024).to_string(),
             ),
-            ("BUZZ_AGENT_MAX_HANDOFFS", "0"),
+            ("PUNKS_AGENT_MAX_HANDOFFS", "0"),
         ],
     )
     .await;
@@ -3299,15 +3068,15 @@ async fn reactive_reset_clears_usage_baseline_so_the_gate_is_not_blind() {
     let mut h = Harness::spawn_with_env(
         &llm.url,
         &[
-            ("BUZZ_AGENT_MAX_CONTEXT_TOKENS", "200000"),
-            ("BUZZ_AGENT_MAX_OUTPUT_TOKENS", "8192"),
+            ("PUNKS_AGENT_MAX_CONTEXT_TOKENS", "200000"),
+            ("PUNKS_AGENT_MAX_OUTPUT_TOKENS", "8192"),
             (
-                "BUZZ_AGENT_MAX_HISTORY_BYTES",
+                "PUNKS_AGENT_MAX_HISTORY_BYTES",
                 &(16 * 1024 * 1024).to_string(),
             ),
             // Must permit a GATED handoff — turn 3 observes the proactive gate,
             // which a cap of 0 would forbid.
-            ("BUZZ_AGENT_MAX_HANDOFFS", "5"),
+            ("PUNKS_AGENT_MAX_HANDOFFS", "5"),
         ],
     )
     .await;
@@ -3420,13 +3189,13 @@ async fn handoff_cap_resets_per_turn_not_per_session() {
     let mut h = Harness::spawn_with_env(
         &llm.url,
         &[
-            ("BUZZ_AGENT_MAX_CONTEXT_TOKENS", "1000"),
-            ("BUZZ_AGENT_MAX_OUTPUT_TOKENS", "100"),
+            ("PUNKS_AGENT_MAX_CONTEXT_TOKENS", "1000"),
+            ("PUNKS_AGENT_MAX_OUTPUT_TOKENS", "100"),
             // Cap of 1 per turn. Before the fix this permanently disables the
             // gate once session handoff_count reaches 1.
-            ("BUZZ_AGENT_MAX_HANDOFFS", "1"),
+            ("PUNKS_AGENT_MAX_HANDOFFS", "1"),
             (
-                "BUZZ_AGENT_MAX_HISTORY_BYTES",
+                "PUNKS_AGENT_MAX_HISTORY_BYTES",
                 &(16 * 1024 * 1024).to_string(),
             ),
         ],
@@ -3542,11 +3311,11 @@ async fn handoff_cap_binds_within_a_single_turn() {
     let mut h = Harness::spawn_with_env(
         &llm.url,
         &[
-            ("BUZZ_AGENT_MAX_CONTEXT_TOKENS", "1000"),
-            ("BUZZ_AGENT_MAX_OUTPUT_TOKENS", "100"),
-            ("BUZZ_AGENT_MAX_HANDOFFS", "1"),
+            ("PUNKS_AGENT_MAX_CONTEXT_TOKENS", "1000"),
+            ("PUNKS_AGENT_MAX_OUTPUT_TOKENS", "100"),
+            ("PUNKS_AGENT_MAX_HANDOFFS", "1"),
             (
-                "BUZZ_AGENT_MAX_HISTORY_BYTES",
+                "PUNKS_AGENT_MAX_HISTORY_BYTES",
                 &(16 * 1024 * 1024).to_string(),
             ),
         ],
@@ -3642,13 +3411,7 @@ async fn handoff_cap_binds_within_a_single_turn() {
         }
 
         if v.get("method") == Some(&json!("session/request_permission")) {
-            let id = v["id"].clone();
-            h.write(json!({
-                "jsonrpc": "2.0",
-                "id": id,
-                "result": { "outcome": { "outcome": "selected", "optionId": "allow" } },
-            }))
-            .await;
+            h.write(approve_permission(&v)).await;
             continue;
         }
         if v["id"] == json!(p2) {
@@ -3739,11 +3502,11 @@ async fn failed_summarize_burns_handoff_attempt_budget() {
     let mut h = Harness::spawn_with_env(
         &llm.url,
         &[
-            ("BUZZ_AGENT_MAX_CONTEXT_TOKENS", "1000"),
-            ("BUZZ_AGENT_MAX_OUTPUT_TOKENS", "100"),
-            ("BUZZ_AGENT_MAX_HANDOFFS", "1"),
+            ("PUNKS_AGENT_MAX_CONTEXT_TOKENS", "1000"),
+            ("PUNKS_AGENT_MAX_OUTPUT_TOKENS", "100"),
+            ("PUNKS_AGENT_MAX_HANDOFFS", "1"),
             (
-                "BUZZ_AGENT_MAX_HISTORY_BYTES",
+                "PUNKS_AGENT_MAX_HISTORY_BYTES",
                 &(16 * 1024 * 1024).to_string(),
             ),
         ],
@@ -3795,13 +3558,7 @@ async fn failed_summarize_burns_handoff_attempt_budget() {
     loop {
         let v = h.recv().await;
         if v.get("method") == Some(&json!("session/request_permission")) {
-            let id = v["id"].clone();
-            h.write(json!({
-                "jsonrpc": "2.0",
-                "id": id,
-                "result": { "outcome": { "outcome": "selected", "optionId": "allow" } },
-            }))
-            .await;
+            h.write(approve_permission(&v)).await;
             continue;
         }
         if v["id"] == json!(p2) {

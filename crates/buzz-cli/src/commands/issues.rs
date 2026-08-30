@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::client::BuzzClient;
+use crate::client::PunksClient;
 use crate::commands::with_git_provenance;
 use crate::error::CliError;
 use crate::validate::{read_or_stdin, sdk_err, validate_hex64, validate_repo_id};
@@ -229,7 +229,7 @@ impl IssueAssignmentOperation {
 }
 
 pub async fn cmd_create_issue(
-    client: &BuzzClient,
+    client: &PunksClient,
     repo_owner: &str,
     repo_id: &str,
     subject: &str,
@@ -257,7 +257,7 @@ pub async fn cmd_create_issue(
     let event = client.sign_event(builder)?;
     let event_id = event.id.to_hex();
     let resp = client.submit_event(event).await?;
-    // `link` renders as a rich preview card in Buzz Desktop when included in
+    // `link` renders as a rich preview card in Punks Desktop when included in
     // a chat message — agents announce issues with it (see base_prompt.md).
     let link = crate::links::issue_link(&event_id, repo_owner, repo_id);
     crate::client::print_create_response(&resp, "link", &link);
@@ -269,7 +269,7 @@ pub async fn cmd_create_issue(
 /// Desktop app writes). Clients trust it when signed by the issue author
 /// or repo owner, or when it is a self-assignment.
 pub async fn cmd_assign_issue(
-    client: &BuzzClient,
+    client: &PunksClient,
     issue: &str,
     repo_owner: &str,
     repo_id: &str,
@@ -290,7 +290,7 @@ pub async fn cmd_assign_issue(
 
 /// Publish an issue unassignment with the same trust rules as assignment.
 pub async fn cmd_unassign_issue(
-    client: &BuzzClient,
+    client: &PunksClient,
     issue: &str,
     repo_owner: &str,
     repo_id: &str,
@@ -311,7 +311,7 @@ pub async fn cmd_unassign_issue(
 
 #[allow(clippy::too_many_arguments)]
 async fn publish_issue_assignment_operation(
-    client: &BuzzClient,
+    client: &PunksClient,
     issue: &str,
     repo_owner: &str,
     repo_id: &str,
@@ -371,7 +371,7 @@ async fn publish_issue_assignment_operation(
 }
 
 async fn issue_assignment_context(
-    client: &BuzzClient,
+    client: &PunksClient,
     issue: &str,
     repo: &GitRepoCoord,
     signer: &str,
@@ -443,7 +443,7 @@ async fn issue_assignment_context(
     Ok(IssueAssignmentContext { created_at, prior })
 }
 
-pub async fn cmd_get_issue(client: &BuzzClient, event: &str) -> Result<(), CliError> {
+pub async fn cmd_get_issue(client: &PunksClient, event: &str) -> Result<(), CliError> {
     validate_hex64(event)?;
     let filter = serde_json::json!({
         "kinds": [1621],
@@ -455,7 +455,7 @@ pub async fn cmd_get_issue(client: &BuzzClient, event: &str) -> Result<(), CliEr
 }
 
 pub async fn cmd_list_issues(
-    client: &BuzzClient,
+    client: &PunksClient,
     repo_owner: &str,
     repo_id: &str,
     author: Option<&str>,
@@ -489,7 +489,7 @@ pub async fn cmd_list_issues(
 
 #[allow(clippy::too_many_arguments)]
 pub async fn cmd_issue_status(
-    client: &BuzzClient,
+    client: &PunksClient,
     issue: &str,
     status: &str,
     content: Option<&str>,
@@ -522,7 +522,7 @@ pub async fn cmd_issue_status(
         }
     };
 
-    // Mirrors `buzz patches status`: default a `p` tag to the repo owner
+    // Mirrors `punks patches status`: default a `p` tag to the repo owner
     // for discoverability, plus a `--to` escape hatch for the issue author
     // or anyone else who should be notified of the status change.
     let mut recipients = Vec::new();
@@ -555,7 +555,7 @@ pub async fn cmd_issue_status(
     Ok(())
 }
 
-pub async fn dispatch(cmd: crate::IssuesCmd, client: &BuzzClient) -> Result<(), CliError> {
+pub async fn dispatch(cmd: crate::IssuesCmd, client: &PunksClient) -> Result<(), CliError> {
     use crate::IssuesCmd;
     match cmd {
         IssuesCmd::Create {

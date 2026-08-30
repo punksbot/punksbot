@@ -2,6 +2,8 @@ import { Diff, Hunk, type ViewType } from "react-diff-view";
 import "react-diff-view/style/index.css";
 import { useMemo } from "react";
 
+import { buildSearchResultPreview } from "@/features/search/lib/searchMatch";
+import { HighlightedSearchText } from "@/features/search/ui/HighlightedSearchText";
 import {
   countDiffFileChanges,
   DIFF_TYPE_LABELS,
@@ -18,6 +20,7 @@ type DiffViewerProps = {
   fallbackFilePath?: string;
   viewType?: ViewType;
   className?: string;
+  searchQuery?: string;
 };
 
 function FileChangeBadge({
@@ -46,16 +49,20 @@ export function DiffViewer({
   fallbackFilePath,
   viewType = "unified",
   className,
+  searchQuery,
 }: DiffViewerProps) {
   const { files, parseError } = useMemo(
     () => parseUnifiedDiff(content),
     [content],
   );
+  const searchPreview = searchQuery
+    ? buildSearchResultPreview(content, searchQuery, 160)
+    : null;
 
   if (parseError) {
     return (
       <pre className="p-3 whitespace-pre-wrap font-mono text-xs text-muted-foreground">
-        {content}
+        <HighlightedSearchText query={searchQuery ?? ""} text={content} />
       </pre>
     );
   }
@@ -69,7 +76,18 @@ export function DiffViewer({
   }
 
   return (
-    <div className={cn("buzz-diff-theme", className)}>
+    <div className={cn("punks-diff-theme", className)}>
+      {searchPreview ? (
+        <pre
+          className="mb-3 whitespace-pre-wrap rounded-lg bg-muted/35 p-2 font-mono text-xs text-muted-foreground"
+          data-testid="diff-search-preview"
+        >
+          <HighlightedSearchText
+            query={searchQuery ?? ""}
+            text={searchPreview}
+          />
+        </pre>
+      ) : null}
       <div className="space-y-3">
         {files.map((file) => {
           const label = getDiffFileLabel(file, fallbackFilePath);
@@ -120,14 +138,14 @@ export function DiffViewer({
               {file.hunks.length > 0 ? (
                 <Diff
                   className={cn(
-                    "buzz-diff-table",
+                    "punks-diff-table",
                     viewType === "split" ? "min-w-[780px]" : "w-full",
                   )}
-                  codeClassName="buzz-diff-code"
+                  codeClassName="punks-diff-code"
                   diffType={diffType}
-                  gutterClassName="buzz-diff-gutter"
+                  gutterClassName="punks-diff-gutter"
                   hunks={file.hunks}
-                  lineClassName="buzz-diff-line"
+                  lineClassName="punks-diff-line"
                   viewType={viewType}
                 >
                   {(hunks) =>

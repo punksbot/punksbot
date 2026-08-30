@@ -42,7 +42,7 @@ pub(in crate::commands) fn retain_persona_pending(
     persona: &AgentDefinition,
 ) {
     if let Err(e) = prepare_persona_publication(app, state, persona, None) {
-        eprintln!("buzz-desktop: persona-retain: {e}");
+        eprintln!("punks-full-local: persona-retain: {e}");
     }
 }
 
@@ -75,8 +75,8 @@ pub(super) fn prepare_persona_publication(
 }
 
 fn retained_persona_is_shared(row: Option<&RetainedEvent>) -> bool {
-    use buzz_core_pkg::kind::event_is_shared;
     use nostr::JsonUtil;
+    use punks_core_pkg::kind::event_is_shared;
 
     row.and_then(|retained| nostr::Event::from_json(&retained.raw_event).ok())
         .is_some_and(|event| event_is_shared(&event))
@@ -114,7 +114,7 @@ fn project_scoped_persona_sharing(
         )
     });
     if let Err(error) = projected {
-        eprintln!("buzz-desktop: persona-share-projection unavailable, reporting every agent as unshared: {error}");
+        eprintln!("punks-full-local: persona-share-projection unavailable, reporting every agent as unshared: {error}");
         for persona in personas {
             persona.shared = false;
         }
@@ -130,7 +130,7 @@ fn project_persona_sharing_at(
         persona_events::persona_d_tag,
         retention::{get_retained_event, open_retention_db},
     };
-    use buzz_core_pkg::kind::KIND_PERSONA;
+    use punks_core_pkg::kind::KIND_PERSONA;
 
     let conn = open_retention_db(db_path)?;
     for persona in personas {
@@ -155,8 +155,8 @@ pub(super) fn prepare_persona_publication_at(
         persona_events::{build_persona_event, monotonic_created_at, persona_d_tag},
         retention::{get_retained_event, open_retention_db, retain_event, RetainedEvent},
     };
-    use buzz_core_pkg::kind::KIND_PERSONA;
     use nostr::JsonUtil;
+    use punks_core_pkg::kind::KIND_PERSONA;
 
     let d_tag = persona_d_tag(persona);
     let pubkey = keys.public_key().to_hex();
@@ -214,8 +214,8 @@ pub(in crate::commands) fn tombstone_persona_pending(
             RetainedEvent,
         },
     };
-    use buzz_core_pkg::kind::KIND_PERSONA;
     use nostr::JsonUtil;
+    use punks_core_pkg::kind::KIND_PERSONA;
 
     const KIND_DELETE: u32 = 5;
 
@@ -245,7 +245,7 @@ pub(in crate::commands) fn tombstone_persona_pending(
         )
     })();
     if let Err(e) = result {
-        eprintln!("buzz-desktop: persona-tombstone: {e}");
+        eprintln!("punks-full-local: persona-tombstone: {e}");
     }
 }
 
@@ -255,7 +255,7 @@ mod tests {
     use crate::managed_agents::retention::{
         get_retained_event, open_retention_db, scoped_retention_db_path,
     };
-    use buzz_core_pkg::kind::KIND_PERSONA;
+    use punks_core_pkg::kind::KIND_PERSONA;
     use std::collections::BTreeMap;
 
     fn persona() -> AgentDefinition {

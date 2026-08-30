@@ -17,7 +17,7 @@ git config user.signingkey <hex-pubkey>
 export NOSTR_PRIVATE_KEY=<hex-or-nsec>
 
 # Optional: NIP-OA owner attestation
-export BUZZ_AUTH_TAG='["auth","<owner-pk>","<conditions>","<owner-sig>"]'
+export PUNKS_AUTH_TAG='["auth","<owner-pk>","<conditions>","<owner-sig>"]'
 
 # Commits are now automatically signed
 git commit -m "signed with nostr"

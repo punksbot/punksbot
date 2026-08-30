@@ -14,6 +14,7 @@ use crate::hints::SkillEntry;
 use crate::llm::Llm;
 use crate::mcp::McpRegistry;
 use crate::mcp::ResultBudget;
+use crate::permission::PermissionDecision;
 
 use crate::types::{
     AgentError, CacheTotalState, ContentBlock, HistoryItem, PricingIdentity, ProviderStop,
@@ -72,19 +73,19 @@ const MAX_REPLY_NAGS: u32 = 2;
 /// Not a real MCP server. It rides the same tool-result path as `_Stop` hook
 /// output, so the model sees `{hook, server, text}` attribution naming the
 /// in-process guard rather than an MCP server that could be impersonated.
-const REPLY_GUARD_SERVER: &str = "buzz-agent";
+const REPLY_GUARD_SERVER: &str = "punks-agent";
 
 /// Reminder text emitted when a turn is about to end with nothing published.
 ///
 /// Explicitly licenses silence. The base prompt tells agents that publishing is
 /// optional and "silence is usually correct"; a reminder that argued otherwise
 /// would fight that instruction and make agents chattier.
-const REPLY_GUARD_NAG: &str = "You are about to end this turn without calling `buzz messages send`. \
+const REPLY_GUARD_NAG: &str = "You are about to end this turn without calling `punks messages send`. \
 Your assistant text and reasoning are never shown to anyone — if you did work, found an answer, \
 or hit a blocker that someone is waiting on, it exists only if you publish it. \
 If you already posted, or if silence is genuinely correct for this turn, ignore this and end your turn.";
 
-/// Whether `call` is a recognized attempt to publish a reply to Buzz.
+/// Whether `call` is a recognized attempt to publish a reply to Punks.
 ///
 /// Recognizes an *attempt*, not a successful publish: the command text is
 /// inspected, never the exit status. That is deliberate — a send that fails
@@ -100,7 +101,7 @@ fn is_buzz_reply_call(call: &ToolCall, mcp: &McpRegistry) -> bool {
     mcp.has(&call.name) && !mcp.is_hook(&call.name) && is_reply_shaped(&call.name, &call.arguments)
 }
 
-/// Whether a tool name and arguments have the shape of a Buzz publish command.
+/// Whether a tool name and arguments have the shape of a Punks publish command.
 ///
 /// Split from [`is_buzz_reply_call`] only so the matcher is testable without a
 /// live [`McpRegistry`]; callers must apply the registry checks first.
@@ -117,7 +118,7 @@ fn is_buzz_reply_call(call: &ToolCall, mcp: &McpRegistry) -> bool {
 /// cannot suppress the guard, and a non-string `command` is rejected rather than
 /// coerced. Known limits, both accepted: a command assembled at runtime (`$CMD`)
 /// or hidden in a wrapper script is missed, and text that merely quotes a send
-/// (`echo "buzz messages send"`) matches. Missing a real post is the expensive
+/// (`echo "punks messages send"`) matches. Missing a real post is the expensive
 /// direction, and substring matching is the more forgiving one there.
 fn is_reply_shaped(name: &str, arguments: &serde_json::Value) -> bool {
     name.ends_with("__shell")
@@ -142,6 +143,14 @@ pub struct RunCtx<'a> {
     pub system_prompt: &'a str,
     pub llm: &'a Llm,
     pub mcp: &'a Arc<McpRegistry>,
+    /// Process-wide permission broker (owned by `App`). Every LLM-issued MCP
+    /// tool call asks the client to authorize it through this broker before
+    /// executing. Shared across all sessions so the global admission cap bounds
+    /// simultaneously-outstanding asks process-wide.
+    pub permissions: &'a Arc<crate::permission::PermissionBroker>,
+    /// ACP protocol version negotiated at `initialize`, fixed for the
+    /// connection. Selects the `session/request_permission` wire shape.
+    pub protocol_version: u32,
     /// Skills discovered at session creation; used by the built-in `load_skill` tool.
     pub skills: &'a [SkillEntry],
     pub wire: &'a WireSender,
@@ -320,7 +329,7 @@ impl RunCtx<'_> {
         *self.turn_pricing_identity = None;
         *self.turn_total_state = TurnTotalState::Unseen;
         // Per-turn handoff-attempt counter. Scoped here (not persisted in the
-        // session) so `BUZZ_AGENT_MAX_HANDOFFS` bounds compactions per
+        // session) so `PUNKS_AGENT_MAX_HANDOFFS` bounds compactions per
         // `session/prompt` turn rather than per session lifetime. A
         // long-lived session legitimately needs unbounded handoffs across
         // prompts; the cap only exists to stop runaway within a single turn.
@@ -594,7 +603,7 @@ impl RunCtx<'_> {
                 // the loss to the single request in flight.
                 //
                 // Emitting more than one `usage_update` per turn is expected by
-                // the consumer: buzz-acp's UsageTracker advances its committed
+                // the consumer: punks-acp's UsageTracker advances its committed
                 // baseline only when the turn's metric is published, so every
                 // notification within a turn measures from the same frozen
                 // baseline and the last one seen is the turn's true total.
@@ -882,8 +891,10 @@ impl RunCtx<'_> {
                 total: MAX_TOOL_RESULT_BYTES,
                 text: self.cfg.max_tool_result_text_bytes,
             };
-            let cancel = self.cancel.clone();
+            let mut cancel = self.cancel.clone();
             let sem = Arc::clone(&sem);
+            let permissions = Arc::clone(self.permissions);
+            let protocol_version = self.protocol_version;
             set.spawn(async move {
                 // Acquire a permit; if the semaphore is closed (cancel),
                 // emit a terminal wire update and skip the call.
@@ -894,6 +905,37 @@ impl RunCtx<'_> {
                         return (i, InvokeOutcome::Failed("cancelled".into()));
                     }
                 };
+                // Argument-shape validation BEFORE the ask: a malformed
+                // non-object argument can never execute, so reject it locally
+                // without prompting the user to approve a doomed call.
+                if let Err(e) = crate::mcp::validate_arg_shape(&call.name, &call.arguments) {
+                    let msg = e.to_string();
+                    emit_failed(&wire, &session_id, &call, &msg).await;
+                    return (i, InvokeOutcome::Failed(msg));
+                }
+                // Ask the client to authorize this call. The broker owns the
+                // full correlation lifecycle and races cancellation internally;
+                // every non-authorizing outcome fails closed.
+                match permissions
+                    .request_permission(&wire, protocol_version, &session_id, &call, &mut cancel)
+                    .await
+                {
+                    PermissionDecision::Allowed => {}
+                    PermissionDecision::Denied(msg) => {
+                        emit_failed(&wire, &session_id, &call, msg).await;
+                        return (i, InvokeOutcome::Failed(msg.into()));
+                    }
+                    PermissionDecision::Cancelled => {
+                        emit_failed(&wire, &session_id, &call, "cancelled").await;
+                        return (i, InvokeOutcome::Failed("cancelled".into()));
+                    }
+                }
+                // Cancellation recheck: a cancel may have landed while we
+                // waited for approval. Do not start the call in that case.
+                if *cancel.borrow() {
+                    emit_failed(&wire, &session_id, &call, "cancelled").await;
+                    return (i, InvokeOutcome::Failed("cancelled".into()));
+                }
                 emit_in_progress(&wire, &session_id, &call).await;
                 let outcome = invoke_tool_inner(&mcp, &call, timeout, budget, cancel).await;
                 match &outcome {
@@ -1314,14 +1356,14 @@ mod tests {
     #[test]
     fn reply_shape_matches_documented_send_forms() {
         for cmd in [
-            "buzz messages send --channel X --content Y",
-            "buzz --relay wss://r messages send --channel X --content Y",
-            "/abs/path/buzz messages send",
-            "printf 'hi' | buzz messages send --content -",
-            "buzz messages send-diff --diff -",
-            "buzz reactions add --event E --emoji +",
+            "punks messages send --channel X --content Y",
+            "punks --relay wss://r messages send --channel X --content Y",
+            "/abs/path/punks messages send",
+            "printf 'hi' | punks messages send --content -",
+            "punks messages send-diff --diff -",
+            "punks reactions add --event E --emoji +",
             // Assembled through another shell: rev 3's tokenizer missed this.
-            r#"sh -c "buzz messages send --channel X""#,
+            r#"sh -c "punks messages send --channel X""#,
         ] {
             assert!(
                 is_reply_shaped("dev__shell", &json!({ "command": cmd })),
@@ -1335,13 +1377,13 @@ mod tests {
     #[test]
     fn reply_shape_rejects_non_reply_commands() {
         for cmd in [
-            "buzz messages get --channel X",
-            "buzz channels list",
-            "buzz reactions remove --event E",
-            "buzz pr open --title T",
-            "buzz social publish --content hi",
-            "buzz notes set --name n",
-            "cargo test -p buzz-agent",
+            "punks messages get --channel X",
+            "punks channels list",
+            "punks reactions remove --event E",
+            "punks pr open --title T",
+            "punks social publish --content hi",
+            "punks notes set --name n",
+            "cargo test -p punks-agent",
         ] {
             assert!(
                 !is_reply_shaped("dev__shell", &json!({ "command": cmd })),
@@ -1355,7 +1397,7 @@ mod tests {
     /// `has()` proves registration, not the bare name.
     #[test]
     fn reply_shape_requires_the_qname_separator() {
-        let args = json!({ "command": "buzz messages send --channel X" });
+        let args = json!({ "command": "punks messages send --channel X" });
         for name in [
             "dev__powershell",
             "dev__noshell",
@@ -1368,7 +1410,7 @@ mod tests {
             );
         }
         assert!(is_reply_shaped("dev__shell", &args));
-        assert!(is_reply_shaped("buzz-dev-mcp__shell", &args));
+        assert!(is_reply_shaped("punks-dev-mcp__shell", &args));
     }
 
     /// Only the field that carries the executable command counts. Searching
@@ -1378,11 +1420,11 @@ mod tests {
     fn reply_shape_reads_only_the_command_field() {
         assert!(!is_reply_shaped(
             "dev__shell",
-            &json!({ "description": "buzz messages send --channel X" })
+            &json!({ "description": "punks messages send --channel X" })
         ));
         assert!(!is_reply_shaped(
             "dev__shell",
-            &json!({ "workdir": "buzz messages send" })
+            &json!({ "workdir": "punks messages send" })
         ));
         // Malformed `command` is rejected, not coerced — and must not panic.
         assert!(!is_reply_shaped("dev__shell", &json!({ "command": 42 })));

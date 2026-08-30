@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDisplayName</key>
+    <string>Punks Full Local</string>
+    <key>CFBundleName</key>
+    <string>Punks Full Local</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Punks Full Local needs microphone access for voice Huddles.</string>
+    <key>NSCameraUsageDescription</key>
+    <string>Punks Full Local needs camera access to record animated avatars.</string>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Punks Full Local uses your local network only for opt-in shared compute and local collaboration.</string>
+</dict>
+</plist>

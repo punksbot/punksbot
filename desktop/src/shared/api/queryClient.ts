@@ -20,7 +20,7 @@ function configureQueryFocusManager() {
   });
 }
 
-export function createBuzzQueryClient() {
+export function createPunksQueryClient() {
   configureQueryFocusManager();
   return new QueryClient({
     defaultOptions: {

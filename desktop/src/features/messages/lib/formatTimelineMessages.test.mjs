@@ -140,7 +140,32 @@ test("kind:5 (NIP-09) deletion hides the target message", () => {
   );
 });
 
-test("kind:9005 (NIP-29 / Buzz-native) deletion hides the target message", () => {
+test("a later restoration makes the retracted message visible again", () => {
+  const deleted = deletionEvent(5, HEX64_A);
+  const restored = deletionEvent(40009, HEX64_A, {
+    id: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    created_at: deleted.created_at + 1,
+  });
+  const events = [streamMessage(), deleted, restored];
+  assert.equal(formatTimelineMessages(events, null).length, 1);
+  assert.equal(countTopLevelTimelineRows(events), 1);
+});
+
+test("a permanent erase remains deleted after an older restoration", () => {
+  const restored = deletionEvent(40009, HEX64_A, {
+    created_at: 1_700_000_001,
+  });
+  const erased = deletionEvent(40010, HEX64_A, {
+    id: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    created_at: 1_700_000_002,
+  });
+  assert.equal(
+    formatTimelineMessages([streamMessage(), restored, erased], null).length,
+    0,
+  );
+});
+
+test("kind:9005 (NIP-29 / Punks-native) deletion hides the target message", () => {
   // This is the actual reported bug: agents emit kind:9005 deletes via the
   // CLI. Without recognizing 9005 as a deletion marker the message stayed
   // rendered until manual refresh.

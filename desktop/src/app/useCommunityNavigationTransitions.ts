@@ -15,6 +15,7 @@ import {
 import { markCommunityDiscoveryAfterLeave } from "@/features/communities/communityStorage";
 import type { useCommunities } from "@/features/communities/useCommunities";
 import { leaveCommunity } from "@/features/communities/leaveCommunity";
+import { setLocalWorkspaceArchived } from "@/shared/api/tauriLocalWorkspaces";
 
 type Communities = ReturnType<typeof useCommunities>;
 type ShellRoute = ReturnType<typeof deriveShellRoute>;
@@ -82,13 +83,18 @@ export function useCommunityNavigationTransitions({
         (community) => community.id !== id,
       );
 
-      // Do not touch local state until this relay has explicitly accepted the
-      // signed NIP-43 leave request. Rejections and timeouts bubble back to the
-      // dialog so the person can retry without losing their community config.
-      const leaveResult = await leaveCommunity(
-        target.relayUrl,
-        communities.activeCommunity?.relayUrl,
-      );
+      // Local Workspaces are lifecycle-managed by the embedded authority. A
+      // signed NIP-43 leave would remove the active Punk from their own local
+      // store instead of archiving the Workspace for this installation.
+      const leaveResult =
+        import.meta.env.VITE_PUNKS_LOCAL === "1"
+          ? await setLocalWorkspaceArchived(id, true).then(() => ({
+              status: "left" as const,
+            }))
+          : await leaveCommunity(
+              target.relayUrl,
+              communities.activeCommunity?.relayUrl,
+            );
 
       if (id !== communities.activeCommunity?.id) {
         communities.removeCommunity(id);
@@ -98,7 +104,7 @@ export function useCommunityNavigationTransitions({
       if (!fallback) {
         if (!markCommunityDiscoveryAfterLeave()) {
           throw new Error(
-            "Membership was removed, but community discovery state could not be saved. Restart Buzz and try again.",
+            "Membership was removed, but community discovery state could not be saved. Restart Punks and try again.",
           );
         }
         await goHome({ replace: true });

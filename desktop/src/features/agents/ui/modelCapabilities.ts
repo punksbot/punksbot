@@ -5,7 +5,7 @@
  * model's six-axis capability profile (thinking mode, supported efforts,
  * default effort, Databricks v2 wire route, normalization policy, and picker
  * label). This module imports that manifest and interprets it at runtime,
- * mirroring the Rust interpreter in `crates/buzz-agent/src/model_capabilities.rs`
+ * mirroring the Rust interpreter in `crates/punks-agent/src/model_capabilities.rs`
  * line for line. There is no codegen: both interpreters read the same
  * hand-curated manifest, and the shared normative corpus
  * (`scripts/normative-corpus.json`) is the cross-language contract that
@@ -28,7 +28,7 @@
 import { z } from "zod";
 import manifestJson from "@model-capabilities-manifest";
 
-/** Valid thinking-effort values accepted by buzz-agent (mirrors parse_thinking_effort in config.rs). */
+/** Valid thinking-effort values accepted by punks-agent (mirrors parse_thinking_effort in config.rs). */
 export const THINKING_EFFORT_VALUES = [
   "none",
   "minimal",
@@ -358,15 +358,48 @@ export function resolveModelCapabilities(
 export const DATABRICKS_V2_KNOWN_MODELS: ReadonlyArray<string> =
   MANIFEST.databricks_v2_known_models;
 
-/**
- * Databricks endpoint-id → display-name registry, derived at runtime from the
- * manifest's `databricks_v2` exact records (the only exact records that carry a
- * `registry_label`). Feeds the providerless registry tier of
- * `resolveModelLabel`. Derived, not hand-listed — the manifest stays the single
- * source of truth, so there is no second table to keep in sync.
- */
-export const DATABRICKS_MODEL_NAMES: ReadonlyMap<string, string> = new Map(
-  MANIFEST.exact_records
-    .filter((rec) => rec.provider === "databricks_v2")
-    .map((rec) => [rec.raw_model_id, rec.registry_label] as const),
-);
+export type RegistryLabelRecord = {
+  readonly provider: string;
+  readonly raw_model_id: string;
+  readonly registry_label: string;
+};
+
+export function databricksRegistryLabelForRecords(
+  rawModelId: string,
+  records: ReadonlyArray<RegistryLabelRecord>,
+  familyTokens: ReadonlyArray<string>,
+): string | null {
+  if (!rawModelId.trim()) return null;
+
+  const idLower = rawModelId.toLowerCase();
+  const exact = records.find(
+    (rec) =>
+      rec.provider === "databricks_v2" &&
+      rec.raw_model_id.toLowerCase() === idLower,
+  );
+  if (exact) return exact.registry_label;
+
+  const strippedQuery = stripCatalogPrefix(idLower, familyTokens);
+  if (strippedQuery === idLower) return null;
+  let matchingRecord: RegistryLabelRecord | null = null;
+  for (const rec of records) {
+    if (rec.provider !== "databricks_v2") continue;
+    const strippedRecord = stripCatalogPrefix(
+      rec.raw_model_id.toLowerCase(),
+      familyTokens,
+    );
+    if (strippedRecord === strippedQuery) {
+      if (matchingRecord) return null;
+      matchingRecord = rec;
+    }
+  }
+  return matchingRecord?.registry_label ?? null;
+}
+
+export function databricksRegistryLabel(rawModelId: string): string | null {
+  return databricksRegistryLabelForRecords(
+    rawModelId,
+    MANIFEST.exact_records,
+    MANIFEST.family_tokens,
+  );
+}

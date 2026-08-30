@@ -46,6 +46,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use super::human_floor::HumanFloor;
 use super::pocket::{
     load_text_to_speech, load_voice_style, DEFAULT_VOICE, SAMPLE_RATE, VOICE_FILE_EXT,
 };
@@ -53,10 +54,11 @@ use super::preprocessing::preprocess_for_tts;
 
 #[path = "tts_voice_transition.rs"]
 mod voice_transition;
+use super::tts_playback::*;
+#[path = "tts_append.rs"]
+mod append;
+use append::*;
 use voice_transition::*;
-#[path = "tts_playback.rs"]
-mod playback;
-use playback::*;
 #[path = "tts_startup.rs"]
 mod startup;
 use startup::await_worker_startup;
@@ -74,6 +76,12 @@ use speaker_cancellation::*;
 #[path = "tts_streaming.rs"]
 mod streaming;
 use streaming::*;
+#[path = "tts_broadcast.rs"]
+mod broadcast;
+use broadcast::TtsBroadcasters;
+pub(crate) use broadcast::{
+    LocalTtsPublisherLease, LocalTtsPublishers, TtsAudioPublisher, TtsBroadcastPacket,
+};
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -133,6 +141,7 @@ type WorkerControlState = (
     ActiveSpeaker,
     SpeakerCancellation,
     PlaybackProbe,
+    TtsBroadcasters,
 );
 
 // ── Public pipeline handle ────────────────────────────────────────────────────
@@ -153,6 +162,7 @@ pub struct TtsPipeline {
     /// Kept alive here so the Arc isn't dropped — the worker holds a clone.
     #[allow(dead_code)]
     cancel: Arc<AtomicBool>,
+    human_floor: HumanFloor,
     /// Internal cancellation used only for voice changes. Kept separate so a
     /// concurrent human barge-in always clears every queued message.
     voice_cancel: Arc<AtomicBool>,
@@ -172,6 +182,9 @@ pub struct TtsPipeline {
     playback_probe: PlaybackProbe,
     /// Completed after the worker drains pre-change text and installs the new style.
     voice_change_ack: VoiceChangeAck,
+    /// Agent-authenticated Huddle publishers used to carry synthesized speech
+    /// to remote clients without impersonating the hosting human.
+    broadcasters: TtsBroadcasters,
     /// Worker thread handle — taken on drop to join cleanly.
     thread: Option<thread::JoinHandle<()>>,
 }
@@ -185,6 +198,7 @@ impl TtsPipeline {
         model_dir: PathBuf,
         tts_active: Arc<AtomicBool>,
         cancel: Arc<AtomicBool>,
+        human_floor: HumanFloor,
         voice: &str,
         output_device: Option<String>,
         activity_app: Option<tauri::AppHandle>,
@@ -196,6 +210,7 @@ impl TtsPipeline {
 
         let shutdown_worker = Arc::clone(&shutdown);
         let cancel_worker = Arc::clone(&cancel);
+        let worker_human_floor = human_floor.clone();
         let voice_cancel = Arc::new(AtomicBool::new(false));
         let worker_voice_cancel = Arc::clone(&voice_cancel);
         let tts_active_worker = Arc::clone(&tts_active);
@@ -213,6 +228,8 @@ impl TtsPipeline {
         let worker_playback_probe = playback_probe.clone();
         let voice_change_ack = Arc::new(Mutex::new(None));
         let worker_voice_change_ack = Arc::clone(&voice_change_ack);
+        let broadcasters = TtsBroadcasters::default();
+        let worker_broadcasters = broadcasters.clone();
         let model_dir_worker = model_dir.clone();
         let (startup_tx, startup_rx) = mpsc::sync_channel(1);
 
@@ -227,6 +244,7 @@ impl TtsPipeline {
                         worker_voice_change_ack,
                     ),
                     text_rx,
+                    worker_human_floor,
                     (
                         tts_active_worker,
                         shutdown_worker,
@@ -235,6 +253,7 @@ impl TtsPipeline {
                         worker_active_speaker,
                         worker_speaker_cancel,
                         worker_playback_probe,
+                        worker_broadcasters,
                     ),
                     output_device,
                     activity_app,
@@ -249,6 +268,7 @@ impl TtsPipeline {
             tts_active,
             shutdown,
             cancel,
+            human_floor,
             voice_cancel,
             voice,
             voice_generation,
@@ -257,6 +277,7 @@ impl TtsPipeline {
             speaker_cancel,
             playback_probe,
             voice_change_ack,
+            broadcasters,
             thread: Some(handle),
         })
     }
@@ -265,6 +286,7 @@ impl TtsPipeline {
 impl Drop for TtsPipeline {
     fn drop(&mut self) {
         self.shutdown.store(true, Ordering::Release);
+        self.broadcasters.shutdown();
         // Dropping `text_tx` unblocks the worker's recv_timeout loop.
         // Join to ensure the audio thread exits cleanly.
         if let Some(thread) = self.thread.take() {
@@ -275,10 +297,33 @@ impl Drop for TtsPipeline {
 
 // ── Worker thread ─────────────────────────────────────────────────────────────
 
+fn authorize_or_defer_queued_text(
+    human_floor: &HumanFloor,
+    deferred_text: &mut VecDeque<QueuedText>,
+    queued_text: QueuedText,
+) -> Result<QueuedText, HumanFloorAuthorization> {
+    match human_floor.authorization(queued_text.floor_epoch) {
+        HumanFloorAuthorization::Blocked => {
+            deferred_text.push_front(queued_text);
+            Err(HumanFloorAuthorization::Blocked)
+        }
+        HumanFloorAuthorization::Stale => {
+            eprintln!(
+                "punks-full-local: tts stage=queue status=dropped reason=barge_in route_id={}",
+                queued_text.route_id
+            );
+            Err(HumanFloorAuthorization::Stale)
+        }
+        HumanFloorAuthorization::Permitted => Ok(queued_text),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 fn tts_worker(
     model_dir: PathBuf,
     voice_state: WorkerVoiceState,
     text_rx: mpsc::Receiver<QueuedText>,
+    human_floor: HumanFloor,
     control_state: WorkerControlState,
     output_device: Option<String>,
     activity_app: Option<tauri::AppHandle>,
@@ -293,6 +338,7 @@ fn tts_worker(
         active_speaker,
         speaker_cancel,
         playback_probe,
+        broadcasters,
     ) = control_state;
     let (cancel, voice_cancel) = cancel_signals;
     // ── 1. Initialise TTS engine ──────────────────────────────────────────────
@@ -302,7 +348,7 @@ fn tts_worker(
         Ok(e) => e,
         Err(e) => {
             let error = format!("TTS engine initialization failed: {e}");
-            eprintln!("buzz-desktop: tts stage=startup status=failed reason=engine_load");
+            eprintln!("punks-full-local: tts stage=startup status=failed reason=engine_load");
             let _ = startup_tx.send(Err(error));
             return;
         }
@@ -319,7 +365,9 @@ fn tts_worker(
         Ok(s) => s,
         Err(e) => {
             let error = format!("TTS voice style initialization failed: {e}");
-            eprintln!("buzz-desktop: tts stage=startup status=failed reason=fallback_voice_style");
+            eprintln!(
+                "punks-full-local: tts stage=startup status=failed reason=fallback_voice_style"
+            );
             let _ = startup_tx.send(Err(error));
             return;
         }
@@ -341,9 +389,9 @@ fn tts_worker(
     // and discard the output so the first real utterance runs at warm-session speed.
     {
         match engine.synth_chunk("warmup", "en", &style, SYNTH_STEPS) {
-            Ok(_) => eprintln!("buzz-desktop: tts stage=warmup status=ready"),
+            Ok(_) => eprintln!("punks-full-local: tts stage=warmup status=ready"),
             Err(_) => eprintln!(
-                "buzz-desktop: tts stage=warmup status=failed reason=inference first_utterance_may_be_slow=true"
+                "punks-full-local: tts stage=warmup status=failed reason=inference first_utterance_may_be_slow=true"
             ),
         }
     }
@@ -356,7 +404,7 @@ fn tts_worker(
         Ok(h) => h,
         Err(e) => {
             let error = format!("TTS audio output initialization failed: {e}");
-            eprintln!("buzz-desktop: tts stage=startup status=failed reason=output_open");
+            eprintln!("punks-full-local: tts stage=startup status=failed reason=output_open");
             let _ = startup_tx.send(Err(error));
             return;
         }
@@ -377,10 +425,11 @@ fn tts_worker(
         }
     };
 
-    // One coordinator owns the current Player and every operation on it.
-    // Cancellation replaces its queue while the output stream and mixer stay
-    // alive, preserving cross-item pipelining without exposing Player handles.
-    let playback = Arc::new(PlaybackCoordinator::new(sink_handle.mixer()));
+    // One coordinator owns the current Player, floor state, and every operation.
+    // It was allocated with the huddle state so onset and playback share the
+    // same serialization boundary even before the TTS worker starts.
+    let playback = human_floor.playback();
+    playback.bind_mixer(sink_handle.mixer());
     playback_probe.install(Arc::clone(&playback));
 
     // Prime the audio output stream with a short silent buffer.
@@ -396,7 +445,7 @@ fn tts_worker(
         let deadline = std::time::Instant::now() + AUDIO_PRIME_TIMEOUT;
         while !playback.empty() {
             if std::time::Instant::now() >= deadline {
-                eprintln!("buzz-desktop: tts stage=startup status=failed reason=output_prime");
+                eprintln!("punks-full-local: tts stage=startup status=failed reason=output_prime");
                 let _ = startup_tx.send(Err(
                     "TTS audio output did not become ready before timeout".to_string(),
                 ));
@@ -408,7 +457,7 @@ fn tts_worker(
     if startup_tx.send(Ok(())).is_err() {
         return;
     }
-    eprintln!("buzz-desktop: tts stage=startup status=ready");
+    eprintln!("punks-full-local: tts stage=startup status=ready");
 
     let activity_frames = Arc::new(Mutex::new(VecDeque::<TtsSpeakerActivityFrame>::new()));
     let monitor_stop = Arc::new(AtomicBool::new(false));
@@ -421,12 +470,13 @@ fn tts_worker(
         activity_frames: Arc::clone(&activity_frames),
         active_speaker: Arc::clone(&active_speaker),
         speaker_cancel: Arc::clone(&speaker_cancel),
+        broadcasters: broadcasters.clone(),
         activity_app,
     });
     if let Err(ref e) = monitor {
         // Degraded but functional: barge-in still works between sentences
         // via the worker's own checks, just not mid-synthesis.
-        eprintln!("buzz-desktop: TTS barge-in monitor failed to spawn: {e}");
+        eprintln!("punks-full-local: TTS barge-in monitor failed to spawn: {e}");
     }
 
     // ── 4. Main loop ──────────────────────────────────────────────────────────
@@ -442,76 +492,40 @@ fn tts_worker(
     let tts_streaming = streaming_emit_frames();
     let mut last_route_id = 0;
     let mut deferred_text = VecDeque::new();
+    let append_context = TtsAppendContext {
+        playback: &playback,
+        #[cfg(test)]
+        human_floor: &human_floor,
+        cancel: &cancel,
+        voice_cancel: &voice_cancel,
+        shutdown: &shutdown,
+        tts_active: &tts_active,
+        speaker_generations: &speaker_generations,
+        active_speaker: &active_speaker,
+        activity_frames: &activity_frames,
+        broadcasters: &broadcasters,
+        channels,
+        rate,
+    };
     let append_audio = |prepared: PreparedModelAudio,
                         route_id: u64,
                         speaker_pubkey: Option<&str>,
-                        speaker_generation: u64| {
-        let sample_count = prepared.sample_count;
-        let chunk_index = prepared.chunk_index;
-        let activity = speaker_pubkey.map(|pubkey| {
-            build_tts_speaker_activity_frames(&prepared.buffer, pubkey, SAMPLE_RATE as usize)
-        });
-        let accepted = playback.append_if(
-            SamplesBuffer::new(channels, rate, prepared.buffer),
-            |player_empty| {
-                if cancel.load(Ordering::Acquire)
-                    || voice_cancel.load(Ordering::Acquire)
-                    || shutdown.load(Ordering::Acquire)
-                {
-                    let reason = if shutdown.load(Ordering::Acquire) {
-                        "shutdown"
-                    } else if cancel.load(Ordering::Acquire) {
-                        "barge_in"
-                    } else {
-                        "voice_switch"
-                    };
-                    eprintln!(
-                        "buzz-desktop: tts stage=synthesis status=cancelled reason={reason} route_id={route_id}"
-                    );
-                    return false;
+                        speaker_generation: u64,
+                        floor_epoch: u64| {
+        let broadcast_samples = speaker_pubkey.map(|_| prepared.buffer.clone());
+        append_worker_audio(
+            &append_context,
+            prepared,
+            route_id,
+            speaker_pubkey,
+            speaker_generation,
+            floor_epoch,
+            || {
+                if let (Some(pubkey), Some(samples)) = (speaker_pubkey, broadcast_samples) {
+                    broadcasters.publish(pubkey, speaker_generation, samples);
                 }
-                if speaker_pubkey.is_some_and(|pubkey| {
-                    current_speaker_generation(&speaker_generations, pubkey) != speaker_generation
-                }) {
-                    eprintln!(
-                        "buzz-desktop: tts stage=synthesis status=cancelled reason=speaker_removed route_id={route_id}"
-                    );
-                    return false;
-                }
-                if let Some(pubkey) = speaker_pubkey {
-                    let mut active = active_speaker
-                        .lock()
-                        .unwrap_or_else(|error| error.into_inner());
-                    if player_empty {
-                        active.take();
-                    }
-                    if active
-                        .as_deref()
-                        .is_some_and(|current| !current.eq_ignore_ascii_case(pubkey))
-                    {
-                        return false;
-                    }
-                    active.get_or_insert_with(|| pubkey.to_ascii_lowercase());
-                    activity_frames
-                        .lock()
-                        .unwrap_or_else(|error| error.into_inner())
-                        .extend(activity.unwrap_or_default());
-                }
-                true
             },
-            // Publish activity under the coordinator: an append and the mic
-            // gate it implies are one transition, so a cancellation that
-            // replaces this player cannot have its release overwritten by a
-            // `true` landing after the fact.
-            || tts_active.store(true, Ordering::Release),
-        );
-        if !accepted {
-            return false;
-        }
-        eprintln!(
-            "buzz-desktop: tts stage=player status=append_accepted route_id={route_id} chunk_index={chunk_index} sample_count={sample_count}"
-        );
-        true
+        )
     };
 
     loop {
@@ -525,6 +539,12 @@ fn tts_worker(
             Some(&playback),
         ) {
             continue;
+        }
+        if cancel.load(Ordering::Acquire)
+            || voice_cancel.load(Ordering::Acquire)
+            || shutdown.load(Ordering::Acquire)
+        {
+            broadcasters.cancel_all();
         }
         if handle_cancel_or_shutdown(
             (&cancel, &voice_cancel),
@@ -573,7 +593,7 @@ fn tts_worker(
                             .unwrap_or_else(|error| error.into_inner())
                             .take();
                         eprintln!(
-                            "buzz-desktop: tts stage=player status=drained route_id={last_route_id}"
+                            "punks-full-local: tts stage=player status=drained route_id={last_route_id}"
                         );
                     });
                     continue;
@@ -585,6 +605,12 @@ fn tts_worker(
         // Check cancel again after unblocking — a cancel may have arrived
         // while we were waiting.
         let pending_route_id = queued_text.as_ref().map(|queued| queued.route_id);
+        if cancel.load(Ordering::Acquire)
+            || voice_cancel.load(Ordering::Acquire)
+            || shutdown.load(Ordering::Acquire)
+        {
+            broadcasters.cancel_all();
+        }
         if handle_cancel_or_shutdown(
             (&cancel, &voice_cancel),
             &shutdown,
@@ -604,14 +630,14 @@ fn tts_worker(
         };
         if !queued_speaker_is_current(&speaker_generations, &queued_text) {
             eprintln!(
-                "buzz-desktop: tts stage=queue status=dropped reason=speaker_removed route_id={}",
+                "punks-full-local: tts stage=queue status=dropped reason=speaker_removed route_id={}",
                 queued_text.route_id
             );
             continue;
         }
         if queued_text.generation < voice_generation.load(Ordering::Acquire) {
             eprintln!(
-                "buzz-desktop: tts stage=queue status=dropped reason=voice_switch route_id={}",
+                "punks-full-local: tts stage=queue status=dropped reason=voice_switch route_id={}",
                 queued_text.route_id
             );
             continue;
@@ -632,7 +658,19 @@ fn tts_worker(
             thread::sleep(RECV_TIMEOUT);
             continue;
         }
-        let requested_voice = queued_text.voice_reference.unwrap_or_else(|| {
+        let mut queued_text =
+            match authorize_or_defer_queued_text(&human_floor, &mut deferred_text, queued_text) {
+                Ok(queued_text) => queued_text,
+                Err(HumanFloorAuthorization::Blocked) => {
+                    thread::sleep(RECV_TIMEOUT);
+                    continue;
+                }
+                Err(HumanFloorAuthorization::Stale) => continue,
+                Err(HumanFloorAuthorization::Permitted) => {
+                    unreachable!("permitted text is returned")
+                }
+            };
+        let requested_voice = queued_text.voice_reference.take().unwrap_or_else(|| {
             selected_voice
                 .lock()
                 .unwrap_or_else(|error| error.into_inner())
@@ -641,8 +679,9 @@ fn tts_worker(
         let raw_text = queued_text.text;
         let speaker_pubkey = queued_text.speaker_pubkey;
         let speaker_generation = queued_text.speaker_generation;
+        let floor_epoch = queued_text.floor_epoch;
         let route_id = queued_text.route_id;
-        eprintln!("buzz-desktop: tts stage=synthesis status=started route_id={route_id}");
+        eprintln!("punks-full-local: tts stage=synthesis status=started route_id={route_id}");
 
         // If playback already drained while we were waiting for this item,
         // release stale ownership before doing any potentially slow voice or
@@ -654,7 +693,7 @@ fn tts_worker(
                 .lock()
                 .unwrap_or_else(|error| error.into_inner())
                 .take();
-            eprintln!("buzz-desktop: tts stage=player status=drained route_id={last_route_id}");
+            eprintln!("punks-full-local: tts stage=player status=drained route_id={last_route_id}");
         });
 
         // From this point until the item finishes, an empty player can mean a
@@ -674,7 +713,7 @@ fn tts_worker(
             &mut style_cache,
         ) {
             eprintln!(
-                "buzz-desktop: tts stage=synthesis status=failed reason=voice_unavailable route_id={route_id}"
+                "punks-full-local: tts stage=synthesis status=failed reason=voice_unavailable route_id={route_id}"
             );
             continue;
         }
@@ -683,7 +722,7 @@ fn tts_worker(
         let text = preprocess_for_tts(&raw_text);
         if text.is_empty() {
             eprintln!(
-                "buzz-desktop: tts stage=synthesis status=empty reason=preprocess route_id={route_id}"
+                "punks-full-local: tts stage=synthesis status=empty reason=preprocess route_id={route_id}"
             );
             continue;
         }
@@ -697,14 +736,14 @@ fn tts_worker(
             Ok(chunks) => chunks,
             Err(_) => {
                 eprintln!(
-                    "buzz-desktop: tts stage=synthesis status=failed reason=chunking route_id={route_id}"
+                    "punks-full-local: tts stage=synthesis status=failed reason=chunking route_id={route_id}"
                 );
                 continue;
             }
         };
         if chunks.is_empty() {
             eprintln!(
-                "buzz-desktop: tts stage=synthesis status=empty reason=no_chunks route_id={route_id}"
+                "punks-full-local: tts stage=synthesis status=empty reason=no_chunks route_id={route_id}"
             );
             continue;
         }
@@ -714,6 +753,12 @@ fn tts_worker(
         let mut model_unit_index = 0_usize;
         'playback_chunks: for chunk in &chunks {
             let mut no_current_text = None;
+            if cancel.load(Ordering::Acquire)
+                || voice_cancel.load(Ordering::Acquire)
+                || shutdown.load(Ordering::Acquire)
+            {
+                broadcasters.cancel_all();
+            }
             if handle_cancel_or_shutdown(
                 (&cancel, &voice_cancel),
                 &shutdown,
@@ -751,6 +796,7 @@ fn tts_worker(
                             route_id,
                             speaker_pubkey.as_deref(),
                             speaker_generation,
+                            floor_epoch,
                         ) {
                             return false;
                         }
@@ -770,7 +816,7 @@ fn tts_worker(
                 Ok(model_chunks) => model_chunks,
                 Err(_) => {
                     eprintln!(
-                        "buzz-desktop: tts stage=synthesis status=failed reason=chunking route_id={route_id}"
+                        "punks-full-local: tts stage=synthesis status=failed reason=chunking route_id={route_id}"
                     );
                     synthesis_outcome = "failed";
                     break 'playback_chunks;
@@ -778,7 +824,7 @@ fn tts_worker(
             };
             if model_chunks.is_empty() {
                 eprintln!(
-                    "buzz-desktop: tts stage=synthesis status=empty reason=no_chunks route_id={route_id}"
+                    "punks-full-local: tts stage=synthesis status=empty reason=no_chunks route_id={route_id}"
                 );
                 continue;
             }
@@ -787,6 +833,12 @@ fn tts_worker(
                 let chunk_index = model_unit_index;
                 model_unit_index += 1;
                 let mut no_current_text = None;
+                if cancel.load(Ordering::Acquire)
+                    || voice_cancel.load(Ordering::Acquire)
+                    || shutdown.load(Ordering::Acquire)
+                {
+                    broadcasters.cancel_all();
+                }
                 if handle_cancel_or_shutdown(
                     (&cancel, &voice_cancel),
                     &shutdown,
@@ -813,7 +865,7 @@ fn tts_worker(
                         "voice_switch"
                     };
                     eprintln!(
-                        "buzz-desktop: tts stage=synthesis status=cancelled reason={reason} route_id={route_id}"
+                        "punks-full-local: tts stage=synthesis status=cancelled reason={reason} route_id={route_id}"
                     );
                     // The monitor already stopped any queued playback. Discard
                     // synthesis that completed after cancellation so stale audio
@@ -832,6 +884,7 @@ fn tts_worker(
                                 route_id,
                                 speaker_pubkey.as_deref(),
                                 speaker_generation,
+                                floor_epoch,
                             ) {
                                 synthesis_outcome = "cancelled";
                                 break 'playback_chunks;
@@ -842,12 +895,12 @@ fn tts_worker(
                     }
                     Ok(_) => {
                         eprintln!(
-                            "buzz-desktop: tts stage=synthesis status=empty route_id={route_id} chunk_index={chunk_index}"
+                            "punks-full-local: tts stage=synthesis status=empty route_id={route_id} chunk_index={chunk_index}"
                         );
                     }
                     Err(_) => {
                         eprintln!(
-                            "buzz-desktop: tts stage=synthesis status=failed reason=inference route_id={route_id} chunk_index={chunk_index}"
+                            "punks-full-local: tts stage=synthesis status=failed reason=inference route_id={route_id} chunk_index={chunk_index}"
                         );
                         synthesis_outcome = "failed";
                         break;
@@ -860,6 +913,7 @@ fn tts_worker(
                     route_id,
                     speaker_pubkey.as_deref(),
                     speaker_generation,
+                    floor_epoch,
                 ) {
                     synthesis_outcome = "cancelled";
                     break 'playback_chunks;
@@ -872,7 +926,7 @@ fn tts_worker(
             }
         }
         if synthesis_outcome == "completed" && appended_audio {
-            eprintln!("buzz-desktop: tts stage=synthesis status=completed route_id={route_id}");
+            eprintln!("punks-full-local: tts stage=synthesis status=completed route_id={route_id}");
         }
 
         if shutdown.load(Ordering::Acquire) {

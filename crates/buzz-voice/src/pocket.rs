@@ -41,9 +41,9 @@ pub const VOICE_FILE_EXT: &str = "wav";
 const TTS_NUM_THREADS: usize = 1;
 
 /// EXPERIMENTAL (latency): override ONNX intra-op threads for the Pocket
-/// sessions via `BUZZ_TTS_THREADS`. Default preserves production's 1.
+/// sessions via `PUNKS_TTS_THREADS`. Default preserves production's 1.
 fn tts_num_threads() -> usize {
-    std::env::var("BUZZ_TTS_THREADS")
+    std::env::var("PUNKS_TTS_THREADS")
         .ok()
         .and_then(|v| v.parse::<usize>().ok())
         .filter(|&n| n >= 1)

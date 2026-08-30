@@ -4,7 +4,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useAppNavigation } from "@/app/navigation/useAppNavigation";
 import { useChannelsQuery } from "@/features/channels/hooks";
 import { HomeScreen } from "@/features/home/ui/HomeScreen";
-import { RouteCapabilityBoundary } from "@/shared/capabilities";
 import {
   consumePendingWelcomeChannel,
   WELCOME_CHANNEL_READY_EVENT,
@@ -45,14 +44,6 @@ export const Route = createFileRoute("/")({
 });
 
 function HomeRouteComponent() {
-  return (
-    <RouteCapabilityBoundary capability="home">
-      <HomeRouteContent />
-    </RouteCapabilityBoundary>
-  );
-}
-
-function HomeRouteContent() {
   const { goChannel } = useAppNavigation();
   const channelsQuery = useChannelsQuery();
   const identityQuery = useIdentityQuery();

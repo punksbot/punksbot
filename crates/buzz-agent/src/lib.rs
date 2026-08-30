@@ -9,6 +9,7 @@ mod hints;
 mod llm;
 mod mcp;
 pub mod model_capabilities;
+mod permission;
 pub mod types;
 mod wire;
 
@@ -22,7 +23,7 @@ pub use types::AgentError;
 #[cfg(windows)]
 pub const WINDOWS_SHELL_RESOLUTION_ENV: &[&str] = &[
     "PATH",
-    "BUZZ_SHELL",
+    "PUNKS_SHELL",
     "GIT_BASH",
     "SystemRoot",
     "ProgramFiles",
@@ -32,6 +33,7 @@ pub const WINDOWS_SHELL_RESOLUTION_ENV: &[&str] = &[
 
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
 use serde_json::{json, Value};
@@ -54,6 +56,17 @@ struct App {
     cfg: Config,
     llm: Arc<Llm>,
     sessions: Mutex<HashMap<String, Session>>,
+    /// ACP protocol version negotiated at `initialize`, stored for the whole
+    /// connection lifetime. The `session/request_permission` wire shape derives
+    /// from this value — never from a later mutable session field — so a strict
+    /// client always receives exactly the shape it negotiated. Defaults to
+    /// [`PROTOCOL_VERSION`] before `initialize`; no prompt (and thus no
+    /// permission ask) can run before then.
+    negotiated_version: AtomicU32,
+    /// Owns the entire `session/request_permission` correlation lifecycle:
+    /// process-wide admission, id allocation, response delivery, and abort-safe
+    /// cleanup. See [`permission::PermissionBroker`].
+    permissions: Arc<permission::PermissionBroker>,
     /// Cached model catalog for Databricks providers. Populated lazily on the
     /// first successful `session/new` discovery call. Failed discovery is never
     /// cached: static-token authentication errors reject session creation, while
@@ -96,7 +109,7 @@ struct Session {
     /// across `session/prompt` calls until changed.
     effective_model: Option<String>,
     /// Session-cumulative input tokens across all turns. Sent in the
-    /// `_goose/unstable/session/update` usage notification so buzz-acp's
+    /// `_goose/unstable/session/update` usage notification so punks-acp's
     /// `UsageTracker` can compute per-turn deltas symmetrically with goose.
     /// `TurnIOState`: `Unseen` before any turn reports; `Exact(n)` while running;
     /// `Poisoned` if any turn's sum overflowed — permanently poisons the session.
@@ -154,7 +167,7 @@ pub async fn authenticate_databricks(host: &str) -> Result<(), AgentError> {
         .await
 }
 
-/// `buzz-agent auth <provider>` — run the interactive auth flow for a
+/// `punks-agent auth <provider>` — run the interactive auth flow for a
 /// provider and persist the result, then exit. Today this supports Databricks
 /// OAuth 2.0 PKCE. Reads `DATABRICKS_HOST` from env; needs a browser on the
 /// machine.
@@ -165,11 +178,11 @@ async fn auth_subcommand(args: &[String]) -> Result<(), Box<dyn std::error::Erro
             let host = std::env::var("DATABRICKS_HOST")
                 .map_err(|_| "auth databricks: DATABRICKS_HOST required")?;
             authenticate_databricks(&host).await?;
-            eprintln!("Authenticated. Token cached under ~/.config/buzz-agent/oauth/databricks/.");
+            eprintln!("Authenticated. Token cached under ~/.config/punks-agent/oauth/databricks/.");
             Ok(())
         }
         Some(other) => Err(format!("auth: unknown provider {other:?}").into()),
-        None => Err("auth: provider required (try: buzz-agent auth databricks)".into()),
+        None => Err("auth: provider required (try: punks-agent auth databricks)".into()),
     }
 }
 
@@ -181,28 +194,53 @@ async fn async_main() {
     let cfg = Config::from_env().unwrap_or_else(|e| die(e));
     let llm = Arc::new(Llm::new(&cfg).unwrap_or_else(|e| die(e.to_string())));
     let max_line = cfg.max_line_bytes;
+    let permissions = Arc::new(permission::PermissionBroker::new(
+        cfg.max_pending_permissions,
+        cfg.permission_timeout,
+    ));
     let app = Arc::new(App {
         cfg,
         llm,
         sessions: Mutex::new(HashMap::new()),
+        negotiated_version: AtomicU32::new(PROTOCOL_VERSION),
+        permissions,
         models_cache: tokio::sync::OnceCell::new(),
     });
     let (wire_tx, wire_rx) = mpsc::channel::<WireMsg>(64);
-    let writer = tokio::spawn(wire::writer_task(wire_rx));
-    if let Err(e) = read_loop(
-        BufReader::new(tokio::io::stdin()),
-        app.clone(),
-        wire_tx,
-        max_line,
-    )
-    .await
-    {
-        tracing::error!("io: reader: {e}");
+    let mut writer = tokio::spawn(wire::writer_task(wire_rx));
+    // Whichever ends first drives shutdown. The reader ending is the normal
+    // path (stdin EOF/error). The writer ending while the reader still runs
+    // means stdout is closed/broken: no reply can ever be written, so we must
+    // stop reading and cancel every session rather than leave the process
+    // reading input while outstanding permission asks wait out their full
+    // deadline for a response that can never arrive.
+    tokio::select! {
+        r = read_loop(
+            BufReader::new(tokio::io::stdin()),
+            app.clone(),
+            wire_tx,
+            max_line,
+        ) => {
+            if let Err(e) = r {
+                tracing::error!("io: reader: {e}");
+            }
+            cancel_all_sessions(&app).await;
+            let _ = writer.await;
+        }
+        _ = &mut writer => {
+            tracing::error!("io: writer exited (stdout closed); shutting down connection");
+            cancel_all_sessions(&app).await;
+        }
     }
+}
+
+/// Signal every live session to cancel. Run on connection teardown so in-flight
+/// prompts — including any waiting on a `session/request_permission` response —
+/// resolve promptly instead of waiting out their deadline.
+async fn cancel_all_sessions(app: &Arc<App>) {
     for session in app.sessions.lock().await.values() {
         let _ = session.cancel_tx.send(true);
     }
-    let _ = writer.await;
 }
 
 async fn read_loop<R: tokio::io::AsyncBufRead + Unpin>(
@@ -235,7 +273,10 @@ async fn dispatch(app: &Arc<App>, msg: Value, wire_tx: &WireSender) {
             handle_request(app, id, method, params, wire_tx).await
         }
         Inbound::Notification { method, params } => handle_notification(app, &method, params).await,
-        Inbound::Ignored => {}
+        // Client's answer to a `session/request_permission` we issued. The
+        // broker matches it to a live correlation id (waking that waiter) or
+        // ignores an unknown/late id.
+        Inbound::Response { id, result } => app.permissions.deliver(&id, result),
         Inbound::Invalid { id, code, message } => {
             wire::send(wire_tx, wire::err(id, code, &message)).await
         }
@@ -250,7 +291,7 @@ async fn handle_request(
     wire_tx: &WireSender,
 ) {
     match method.as_str() {
-        "initialize" => initialize(id, params, wire_tx).await,
+        "initialize" => initialize(app, id, params, wire_tx).await,
         "session/new" => {
             let app = app.clone();
             let wire_tx = wire_tx.clone();
@@ -291,7 +332,7 @@ async fn handle_notification(app: &Arc<App>, method: &str, params: Value) {
     }
 }
 
-async fn initialize(id: Value, params: Value, wire_tx: &WireSender) {
+async fn initialize(app: &Arc<App>, id: Value, params: Value, wire_tx: &WireSender) {
     let p: InitializeParams = match decode(params, "initialize") {
         Ok(p) => p,
         Err(m) => return reject(wire_tx, id, INVALID_PARAMS, &m).await,
@@ -303,6 +344,12 @@ async fn initialize(id: Value, params: Value, wire_tx: &WireSender) {
     // RFD. Revisit when that RFD merges; otherwise a genuine upstream-v2 agent
     // would silently lose `[Base]`.
     let negotiated_version = p.protocol_version.min(PROTOCOL_VERSION);
+    // Store the negotiated version for the connection lifetime: the
+    // `session/request_permission` wire shape derives from this value, never
+    // from a later mutable session field, so a strict client always receives
+    // exactly the shape it negotiated at `initialize`.
+    app.negotiated_version
+        .store(negotiated_version, Ordering::Relaxed);
     wire::send(
         wire_tx,
         wire::ok(
@@ -314,7 +361,7 @@ async fn initialize(id: Value, params: Value, wire_tx: &WireSender) {
                     "promptCapabilities": { "image": false, "audio": false, "embeddedContext": false },
                     "mcpCapabilities": { "http": false, "sse": false },
                 },
-                "agentInfo": { "name": "buzz-agent", "version": env!("CARGO_PKG_VERSION") },
+                "agentInfo": { "name": "punks-agent", "version": env!("CARGO_PKG_VERSION") },
             }),
         ),
     )
@@ -734,6 +781,8 @@ async fn run_prompt(app: Arc<App>, id: Value, params: Value, wire_tx: WireSender
         system_prompt: &effective_system_prompt,
         llm: &app.llm,
         mcp: &mcp,
+        permissions: &app.permissions,
+        protocol_version: app.negotiated_version.load(Ordering::Relaxed),
         skills: &skills,
         wire: &wire_tx,
         cancel: &mut cancel_rx,
@@ -765,7 +814,7 @@ async fn run_prompt(app: Arc<App>, id: Value, params: Value, wire_tx: WireSender
         s.last_request_history_bytes = last_request_history_bytes;
     }
     // Update session-cumulative token counters and emit the usage notification
-    // BEFORE sending the session/prompt response. buzz-acp's UsageTracker
+    // BEFORE sending the session/prompt response. punks-acp's UsageTracker
     // processes the notification while the turn is still in-flight (i.e. before
     // the response triggers take_turn_usage()), which is required for the
     // begin_turn gate to recognise it as publishable.

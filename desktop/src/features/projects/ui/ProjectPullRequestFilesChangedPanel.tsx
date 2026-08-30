@@ -39,7 +39,7 @@ import type { UserProfileLookup } from "@/features/profile/lib/identity";
 import { useIdentityQuery } from "@/shared/api/hooks";
 import { cn } from "@/shared/lib/cn";
 import type { ProjectRepoDiff, ProjectRepoDiffFile } from "@/shared/api/types";
-import { BuzzLoadingState } from "@/shared/ui/BuzzLoadingState";
+import { PunksLoadingState } from "@/shared/ui/PunksLoadingState";
 import { PROJECT_DETAIL_PANEL_CLASS } from "./projectPanelStyles";
 import { ProjectPullRequestInlineCommentThread } from "./ProjectPullRequestInlineComments";
 
@@ -755,8 +755,10 @@ export function ProjectPullRequestFilesChangedPanel({
 }
 
 export function ProjectDiffFilesPanel({
+  className,
   error,
   diff,
+  fileTreeClassName,
   isLoading,
   embedded = false,
   focusedAnchor,
@@ -764,6 +766,10 @@ export function ProjectDiffFilesPanel({
   inlineComments,
   subjectLabel,
 }: {
+  /** Extra classes for the file-tree/diff grid container. */
+  className?: string;
+  /** Overrides the file tree's default `max-h-96` cap, e.g. for full-height layouts. */
+  fileTreeClassName?: string;
   error: unknown;
   diff: ProjectRepoDiff | null | undefined;
   isLoading: boolean;
@@ -814,11 +820,11 @@ export function ProjectDiffFilesPanel({
     }
   }, [filteredFiles, selectedPath]);
 
-  if (isLoading) {
-    return <BuzzLoadingState label="Loading changed files" />;
+  if (isLoading && !diff) {
+    return <PunksLoadingState label="Loading changed files" />;
   }
 
-  if (error) {
+  if (error && !diff) {
     const message = errorMessage(error);
     return (
       <div
@@ -857,6 +863,7 @@ export function ProjectDiffFilesPanel({
       className={cn(
         "grid min-h-0 overflow-hidden lg:grid-cols-[17rem_minmax(0,1fr)]",
         outerBorderClass,
+        className,
       )}
       data-project-detail-panel={embedded ? undefined : true}
     >
@@ -876,7 +883,12 @@ export function ProjectDiffFilesPanel({
             />
           </label>
         </div>
-        <nav className="max-h-96 overflow-auto border-border/50 border-t py-1">
+        <nav
+          className={cn(
+            "max-h-96 overflow-auto border-border/50 border-t py-1",
+            fileTreeClassName,
+          )}
+        >
           <FileTreeItems
             node={fileTree}
             onSelect={setSelectedPath}

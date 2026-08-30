@@ -8,11 +8,16 @@
 //!
 //! Each function validates inputs and returns a nostr::EventBuilder.
 //! Signing and submission happen in relay::submit_event.
-use buzz_core_pkg::kind::{KIND_IA_ARCHIVE_REQUEST, KIND_IA_UNARCHIVE_REQUEST};
 use nostr::{EventBuilder, EventId, Kind, Tag};
+use punks_core_pkg::kind::{KIND_IA_ARCHIVE_REQUEST, KIND_IA_UNARCHIVE_REQUEST};
 use uuid::Uuid;
 
+mod content_markers;
+mod message_lifecycle;
 mod message_tags;
+
+pub use content_markers::{build_message_bookmark, build_message_pin};
+pub use message_lifecycle::{build_message_erase, build_message_restore};
 
 use message_tags::{
     append_client_tags, append_sent_from_thread_tag, emoji_tags, imeta_tags, mention_reference_tags,
@@ -102,7 +107,7 @@ pub fn build_create_channel(
     about: Option<&str>,
     ttl_seconds: Option<i32>,
 ) -> Result<EventBuilder, String> {
-    let name = buzz_sdk_pkg::canonical_channel_name(name);
+    let name = punks_sdk_pkg::canonical_channel_name(name);
     if name.trim().is_empty() {
         return Err("channel name is required".into());
     }
@@ -151,7 +156,7 @@ pub fn build_update_channel(
             return Err("visibility must be \"open\" or \"private\"".into());
         }
     }
-    let name = name.map(buzz_sdk_pkg::canonical_channel_name);
+    let name = name.map(punks_sdk_pkg::canonical_channel_name);
     if name.is_some_and(|name| name.trim().is_empty()) {
         return Err("channel name is required".into());
     }
@@ -373,7 +378,7 @@ pub fn build_message_edit(
     emoji_tags(edit_tags.custom_emoji, &mut tags)?;
     if let Some(mention_refs) = edit_tags.mention_refs {
         mention_reference_tags(mention_refs, &mut tags)?;
-        tags.push(tag(vec!["buzz:mention-snapshot"])?);
+        tags.push(tag(vec!["punks:mention-snapshot"])?);
     }
     if suppress_link_previews {
         tags.push(tag(vec!["link-preview", "none"])?);
@@ -416,9 +421,17 @@ pub fn build_remove_reaction(reaction_event_id: EventId) -> Result<EventBuilder,
 // ── Canvas ───────────────────────────────────────────────────────────────────
 
 /// Kind 40100 — set canvas.
-pub fn build_set_canvas(channel_id: Uuid, content: &str) -> Result<EventBuilder, String> {
+pub fn build_set_canvas(
+    channel_id: Uuid,
+    content: &str,
+    expected_revision: Option<&str>,
+) -> Result<EventBuilder, String> {
     check_content(content)?;
-    let tags = vec![tag(vec!["h", &channel_id.to_string()])?];
+    let mut tags = vec![tag(vec!["h", &channel_id.to_string()])?];
+    if let Some(revision) = expected_revision {
+        EventId::from_hex(revision).map_err(|_| "invalid Canvas revision".to_string())?;
+        tags.push(tag(vec!["expected-revision", revision])?);
+    }
     Ok(EventBuilder::new(Kind::Custom(40100), content).tags(tags))
 }
 
@@ -916,7 +929,7 @@ mod tests {
             "stable mention reference must be present: {tags:?}"
         );
         assert!(
-            tags.iter().any(|tag| tag == &["buzz:mention-snapshot"]),
+            tags.iter().any(|tag| tag == &["punks:mention-snapshot"]),
             "snapshot marker must be present: {tags:?}"
         );
     }
@@ -925,7 +938,7 @@ mod tests {
     fn empty_edit_mention_snapshot_is_explicit() {
         let tags = edit_tags_with_refs(&[], Some(&[]));
         assert!(
-            tags.iter().any(|tag| tag == &["buzz:mention-snapshot"]),
+            tags.iter().any(|tag| tag == &["punks:mention-snapshot"]),
             "empty snapshot must still clear stale references: {tags:?}"
         );
         assert!(!tags
@@ -941,7 +954,7 @@ mod tests {
             .any(|tag| tag.first().map(String::as_str) == Some("mention")));
         assert!(!tags
             .iter()
-            .any(|tag| tag.first().map(String::as_str) == Some("buzz:mention-snapshot")));
+            .any(|tag| tag.first().map(String::as_str) == Some("punks:mention-snapshot")));
     }
 
     #[test]

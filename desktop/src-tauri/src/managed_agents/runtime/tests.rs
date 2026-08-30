@@ -1,10 +1,13 @@
 use crate::managed_agents::known_acp_runtime;
 
+#[path = "cli_tests.rs"]
+mod cli_tests;
+
 // ── desktop binary name tests ───────────────────────────────────────────
 
 #[test]
 fn appimage_binary_matches_truncated_linux_comm_name() {
-    assert!(super::is_desktop_binary("buzz-desktop.bi"));
+    assert!(super::is_desktop_binary("punks-full-loca"));
 }
 
 // ── buffer_contains_identifier tests ────────────────────────────────────
@@ -36,7 +39,7 @@ fn identifier_exact_match_with_quote_boundary() {
 #[test]
 fn identifier_match_with_null_boundary() {
     // In KERN_PROCARGS2, entries are null-delimited.
-    let mut buf = b"BUZZ_MANAGED_AGENT=xyz.block.buzz.app.dev".to_vec();
+    let mut buf = b"PUNKS_MANAGED_AGENT=xyz.block.buzz.app.dev".to_vec();
     buf.push(0);
     buf.extend_from_slice(b"OTHER_VAR=value");
     let id = b"xyz.block.buzz.app.dev";
@@ -71,36 +74,36 @@ fn identifier_empty_returns_false() {
 
 #[test]
 fn marker_entry_is_namespaced_by_instance_id() {
-    // The spawn stamp and sweep matcher both go through buzz_marker_entry, pinning the on-the-wire
+    // The spawn stamp and sweep matcher both go through punks_marker_entry, pinning the on-the-wire
     // format and guards against a dev build (`...app.dev`) matching a
     // release build's (`...app`) agents.
     assert_eq!(
-        super::buzz_marker_entry("xyz.block.buzz.app"),
-        b"BUZZ_MANAGED_AGENT=xyz.block.buzz.app".to_vec()
+        super::punks_marker_entry("xyz.block.buzz.app"),
+        b"PUNKS_MANAGED_AGENT=xyz.block.buzz.app".to_vec()
     );
     assert_ne!(
-        super::buzz_marker_entry("xyz.block.buzz.app"),
-        super::buzz_marker_entry("xyz.block.buzz.app.dev")
+        super::punks_marker_entry("xyz.block.buzz.app"),
+        super::punks_marker_entry("xyz.block.buzz.app.dev")
     );
 }
 
 #[test]
-fn buzz_agent_has_mcp_hooks() {
-    let p = known_acp_runtime("buzz-agent").expect("should resolve");
+fn punks_agent_has_mcp_hooks() {
+    let p = known_acp_runtime("punks-agent").expect("should resolve");
     assert!(p.mcp_hooks);
-    assert_eq!(p.mcp_command, Some("buzz-dev-mcp"));
+    assert_eq!(p.mcp_command, Some("punks-dev-mcp"));
 }
 
 #[test]
-fn buzz_agent_resolved_via_path() {
-    assert!(known_acp_runtime("/usr/local/bin/buzz-agent").is_some_and(|p| p.mcp_hooks));
+fn punks_agent_resolved_via_path() {
+    assert!(known_acp_runtime("/usr/local/bin/punks-agent").is_some_and(|p| p.mcp_hooks));
 }
 
 #[test]
 fn codex_has_mcp_command() {
     let p = known_acp_runtime("codex-acp").expect("should resolve");
     assert!(!p.mcp_hooks, "codex-acp does not handle MCP_HOOK_SERVERS");
-    assert_eq!(p.mcp_command, Some("buzz-dev-mcp"));
+    assert_eq!(p.mcp_command, Some("punks-dev-mcp"));
 }
 
 #[test]
@@ -127,25 +130,25 @@ fn build_env_owner_only_sets_mode_and_removes_others() {
     let (set, remove) = build_respond_to_env(&rec, Some("owner")).unwrap();
     let set_map: std::collections::HashMap<_, _> = set.into_iter().collect();
     assert_eq!(
-        set_map.get("BUZZ_ACP_RESPOND_TO").map(String::as_str),
+        set_map.get("PUNKS_ACP_RESPOND_TO").map(String::as_str),
         Some("owner-only")
     );
-    assert!(!set_map.contains_key("BUZZ_ACP_RESPOND_TO_ALLOWLIST"));
-    assert!(remove.contains(&"BUZZ_ACP_RESPOND_TO_ALLOWLIST"));
+    assert!(!set_map.contains_key("PUNKS_ACP_RESPOND_TO_ALLOWLIST"));
+    assert!(remove.contains(&"PUNKS_ACP_RESPOND_TO_ALLOWLIST"));
     if expected_owner_only() {
         assert_eq!(
             set_map
-                .get("BUZZ_ACP_ALLOWED_RESPOND_TO")
+                .get("PUNKS_ACP_ALLOWED_RESPOND_TO")
                 .map(String::as_str),
             Some("owner-only")
         );
-        assert!(!remove.contains(&"BUZZ_ACP_ALLOWED_RESPOND_TO"));
+        assert!(!remove.contains(&"PUNKS_ACP_ALLOWED_RESPOND_TO"));
     } else {
-        assert!(!set_map.contains_key("BUZZ_ACP_ALLOWED_RESPOND_TO"));
-        assert!(remove.contains(&"BUZZ_ACP_ALLOWED_RESPOND_TO"));
+        assert!(!set_map.contains_key("PUNKS_ACP_ALLOWED_RESPOND_TO"));
+        assert!(remove.contains(&"PUNKS_ACP_ALLOWED_RESPOND_TO"));
     }
     // auth_tag is present → no AGENT_OWNER fallback fires.
-    assert!(remove.contains(&"BUZZ_ACP_AGENT_OWNER"));
+    assert!(remove.contains(&"PUNKS_ACP_AGENT_OWNER"));
 }
 
 // select_untracked_bundle_harnesses tests live in runtime/sweep.rs (mod tests).
@@ -162,16 +165,16 @@ fn build_env_allowlist_sets_both_envs_and_joins() {
     let (set, _remove) = build_respond_to_env(&rec, Some("owner")).unwrap();
     let set_map: std::collections::HashMap<_, _> = set.into_iter().collect();
     assert_eq!(
-        set_map.get("BUZZ_ACP_RESPOND_TO").map(String::as_str),
+        set_map.get("PUNKS_ACP_RESPOND_TO").map(String::as_str),
         Some(expected_mode("allowlist")),
         "runtime wrapper did not apply the declared build policy",
     );
     if expected_owner_only() {
-        assert!(!set_map.contains_key("BUZZ_ACP_RESPOND_TO_ALLOWLIST"));
+        assert!(!set_map.contains_key("PUNKS_ACP_RESPOND_TO_ALLOWLIST"));
     } else {
         assert_eq!(
             set_map
-                .get("BUZZ_ACP_RESPOND_TO_ALLOWLIST")
+                .get("PUNKS_ACP_RESPOND_TO_ALLOWLIST")
                 .map(String::as_str),
             Some(format!("{a},{b}").as_str()),
         );
@@ -184,12 +187,12 @@ fn build_env_anyone_omits_allowlist_var() {
     let (set, remove) = build_respond_to_env(&rec, Some("owner")).unwrap();
     let set_map: std::collections::HashMap<_, _> = set.into_iter().collect();
     assert_eq!(
-        set_map.get("BUZZ_ACP_RESPOND_TO").map(String::as_str),
+        set_map.get("PUNKS_ACP_RESPOND_TO").map(String::as_str),
         Some(expected_mode("anyone")),
         "runtime wrapper did not apply the declared build policy",
     );
-    assert!(!set_map.contains_key("BUZZ_ACP_RESPOND_TO_ALLOWLIST"));
-    assert!(remove.contains(&"BUZZ_ACP_RESPOND_TO_ALLOWLIST"));
+    assert!(!set_map.contains_key("PUNKS_ACP_RESPOND_TO_ALLOWLIST"));
+    assert!(remove.contains(&"PUNKS_ACP_RESPOND_TO_ALLOWLIST"));
 }
 
 #[test]
@@ -199,19 +202,19 @@ fn owner_only_access_policy_overrides_stale_anyone_record_at_runtime() {
     let set_map: std::collections::HashMap<_, _> = set.into_iter().collect();
 
     assert_eq!(
-        set_map.get("BUZZ_ACP_RESPOND_TO").map(String::as_str),
+        set_map.get("PUNKS_ACP_RESPOND_TO").map(String::as_str),
         Some("owner-only"),
         "owner-only-access runtime env widened stale access",
     );
     assert_eq!(
         set_map
-            .get("BUZZ_ACP_ALLOWED_RESPOND_TO")
+            .get("PUNKS_ACP_ALLOWED_RESPOND_TO")
             .map(String::as_str),
         Some("owner-only"),
         "owner-only-access runtime env omitted the owner-only guard",
     );
-    assert!(!set_map.contains_key("BUZZ_ACP_RESPOND_TO_ALLOWLIST"));
-    assert!(remove.contains(&"BUZZ_ACP_RESPOND_TO_ALLOWLIST"));
+    assert!(!set_map.contains_key("PUNKS_ACP_RESPOND_TO_ALLOWLIST"));
+    assert!(remove.contains(&"PUNKS_ACP_RESPOND_TO_ALLOWLIST"));
 }
 
 #[test]
@@ -220,10 +223,10 @@ fn build_env_legacy_record_without_auth_tag_emits_agent_owner() {
     let (set, remove) = build_respond_to_env(&rec, Some("ownerhex")).unwrap();
     let set_map: std::collections::HashMap<_, _> = set.into_iter().collect();
     assert_eq!(
-        set_map.get("BUZZ_ACP_AGENT_OWNER").map(String::as_str),
+        set_map.get("PUNKS_ACP_AGENT_OWNER").map(String::as_str),
         Some("ownerhex")
     );
-    assert!(!remove.contains(&"BUZZ_ACP_AGENT_OWNER"));
+    assert!(!remove.contains(&"PUNKS_ACP_AGENT_OWNER"));
 }
 
 #[test]
@@ -232,7 +235,7 @@ fn build_env_legacy_record_without_owner_hex_removes_agent_owner() {
     // env var from the parent.
     let rec = fixture(RespondTo::OwnerOnly, vec![], None);
     let (_set, remove) = build_respond_to_env(&rec, None).unwrap();
-    assert!(remove.contains(&"BUZZ_ACP_AGENT_OWNER"));
+    assert!(remove.contains(&"PUNKS_ACP_AGENT_OWNER"));
 }
 
 #[test]
@@ -252,7 +255,7 @@ fn build_env_rejects_empty_allowlist_in_allowlist_mode() {
         let (set, _) = build_respond_to_env(&rec, Some("owner")).unwrap();
         let set_map: std::collections::HashMap<_, _> = set.into_iter().collect();
         assert_eq!(
-            set_map.get("BUZZ_ACP_RESPOND_TO").map(String::as_str),
+            set_map.get("PUNKS_ACP_RESPOND_TO").map(String::as_str),
             Some("owner-only")
         );
     } else {
@@ -535,8 +538,8 @@ fn runtime_metadata_env_vars_injects_model_even_with_acp_model_switching() {
     // buzz-agent has supports_acp_model_switching=true but we still inject
     // the model env var because ACP model switching is post-bootstrap
     let vars = runtime_metadata_env_vars(
-        Some("BUZZ_AGENT_MODEL"),
-        Some("BUZZ_AGENT_PROVIDER"),
+        Some("PUNKS_AGENT_MODEL"),
+        Some("PUNKS_AGENT_PROVIDER"),
         false,
         Some("goose-claude-4-6-opus"),
         Some("databricks"),
@@ -544,8 +547,8 @@ fn runtime_metadata_env_vars_injects_model_even_with_acp_model_switching() {
     assert_eq!(
         vars,
         vec![
-            ("BUZZ_AGENT_MODEL", "goose-claude-4-6-opus"),
-            ("BUZZ_AGENT_PROVIDER", "databricks"),
+            ("PUNKS_AGENT_MODEL", "goose-claude-4-6-opus"),
+            ("PUNKS_AGENT_PROVIDER", "databricks"),
         ]
     );
 }
@@ -583,38 +586,8 @@ fn name_matches_interpreter_rejects_node_prefix() {
 }
 
 #[test]
-fn claude_spawn_uses_the_probed_cli_executable() {
-    let _guard = crate::managed_agents::lock_path_mutex();
-    let temp = tempfile::tempdir().expect("temp dir");
-    let cli = temp
-        .path()
-        .join(format!("claude{}", std::env::consts::EXE_SUFFIX));
-    std::fs::write(&cli, "").expect("write fake cli");
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o755))
-            .expect("make fake cli executable");
-    }
-    let original_path = std::env::var_os("PATH");
-    std::env::set_var("PATH", temp.path());
-
-    let mut command = std::process::Command::new("buzz-acp");
-    super::configure_runtime_cli(&mut command, super::known_acp_runtime("claude-agent-acp"));
-
-    if let Some(path) = original_path {
-        std::env::set_var("PATH", path);
-    } else {
-        std::env::remove_var("PATH");
-    }
-    assert!(command
-        .get_envs()
-        .any(|(key, value)| { key == "CLAUDE_CODE_EXECUTABLE" && value == Some(cli.as_os_str()) }));
-}
-
-#[test]
 fn codex_spawn_does_not_set_a_claude_executable() {
-    let mut command = std::process::Command::new("buzz-acp");
+    let mut command = std::process::Command::new("punks-acp");
     super::configure_runtime_cli(&mut command, super::known_acp_runtime("codex-acp"));
     assert!(!command
         .get_envs()
@@ -1032,13 +1005,13 @@ fn invalid_pubkey_resolves_no_pair_key() {
 // ── Custom-harness orphan sweep coverage ─────────────────────────────────────
 //
 // The sweep/receipt ownership gate must include any process carrying the
-// `BUZZ_MANAGED_AGENT` env marker, regardless of whether the binary name
+// `PUNKS_MANAGED_AGENT` env marker, regardless of whether the binary name
 // matches `KNOWN_AGENT_BINARIES`. Custom harnesses use arbitrary binary names
 // so name-match alone would silently leak their orphans on crash.
 //
 // Previously: macOS used a two-check OR+AND pattern (equivalent to just marker),
 //             Linux used an AND-gate (name + marker) — wrong for custom harnesses.
-// Fix: all platforms gate on `process_has_buzz_marker` alone; the receipt path
+// Fix: all platforms gate on `process_has_punks_marker` alone; the receipt path
 //      is verified below via `valid_agent_runtime_receipt_with` (injectable),
 //      which no longer takes a name-check predicate at all — reinstating an
 //      AND-gate would be a signature change these tests would catch.
@@ -1052,7 +1025,7 @@ fn invalid_pubkey_resolves_no_pair_key() {
 
 #[test]
 fn kill_stale_custom_harness_with_marker_is_terminated() {
-    // A record with a PID not in the live runtime map and with the Buzz marker
+    // A record with a PID not in the live runtime map and with the Punks marker
     // should be terminated even though the binary name is not in KNOWN_AGENT_BINARIES.
     let mut record = minimal_record("pubkey-custom");
     record.runtime_pid = Some(9001);
@@ -1215,8 +1188,8 @@ fn minimal_record(pubkey: &str) -> crate::managed_agents::ManagedAgentRecord {
             "name": "test",
             "private_key_nsec": "nsec1fake",
             "relay_url": "",
-            "acp_command": "buzz-acp",
-            "agent_command": "buzz-agent",
+            "acp_command": "punks-acp",
+            "agent_command": "punks-agent",
             "agent_args": [],
             "mcp_command": "",
             "turn_timeout_seconds": 320,

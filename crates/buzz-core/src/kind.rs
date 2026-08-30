@@ -491,6 +491,10 @@ pub const KIND_STREAM_MESSAGE_SCHEDULED: u32 = 40006;
 pub const KIND_STREAM_REMINDER: u32 = 40007;
 /// A diff/patch message showing file changes (unified diff format).
 pub const KIND_STREAM_MESSAGE_DIFF: u32 = 40008;
+/// Restore a previously retracted message while retaining its audit history.
+pub const KIND_STREAM_MESSAGE_RESTORED: u32 = 40009;
+/// Permanently erase message content while retaining an audited tombstone.
+pub const KIND_STREAM_MESSAGE_ERASED: u32 = 40010;
 /// Canvas (shared document) for a channel.
 pub const KIND_CANVAS: u32 = 40100;
 /// System message for channel state changes (join, leave, rename, etc.).
@@ -707,6 +711,8 @@ pub const ALL_KINDS: &[u32] = &[
     KIND_STREAM_MESSAGE_SCHEDULED,
     KIND_STREAM_REMINDER,
     KIND_STREAM_MESSAGE_DIFF,
+    KIND_STREAM_MESSAGE_RESTORED,
+    KIND_STREAM_MESSAGE_ERASED,
     KIND_CANVAS,
     KIND_SYSTEM_MESSAGE,
     KIND_CHANNEL_SUMMARY,

@@ -23,7 +23,8 @@ export type WorkflowRunStatus =
   | "completed"
   | "failed"
   | "cancelled"
-  | "waiting_approval";
+  | "waiting_approval"
+  | "waiting_delay";
 
 export type TraceEntry = {
   stepId: string;

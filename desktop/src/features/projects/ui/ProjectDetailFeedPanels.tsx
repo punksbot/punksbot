@@ -10,11 +10,14 @@ import type {
   ProjectPullRequest,
   ProjectRepoContributor,
   ProjectRepoSnapshot,
+  Repository,
 } from "@/features/projects/hooks";
+import { selectionItemFromCommit } from "@/features/projects/lib/projectSelection";
+import { commitShareLink } from "@/features/projects/lib/projectShareLinks";
 import { relativeTime } from "@/features/projects/lib/projectsViewHelpers";
 import type { ProjectRepoCommit } from "@/shared/api/types";
 import { truncatePubkey } from "@/shared/lib/pubkey";
-import { BuzzLoadingState } from "@/shared/ui/BuzzLoadingState";
+import { PunksLoadingState } from "@/shared/ui/PunksLoadingState";
 import {
   resolveUserLabel,
   type UserProfileLookup,
@@ -36,6 +39,22 @@ import { ProjectWorkItemRow } from "./ProjectWorkItemRow";
 
 function pluralize(count: number, singular: string, plural = `${singular}s`) {
   return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function commitSelectionItem(
+  commit: ProjectRepoCommit,
+  repository: Repository,
+  projectId: string,
+  author?: string | null,
+) {
+  return selectionItemFromCommit({
+    author,
+    channelId: repository.channelId,
+    commitHash: commit.hash,
+    projectId,
+    shareLink: commitShareLink(repository, commit.hash),
+    title: commit.subject,
+  });
 }
 
 export function ContributorsPanel({
@@ -78,7 +97,9 @@ export function ContributorsPanel({
       profileLinked: matchedPubkey !== null,
       reviewCount: signedCounts?.reviews ?? null,
       role: signedPubkey
-        ? matchedProfile?.nip05Handle || contributor.email || "Buzz contributor"
+        ? matchedProfile?.nip05Handle ||
+          contributor.email ||
+          "Punks contributor"
         : heuristicProfile
           ? `${
               heuristicProfile.profile.nip05Handle ||
@@ -107,7 +128,7 @@ export function ContributorsPanel({
       return {
         avatarUrl: profile?.avatarUrl ?? null,
         commitCount: signedCounts.commits,
-        id: `buzz:${pubkey}`,
+        id: `punks:${pubkey}`,
         isAgent,
         label: profile
           ? resolveUserLabel({ profiles, pubkey })
@@ -117,7 +138,7 @@ export function ContributorsPanel({
         reviewCount: signedCounts.reviews,
         role:
           profile?.nip05Handle ||
-          (isAgent ? "Agent contributor" : "Buzz contributor"),
+          (isAgent ? "Agent contributor" : "Punks contributor"),
         taskCount: signedCounts.tasks,
       };
     });
@@ -143,7 +164,10 @@ export function ContributorsPanel({
   }
 
   return (
-    <div className={PROJECT_DETAIL_PANEL_CLASS} data-project-detail-panel>
+    <div
+      className={`${PROJECT_DETAIL_PANEL_CLASS} mx-4`}
+      data-project-detail-panel
+    >
       {rows.map((row) => (
         <div
           className="flex min-h-9 min-w-0 items-center gap-2 px-4 py-1.5 transition-colors hover:bg-muted/35"
@@ -162,6 +186,7 @@ export function ContributorsPanel({
           />
           <span
             className="min-w-0 flex-1 truncate text-sm font-medium text-foreground"
+            data-projects-text-priority="primary"
             title={row.label}
           >
             {row.label}
@@ -222,6 +247,8 @@ export function ActivityPanel({
   error,
   onSelectCommit,
   profiles,
+  project,
+  projectId,
   pullRequests,
   repoContributors,
   viewerGitIdentity,
@@ -232,6 +259,8 @@ export function ActivityPanel({
   error: unknown;
   onSelectCommit?: (commit: ProjectRepoCommit) => void;
   profiles?: UserProfileLookup;
+  project: Repository;
+  projectId: string;
   pullRequests?: ProjectPullRequest[];
   repoContributors: ProjectRepoContributor[];
   viewerGitIdentity?: ViewerGitIdentity | null;
@@ -240,9 +269,23 @@ export function ActivityPanel({
   const commitAuthorPubkeys = commitAuthorPubkeysFromPullRequests(
     pullRequests ?? [],
   );
+  const rangeItems = commits.map((commit) => {
+    const matchedProfile = profileForCommit(
+      commit,
+      profiles,
+      commitAuthorPubkeys,
+      viewerGitIdentity,
+    );
+    return commitSelectionItem(
+      commit,
+      project,
+      projectId,
+      matchedProfile?.pubkey,
+    );
+  });
 
   if (isLoading) {
-    return <BuzzLoadingState label="Loading activity" />;
+    return <PunksLoadingState label="Loading activity" />;
   }
 
   if (commits.length === 0) {
@@ -298,6 +341,15 @@ export function ActivityPanel({
                 ) : undefined
               }
               onOpen={onSelectCommit ? () => onSelectCommit(commit) : undefined}
+              selection={{
+                item: commitSelectionItem(
+                  commit,
+                  project,
+                  projectId,
+                  matchedProfile?.pubkey,
+                ),
+                rangeItems,
+              }}
               statusIcon={
                 <GitCommitHorizontal className="h-3.5 w-3.5 text-muted-foreground/70" />
               }
@@ -328,11 +380,11 @@ export function ActivityPanel({
                     />
                   </span>
                   <CopyCommitHashButton
-                    className="h-5 w-5 shrink-0 text-muted-foreground/70"
+                    className="h-5 w-5 shrink-0 text-muted-foreground/60"
                     hash={commit.hash}
                   />
                   <span
-                    className="hidden w-20 shrink-0 whitespace-nowrap text-right text-xs text-muted-foreground/70 sm:block"
+                    className="hidden w-20 shrink-0 whitespace-nowrap text-right text-xs text-muted-foreground/55 sm:block"
                     data-testid="project-commit-row-date"
                     title={new Date(commit.timestamp * 1_000).toLocaleString()}
                   >

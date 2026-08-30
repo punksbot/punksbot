@@ -40,13 +40,13 @@ type LocalStorageSweepRule = {
 
 /** Disposable cache namespaces and their maximum idle age. */
 export const LOCAL_STORAGE_SWEEP_RULES: readonly LocalStorageSweepRule[] = [
-  { keyPrefix: "buzz-channel-messages.v1:", maxAgeMs: 14 * DAY_MS },
-  { keyPrefix: "buzz-channels.v1:", maxAgeMs: 14 * DAY_MS },
-  { keyPrefix: "buzz-observed-unread.v1:", maxAgeMs: 14 * DAY_MS },
-  { keyPrefix: "buzz-sidebar-skeleton-shape.v1:", maxAgeMs: 14 * DAY_MS },
-  { keyPrefix: "buzz-timeline-skeleton-shape.v1:", maxAgeMs: 14 * DAY_MS },
-  { keyPrefix: "buzz-user-labels.v1:", maxAgeMs: 14 * DAY_MS },
-  // Do not add buzz-self-profile.v1: here. It is the load-bearing offline
+  { keyPrefix: "punks-channel-messages.v1:", maxAgeMs: 14 * DAY_MS },
+  { keyPrefix: "punks-channels.v1:", maxAgeMs: 14 * DAY_MS },
+  { keyPrefix: "punks-observed-unread.v1:", maxAgeMs: 14 * DAY_MS },
+  { keyPrefix: "punks-sidebar-skeleton-shape.v1:", maxAgeMs: 14 * DAY_MS },
+  { keyPrefix: "punks-timeline-skeleton-shape.v1:", maxAgeMs: 14 * DAY_MS },
+  { keyPrefix: "punks-user-labels.v1:", maxAgeMs: 14 * DAY_MS },
+  // Do not add punks-self-profile.v1: here. It is the load-bearing offline
   // identity fallback when the relay is unreachable, not a repaintable cache.
 ];
 

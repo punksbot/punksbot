@@ -7,7 +7,6 @@ import {
   type ProfilePanelTab,
   type ProfilePanelView,
 } from "@/features/profile/ui/UserProfilePanelUtils";
-import { RouteCapabilityBoundary } from "@/shared/capabilities";
 import { ViewLoadingFallback } from "@/shared/ui/ViewLoadingFallback";
 
 type AgentsRouteSearch = {
@@ -44,10 +43,8 @@ export const Route = createFileRoute("/agents")({
 
 function AgentsRouteComponent() {
   return (
-    <RouteCapabilityBoundary capability="bots">
-      <React.Suspense fallback={<ViewLoadingFallback kind="agents" />}>
-        <AgentsScreen />
-      </React.Suspense>
-    </RouteCapabilityBoundary>
+    <React.Suspense fallback={<ViewLoadingFallback kind="agents" />}>
+      <AgentsScreen />
+    </React.Suspense>
   );
 }

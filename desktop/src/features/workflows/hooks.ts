@@ -113,7 +113,8 @@ function isActiveWorkflowRunStatus(status: WorkflowRunStatus) {
   return (
     status === "pending" ||
     status === "running" ||
-    status === "waiting_approval"
+    status === "waiting_approval" ||
+    status === "waiting_delay"
   );
 }
 

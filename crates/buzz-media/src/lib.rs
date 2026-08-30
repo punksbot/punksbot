@@ -1,4 +1,4 @@
-//! Media storage, validation, and thumbnail generation for Buzz.
+//! Media storage, validation, and thumbnail generation for Punks.
 //!
 //! Library crate — no Axum dependency for handlers. Axum handlers live in `buzz-relay`.
 
@@ -20,7 +20,10 @@ pub use bucket_index::{
 };
 pub use config::{MediaConfig, S3AddressingStyle};
 pub use error::MediaError;
-pub use storage::{BlobHeadMeta, BlobMeta, BulkDeleteOutcome, ByteStream, MediaStorage};
+pub use storage::{
+    BlobHeadMeta, BlobMeta, BulkDeleteOutcome, ByteStream, MediaStorage, ObjectVersionEntry,
+    ObjectVersionKind, ObjectVersionRef, ObjectVersionsPage,
+};
 pub use types::BlobDescriptor;
 pub use upload::{process_file_upload, process_upload, process_video_upload};
 pub use upload_record::{

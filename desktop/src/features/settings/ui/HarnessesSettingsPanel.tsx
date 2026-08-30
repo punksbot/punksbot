@@ -3,7 +3,7 @@ import { ExternalLink, Plus, RefreshCw } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 import {
-  useAcpRuntimesQuery,
+  useAcpRuntimesQueryForced,
   useGitBashPrerequisiteQuery,
 } from "@/features/agents/hooks";
 import type { AcpRuntimeCatalogEntry } from "@/shared/api/types";
@@ -63,7 +63,7 @@ function GitBashCard({
             className="mt-3 space-y-1 text-sm text-muted-foreground/70"
             data-settings-subcopy
           >
-            <p>Required for buzz-agent shell tools on Windows.</p>
+            <p>Required for punks-agent shell tools on Windows.</p>
             <p>{prerequisite.installHint}</p>
           </div>
         ) : null}
@@ -85,7 +85,7 @@ function GitBashCard({
  *   needs multi-step setup, plus the custom-harness form.
  */
 export function HarnessesSettingsPanel() {
-  const runtimesQuery = useAcpRuntimesQuery();
+  const runtimesQuery = useAcpRuntimesQueryForced();
   const gitBashQuery = useGitBashPrerequisiteQuery();
   const [catalogOpen, setCatalogOpen] = React.useState(false);
   // Incremented each time the user clicks "Check again" so HarnessRow
@@ -113,13 +113,13 @@ export function HarnessesSettingsPanel() {
   return (
     <SettingsOptionGroup
       data-testid="settings-harnesses"
-      description="Choose which agent tools Buzz can use on this device."
+      description="Choose which agent tools Punks can use on this device."
       headerAction={
         <Button
           disabled={isRefreshing}
           onClick={() => {
             setResetEpoch((e) => e + 1);
-            void runtimesQuery.refetch();
+            void runtimesQuery.forceRefresh();
             void gitBashQuery.refetch();
           }}
           size="sm"

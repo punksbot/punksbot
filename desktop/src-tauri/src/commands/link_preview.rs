@@ -191,7 +191,7 @@ async fn resolve_public_addresses(host: &str) -> Result<Vec<IpAddr>, String> {
     if addresses.is_empty() {
         return Err("link preview DNS resolution returned no addresses".to_string());
     }
-    if addresses.iter().any(buzz_core_pkg::network::is_private_ip) {
+    if addresses.iter().any(punks_core_pkg::network::is_private_ip) {
         return Err("link preview host resolved to a private or reserved address".to_string());
     }
 
@@ -217,7 +217,7 @@ async fn send_pinned_request(url: &Url, accept: &str) -> Result<reqwest::Respons
     let request = client
         .get(url.as_str())
         .header(ACCEPT, accept)
-        .header(USER_AGENT, "Buzz Desktop link preview");
+        .header(USER_AGENT, "Punks Desktop link preview");
 
     tokio::time::timeout(PREVIEW_FETCH_TIMEOUT, request.send())
         .await
@@ -706,7 +706,7 @@ mod tests {
 
     #[test]
     fn metadata_prefers_open_graph_and_reads_site_name() {
-        let html = r#"<meta content="Buzz" property="og:site_name">
+        let html = r#"<meta content="Punks" property="og:site_name">
           <meta content="Rich previews &amp; cards" property="og:title">
           <meta content="Safe &amp; useful previews" property="og:description">
           <meta name="twitter:title" content="Twitter fallback"><title>Fallback</title>"#;
@@ -714,7 +714,7 @@ mod tests {
             extract_link_preview_metadata(html),
             Some(LinkPreviewMetadata {
                 title: "Rich previews & cards".to_string(),
-                site_name: Some("Buzz".to_string()),
+                site_name: Some("Punks".to_string()),
                 description: Some("Safe & useful previews".to_string()),
                 image_data_url: None,
                 image_domain: None,

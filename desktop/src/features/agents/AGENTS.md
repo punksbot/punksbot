@@ -4,7 +4,7 @@ Scope: `desktop/src/features/agents/` (config surfaces, shared config renderer,
 and the agent config core). Read this before changing how harness / provider /
 model / effort configuration is modeled, rendered, persisted, or applied.
 
-Plan of record: `Buzz/Harness-Provider-Model.md` in Morgan's Obsidian vault
+Plan of record: `Punks/Harness-Provider-Model.md` in Morgan's Obsidian vault
 (PR sequence, decisions log). PRs: #2140 (rename), #2148 (flag reduction),
 #2156 (honest model states), #2158 (Agent Config Core).
 
@@ -44,7 +44,7 @@ with a TypeScript lookup table or an id comparison in a component.
    (`hasRenderableAgentConfigField`, `getRenderableEffortField`).
 2. **Effort reads/writes go through the descriptor.** Use the effort
    descriptor's `currentPersistence` key — never a raw
-   `BUZZ_AGENT_THINKING_EFFORT` literal in UI code. `currentPersistence` is
+   `PUNKS_AGENT_THINKING_EFFORT` literal in UI code. `currentPersistence` is
    where the value lives *today*; `targetApplication` is how the harness
    *should* receive it. They intentionally differ until PR 2.7 migrates
    Goose/Claude — do not "fix" one to match the other without doing the
@@ -87,7 +87,7 @@ with a TypeScript lookup table or an id comparison in a component.
    disables editing while awaiting `set_global_agent_config`, advances only on
    success, and leaves the draft in place with a retryable inline error on
    failure. A harness selection alone does not enable Next when the harness
-   requires provider/model/credential config (e.g. buzz-agent with no
+   requires provider/model/credential config (e.g. punks-agent with no
    provider). Baked build env and runtime-file config satisfy the gate. Drafts
    intentionally do not survive an app restart.
    `onboarding-agent-defaults.spec.ts` is the acceptance gate for anything
@@ -104,9 +104,9 @@ with a TypeScript lookup table or an id comparison in a component.
    harness has empty discovery` (and the failed-discovery counterpart) in
    `onboarding-agent-defaults.spec.ts`.
 9. **The defaults modal is progressively disclosed.** An unset global config
-   starts on the Buzz Agent-first deployment fallback and carries that visible
+   starts on the Punks Agent-first deployment fallback and carries that visible
    harness into the next saved edit. The `progressive-defaults` disclosure
-   preset therefore begins at Provider for Buzz Agent, then reveals Model,
+   preset therefore begins at Provider for Punks Agent, then reveals Model,
    Effort, and Advanced only after a provider is configured. Harnesses whose
    runtime metadata has no provider field skip that gate. Reveals animate their
    height through Motion and become immediate when reduced motion is requested.
@@ -166,7 +166,7 @@ with a TypeScript lookup table or an id comparison in a component.
    must never bypass the instance command's stop, persist, publish, and restart
    boundary.** An unknown location falls back to the local wording — never hedge
    with "computer or server". A remote host requires an
-   installed `buzz-backend-*` provider, and without one `WhereToRunSection`
+   installed `punks-backend-*` provider, and without one `WhereToRunSection`
    never renders, so "server" would name a concept the owner has never been
    shown; when it *is* remote they picked that host from the selector
    themselves. Never synthesize a run location a surface doesn't have. Don't
@@ -229,24 +229,26 @@ with a TypeScript lookup table or an id comparison in a component.
 
    **Cut invariant — live mid-conversation effort machinery was deliberately
    removed.** Effort is spawn-scoped only: the worker holds one `startup_effort`
-   read from `BUZZ_ACP_EFFORT_LEVEL` and applies it once at session creation
-   (`apply_startup_effort` in `buzz-acp/src/pool.rs`); there is no pool-level
+   read from `PUNKS_ACP_EFFORT_LEVEL` and applies it once at session creation
+   (`apply_startup_effort` in `punks-acp/src/pool.rs`); there is no pool-level
    effort authority, no live effort switching, and no effort-ack frame. Do not
    reintroduce a live effort-switch RPC, a pool effort field, or a
    mid-conversation effort control without a plan ruling. The archived live-effort
    machinery lives on `archive/claude-config-gaps-live-effort` for reference only.
 
-12. **Owner-only builds discover only verified same-owner remote agents.**
-    The native `list_relay_agents` boundary authenticates ownership through the
-    agent's NIP-OA profile, then retains only agents owned by the active user
-    when the compiled owner-only capability is present. Keep this as the
-    authoritative backstop: internal builds must never admit cross-owner remote
-    agents, while same-owner agents on another machine remain inside the
-    documented owner-only trust boundary. OSS builds retain the complete
-    policy-filtered relay directory and send-time fail-closed mention
-    revalidation. Local `agents-data-changed` events refresh only local
-    persona/team/managed-agent caches; they must never invalidate the remote
-    relay directory.
+12. **Owner-only builds constrain managed runtimes, not relay-agent mentions.**
+    The compiled owner-only capability applies when Desktop starts or deploys a
+    managed agent. Independently operated relay agents with NIP-OA ownership
+    remain eligible in every build when their verified owner's signed
+    `respond_to` policy admits the viewer and relay membership includes the
+    target channel. Marked builds require that verified owner coordinate but do
+    not require it to equal the viewer; OSS builds retain compatibility with
+    self-authored legacy directory records. Keep native discovery and send-time
+    revalidation fail closed on invalid ownership or managed policy evidence,
+    and on missing membership or directory evidence; do not add a cross-owner
+    clamp to either mention path. Local `agents-data-changed` events
+    refresh only local persona/team/managed-agent caches; they must never
+    invalidate the remote relay directory.
 
 ## The tests that enforce this
 

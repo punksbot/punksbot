@@ -43,6 +43,7 @@ import type {
 
 export * from "@/shared/api/tauriChannels";
 export { sendChannelMessage } from "@/shared/api/tauriMessages";
+export { getEventById, getEventsByIds } from "@/shared/api/tauriEvents";
 
 type RawPresenceLookup = Record<string, PresenceStatus>;
 
@@ -64,7 +65,7 @@ type RawFeedItem = {
   channel_name: string;
   channel_type: string | null;
   tags: string[][];
-  category: "mention" | "needs_action" | "activity" | "agent_activity";
+  category: HomeFeedResponse["feed"]["mentions"][number]["category"];
 };
 
 type RawHomeFeedResponse = {
@@ -235,6 +236,7 @@ type RawListRelayMembersResponse = {
 
 type RawCanvasResponse = {
   content: string | null;
+  event_id: string | null;
   updated_at: number | null;
   author: string | null;
 };
@@ -406,9 +408,7 @@ export async function getCanvas(channelId: string): Promise<CanvasResponse> {
   });
   return {
     content: response.content,
-    // Normalize absent keys to null: ensureWelcomeCanvas treats null as
-    // "no canvas yet", and `undefined !== null` would make every fresh
-    // channel look already-seeded.
+    eventId: response.event_id ?? null,
     updatedAt: response.updated_at ?? null,
     author: response.author ?? null,
   };
@@ -420,6 +420,7 @@ export async function setCanvas(
   const response = await invokeTauri<RawSetCanvasResult>("set_canvas", {
     channelId: input.channelId,
     content: input.content,
+    expectedRevision: input.expectedRevision ?? null,
   });
   return {
     ok: response.ok,
@@ -463,11 +464,6 @@ export async function searchMessages(
     hits: response.hits.map(fromRawSearchHit),
     found: response.found,
   };
-}
-
-export async function getEventById(eventId: string): Promise<RelayEvent> {
-  const eventJson = await invokeTauri<string>("get_event", { eventId });
-  return JSON.parse(eventJson) as RelayEvent;
 }
 
 type RawThreadCursor = {
@@ -863,12 +859,6 @@ export async function discoverGitBashPrerequisite(): Promise<GitBashPrerequisite
   );
 }
 
-export async function discoverAcpRuntimes(): Promise<AcpRuntimeCatalogEntry[]> {
-  return (
-    await invokeTauri<RawAcpRuntimeCatalogEntry[]>("discover_acp_providers")
-  ).map(fromRawAcpRuntimeCatalogEntry);
-}
-
 /** Input shape for creating or updating a custom harness. */
 export type HarnessDefinitionInput = {
   id: string;
@@ -997,7 +987,7 @@ export async function getBakedBuildEnvKeys(): Promise<string[]> {
  * A single baked build env entry.
  *
  * The value is already masked in Rust for secret keys (keys not in the
- * explicit safe-to-reveal allowlist: `BUZZ_AGENT_PROVIDER`, `BUZZ_AGENT_MODEL`,
+ * explicit safe-to-reveal allowlist: `PUNKS_AGENT_PROVIDER`, `PUNKS_AGENT_MODEL`,
  * `DATABRICKS_HOST`, `DATABRICKS_MODEL`). Non-allowlisted keys have their
  * values replaced with `••••••`. Non-secret values are shown as-is.
  * Empty-value keys are filtered out.
@@ -1014,7 +1004,7 @@ export type BakedEnvEntry = {
  * Return the baked build env entries with values shown (masked where
  * appropriate) for display in the Agent defaults card.
  *
- * Provider and model arrive as `BUZZ_AGENT_PROVIDER` / `BUZZ_AGENT_MODEL`
+ * Provider and model arrive as `PUNKS_AGENT_PROVIDER` / `PUNKS_AGENT_MODEL`
  * keys and are included in the list alongside other baked vars.
  *
  * OSS builds return an empty array — the baked-env section is hidden.

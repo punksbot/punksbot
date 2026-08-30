@@ -257,7 +257,7 @@ async fn fetch_v2_models(
     // Cap at 20 pages (2 000 endpoints) to bound execution time.
     for _ in 0..20 {
         // Build URL with query params manually — avoids requiring the `query`
-        // reqwest feature in buzz-agent's Cargo.toml.
+        // reqwest feature in punks-agent's Cargo.toml.
         let url = match &page_token {
             Some(tok) => format!(
                 "{base_url}?page_size=100&page_token={}",
@@ -677,7 +677,7 @@ mod tests {
 
     #[test]
     fn v2_parse_curates_known_name_and_passes_unknown_through() {
-        // buzz-agent's real discovery contract: the endpoint id IS the name the
+        // punks-agent's real discovery contract: the endpoint id IS the name the
         // API returns. A known id gets its manifest label; an unknown id stays raw.
         let json = serde_json::json!({
             "endpoints": [

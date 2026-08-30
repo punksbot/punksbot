@@ -1,4 +1,4 @@
-//! `buzz projects` commands — NIP-MP kind:30621 write path.
+//! `punks projects` commands — NIP-MP kind:30621 write path.
 //!
 //! All mutations follow a read-modify-write pattern:
 //!   1. Fetch the caller's own live head via `kinds:[30621] + authors:[self] + #d:[slug]`.
@@ -23,13 +23,13 @@ use buzz_sdk::{
 };
 use nostr::{Event, EventBuilder, Tag, Timestamp};
 
-use crate::client::BuzzClient;
+use crate::client::PunksClient;
 use crate::commands::parse_write_response;
 use crate::error::CliError;
 
-// ── Buzz repo-ID grammar (bare --repo shorthand) ─────────────────────────────
+// ── Punks repo-ID grammar (bare --repo shorthand) ─────────────────────────────
 
-/// Pattern for a Buzz-hosted repo identifier (bare `--repo` shorthand).
+/// Pattern for a Punks-hosted repo identifier (bare `--repo` shorthand).
 /// `[a-zA-Z0-9._-]{1,64}` — no colons, so guaranteed collision-free with
 /// `30617:<owner>:<d>` full coordinates.
 fn is_bare_repo_id(s: &str) -> bool {
@@ -64,13 +64,13 @@ fn parse_events(json: &str) -> Result<Vec<Event>, CliError> {
 }
 
 /// Fetch the caller's own live kind:30621 head for `slug`.
-async fn fetch_own_project(client: &BuzzClient, slug: &str) -> Result<Option<Event>, CliError> {
+async fn fetch_own_project(client: &PunksClient, slug: &str) -> Result<Option<Event>, CliError> {
     fetch_project(client, slug, None).await
 }
 
 /// Fetch a project head by slug and optional owner pubkey.
 async fn fetch_project(
-    client: &BuzzClient,
+    client: &PunksClient,
     slug: &str,
     owner: Option<&str>,
 ) -> Result<Option<Event>, CliError> {
@@ -113,11 +113,11 @@ fn make_tag(parts: &[&str]) -> Result<Tag, CliError> {
 /// Submit a project event and print the relay's write response.
 ///
 /// `link_slug` carries the project's d-tag on creates whose slug fits the
-/// `buzz://` link charset; the response then also carries a `link` field,
-/// which renders as a rich preview card in Buzz Desktop when included in a
+/// `punks-local://` link charset; the response then also carries a `link` field,
+/// which renders as a rich preview card in Punks Desktop when included in a
 /// chat message — agents announce projects with it (see base_prompt.md).
 async fn submit_project(
-    client: &BuzzClient,
+    client: &PunksClient,
     builder: EventBuilder,
     link_slug: Option<&str>,
 ) -> Result<(), CliError> {
@@ -171,9 +171,9 @@ fn rebuild_project(
 
 // ── Command implementations ───────────────────────────────────────────────────
 
-/// `buzz projects create`
+/// `punks projects create`
 pub async fn cmd_create(
-    client: &BuzzClient,
+    client: &PunksClient,
     slug: &str,
     repos: &[String],
     name: Option<&str>,
@@ -222,7 +222,7 @@ pub async fn cmd_create(
     // ── Network: collision preflight ──────────────────────────────────────
     if fetch_own_project(client, slug).await?.is_some() {
         return Err(CliError::Conflict(format!(
-            "project {slug:?} already exists; use 'buzz projects update' to modify it"
+            "project {slug:?} already exists; use 'punks projects update' to modify it"
         )));
     }
 
@@ -240,8 +240,12 @@ pub async fn cmd_create(
     .await
 }
 
-/// `buzz projects get`
-pub async fn cmd_get(client: &BuzzClient, slug: &str, owner: Option<&str>) -> Result<(), CliError> {
+/// `punks projects get`
+pub async fn cmd_get(
+    client: &PunksClient,
+    slug: &str,
+    owner: Option<&str>,
+) -> Result<(), CliError> {
     validate_project_slug(slug)?;
     let resp = match fetch_project(client, slug, owner).await? {
         Some(event) => serde_json::json!({
@@ -263,9 +267,9 @@ pub async fn cmd_get(client: &BuzzClient, slug: &str, owner: Option<&str>) -> Re
     Ok(())
 }
 
-/// `buzz projects list`
+/// `punks projects list`
 pub async fn cmd_list(
-    client: &BuzzClient,
+    client: &PunksClient,
     owner: Option<&str>,
     limit: Option<u32>,
 ) -> Result<(), CliError> {
@@ -288,9 +292,9 @@ pub async fn cmd_list(
     Ok(())
 }
 
-/// `buzz projects add-repo`
+/// `punks projects add-repo`
 pub async fn cmd_add_repo(
-    client: &BuzzClient,
+    client: &PunksClient,
     slug: &str,
     repos: &[String],
 ) -> Result<(), CliError> {
@@ -353,9 +357,9 @@ pub async fn cmd_add_repo(
     submit_project(client, builder, None).await
 }
 
-/// `buzz projects remove-repo`
+/// `punks projects remove-repo`
 pub async fn cmd_remove_repo(
-    client: &BuzzClient,
+    client: &PunksClient,
     slug: &str,
     repos: &[String],
 ) -> Result<(), CliError> {
@@ -416,12 +420,12 @@ pub async fn cmd_remove_repo(
     submit_project(client, builder, None).await
 }
 
-/// `buzz projects update`
+/// `punks projects update`
 ///
 /// Requires at least one setter or clearer; a no-op call is a usage error.
 #[allow(clippy::too_many_arguments)]
 pub async fn cmd_update(
-    client: &BuzzClient,
+    client: &PunksClient,
     slug: &str,
     name: Option<&str>,
     clear_name: bool,
@@ -446,7 +450,7 @@ pub async fn cmd_update(
         || clear_visibility;
     if !has_mutation {
         return Err(CliError::Usage(
-            "buzz projects update requires at least one of: \
+            "punks projects update requires at least one of: \
              --name, --clear-name, --description, --clear-description, \
              --channel, --clear-channel, --visibility, --clear-visibility"
                 .into(),
@@ -471,7 +475,7 @@ pub async fn cmd_update(
     //   - clear flag set: drop the tag
     //   - neither: keep existing
     // Non-singleton / non-metadata tags (d, a, unknown) are preserved as-is.
-    let singleton_fields = ["name", "description", "buzz-channel", "buzz-visibility"];
+    let singleton_fields = ["name", "description", "h", "visibility"];
     let mut tags: Vec<Tag> = head
         .tags
         .iter()
@@ -485,8 +489,8 @@ pub async fn cmd_update(
                     let clear = match field {
                         "name" => clear_name || name.is_some(),
                         "description" => clear_description || description.is_some(),
-                        "buzz-channel" => clear_channel || channel.is_some(),
-                        "buzz-visibility" => clear_visibility || visibility.is_some(),
+                        "h" => clear_channel || channel.is_some(),
+                        "visibility" => clear_visibility || visibility.is_some(),
                         _ => false,
                     };
                     return !clear;
@@ -505,10 +509,10 @@ pub async fn cmd_update(
         tags.push(make_tag(&["description", d])?);
     }
     if let Some(ch) = channel {
-        tags.push(make_tag(&["buzz-channel", ch])?);
+        tags.push(make_tag(&["h", ch])?);
     }
     if let Some(vis) = visibility {
-        tags.push(make_tag(&["buzz-visibility", vis])?);
+        tags.push(make_tag(&["visibility", vis])?);
     }
 
     let builder = build_project_with_tags(&head.content, tags)
@@ -517,14 +521,14 @@ pub async fn cmd_update(
     submit_project(client, builder, None).await
 }
 
-/// `buzz projects delete`
+/// `punks projects delete`
 ///
 /// Head-based and verified:
 ///   1. Fetch own live head — `NotFound` if absent.
 ///   2. Build tombstone at `max(client_now, head.created_at + 1)`.
 ///   3. Submit.
 ///   4. Re-query the coordinate; if a newer head survived → `Conflict`.
-pub async fn cmd_delete(client: &BuzzClient, slug: &str) -> Result<(), CliError> {
+pub async fn cmd_delete(client: &PunksClient, slug: &str) -> Result<(), CliError> {
     validate_project_slug(slug)?;
 
     let head = fetch_own_project(client, slug)
@@ -557,7 +561,7 @@ pub async fn cmd_delete(client: &BuzzClient, slug: &str) -> Result<(), CliError>
 // ── Validation helpers ────────────────────────────────────────────────────────
 
 /// Validate a project slug: non-empty, ≤1024 bytes, verbatim.
-/// Does NOT impose the Buzz repo-ID grammar — project slugs are more permissive.
+/// Does NOT impose the Punks repo-ID grammar — project slugs are more permissive.
 fn validate_project_slug(slug: &str) -> Result<(), CliError> {
     if slug.is_empty() {
         return Err(CliError::Usage("project slug must not be empty".into()));
@@ -571,7 +575,7 @@ fn validate_project_slug(slug: &str) -> Result<(), CliError> {
     Ok(())
 }
 
-/// Validate a `buzz-visibility` value at the writer level.
+/// Validate a `visibility` value at the writer level.
 fn validate_visibility(vis: &str) -> Result<(), CliError> {
     if vis != "listed" && vis != "unlisted" {
         return Err(CliError::Usage(format!(
@@ -583,7 +587,7 @@ fn validate_visibility(vis: &str) -> Result<(), CliError> {
 
 // ── Dispatch ──────────────────────────────────────────────────────────────────
 
-pub async fn dispatch(cmd: crate::ProjectsCmd, client: &BuzzClient) -> Result<(), CliError> {
+pub async fn dispatch(cmd: crate::ProjectsCmd, client: &PunksClient) -> Result<(), CliError> {
     use crate::ProjectsCmd;
     match cmd {
         ProjectsCmd::Create {
@@ -867,7 +871,7 @@ mod tests {
         clear_visibility: bool,
     ) -> Vec<Tag> {
         // Replicate the tag-mutation logic from cmd_update (sans relay I/O).
-        let singleton_fields = ["name", "description", "buzz-channel", "buzz-visibility"];
+        let singleton_fields = ["name", "description", "h", "visibility"];
         let mut tags: Vec<Tag> = head_tags
             .iter()
             .filter(|t| {
@@ -879,8 +883,8 @@ mod tests {
                         let clear = match field {
                             "name" => clear_name || name.is_some(),
                             "description" => clear_description || description.is_some(),
-                            "buzz-channel" => clear_channel || channel.is_some(),
-                            "buzz-visibility" => clear_visibility || visibility.is_some(),
+                            "h" => clear_channel || channel.is_some(),
+                            "visibility" => clear_visibility || visibility.is_some(),
                             _ => false,
                         };
                         return !clear;
@@ -897,10 +901,10 @@ mod tests {
             tags.push(make_test_tag(&["description", d]));
         }
         if let Some(ch) = channel {
-            tags.push(make_test_tag(&["buzz-channel", ch]));
+            tags.push(make_test_tag(&["h", ch]));
         }
         if let Some(vis) = visibility {
-            tags.push(make_test_tag(&["buzz-visibility", vis]));
+            tags.push(make_test_tag(&["visibility", vis]));
         }
         tags
     }
@@ -939,19 +943,17 @@ mod tests {
 
     #[test]
     fn update_clear_visibility_drops_tag() {
-        let head = make_head_tags(&[make_test_tag(&["buzz-visibility", "unlisted"])]);
+        let head = make_head_tags(&[make_test_tag(&["visibility", "unlisted"])]);
         let result = apply_update_tags(head, None, false, None, false, None, false, None, true);
-        assert!(!result
-            .iter()
-            .any(|t| tag_name(t) == Some("buzz-visibility")));
+        assert!(!result.iter().any(|t| tag_name(t) == Some("visibility")));
     }
 
     #[test]
     fn update_exactly_one_singleton_after_replace() {
-        // Start with a buzz-channel; replace with a new one; must have exactly one.
+        // Start with a h; replace with a new one; must have exactly one.
         let uuid1 = "3580ca9b-47b4-4af9-b22a-1068778f26c6";
         let uuid2 = "00000000-0000-0000-0000-000000000000";
-        let head = make_head_tags(&[make_test_tag(&["buzz-channel", uuid1])]);
+        let head = make_head_tags(&[make_test_tag(&["h", uuid1])]);
         let result = apply_update_tags(
             head,
             None,
@@ -963,10 +965,7 @@ mod tests {
             None,
             false,
         );
-        let channels: Vec<_> = result
-            .iter()
-            .filter(|t| tag_name(t) == Some("buzz-channel"))
-            .collect();
+        let channels: Vec<_> = result.iter().filter(|t| tag_name(t) == Some("h")).collect();
         assert_eq!(channels.len(), 1);
         assert_eq!(tag_value(channels[0]), Some(uuid2));
     }
@@ -1069,7 +1068,7 @@ mod tests {
         // Port 9 is the discard protocol — any real connect will be refused
         // immediately, but the guard fires before the first await so this
         // never reaches the network.
-        let client = crate::client::BuzzClient::new("http://127.0.0.1:9".into(), keys, None, None)
+        let client = crate::client::PunksClient::new("http://127.0.0.1:9".into(), keys, None, None)
             .expect("client construction");
 
         let err = cmd_update(
@@ -1093,9 +1092,9 @@ mod tests {
     // refused immediately, but local validation fires before the first .await
     // so the network is never touched.
 
-    fn discard_client() -> crate::client::BuzzClient {
+    fn discard_client() -> crate::client::PunksClient {
         let keys = nostr::Keys::generate();
-        crate::client::BuzzClient::new("http://127.0.0.1:9".into(), keys, None, None)
+        crate::client::PunksClient::new("http://127.0.0.1:9".into(), keys, None, None)
             .expect("client construction")
     }
 
@@ -1243,6 +1242,6 @@ mod tests {
     // ── add-repo no-op guard ──────────────────────────────────────────────────
 
     // The add-repo no-op Conflict path is pinned by the live transcript
-    // (step 7: buzz already present → exit=5). No relay mock is available
+    // (step 7: punks already present → exit=5). No relay mock is available
     // for a unit test; the async no-network tests above cover all pre-await paths.
 }

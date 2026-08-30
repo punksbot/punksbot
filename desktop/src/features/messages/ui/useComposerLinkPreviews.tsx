@@ -12,8 +12,9 @@ import {
   beginRelayOriginFetch,
   getCachedRelayOrigin,
 } from "@/shared/lib/mediaUrl";
+import { useRelayOrigin } from "@/shared/lib/useRelayOrigin";
 import {
-  isBuzzEntityPreview,
+  isPunksEntityPreview,
   type ResolvedLinkPreview,
   useResolvedLinkPreviews,
   withEntityFallbacks,
@@ -83,11 +84,11 @@ function ComposerLinkPreviewCard({
   );
   const showImage = Boolean(imageSrc && failedImageSrc !== imageSrc);
   const hostname = previewHostname(preview.href);
-  // External cards are send-ready only once their snapshot tag exists. Buzz
+  // External cards are send-ready only once their snapshot tag exists. Punks
   // entities never snapshot; recipients resolve them from the relay, so they
   // are complete as soon as the recognized entity card exists.
   const snapshotTagReady = Boolean(preview.snapshotReady && tagReady);
-  const done = snapshotTagReady || isBuzzEntityPreview(preview);
+  const done = snapshotTagReady || isPunksEntityPreview(preview);
 
   return (
     <div
@@ -199,11 +200,12 @@ export interface ComposerLinkPreviewInput {
 export function updateComposerLinkPreviewInput(
   current: ComposerLinkPreviewInput,
   content: string,
+  relayOrigin: string | null,
 ): ComposerLinkPreviewInput {
   const nextHrefs = new Set(
-    extractSupportedLinkPreviews(content)
+    extractSupportedLinkPreviews(content, relayOrigin)
       .filter((preview) =>
-        preview.href.startsWith("buzz://")
+        preview.href.startsWith("punks-local://")
           ? true
           : isValidLinkPreviewSnapshotCanonicalUrl(preview.href),
       )
@@ -235,11 +237,28 @@ export function useComposerLinkPreviewInput() {
     hrefVersions: new Map(),
     nextHrefVersion: 0,
   }));
+  // Read the origin through the store subscription so a paste that lands
+  // before the async lookup resolves is reclassified — an href set frozen at
+  // first-render time would keep a same-relay clone URL versioned as an
+  // external candidate for the life of the composer.
+  const relayOrigin = useRelayOrigin();
   const update = React.useCallback(
     (content: string) =>
-      setInput((current) => updateComposerLinkPreviewInput(current, content)),
-    [],
+      setInput((current) =>
+        updateComposerLinkPreviewInput(current, content, relayOrigin),
+      ),
+    [relayOrigin],
   );
+  // Re-classify already-entered content when the origin resolves or changes.
+  // An empty draft has nothing to reclassify; returning `current` lets React
+  // bail out of the mount-time pass instead of re-rendering the composer.
+  React.useEffect(() => {
+    setInput((current) =>
+      current.content
+        ? updateComposerLinkPreviewInput(current, current.content, relayOrigin)
+        : current,
+    );
+  }, [relayOrigin]);
   return [input, update] as const;
 }
 
@@ -273,16 +292,17 @@ export function useComposerLinkPreviews(
     );
     return () => window.clearTimeout(timer);
   }, [content]);
+  const relayOrigin = useRelayOrigin();
   const extractCandidates = React.useCallback(
     (source: string) =>
       enabled
-        ? extractSupportedLinkPreviews(source).filter((preview) =>
-            preview.href.startsWith("buzz://")
+        ? extractSupportedLinkPreviews(source, relayOrigin).filter((preview) =>
+            preview.href.startsWith("punks-local://")
               ? true
               : isValidLinkPreviewSnapshotCanonicalUrl(preview.href),
           )
         : [],
-    [enabled],
+    [enabled, relayOrigin],
   );
   const candidates = React.useMemo(
     () => extractCandidates(debounced),
@@ -468,7 +488,7 @@ export function useComposerLinkPreviews(
     !suppressed &&
     previews.some(
       (preview) =>
-        !preview.href.startsWith("buzz://") &&
+        !preview.href.startsWith("punks-local://") &&
         (preview.imageState === "pending" ||
           isHrefReentering(preview.href) ||
           (preview.snapshotReady && !readyTags[preview.href])),
@@ -479,7 +499,7 @@ export function useComposerLinkPreviews(
     !suppressed &&
     liveCandidates.some(
       (href) =>
-        !href.startsWith("buzz://") &&
+        !href.startsWith("punks-local://") &&
         !readyTags[href] &&
         !candidates.some((candidate) => candidate.href === href),
     );

@@ -1,9 +1,5 @@
 import * as React from "react";
 
-import {
-  capabilityForShortcut,
-  useCapabilityAvailable,
-} from "@/shared/capabilities";
 import { hasPrimaryShortcutModifier } from "@/shared/lib/platform";
 import {
   HUDDLE_SHORTCUT_EVENT,
@@ -33,48 +29,6 @@ export function useAppShellKeyboardShortcuts({
   onSearchCurrentChannel,
   onSearchEverything,
 }: AppShellKeyboardShortcutsOptions) {
-  // Garde unique : un raccourci d'une capacité indisponible ne fait rien —
-  // ni preventDefault, ni action, ni indice d'existence.
-  const searchCurrentChannel = useCapabilityAvailable(
-    capabilityForShortcut("search-current-channel"),
-  );
-  const searchEverything = useCapabilityAvailable(
-    capabilityForShortcut("search-everything"),
-  );
-  const newMessage = useCapabilityAvailable(
-    capabilityForShortcut("new-message"),
-  );
-  const createChannel = useCapabilityAvailable(
-    capabilityForShortcut("create-channel"),
-  );
-  const browseChannels = useCapabilityAvailable(
-    capabilityForShortcut("browse-channels"),
-  );
-  const goHome = useCapabilityAvailable(capabilityForShortcut("go-home"));
-  const startHuddle = useCapabilityAvailable(
-    capabilityForShortcut("start-huddle"),
-  );
-  const shortcutEnabled = React.useMemo(
-    () => ({
-      "search-current-channel": searchCurrentChannel,
-      "search-everything": searchEverything,
-      "new-message": newMessage,
-      "create-channel": createChannel,
-      "browse-channels": browseChannels,
-      "go-home": goHome,
-      "start-huddle": startHuddle,
-    }),
-    [
-      browseChannels,
-      createChannel,
-      goHome,
-      newMessage,
-      searchCurrentChannel,
-      searchEverything,
-      startHuddle,
-    ],
-  );
-
   React.useLayoutEffect(() => {
     if (disabled) return;
 
@@ -91,7 +45,6 @@ export function useAppShellKeyboardShortcuts({
         event.code === "Space";
       if (!isHuddleShortcut) return;
       if (event.repeat || event.defaultPrevented || !activeChannelId) return;
-      if (!shortcutEnabled["start-huddle"]) return;
       event.preventDefault();
       window.dispatchEvent(
         new CustomEvent<HuddleShortcutDetail>(HUDDLE_SHORTCUT_EVENT, {
@@ -111,47 +64,37 @@ export function useAppShellKeyboardShortcuts({
       }
 
       const key = event.key.toLowerCase();
-      if (
-        key === "f" &&
-        !event.shiftKey &&
-        canSearchCurrentChannel &&
-        shortcutEnabled["search-current-channel"]
-      ) {
+      if (key === "f" && !event.shiftKey && canSearchCurrentChannel) {
         event.preventDefault();
         onSearchCurrentChannel();
         return;
       }
 
       if (key === "k" && !event.shiftKey) {
-        if (!shortcutEnabled["search-everything"]) return;
         event.preventDefault();
         onSearchEverything();
         return;
       }
 
       if (key === "k" && event.shiftKey) {
-        if (!shortcutEnabled["new-message"]) return;
         event.preventDefault();
         void onNewMessage();
         return;
       }
 
       if (key === "n" && event.shiftKey) {
-        if (!shortcutEnabled["create-channel"]) return;
         event.preventDefault();
         onCreateChannel();
         return;
       }
 
       if (key === "o" && event.shiftKey) {
-        if (!shortcutEnabled["browse-channels"]) return;
         event.preventDefault();
         onBrowseChannels();
         return;
       }
 
       if (key === "a" && event.shiftKey) {
-        if (!shortcutEnabled["go-home"]) return;
         event.preventDefault();
         void onGoHome();
       }
@@ -177,6 +120,5 @@ export function useAppShellKeyboardShortcuts({
     onNewMessage,
     onSearchCurrentChannel,
     onSearchEverything,
-    shortcutEnabled,
   ]);
 }

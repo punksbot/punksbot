@@ -448,11 +448,11 @@ mod tests {
 
         std::fs::write(cwd.join("AGENTS.md"), "Project-level hints.").unwrap();
 
-        let skill_dir = cwd.join(".agents/skills/buzz-cli");
+        let skill_dir = cwd.join(".agents/skills/punks");
         std::fs::create_dir_all(&skill_dir).unwrap();
         std::fs::write(
             skill_dir.join("SKILL.md"),
-            "---\nname: buzz-cli\ndescription: CLI reference for Buzz managed agents\n---\nUse `buzz` to manage agents.\n",
+            "---\nname: punks\ndescription: CLI reference for Punks managed agents\n---\nUse `punks` to manage agents.\n",
         )
         .unwrap();
 
@@ -472,12 +472,12 @@ mod tests {
             "missing Available Skills"
         );
         assert!(
-            result.contains("buzz-cli: CLI reference for Buzz managed agents"),
+            result.contains("punks: CLI reference for Punks managed agents"),
             "missing skill bullet"
         );
         // Body must NOT be inlined — lazy loading only.
         assert!(
-            !result.contains("Use `buzz` to manage agents."),
+            !result.contains("Use `punks` to manage agents."),
             "skill body must not be inlined in system prompt"
         );
         // The load_skill instruction must be present.
@@ -487,12 +487,12 @@ mod tests {
         );
         // The old ### heading format must not appear.
         assert!(
-            !result.contains("### buzz-cli"),
+            !result.contains("### punks"),
             "skill body heading must not be inlined"
         );
         // The returned skills list should contain the discovered skill.
         assert_eq!(skills.len(), 1);
-        assert_eq!(skills[0].name, "buzz-cli");
+        assert_eq!(skills[0].name, "punks");
     }
 
     #[test]

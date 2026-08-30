@@ -1,5 +1,6 @@
-import { SmilePlus } from "lucide-react";
+import { RotateCcw, SmilePlus } from "lucide-react";
 import * as React from "react";
+import { toast } from "sonner";
 
 import { EmojiPicker } from "@/features/custom-emoji/ui/EmojiPicker";
 import type {
@@ -9,6 +10,7 @@ import type {
 import { MessageReactions } from "@/features/messages/ui/MessageReactions";
 import { useReactionHandler } from "@/features/messages/ui/useReactionHandler";
 import { recordQuickReactionEmoji } from "@/features/messages/ui/useQuickReactionEmojis";
+import { restoreMessage } from "@/shared/api/tauriMessageLifecycle";
 import {
   formatOwnerLabel,
   type UserProfileLookup,
@@ -57,6 +59,8 @@ type SystemMessagePayload = {
   public_reason?: string;
   reason_code?: string;
   action_id?: string;
+  target_event_id?: string;
+  permanent?: boolean;
 };
 
 type SystemMessageDescription = {
@@ -607,11 +611,22 @@ function describeSystemEvent(
           action: payload.public_reason,
         };
       }
+      if (payload.permanent) {
+        return {
+          title: actorName,
+          action: "permanently erased a message",
+        };
+      }
       return {
         title: actorName,
         action: "removed a message",
       };
     }
+    case "message_restored":
+      return {
+        title: actorName,
+        action: "restored a message",
+      };
     default:
       return null;
   }
@@ -710,6 +725,17 @@ export const SystemMessageRow = React.memo(function SystemMessageRow({
   if (!description) {
     return null;
   }
+  const lifecycleChannelId = message.tags?.find((tag) => tag[0] === "h")?.[1];
+  const lifecycleTargetId = payload.target_event_id;
+  const canRestore = Boolean(
+    payload.type === "message_deleted" &&
+      !payload.permanent &&
+      lifecycleTargetId &&
+      lifecycleChannelId &&
+      currentPubkey &&
+      payload.actor &&
+      normalizePubkey(payload.actor) === normalizePubkey(currentPubkey),
+  );
   const isMembershipArrival =
     payload.type === "member_joined" ||
     payload.type === "members_added" ||
@@ -915,6 +941,27 @@ export const SystemMessageRow = React.memo(function SystemMessageRow({
             <p className="-mt-0.5 text-sm leading-snug text-foreground">
               {description.action}
             </p>
+            {canRestore && lifecycleTargetId && lifecycleChannelId ? (
+              <Button
+                className="mt-1 w-fit"
+                onClick={() => {
+                  void restoreMessage(lifecycleChannelId, lifecycleTargetId)
+                    .then(() => toast.success("Message restored"))
+                    .catch((error) =>
+                      toast.error(
+                        error instanceof Error
+                          ? error.message
+                          : "Couldn’t restore message",
+                      ),
+                    );
+                }}
+                size="sm"
+                variant="outline"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                Restore
+              </Button>
+            ) : null}
             {reactionsContent}
           </div>
         </div>

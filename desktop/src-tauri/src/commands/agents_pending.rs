@@ -38,7 +38,7 @@ pub(crate) fn retain_managed_agent_pending(
         retain_agent_record(&conn, &scope.owner_keys, record).map(|_| ())
     })();
     if let Err(e) = result {
-        eprintln!("buzz-desktop: agent-retain: {e}");
+        eprintln!("punks-full-local: agent-retain: {e}");
     }
 }
 
@@ -65,8 +65,8 @@ pub(crate) fn tombstone_managed_agent_pending(
             RetainedEvent,
         },
     };
-    use buzz_core_pkg::kind::KIND_MANAGED_AGENT;
     use nostr::JsonUtil;
+    use punks_core_pkg::kind::KIND_MANAGED_AGENT;
 
     const KIND_DELETE: u32 = 5;
 
@@ -94,7 +94,7 @@ pub(crate) fn tombstone_managed_agent_pending(
         )
     })();
     if let Err(e) = result {
-        eprintln!("buzz-desktop: agent-tombstone: {e}");
+        eprintln!("punks-full-local: agent-tombstone: {e}");
     }
 }
 
@@ -116,7 +116,7 @@ pub(crate) fn build_agent_archive_request(
     } else {
         let agent = nostr::PublicKey::from_hex(agent_pubkey)
             .map_err(|e| format!("invalid agent pubkey: {e}"))?;
-        let tag_json = buzz_sdk_pkg::nip_oa::compute_auth_tag(keys, &agent, "")
+        let tag_json = punks_sdk_pkg::nip_oa::compute_auth_tag(keys, &agent, "")
             .map_err(|e| format!("failed to build owner auth tag: {e}"))?;
         let parts: Vec<String> = serde_json::from_str(&tag_json)
             .map_err(|e| format!("failed to parse owner auth tag: {e}"))?;
@@ -150,8 +150,8 @@ pub(crate) fn archive_managed_agent_pending(
     persona_id: Option<&str>,
 ) {
     use crate::managed_agents::retention::{open_retention_db, retain_event, RetainedEvent};
-    use buzz_core_pkg::kind::KIND_IA_ARCHIVE_REQUEST;
     use nostr::JsonUtil;
+    use punks_core_pkg::kind::KIND_IA_ARCHIVE_REQUEST;
 
     let result = (|| -> Result<(), String> {
         let scope = crate::managed_agents::retention::active_retention_scope(app, state)?;
@@ -172,6 +172,6 @@ pub(crate) fn archive_managed_agent_pending(
         )
     })();
     if let Err(e) = result {
-        eprintln!("buzz-desktop: agent-archive: {e}");
+        eprintln!("punks-full-local: agent-archive: {e}");
     }
 }

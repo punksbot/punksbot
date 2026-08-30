@@ -1,4 +1,4 @@
-//! Tauri commands for exporting and importing `buzz-team-snapshot v1` files.
+//! Tauri commands for exporting and importing `punks-team-snapshot v1` files.
 //!
 //! Team snapshots are full-instance bundles: importing mints a fresh keypair
 //! and `ManagedAgentRecord` for every member plus one `TeamRecord`. Exporting
@@ -32,7 +32,7 @@ pub(crate) const MAX_TEAM_SNAPSHOT_PNG_BYTES: usize = 50 * 1024 * 1024;
 const PNG_MAGIC: [u8; 4] = [0x89, 0x50, 0x4e, 0x47];
 const ZIP_MAGIC_PREFIX: [u8; 2] = [0x50, 0x4b];
 const LEGACY_TEAM_ERROR: &str =
-    "Legacy team files are no longer supported. Export a buzz-team-snapshot v1 .team.json or .team.png instead.";
+    "Legacy team files are no longer supported. Export a punks-team-snapshot v1 .team.json or .team.png instead.";
 
 /// Decode a canonical team snapshot, rejecting retired flat team JSON and
 /// persona-pack ZIP files with a migration-oriented error.
@@ -542,7 +542,7 @@ pub async fn confirm_team_snapshot_import(
             let compat_agent = nostr::PublicKey::from_hex(&pubkey)
                 .map_err(|e| format!("failed to bridge agent pubkey: {e}"))?;
             let auth_tag = Some(
-                buzz_sdk_pkg::nip_oa::compute_auth_tag(&compat_owner, &compat_agent, "")
+                punks_sdk_pkg::nip_oa::compute_auth_tag(&compat_owner, &compat_agent, "")
                     .map_err(|e| format!("failed to compute NIP-OA auth tag: {e}"))?,
             );
             (agent_keys, private_key_nsec, pubkey, auth_tag)
@@ -786,19 +786,19 @@ pub async fn confirm_team_snapshot_import(
             let base_ts = nostr::Timestamp::now().as_secs();
 
             for (idx, entry) in snap_member.memory.entries.iter().enumerate() {
-                let body = if entry.slug == buzz_core_pkg::engram::CORE_SLUG {
-                    buzz_core_pkg::engram::Body::Core {
+                let body = if entry.slug == punks_core_pkg::engram::CORE_SLUG {
+                    punks_core_pkg::engram::Body::Core {
                         profile: entry.body.clone(),
                     }
                 } else {
-                    buzz_core_pkg::engram::Body::Memory {
+                    punks_core_pkg::engram::Body::Memory {
                         slug: entry.slug.clone(),
                         value: Some(entry.body.clone()),
                     }
                 };
 
                 let created_at = base_ts + idx as u64;
-                match buzz_core_pkg::engram::build_event(
+                match punks_core_pkg::engram::build_event(
                     &m.agent_keys,
                     &owner_pubkey,
                     &body,
@@ -855,8 +855,8 @@ fn retain_agent_pending(app: &AppHandle, state: &AppState, record: &ManagedAgent
         persona_events::monotonic_created_at,
         retention::{get_retained_event, open_retention_db, retain_event, RetainedEvent},
     };
-    use buzz_core_pkg::kind::KIND_MANAGED_AGENT;
     use nostr::JsonUtil;
+    use punks_core_pkg::kind::KIND_MANAGED_AGENT;
 
     let result = (|| -> Result<(), String> {
         let scope = crate::managed_agents::retention::active_retention_scope(app, state)?;
@@ -891,7 +891,7 @@ fn retain_agent_pending(app: &AppHandle, state: &AppState, record: &ManagedAgent
         )
     })();
     if let Err(e) = result {
-        eprintln!("buzz-desktop: team-snapshot-import retain-agent: {e}");
+        eprintln!("punks-full-local: team-snapshot-import retain-agent: {e}");
     }
 }
 

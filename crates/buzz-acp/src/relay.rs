@@ -1,6 +1,6 @@
-//! Harness-side Buzz relay client.
+//! Harness-side Punks relay client.
 //!
-//! Connects to the Buzz relay via NIP-01 WebSocket, authenticates via NIP-42,
+//! Connects to the Punks relay via NIP-01 WebSocket, authenticates via NIP-42,
 //! discovers channels via REST API, and streams events back to the harness main
 //! loop. Also publishes ephemeral events (typing indicators) via the same
 //! WebSocket connection.
@@ -13,7 +13,7 @@
 //!
 //! A background tokio task owns the WebSocket stream. It:
 //! - Responds to Ping frames with Pong (preventing relay disconnect on long turns)
-//! - Forwards `BuzzEvent`s through an `mpsc` channel
+//! - Forwards `PunksEvent`s through an `mpsc` channel
 //! - Handles reconnection with `since` filters to avoid event loss
 //! - Responds to mid-session AUTH challenges
 //! - Publishes ephemeral events (typing indicators) via `PublishEvent` commands
@@ -25,7 +25,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::time::Duration;
 
 /// Default capacity of the event channel from background task to harness.
-/// Override with `BUZZ_ACP_EVENT_BUFFER` env var at startup.
+/// Override with `PUNKS_ACP_EVENT_BUFFER` env var at startup.
 const EVENT_CHANNEL_CAPACITY_DEFAULT: usize = 256;
 /// Capacity of the command channel from harness to background task.
 const CMD_CHANNEL_CAPACITY: usize = 64;
@@ -33,7 +33,7 @@ const CMD_CHANNEL_CAPACITY: usize = 64;
 /// Read the event channel capacity from the environment, falling back to the
 /// compiled-in default. Parsed once at call-site (connect time).
 fn event_channel_capacity() -> usize {
-    std::env::var("BUZZ_ACP_EVENT_BUFFER")
+    std::env::var("PUNKS_ACP_EVENT_BUFFER")
         .ok()
         .and_then(|v| v.parse::<usize>().ok())
         .map(|v| v.max(1)) // mpsc::channel panics on capacity 0
@@ -456,7 +456,7 @@ impl RestClient {
 
 /// Events the harness cares about.
 #[derive(Debug, Clone)]
-pub struct BuzzEvent {
+pub struct PunksEvent {
     /// Which channel this event belongs to.
     pub channel_id: Uuid,
     /// The underlying Nostr event.
@@ -557,14 +557,14 @@ type WsStream = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
 
 /// Harness-side relay client.
 ///
-/// Connects to the Buzz relay, authenticates via NIP-42, and streams
+/// Connects to the Punks relay, authenticates via NIP-42, and streams
 /// matching events for subscribed channels.
 ///
 /// A background tokio task owns the WebSocket connection and responds to
 /// Ping frames, preventing disconnection during long agent turns.
 pub struct HarnessRelay {
     /// Receiver for events forwarded by the background task.
-    event_rx: mpsc::Receiver<Option<BuzzEvent>>,
+    event_rx: mpsc::Receiver<Option<PunksEvent>>,
     /// Receiver for encrypted observer control events addressed to this agent.
     observer_control_rx: Option<mpsc::Receiver<Event>>,
     /// Sender for commands to the background task.
@@ -638,7 +638,7 @@ impl HarnessRelay {
         let (ws, handshake_buffer) =
             retry_initial_connect(|| do_connect(relay_url, keys, auth_tag.as_ref())).await?;
 
-        let (event_tx, event_rx) = mpsc::channel::<Option<BuzzEvent>>(event_channel_capacity());
+        let (event_tx, event_rx) = mpsc::channel::<Option<PunksEvent>>(event_channel_capacity());
         let (observer_control_tx, observer_control_rx) =
             mpsc::channel::<Event>(event_channel_capacity());
         let (cmd_tx, cmd_rx) = mpsc::channel::<RelayCommand>(CMD_CHANNEL_CAPACITY);
@@ -839,7 +839,7 @@ impl HarnessRelay {
     ///
     /// Reads from the background task's event channel. Returns `None` on
     /// connection loss — the caller should call [`reconnect`](Self::reconnect).
-    pub async fn next_event(&mut self) -> Option<BuzzEvent> {
+    pub async fn next_event(&mut self) -> Option<PunksEvent> {
         // The background task sends `None` to signal connection loss.
         self.event_rx.recv().await.flatten()
     }
@@ -1565,7 +1565,7 @@ async fn execute_connected_command(
 async fn run_background_task(
     mut ws: WsStream,
     initial_handshake_buffer: std::collections::VecDeque<RelayMessage>,
-    event_tx: mpsc::Sender<Option<BuzzEvent>>,
+    event_tx: mpsc::Sender<Option<PunksEvent>>,
     observer_control_tx: mpsc::Sender<Event>,
     mut cmd_rx: mpsc::Receiver<RelayCommand>,
     keys: Keys,
@@ -2074,7 +2074,7 @@ async fn run_background_task(
 async fn handle_ws_message(
     msg: Message,
     ws: &mut WsStream,
-    event_tx: &mpsc::Sender<Option<BuzzEvent>>,
+    event_tx: &mpsc::Sender<Option<PunksEvent>>,
     observer_control_tx: &mpsc::Sender<Event>,
     state: &mut BgState,
     keys: &Keys,
@@ -2130,7 +2130,7 @@ async fn handle_ws_message(
                             return true;
                         }
                         let ts = event.created_at.as_secs();
-                        let buzz_event = BuzzEvent {
+                        let buzz_event = PunksEvent {
                             channel_id: channel_uuid,
                             event: *event,
                         };
@@ -2171,7 +2171,7 @@ async fn handle_ws_message(
                         let ts = event.created_at.as_secs();
                         let event_id_hex = event.id.to_hex();
                         if state.record_event(channel_id, &event) {
-                            let buzz_event = BuzzEvent {
+                            let buzz_event = PunksEvent {
                                 channel_id,
                                 event: *event,
                             };
@@ -2424,7 +2424,7 @@ async fn handle_ws_message(
 async fn process_handshake_buffer(
     ws: &mut WsStream,
     buffer: std::collections::VecDeque<RelayMessage>,
-    event_tx: &mpsc::Sender<Option<BuzzEvent>>,
+    event_tx: &mpsc::Sender<Option<PunksEvent>>,
     observer_control_tx: &mpsc::Sender<Event>,
     state: &mut BgState,
     keys: &Keys,
@@ -2928,7 +2928,7 @@ async fn try_autonomous_reconnect(
     keys: &Keys,
     relay_url: &str,
     agent_pubkey_hex: &str,
-    event_tx: &mpsc::Sender<Option<BuzzEvent>>,
+    event_tx: &mpsc::Sender<Option<PunksEvent>>,
     observer_control_tx: &mpsc::Sender<Event>,
     auth_tag: Option<&nostr::Tag>,
 ) -> ReconnectOutcome {
@@ -3057,7 +3057,7 @@ async fn wait_for_reconnect(
     keys: &Keys,
     relay_url: &str,
     agent_pubkey_hex: &str,
-    event_tx: &mpsc::Sender<Option<BuzzEvent>>,
+    event_tx: &mpsc::Sender<Option<PunksEvent>>,
     observer_control_tx: &mpsc::Sender<Event>,
     skip_drain: bool,
     auth_tag: Option<&nostr::Tag>,

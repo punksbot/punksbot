@@ -86,6 +86,14 @@ struct WorkflowTriggerAck {
     run_id: String,
 }
 
+#[derive(Debug, serde::Deserialize, Serialize)]
+struct WorkflowApprovalActionWire {
+    token: String,
+    status: String,
+    run_id: String,
+    workflow_id: String,
+}
+
 // ── Reads ────────────────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -355,7 +363,10 @@ pub async fn grant_approval(
 ) -> Result<Value, String> {
     let builder = events::build_approval_grant(&token, note.as_deref())?;
     let result = submit_event(builder, &state).await?;
-    Ok(serde_json::json!({ "event_id": result.event_id }))
+    serde_json::to_value(parse_command_response::<WorkflowApprovalActionWire>(
+        &result.message,
+    )?)
+    .map_err(|error| format!("serialize approval result: {error}"))
 }
 
 #[tauri::command]
@@ -366,7 +377,10 @@ pub async fn deny_approval(
 ) -> Result<Value, String> {
     let builder = events::build_approval_deny(&token, note.as_deref())?;
     let result = submit_event(builder, &state).await?;
-    Ok(serde_json::json!({ "event_id": result.event_id }))
+    serde_json::to_value(parse_command_response::<WorkflowApprovalActionWire>(
+        &result.message,
+    )?)
+    .map_err(|error| format!("serialize approval result: {error}"))
 }
 
 // ── Helpers (pure, unit-tested in workflows_tests.rs) ─────────────────────────

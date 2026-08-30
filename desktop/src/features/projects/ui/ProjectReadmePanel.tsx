@@ -11,7 +11,7 @@ import { projectExternalRefUrl } from "@/features/projects/lib/projectExternalUr
 import type { ProjectRepoUnavailableReason } from "@/features/projects/lib/projectRepoAvailability";
 import { formatLastChangedAt } from "@/features/projects/lib/projectsViewHelpers";
 import { Button } from "@/shared/ui/button";
-import { BuzzLoadingState } from "@/shared/ui/BuzzLoadingState";
+import { PunksLoadingState } from "@/shared/ui/PunksLoadingState";
 import { Markdown, SyntaxHighlightedCode } from "@/shared/ui/markdown";
 import { baseName, languageForPath } from "./ProjectRepositoryPanel";
 import {
@@ -103,7 +103,7 @@ export function ReadmePanel({
   sourceControls,
   unavailableReason,
 }: {
-  /** `buzz-channel` binding of the repository, for access-restricted copy. */
+  /** `punks-channel` binding of the repository, for access-restricted copy. */
   accessChannelId?: string | null;
   file: ProjectRepoFile | null;
   fileContentSource?: RepositoryFileContentSource;
@@ -171,7 +171,7 @@ export function ReadmePanel({
     return (
       <section className="overflow-hidden">
         {header}
-        <BuzzLoadingState label="Loading repository" />
+        <PunksLoadingState label="Loading repository" />
       </section>
     );
   }
@@ -209,7 +209,7 @@ export function ReadmePanel({
           </h3>
           <p className="mt-1 max-w-lg text-sm text-muted-foreground">
             Clone this repository locally to explore its files, commits, and
-            contributors in Buzz.
+            contributors in Punks.
           </p>
           {externalOpenUrl ? (
             <a
@@ -254,7 +254,7 @@ export function ReadmePanel({
     return (
       <section className="overflow-hidden">
         {header}
-        <BuzzLoadingState label="Loading README" />
+        <PunksLoadingState label="Loading README" />
       </section>
     );
   }
@@ -263,7 +263,7 @@ export function ReadmePanel({
     return (
       <section className="overflow-hidden">
         {header}
-        <div className="p-6 text-sm text-muted-foreground">
+        <div className="px-8 py-6 text-sm text-muted-foreground">
           {fileContent.error
             ? "Could not load this README. Try again after refreshing the repository."
             : gitDataState === "empty"
@@ -283,11 +283,13 @@ export function ReadmePanel({
   return (
     <section className="overflow-hidden">
       {header}
-      <div className="p-4">
+      <div className="min-w-0 px-8 py-6">
         {isMarkdown ? (
           <Markdown
+            blockCode
             className="text-sm"
             content={readmeContent}
+            hardLineBreaks={false}
             interactive={false}
           />
         ) : language ? (

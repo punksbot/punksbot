@@ -1,0 +1,88 @@
+.punks-logo {
+  display: grid;
+  place-items: center;
+  inline-size: fit-content;
+}
+
+.punks-logo--screen {
+  min-block-size: 100vh;
+  inline-size: 100%;
+  overflow: hidden;
+}
+
+.punks-logo--background {
+  background-color: #d7d72e;
+  background-image: radial-gradient(
+    circle,
+    rgba(35, 30, 30, 0.16) 1.2px,
+    transparent 1.3px
+  );
+  background-position: 0 0;
+  background-size: 37px 37px;
+}
+
+.punks-logo__mark {
+  display: block;
+  inline-size: min(466px, calc(100vw - 32px));
+  block-size: auto;
+  overflow: visible;
+}
+
+.punks-logo--compact {
+  inline-size: 1.5rem;
+}
+
+.punks-logo--compact .punks-logo__mark {
+  inline-size: 100%;
+  block-size: auto;
+  max-inline-size: 100%;
+}
+
+.punks-logo__ink {
+  fill: currentColor;
+}
+
+@keyframes punks-logo-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.punks-logo--pulse .punks-logo__mark {
+  animation: punks-logo-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes punks-logo-scale-pulse {
+  0%,
+  100% {
+    transform: scale(0.94);
+  }
+  50% {
+    transform: scale(1.06);
+  }
+}
+
+.punks-logo--scale-pulse .punks-logo__mark {
+  animation: punks-logo-scale-pulse 1.8s ease-in-out infinite;
+  transform-origin: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .punks-logo animate {
+    display: none;
+  }
+
+  .punks-logo--pulse .punks-logo__mark {
+    animation: none;
+    opacity: 0.8;
+  }
+
+  .punks-logo--scale-pulse .punks-logo__mark {
+    animation: none;
+    transform: none;
+  }
+}

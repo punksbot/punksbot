@@ -51,7 +51,7 @@ pub async fn set_huddle_transcription_enabled(
             (ephemeral_channel_id, None)
         } else {
             hs.invalidate_transcription_pipeline();
-            (ephemeral_channel_id, hs.stt_pipeline.take())
+            (ephemeral_channel_id, hs.take_stt_pipeline())
         }
     };
 
@@ -65,7 +65,7 @@ pub async fn set_huddle_transcription_enabled(
             manager.start_stt_download(state.http_client.clone());
         }
         if let Err(e) = maybe_start_stt_pipeline(&state, &ephemeral_channel_id).await {
-            eprintln!("buzz-desktop: STT transcript start failed: {e}");
+            eprintln!("punks-full-local: STT transcript start failed: {e}");
         }
     }
 

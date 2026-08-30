@@ -35,9 +35,14 @@ import {
   KIND_STREAM_MESSAGE_EDIT,
   KIND_STREAM_MESSAGE_DIFF,
   KIND_SYSTEM_MESSAGE,
+  KIND_STREAM_MESSAGE_ERASED,
+  KIND_STREAM_MESSAGE_RESTORED,
 } from "@/shared/constants/kinds";
 import { resolveEventAuthorPubkey } from "@/shared/lib/authors";
 import { normalizePubkey } from "@/shared/lib/pubkey";
+import { channelRoleMap } from "@/shared/lib/rosterDerivations";
+
+const EMPTY_ROLE_MAP: ReadonlyMap<string, string> = new Map();
 import { formatTime } from "@/features/messages/lib/dateFormatters";
 // Pure overlay helper lives in a sibling .mjs so node:test (no TS loader)
 // can exercise the exact same source the renderer uses.
@@ -74,6 +79,77 @@ function getDeletionTargets(tags: string[][]) {
     .map((tag) => tag[1]);
 }
 
+function deletedEventIdsFromLifecycle(events: RelayEvent[]) {
+  const latest = new Map<
+    string,
+    { deleted: boolean; createdAt: number; eventId: string }
+  >();
+  for (const event of events) {
+    const deleted =
+      event.kind === KIND_DELETION ||
+      event.kind === KIND_NIP29_DELETE_EVENT ||
+      event.kind === KIND_STREAM_MESSAGE_ERASED;
+    if (!deleted && event.kind !== KIND_STREAM_MESSAGE_RESTORED) continue;
+    for (const targetId of getDeletionTargets(event.tags)) {
+      const current = latest.get(targetId);
+      if (
+        !current ||
+        event.created_at > current.createdAt ||
+        (event.created_at === current.createdAt && event.id > current.eventId)
+      ) {
+        latest.set(targetId, {
+          deleted,
+          createdAt: event.created_at,
+          eventId: event.id,
+        });
+      }
+    }
+  }
+  return new Set(
+    [...latest.entries()]
+      .filter(([, state]) => state.deleted)
+      .map(([targetId]) => targetId),
+  );
+}
+
+function supersededLifecycleSystemEventIds(events: RelayEvent[]) {
+  const lifecycle = new Map<
+    string,
+    { id: string; createdAt: number; eventId: string }
+  >();
+  const candidates: Array<{ id: string; targetId: string }> = [];
+  for (const event of events) {
+    if (event.kind !== KIND_SYSTEM_MESSAGE) continue;
+    let type: unknown;
+    try {
+      type = JSON.parse(event.content)?.type;
+    } catch {
+      continue;
+    }
+    if (type !== "message_deleted" && type !== "message_restored") continue;
+    const targetId = getDeletionTargets(event.tags)[0];
+    if (!targetId) continue;
+    candidates.push({ id: event.id, targetId });
+    const current = lifecycle.get(targetId);
+    if (
+      !current ||
+      event.created_at > current.createdAt ||
+      (event.created_at === current.createdAt && event.id > current.eventId)
+    ) {
+      lifecycle.set(targetId, {
+        id: event.id,
+        createdAt: event.created_at,
+        eventId: event.id,
+      });
+    }
+  }
+  return new Set(
+    candidates
+      .filter(({ id, targetId }) => lifecycle.get(targetId)?.id !== id)
+      .map(({ id }) => id),
+  );
+}
+
 /**
  * Count the *visible top-level rows* a raw event window would render in the
  * main channel timeline — the same unit `buildMainTimelineEntries` produces.
@@ -90,21 +166,16 @@ function getDeletionTargets(tags: string[][]) {
  *      (`parentId == null`) or broadcast replies.
  */
 export function countTopLevelTimelineRows(events: RelayEvent[]): number {
-  const deletedEventIds = new Set<string>();
-  for (const event of events) {
-    if (
-      event.kind === KIND_DELETION ||
-      event.kind === KIND_NIP29_DELETE_EVENT
-    ) {
-      for (const targetId of getDeletionTargets(event.tags)) {
-        deletedEventIds.add(targetId);
-      }
-    }
-  }
+  const deletedEventIds = deletedEventIdsFromLifecycle(events);
+  const supersededSystemEvents = supersededLifecycleSystemEventIds(events);
 
   let count = 0;
   for (const event of events) {
-    if (!isTimelineContentEvent(event) || deletedEventIds.has(event.id)) {
+    if (
+      !isTimelineContentEvent(event) ||
+      deletedEventIds.has(event.id) ||
+      supersededSystemEvents.has(event.id)
+    ) {
       continue;
     }
     const { parentId } = getThreadReference(event.tags);
@@ -228,26 +299,11 @@ export function formatTimelineMessages(
   ownerProfiles?: UserProfileLookup,
 ): TimelineMessage[] {
   const currentPubkeyLower = currentPubkey?.toLowerCase();
-  const roleByPubkey = new Map<string, string>();
-  if (members) {
-    for (const member of members) {
-      roleByPubkey.set(member.pubkey.toLowerCase(), member.role);
-    }
-  }
-  const deletedEventIds = new Set<string>();
-  for (const event of events) {
-    // Both kind:5 and kind:9005 are deletion markers; mirror the relay.
-    if (
-      event.kind !== KIND_DELETION &&
-      event.kind !== KIND_NIP29_DELETE_EVENT
-    ) {
-      continue;
-    }
-
-    for (const targetId of getDeletionTargets(event.tags)) {
-      deletedEventIds.add(targetId);
-    }
-  }
+  // Identity-cached: rosters can be 10k+ members and this formatter re-runs
+  // on every live message; the map is computed once per distinct roster.
+  const roleByPubkey = members ? channelRoleMap(members) : EMPTY_ROLE_MAP;
+  const deletedEventIds = deletedEventIdsFromLifecycle(events);
+  const supersededSystemEvents = supersededLifecycleSystemEventIds(events);
 
   const timelineEventsById = new Map(
     events.filter(isTimelineContentEvent).map((event) => [event.id, event]),
@@ -298,7 +354,10 @@ export function formatTimelineMessages(
   }
 
   const visibleEvents = events.filter(
-    (event) => isTimelineContentEvent(event) && !deletedEventIds.has(event.id),
+    (event) =>
+      isTimelineContentEvent(event) &&
+      !deletedEventIds.has(event.id) &&
+      !supersededSystemEvents.has(event.id),
   );
   const eventsById = new Map(visibleEvents.map((event) => [event.id, event]));
   const reactionPresence = new Map<
@@ -568,18 +627,9 @@ export function collectReactionActorPubkeys(
   events: RelayEvent[],
   relaySelfPubkey?: string | null,
 ) {
-  const deletedEventIds = new Set<string>();
-  for (const event of events) {
-    if (
-      event.kind !== KIND_DELETION &&
-      event.kind !== KIND_NIP29_DELETE_EVENT
-    ) {
-      continue;
-    }
-    for (const targetId of getDeletionTargets(event.tags)) {
-      deletedEventIds.add(targetId.toLowerCase());
-    }
-  }
+  const deletedEventIds = new Set(
+    [...deletedEventIdsFromLifecycle(events)].map((id) => id.toLowerCase()),
+  );
 
   const pubkeys = new Set<string>();
   for (const event of events) {

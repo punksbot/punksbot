@@ -1,7 +1,8 @@
 import * as React from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useLocation } from "@tanstack/react-router";
 
-import { RouteCapabilityBoundary } from "@/shared/capabilities";
+import { selectSearchHighlightRouteState } from "@/app/routes/searchHighlightRouteState";
+import { usePreviewFeatureWarning } from "@/shared/features";
 import { ViewLoadingFallback } from "@/shared/ui/ViewLoadingFallback";
 
 type ForumPostRouteSearch = {
@@ -30,23 +31,26 @@ const ChannelRouteScreen = React.lazy(async () => {
 });
 
 function ForumPostRouteComponent() {
+  usePreviewFeatureWarning("forum");
   const { channelId, postId } = Route.useParams();
   const search = Route.useSearch();
+  const searchHighlight = useLocation({
+    select: selectSearchHighlightRouteState,
+  });
 
   return (
-    <RouteCapabilityBoundary capability="forum">
-      <React.Suspense
-        fallback={<ViewLoadingFallback includeHeader kind="forum" />}
-      >
-        <ChannelRouteScreen
-          autoSendDraftKey={null}
-          channelId={channelId}
-          selectedPostId={postId}
-          targetMessageId={null}
-          targetReplyId={search.replyId ?? null}
-          targetThreadRootId={null}
-        />
-      </React.Suspense>
-    </RouteCapabilityBoundary>
+    <React.Suspense
+      fallback={<ViewLoadingFallback includeHeader kind="forum" />}
+    >
+      <ChannelRouteScreen
+        autoSendDraftKey={null}
+        channelId={channelId}
+        searchHighlight={searchHighlight}
+        selectedPostId={postId}
+        targetMessageId={null}
+        targetReplyId={search.replyId ?? null}
+        targetThreadRootId={null}
+      />
+    </React.Suspense>
   );
 }

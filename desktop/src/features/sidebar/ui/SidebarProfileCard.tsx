@@ -9,6 +9,7 @@ import {
   STATUS_DOT_MASK_CURVE,
 } from "@/features/profile/ui/MaskedAvatarBadgeFrame";
 import { ProfilePopover } from "@/features/profile/ui/ProfilePopover";
+import { LocalAccountSwitcher } from "@/features/profile/ui/LocalAccountSwitcher";
 import { StatusEmoji } from "@/features/user-status/ui/StatusEmoji";
 import type { LeaveCommunityResult } from "@/features/communities/leaveCommunity";
 import type { Community } from "@/features/communities/types";
@@ -86,7 +87,7 @@ export function SidebarProfileCard({
   const readonlyCommunityLabel = (
     <span
       className="flex min-w-0 cursor-pointer items-center gap-1 text-xs leading-snug text-sidebar-foreground/70"
-      data-buzz-sidebar-secondary
+      data-punks-sidebar-secondary
     >
       <span
         aria-hidden="true"
@@ -147,6 +148,13 @@ export function SidebarProfileCard({
 
         <div className="min-w-0 flex-1">
           <ProfilePopover
+            accountSwitcherSlot={
+              import.meta.env.VITE_PUNKS_LOCAL === "1" ? (
+                <LocalAccountSwitcher
+                  onClose={() => setProfilePopoverOpen(false)}
+                />
+              ) : null
+            }
             open={profilePopoverOpen}
             onOpenChange={setProfilePopoverOpen}
             avatarDataUrl={selfProfileCache?.avatarDataUrl ?? null}
@@ -208,7 +216,7 @@ export function SidebarProfileCard({
                   "flex w-full min-w-0 items-center truncate rounded-sm text-left text-xs leading-snug text-sidebar-foreground/70 outline-hidden transition-opacity duration-150 focus:outline-none focus-visible:outline-none group-hover/profile-card:opacity-0",
                   profilePopoverOpen && "opacity-100",
                 )}
-                data-buzz-sidebar-secondary
+                data-punks-sidebar-secondary
                 data-testid="sidebar-profile-user-status"
                 onClick={(event) => {
                   event.stopPropagation();
@@ -229,7 +237,7 @@ export function SidebarProfileCard({
                   "pointer-events-none absolute inset-0 flex min-w-0 items-center text-xs leading-snug text-sidebar-foreground/70 opacity-0 transition-opacity duration-150 group-hover/profile-card:opacity-100",
                   profilePopoverOpen && "opacity-0",
                 )}
-                data-buzz-sidebar-secondary
+                data-punks-sidebar-secondary
               >
                 {readonlyCommunityLabel}
               </div>

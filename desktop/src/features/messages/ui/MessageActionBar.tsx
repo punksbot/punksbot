@@ -1,6 +1,7 @@
 import {
   BellOff,
   BellRing,
+  Bookmark,
   Clock,
   Copy,
   CornerUpLeft,
@@ -10,6 +11,7 @@ import {
   MailCheck,
   MailOpen,
   Pencil,
+  Pin,
   SmilePlus,
   Trash2,
 } from "lucide-react";
@@ -18,27 +20,26 @@ import { toast } from "sonner";
 
 import { buildMessageLink } from "@/features/messages/lib/messageLink";
 import { EmojiPicker } from "@/features/custom-emoji/ui/EmojiPicker";
-import { useCustomEmoji } from "@/features/custom-emoji/hooks";
 import { getThreadReference } from "@/features/messages/lib/threading";
+import { eraseMessage } from "@/shared/api/tauriMessageLifecycle";
+import {
+  useMessageMarkerMutations,
+  useMessageMarkerState,
+} from "@/features/messages/useMessageMarkers";
 import { ReportMessageDialog } from "@/features/moderation/ui/ReportMessageDialog";
 import { MessageModerationMenuItems } from "@/features/moderation/ui/MessageModerationMenuItems";
 import type {
   TimelineMessage,
   TimelineReaction,
 } from "@/features/messages/types";
-import {
-  recordQuickReactionEmoji,
-  useQuickReactionEmojis,
-} from "@/features/messages/ui/useQuickReactionEmojis";
-import { reactionEmojiUrl } from "@/shared/api/customEmoji";
+import { recordQuickReactionEmoji } from "@/features/messages/ui/useQuickReactionEmojis";
 import { cn } from "@/shared/lib/cn";
 import { copyTextToClipboard } from "@/shared/lib/clipboard";
-import { emojiDisplayName } from "@/shared/lib/emojiName";
-import { rewriteRelayUrl } from "@/shared/lib/mediaUrl";
 import { KIND_HUDDLE_STARTED } from "@/shared/constants/kinds";
 import { Button } from "@/shared/ui/button";
 import { HashArrowIn } from "@/shared/ui/icons";
 import { DeleteMessageConfirmDialog } from "./DeleteMessageConfirmDialog";
+import { EraseMessageConfirmDialog } from "./EraseMessageConfirmDialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -53,20 +54,51 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
 const ACTION_BUTTON_CLASS = "h-8 w-8 rounded-full p-0";
 const ACTION_ICON_CLASS = "!h-4 !w-4";
 
+/** Copying a message link is offered from both the hover action bar and the
+ *  More menu; both paths share this exact link-building + toast behavior. */
+function copyMessageLink(channelId: string, message: TimelineMessage) {
+  const { rootId } = getThreadReference(message.tags ?? []);
+  const link = buildMessageLink({
+    channelId,
+    messageId: message.id,
+    threadRootId: rootId,
+  });
+  copyTextToClipboard(link, "Link copied to clipboard");
+}
+
+/** Gate shared by every copy-link surface: pending sends have no delivered
+ *  event to link to, huddle system rows aren't linkable, and callers without
+ *  a channelId (e.g. inbox preview rows) can't build the link. */
+function canCopyMessageLink(
+  message: TimelineMessage,
+  channelId: string | null | undefined,
+): channelId is string {
+  return (
+    !message.pending &&
+    message.kind !== KIND_HUDDLE_STARTED &&
+    Boolean(channelId)
+  );
+}
+
 function MoreActionsMenu({
   channelId,
   message,
   onDelete,
   onEdit,
+  onErase,
   onFollowThread,
   onMarkUnread,
   onMarkRead,
+  onToggleBookmark,
+  onTogglePin,
   onOpenChange,
   onRemindLater,
   onSendToChannel,
   onUnfollowThread,
   open,
   isFollowingThread,
+  isBookmarked,
+  isPinned,
   isUnread,
 }: {
   /** Channel UUID for the "Copy link" action. When null/undefined, the
@@ -75,18 +107,24 @@ function MoreActionsMenu({
   message: TimelineMessage;
   onDelete?: (message: TimelineMessage) => void;
   onEdit?: (message: TimelineMessage) => void;
+  onErase?: (message: TimelineMessage) => Promise<void>;
   onFollowThread?: (message: TimelineMessage) => void;
   onMarkUnread?: (message: TimelineMessage) => void;
   onMarkRead?: (message: TimelineMessage) => void;
+  onToggleBookmark?: (message: TimelineMessage) => Promise<void>;
+  onTogglePin?: (message: TimelineMessage) => Promise<void>;
   onOpenChange: (open: boolean) => void;
   onRemindLater?: (message: TimelineMessage) => void;
   onSendToChannel?: (message: TimelineMessage) => Promise<void>;
   onUnfollowThread?: (message: TimelineMessage) => void;
   open: boolean;
   isFollowingThread?: boolean;
+  isBookmarked?: boolean;
+  isPinned?: boolean;
   isUnread?: boolean;
 }) {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
+  const [isEraseDialogOpen, setIsEraseDialogOpen] = React.useState(false);
   const [isReportDialogOpen, setIsReportDialogOpen] = React.useState(false);
   // Set true the moment the user picks "Edit message". The
   // `onCloseAutoFocus` handler on `DropdownMenuContent` reads it to
@@ -143,7 +181,7 @@ function MoreActionsMenu({
           {onEdit ? (
             <DropdownMenuItem
               data-testid={`edit-message-${message.id}`}
-              onClick={() => {
+              onSelect={() => {
                 editJustSelectedRef.current = true;
                 onEdit(message);
               }}
@@ -206,6 +244,54 @@ function MoreActionsMenu({
             </DropdownMenuItem>
           ) : null}
 
+          {onTogglePin ? (
+            <DropdownMenuItem
+              data-testid={`pin-message-${message.id}`}
+              onClick={() => {
+                void onTogglePin(message)
+                  .then(() =>
+                    toast.success(
+                      isPinned ? "Message unpinned" : "Message pinned",
+                    ),
+                  )
+                  .catch((error) =>
+                    toast.error(
+                      error instanceof Error
+                        ? error.message
+                        : "Couldn’t update the pin",
+                    ),
+                  );
+              }}
+            >
+              <Pin className="h-4 w-4" />
+              {isPinned ? "Unpin from Workspace" : "Pin to Workspace"}
+            </DropdownMenuItem>
+          ) : null}
+
+          {onToggleBookmark ? (
+            <DropdownMenuItem
+              data-testid={`bookmark-message-${message.id}`}
+              onClick={() => {
+                void onToggleBookmark(message)
+                  .then(() =>
+                    toast.success(
+                      isBookmarked ? "Bookmark removed" : "Message bookmarked",
+                    ),
+                  )
+                  .catch((error) =>
+                    toast.error(
+                      error instanceof Error
+                        ? error.message
+                        : "Couldn’t update the bookmark",
+                    ),
+                  );
+              }}
+            >
+              <Bookmark className="h-4 w-4" />
+              {isBookmarked ? "Remove private bookmark" : "Bookmark privately"}
+            </DropdownMenuItem>
+          ) : null}
+
           {onRemindLater ? (
             <DropdownMenuItem
               onClick={() => {
@@ -242,17 +328,11 @@ function MoreActionsMenu({
             </DropdownMenuItem>
           ) : null}
 
-          {hasCopyActions && channelId ? (
+          {canCopyMessageLink(message, channelId) ? (
             <DropdownMenuItem
               data-testid={`copy-message-link-${message.id}`}
               onClick={() => {
-                const { rootId } = getThreadReference(message.tags ?? []);
-                const link = buildMessageLink({
-                  channelId,
-                  messageId: message.id,
-                  threadRootId: rootId,
-                });
-                copyTextToClipboard(link, "Link copied to clipboard");
+                copyMessageLink(channelId, message);
               }}
             >
               <Link2 className="h-4 w-4" />
@@ -260,7 +340,7 @@ function MoreActionsMenu({
             </DropdownMenuItem>
           ) : null}
 
-          {canReport || onDelete ? <DropdownMenuSeparator /> : null}
+          {canReport || onDelete || onErase ? <DropdownMenuSeparator /> : null}
 
           {canReport ? (
             <DropdownMenuItem
@@ -283,7 +363,18 @@ function MoreActionsMenu({
               }}
             >
               <Trash2 className="h-4 w-4" />
-              Delete message
+              Remove message
+            </DropdownMenuItem>
+          ) : null}
+
+          {onErase ? (
+            <DropdownMenuItem
+              className="text-destructive focus:text-destructive"
+              data-testid={`erase-message-${message.id}`}
+              onClick={() => setIsEraseDialogOpen(true)}
+            >
+              <Trash2 className="h-4 w-4" />
+              Erase permanently
             </DropdownMenuItem>
           ) : null}
 
@@ -304,6 +395,24 @@ function MoreActionsMenu({
         />
       ) : null}
 
+      {onErase ? (
+        <EraseMessageConfirmDialog
+          onConfirm={() => {
+            void onErase(message)
+              .then(() => toast.success("Message permanently erased"))
+              .catch((error) =>
+                toast.error(
+                  error instanceof Error
+                    ? error.message
+                    : "Couldn’t erase message",
+                ),
+              );
+          }}
+          onOpenChange={setIsEraseDialogOpen}
+          open={isEraseDialogOpen}
+        />
+      ) : null}
+
       {canReport ? (
         <ReportMessageDialog
           open={isReportDialogOpen}
@@ -314,51 +423,6 @@ function MoreActionsMenu({
       ) : null}
     </>
   );
-}
-
-function QuickReactionButton({
-  customEmojiUrl,
-  emoji,
-  onSelect,
-}: {
-  customEmojiUrl?: string;
-  emoji: string;
-  onSelect: (emoji: string) => void;
-}) {
-  const displayName = emojiDisplayName(emoji);
-  const mediaUrl = customEmojiUrl ? rewriteRelayUrl(customEmojiUrl) : null;
-
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          aria-label={`React with ${displayName}`}
-          className="flex h-8 w-8 items-center justify-center rounded-full text-base leading-none text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
-          onClick={() => onSelect(emoji)}
-          title={displayName}
-          type="button"
-        >
-          {mediaUrl ? (
-            <img
-              alt={emoji}
-              className="h-5 w-5 object-contain"
-              draggable={false}
-              src={mediaUrl}
-            />
-          ) : (
-            <span aria-hidden="true" className="translate-y-px">
-              {emoji}
-            </span>
-          )}
-        </button>
-      </TooltipTrigger>
-      <TooltipContent>{displayName}</TooltipContent>
-    </Tooltip>
-  );
-}
-
-function isCustomEmojiShortcode(emoji: string) {
-  return emoji.startsWith(":") && emoji.endsWith(":");
 }
 
 export const MessageActionBar = React.memo(function MessageActionBar({
@@ -404,28 +468,56 @@ export const MessageActionBar = React.memo(function MessageActionBar({
 }) {
   const [isReactionPickerOpen, setIsReactionPickerOpen] = React.useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = React.useState(false);
-  const customEmoji = useCustomEmoji();
-  const quickReactionEmojis = useQuickReactionEmojis(4, customEmoji);
-  const quickReactionItems = React.useMemo(
-    () =>
-      quickReactionEmojis
-        .map((emoji) => ({
-          customEmojiUrl: reactionEmojiUrl(emoji, customEmoji),
-          emoji,
-        }))
-        .filter(
-          (item) => !isCustomEmojiShortcode(item.emoji) || item.customEmojiUrl,
-        ),
-    [customEmoji, quickReactionEmojis],
+  const markerState = useMessageMarkerState(
+    channelId ?? null,
+    message.id,
+    !message.pending,
   );
+  const markerMutations = useMessageMarkerMutations(channelId ?? null);
+  const isPinned = markerState.data?.pinned ?? false;
+  const isBookmarked = markerState.data?.bookmarked ?? false;
+  const handleTogglePin = React.useCallback(
+    async (target: TimelineMessage) => {
+      await markerMutations.pin.mutateAsync({
+        messageId: target.id,
+        active: !isPinned,
+      });
+    },
+    [isPinned, markerMutations.pin.mutateAsync],
+  );
+  const handleToggleBookmark = React.useCallback(
+    async (target: TimelineMessage) => {
+      await markerMutations.bookmark.mutateAsync({
+        messageId: target.id,
+        active: !isBookmarked,
+      });
+    },
+    [isBookmarked, markerMutations.bookmark.mutateAsync],
+  );
+  const onTogglePin =
+    channelId && !message.pending ? handleTogglePin : undefined;
+  const onToggleBookmark =
+    channelId && !message.pending ? handleToggleBookmark : undefined;
+  const handleErase = React.useCallback(
+    async (target: TimelineMessage) => {
+      if (!channelId) throw new Error("No Conversation selected");
+      await eraseMessage(channelId, target.id);
+    },
+    [channelId],
+  );
+  const onErase =
+    channelId && onDelete && !message.pending ? handleErase : undefined;
   const hasReplyAction = Boolean(onReply);
   const hasReactionAction = Boolean(onReactionSelect);
 
   const hasMoreMenuActions =
     Boolean(onEdit) ||
     Boolean(onDelete) ||
+    Boolean(onErase) ||
     Boolean(onMarkUnread) ||
     Boolean(onMarkRead) ||
+    Boolean(onToggleBookmark) ||
+    Boolean(onTogglePin) ||
     Boolean(onFollowThread) ||
     Boolean(onUnfollowThread) ||
     Boolean(onRemindLater) ||
@@ -482,22 +574,6 @@ export const MessageActionBar = React.memo(function MessageActionBar({
     >
       <div className="overflow-hidden rounded-full border border-border/70 bg-background/95 shadow-xs backdrop-blur-sm supports-[backdrop-filter]:bg-background/85">
         <div className="flex items-center gap-0.5 p-1">
-          {hasReactionAction && quickReactionItems.length > 0 ? (
-            <>
-              <div className="hidden items-center gap-0.5 sm:flex">
-                {quickReactionItems.map(({ customEmojiUrl, emoji }) => (
-                  <QuickReactionButton
-                    customEmojiUrl={customEmojiUrl}
-                    emoji={emoji}
-                    key={emoji}
-                    onSelect={handleReactionSelection}
-                  />
-                ))}
-              </div>
-              <div className="mx-0.5 hidden h-4 w-px bg-border/70 sm:block" />
-            </>
-          ) : null}
-
           {hasReactionAction ? (
             <Popover
               onOpenChange={setIsReactionPickerOpen}
@@ -566,21 +642,47 @@ export const MessageActionBar = React.memo(function MessageActionBar({
             </Tooltip>
           ) : null}
 
+          {canCopyMessageLink(message, channelId) ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  aria-label="Copy link"
+                  className={ACTION_BUTTON_CLASS}
+                  data-testid={`copy-link-message-${message.id}`}
+                  onClick={() => {
+                    copyMessageLink(channelId, message);
+                  }}
+                  size="sm"
+                  type="button"
+                  variant="ghost"
+                >
+                  <Link2 className={ACTION_ICON_CLASS} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Copy link</TooltipContent>
+            </Tooltip>
+          ) : null}
+
           {hasMoreMenuActions ? (
             <MoreActionsMenu
               channelId={channelId}
               message={message}
               onDelete={onDelete}
               onEdit={onEdit}
+              onErase={onErase}
               onFollowThread={onFollowThread}
               onMarkUnread={onMarkUnread}
               onMarkRead={onMarkRead}
+              onToggleBookmark={onToggleBookmark}
+              onTogglePin={onTogglePin}
               onOpenChange={setIsDropdownOpen}
               onRemindLater={onRemindLater}
               onSendToChannel={onSendToChannel}
               onUnfollowThread={onUnfollowThread}
               open={isDropdownOpen}
               isFollowingThread={isFollowingThread}
+              isBookmarked={isBookmarked}
+              isPinned={isPinned}
               isUnread={isUnread}
             />
           ) : null}

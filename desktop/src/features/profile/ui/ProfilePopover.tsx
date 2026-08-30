@@ -41,6 +41,7 @@ interface ProfilePopoverProps {
   // Optional slot rendered before the profile actions. Used by the sidebar to
   // surface active-community actions inside the profile menu.
   communitySwitcherSlot?: React.ReactNode;
+  accountSwitcherSlot?: React.ReactNode;
 }
 
 const MENU_ITEM_CLASS =
@@ -66,6 +67,7 @@ export function ProfilePopover({
   children,
   triggerContainerRef,
   communitySwitcherSlot,
+  accountSwitcherSlot,
 }: ProfilePopoverProps) {
   const [statusDialogOpen, setStatusDialogOpen] = React.useState(false);
   const [presenceMenuOpen, setPresenceMenuOpen] = React.useState(false);
@@ -230,6 +232,15 @@ export function ProfilePopover({
             </div>
 
             <hr className="my-1 h-px border-0 bg-border/60" />
+
+            {accountSwitcherSlot ? (
+              <>
+                <div className="py-1" data-testid="profile-popover-accounts">
+                  {accountSwitcherSlot}
+                </div>
+                <hr className="my-1 h-px border-0 bg-border/60" />
+              </>
+            ) : null}
 
             {communitySwitcherSlot ? (
               <>

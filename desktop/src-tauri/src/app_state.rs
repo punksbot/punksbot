@@ -104,7 +104,7 @@ pub struct AppState {
     pub session_config_cache: Mutex<HashMap<ManagedAgentRuntimeKey, SessionConfigCache>>,
     /// IOKit power assertion state — prevents idle sleep while agents run.
     pub prevent_sleep: Arc<Mutex<crate::prevent_sleep::PreventSleepState>>,
-    /// In-process mesh-llm node started by Buzz Desktop.
+    /// In-process mesh-llm node started by Punks Desktop.
     #[cfg(feature = "mesh-llm")]
     pub mesh_llm_runtime: AsyncMutex<Option<crate::mesh_llm::DesktopMeshRuntime>>,
     #[cfg(feature = "mesh-llm")]
@@ -129,24 +129,25 @@ pub struct AppState {
     /// bounded and letting a later leave correctly flip the channel back to
     /// `is_member=false`.
     pub pending_owned_channels: Mutex<std::collections::HashSet<(String, String)>>,
+    pub archive_db: crate::archive::ArchiveDb,
 }
 
-/// Parse the `BUZZ_PRIVATE_KEY` env var into identity keys. `Some` means the
+/// Parse the `PUNKS_PRIVATE_KEY` env var into identity keys. `Some` means the
 /// env var was present and valid and MUST win over any persisted/keyring key
 /// (the dev/CI/harness override). `None` means absent or malformed — callers
 /// fall through to persisted resolution. A malformed value is logged and
 /// treated as absent rather than left on an ephemeral identity.
 fn identity_from_env() -> Option<Keys> {
-    match std::env::var("BUZZ_PRIVATE_KEY") {
+    match std::env::var("PUNKS_PRIVATE_KEY") {
         Ok(nsec) => match Keys::parse(nsec.trim()) {
             Ok(keys) => Some(keys),
             Err(error) => {
-                eprintln!("buzz-desktop: invalid BUZZ_PRIVATE_KEY: {error}");
+                eprintln!("punks: invalid PUNKS_PRIVATE_KEY: {error}");
                 None
             }
         },
         Err(std::env::VarError::NotUnicode(_)) => {
-            eprintln!("buzz-desktop: BUZZ_PRIVATE_KEY contains invalid UTF-8");
+            eprintln!("punks: PUNKS_PRIVATE_KEY contains invalid UTF-8");
             None
         }
         Err(std::env::VarError::NotPresent) => None,
@@ -180,7 +181,7 @@ pub fn build_app_state() -> AppState {
     let (keys, identity_storage) = match identity_from_env() {
         Some(keys) => {
             eprintln!(
-                "buzz-desktop: configured identity pubkey {}",
+                "punks: configured identity pubkey {}",
                 keys.public_key().to_hex()
             );
             (keys, IdentityStorage::Environment)
@@ -193,8 +194,8 @@ pub fn build_app_state() -> AppState {
         identity_storage: AtomicU8::new(identity_storage as u8),
         http_client: reqwest::Client::builder()
             .resolve("localhost", std::net::SocketAddr::from(([127, 0, 0, 1], 0)))
-            .pool_idle_timeout(std::time::Duration::from_secs(10))
-            .pool_max_idle_per_host(1)
+            .pool_idle_timeout(std::time::Duration::from_secs(300))
+            .pool_max_idle_per_host(2)
             .build()
             .unwrap_or_else(|_| reqwest::Client::new()),
         media_fetch_client: build_media_fetch_client().expect(
@@ -219,9 +220,7 @@ pub fn build_app_state() -> AppState {
         huddle_audio: Default::default(),
         app_handle: Mutex::new(None),
         media_proxy_port: AtomicU16::new(0),
-        prevent_sleep: Arc::new(Mutex::new(
-            crate::prevent_sleep::PreventSleepState::default(),
-        )),
+        prevent_sleep: Default::default(),
         keyring_locked: AtomicBool::new(false),
         identity_lost: AtomicBool::new(false),
         reset_failed: AtomicBool::new(false),
@@ -232,6 +231,7 @@ pub fn build_app_state() -> AppState {
         #[cfg(feature = "mesh-llm")]
         mesh_coordinator: AsyncMutex::new(None),
         pending_owned_channels: Mutex::new(std::collections::HashSet::new()),
+        archive_db: crate::archive::ArchiveDb::default(),
     }
 }
 
@@ -267,33 +267,6 @@ impl AppState {
         }
     }
 
-    /// Record that `channel_id` was just created by `creator_pubkey` and its
-    /// kind:39002 owner membership has not yet been observed.
-    pub fn mark_pending_owned_channel(&self, creator_pubkey: &str, channel_id: &str) {
-        if let Ok(mut set) = self.pending_owned_channels.lock() {
-            set.insert((creator_pubkey.to_string(), channel_id.to_string()));
-        }
-    }
-
-    /// Whether `channel_id` is still awaiting `my_pubkey`'s kind:39002 entry.
-    /// Bound to `my_pubkey` so an in-process identity swap never inherits
-    /// another identity's pending-owner entry for the same channel id.
-    pub fn is_pending_owned_channel(&self, my_pubkey: &str, channel_id: &str) -> bool {
-        self.pending_owned_channels
-            .lock()
-            .map(|set| set.contains(&(my_pubkey.to_string(), channel_id.to_string())))
-            .unwrap_or(false)
-    }
-
-    /// Drop the `(my_pubkey, channel_id)` entry from the pending-owner
-    /// overlay once that identity's real kind:39002 membership has been
-    /// observed.
-    pub fn clear_pending_owned_channel(&self, my_pubkey: &str, channel_id: &str) {
-        if let Ok(mut set) = self.pending_owned_channels.lock() {
-            set.remove(&(my_pubkey.to_string(), channel_id.to_string()));
-        }
-    }
-
     /// Return the active identity keys if they are in a signable state.
     ///
     /// Returns `Err` when the identity is in a lost state (`identity_lost`
@@ -311,7 +284,7 @@ impl AppState {
                 .load(std::sync::atomic::Ordering::Acquire)
         {
             return Err("identity is in recovery mode; event signing is disabled \
-                 until the identity is restored and Buzz is relaunched"
+                 until the identity is restored and Punks is relaunched"
                 .to_string());
         }
         self.keys
@@ -342,7 +315,7 @@ impl AppState {
 /// Resolve the user's identity key from the app data directory and wire
 /// the resulting [`RecoveryState`] into `AppState`.
 ///
-/// Priority: `BUZZ_PRIVATE_KEY` env var (already handled in `build_app_state`)
+/// Priority: `PUNKS_PRIVATE_KEY` env var (already handled in `build_app_state`)
 /// → keyring → `{app_data_dir}/identity.key` file → generate + save.
 ///
 /// On success, writes the resolved keys into `state.keys` (with the mutex)
@@ -390,6 +363,9 @@ pub fn resolve_persisted_identity(app: &AppHandle, state: &AppState) -> Result<(
 #[path = "app_state_keyring.rs"]
 mod keyring_config;
 pub(crate) use keyring_config::keyring_service;
+
+#[path = "app_state_pending_channels.rs"]
+mod pending_channels;
 
 /// Keyring key name for the human identity nsec.
 const IDENTITY_KEY_NAME: &str = "identity";
@@ -476,7 +452,7 @@ fn resolve_identity_with_store(
                 match Keys::parse(nsec.trim()) {
                     Ok(keyring_keys) => {
                         eprintln!(
-                            "buzz-desktop: persisted identity pubkey {}",
+                            "punks: persisted identity pubkey {}",
                             keyring_keys.public_key().to_hex()
                         );
                         // Check for a leftover identity.key. If it holds a
@@ -491,7 +467,7 @@ fn resolve_identity_with_store(
                                     if file_keys.public_key() != keyring_keys.public_key() =>
                                 {
                                     eprintln!(
-                                        "buzz-desktop: identity.key differs from keyring; \
+                                        "punks: identity.key differs from keyring; \
                                          adopting imported key {}",
                                         file_keys.public_key().to_hex()
                                     );
@@ -509,7 +485,7 @@ fn resolve_identity_with_store(
                                         data_dir,
                                     ) {
                                         eprintln!(
-                                            "buzz-desktop: keyring adoption of identity.key \
+                                            "punks: keyring adoption of identity.key \
                                              failed ({e}); using file key, will retry next boot"
                                         );
                                         IdentityStorage::LocalFile
@@ -526,7 +502,7 @@ fn resolve_identity_with_store(
                                 // cleanup so there is a diagnostic for the lost data.
                                 Err(e) => {
                                     eprintln!(
-                                        "buzz-desktop: leftover identity.key is corrupt ({e}); \
+                                        "punks: leftover identity.key is corrupt ({e}); \
                                          keyring is authoritative, removing"
                                     );
                                     ensure_marker_then_cleanup(data_dir, legacy_path);
@@ -551,7 +527,7 @@ fn resolve_identity_with_store(
                             if let Err(e) = write_migration_marker(&migration_marker_path(data_dir))
                             {
                                 eprintln!(
-                                    "buzz-desktop: keyring present but marker missing; \
+                                    "punks: keyring present but marker missing; \
                                      self-heal marker write failed ({e}), continuing"
                                 );
                             }
@@ -602,7 +578,7 @@ fn resolve_identity_with_store(
                 // than silently starting a fresh identity.
                 let ephemeral = Keys::generate();
                 eprintln!(
-                    "buzz-desktop: identity lost — keyring was empty despite migration marker; \
+                    "punks: identity lost — keyring was empty despite migration marker; \
                      using ephemeral key {}, awaiting user re-import",
                     ephemeral.public_key().to_hex()
                 );
@@ -630,7 +606,7 @@ fn resolve_identity_with_store(
             if !legacy_path.exists() && migration_marker_path(data_dir).exists() {
                 let ephemeral = Keys::generate();
                 eprintln!(
-                    "buzz-desktop: keyring unreachable but migration marker present; \
+                    "punks: keyring unreachable but migration marker present; \
                      booting keyring-locked recovery with ephemeral key {} — \
                      unlock the keyring and relaunch",
                     ephemeral.public_key().to_hex()
@@ -671,9 +647,9 @@ fn recover_from_keyring(
     data_dir: &std::path::Path,
     error: &str,
 ) -> Result<ResolvedIdentity, String> {
-    eprintln!("buzz-desktop: corrupt nsec in keyring ({error}), clearing and recovering from file");
+    eprintln!("punks: corrupt nsec in keyring ({error}), clearing and recovering from file");
     if let Err(e) = store.delete(IDENTITY_KEY_NAME) {
-        eprintln!("buzz-desktop: failed to clear corrupt keyring value: {e}");
+        eprintln!("punks: failed to clear corrupt keyring value: {e}");
     }
     if legacy_path.exists() {
         if let Some(keys) = migrate_identity_file(store, legacy_path, data_dir)? {
@@ -690,7 +666,7 @@ fn recover_from_keyring(
     if migration_marker_path(data_dir).exists() {
         let ephemeral = Keys::generate();
         eprintln!(
-            "buzz-desktop: identity lost — keyring had corrupt data and no valid identity.key \
+            "punks: identity lost — keyring had corrupt data and no valid identity.key \
              backup; prior identity (migration marker present) is unrecoverable; \
              using ephemeral key {}, awaiting user re-import",
             ephemeral.public_key().to_hex()
@@ -720,7 +696,7 @@ fn load_file_or_generate(
         match load_key_file(legacy_path) {
             Ok(keys) => {
                 eprintln!(
-                    "buzz-desktop: persisted identity pubkey {}",
+                    "punks: persisted identity pubkey {}",
                     keys.public_key().to_hex()
                 );
                 return Ok(keys);
@@ -731,7 +707,7 @@ fn load_file_or_generate(
     let keys = Keys::generate();
     save_key_file(legacy_path, &keys)?;
     eprintln!(
-        "buzz-desktop: generated and saved identity pubkey {}",
+        "punks: generated and saved identity pubkey {}",
         keys.public_key().to_hex()
     );
     Ok(keys)
@@ -748,7 +724,7 @@ fn migrate_identity_file(
     let keys = match load_key_file(legacy_path) {
         Ok(keys) => keys,
         Err(error) => {
-            eprintln!("buzz-desktop: corrupt identity.key during migration ({error}), skipping");
+            eprintln!("punks: corrupt identity.key during migration ({error}), skipping");
             return Ok(None);
         }
     };
@@ -777,15 +753,15 @@ fn migrate_identity_file(
     let marker_path = migration_marker_path(data_dir);
     if let Err(e) = write_migration_marker(&marker_path) {
         eprintln!(
-            "buzz-desktop: keyring import ok but failed to write migration marker ({e}); \
+            "punks: keyring import ok but failed to write migration marker ({e}); \
              keeping identity.key so the key is not stranded"
         );
         return Ok(Some(keys));
     }
     if let Err(e) = std::fs::remove_file(legacy_path) {
-        eprintln!("buzz-desktop: keyring import ok but failed to delete identity.key: {e}");
+        eprintln!("punks: keyring import ok but failed to delete identity.key: {e}");
     } else {
-        eprintln!("buzz-desktop: migrated identity key into OS keyring");
+        eprintln!("punks: migrated identity key into OS keyring");
     }
     Ok(Some(keys))
 }
@@ -832,7 +808,7 @@ fn persist_identity_to_keyring(
         if !legacy_path.exists() {
             if let Err(write_err) = save_key_file(legacy_path, keys) {
                 eprintln!(
-                    "buzz-desktop: keyring ok but marker write failed ({e}) and \
+                    "punks: keyring ok but marker write failed ({e}) and \
                      identity.key write also failed ({write_err}); key may be unrecoverable"
                 );
                 return Err(format!(
@@ -842,13 +818,13 @@ fn persist_identity_to_keyring(
                 ));
             } else {
                 eprintln!(
-                    "buzz-desktop: keyring ok but marker write failed ({e}); \
+                    "punks: keyring ok but marker write failed ({e}); \
                      wrote identity.key as fallback so the key is not stranded"
                 );
             }
         } else {
             eprintln!(
-                "buzz-desktop: keyring ok but marker write failed ({e}); \
+                "punks: keyring ok but marker write failed ({e}); \
                  keeping existing identity.key so the key is not stranded"
             );
         }
@@ -857,7 +833,7 @@ fn persist_identity_to_keyring(
 
     if legacy_path.exists() {
         if let Err(e) = std::fs::remove_file(legacy_path) {
-            eprintln!("buzz-desktop: keyring write ok but failed to delete identity.key: {e}");
+            eprintln!("punks: keyring write ok but failed to delete identity.key: {e}");
         }
     }
 
@@ -878,7 +854,7 @@ fn persist_imported_identity_impl(
         Ok(()) => Ok(IdentityStorage::SystemKeyring),
         Err(e) => {
             eprintln!(
-                "buzz-desktop: keyring write failed during import ({e}), \
+                "punks: keyring write failed during import ({e}), \
                  falling back to identity.key"
             );
             save_key_file(legacy_path, keys)?;
@@ -940,14 +916,14 @@ fn generate_and_persist(
         let marker_path = migration_marker_path(data_dir);
         if let Err(e) = write_migration_marker(&marker_path) {
             eprintln!(
-                "buzz-desktop: stored identity in keyring but failed to write migration marker \
+                "punks: stored identity in keyring but failed to write migration marker \
                  ({e}); saving identity.key fallback so the key is not stranded"
             );
             save_key_file(legacy_path, &keys)?;
         }
     }
     eprintln!(
-        "buzz-desktop: generated and saved identity pubkey {}",
+        "punks: generated and saved identity pubkey {}",
         keys.public_key().to_hex()
     );
     Ok((keys, storage))
@@ -970,7 +946,7 @@ fn store_key_preferring_keyring(
     match store.store(IDENTITY_KEY_NAME, &nsec) {
         Ok(()) => Ok(IdentityStorage::SystemKeyring),
         Err(keyring_err) => {
-            eprintln!("buzz-desktop: keyring write failed ({keyring_err}), using file fallback");
+            eprintln!("punks: keyring write failed ({keyring_err}), using file fallback");
             save_key_file(legacy_path, keys)?;
             Ok(IdentityStorage::LocalFile)
         }
@@ -989,7 +965,7 @@ fn ensure_marker_then_cleanup(data_dir: &std::path::Path, legacy_path: &std::pat
         || write_migration_marker(&marker_path)
             .map_err(|e| {
                 eprintln!(
-                    "buzz-desktop: keyring present but marker missing; \
+                    "punks: keyring present but marker missing; \
                      failed to write marker ({e}), keeping identity.key"
                 );
             })
@@ -1007,8 +983,8 @@ fn cleanup_leftover_identity_file(legacy_path: &std::path::Path) {
         return;
     }
     match std::fs::remove_file(legacy_path) {
-        Ok(()) => eprintln!("buzz-desktop: removed leftover identity.key (key is in keyring)"),
-        Err(e) => eprintln!("buzz-desktop: failed to remove leftover identity.key: {e}"),
+        Ok(()) => eprintln!("punks: removed leftover identity.key (key is in keyring)"),
+        Err(e) => eprintln!("punks: failed to remove leftover identity.key: {e}"),
     }
 }
 
@@ -1023,7 +999,7 @@ fn quarantine_corrupt_key(key_path: &std::path::Path, data_dir: &std::path::Path
         .map(|d| d.as_secs())
         .unwrap_or(0);
     let bad_name = format!("identity.key.bad.{ts}");
-    eprintln!("buzz-desktop: corrupt identity.key ({error}), quarantining to {bad_name}");
+    eprintln!("punks: corrupt identity.key ({error}), quarantining to {bad_name}");
     let bad_path = data_dir.join(bad_name);
     if std::fs::rename(key_path, &bad_path).is_err() {
         let _ = std::fs::remove_file(key_path);

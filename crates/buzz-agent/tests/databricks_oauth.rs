@@ -509,15 +509,15 @@ impl AgentHarness {
             .is_none()
             .then(|| TempDir::new().expect("create isolated OAuth home"));
         let mut cmd = tokio::process::Command::new(bin);
-        cmd.env("BUZZ_AGENT_PROVIDER", provider)
+        cmd.env("PUNKS_AGENT_PROVIDER", provider)
             .env("DATABRICKS_HOST", base_url)
             .env("DATABRICKS_MODEL", model)
             .env_remove("DATABRICKS_TOKEN")
-            .env("BUZZ_AGENT_LLM_TIMEOUT_SECS", "5")
-            .env("BUZZ_AGENT_TOOL_TIMEOUT_SECS", "5")
-            .env("BUZZ_AGENT_MAX_ROUNDS", "2")
-            .env("BUZZ_AGENT_MAX_SESSIONS", max_sessions.to_string())
-            .env("BUZZ_AGENT_MCP_INIT_TIMEOUT_SECS", "2")
+            .env("PUNKS_AGENT_LLM_TIMEOUT_SECS", "5")
+            .env("PUNKS_AGENT_TOOL_TIMEOUT_SECS", "5")
+            .env("PUNKS_AGENT_MAX_ROUNDS", "2")
+            .env("PUNKS_AGENT_MAX_SESSIONS", max_sessions.to_string())
+            .env("PUNKS_AGENT_MCP_INIT_TIMEOUT_SECS", "2")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -1051,7 +1051,7 @@ fn databricks_oauth_cache_path(home: &std::path::Path, host: &str) -> std::path:
     hasher.update(b"all-apis,offline_access");
     let hash = hex::encode(hasher.finalize());
     home.join(".config")
-        .join("buzz-agent")
+        .join("punks-agent")
         .join("oauth")
         .join("databricks")
         .join(format!("{hash}.json"))

@@ -12,14 +12,14 @@ const BYSTANDER = "d".repeat(64);
 
 function makeProject(overrides = {}) {
   return {
-    id: "project-buzz",
-    name: "buzz",
+    id: "project-punks",
+    name: "punks",
     owner: OWNER,
     projectChannelId: null,
     repositories: [
       {
-        id: "repo-buzz",
-        name: "buzz",
+        id: "repo-punks",
+        name: "punks",
         owner: OWNER,
         channelId: CHANNEL_A,
         contributors: [BYSTANDER],
@@ -67,7 +67,7 @@ test("activity pod shows workspace details and a create-project action", () => {
     ],
     pullRequests: [],
     summaries: {
-      "project-buzz": { issueCount: 4, prCount: 2 },
+      "project-punks": { issueCount: 4, prCount: 2 },
       "project-relay": { issueCount: 1, prCount: 3 },
     },
   });
@@ -194,8 +194,7 @@ function peopleContext(filter, overrides = {}) {
     projects: [makeProject()],
     pullRequests: [makePullRequest("Open")],
     summaries: {
-      "project-buzz": {
-        activityByDay: { "2026-08-01": 4 },
+      "project-punks": {
         latestCommit: { author: REVIEW_AUTHOR },
       },
     },
@@ -226,22 +225,10 @@ test("listed repository contributors without commits stay off the repositories p
   assert.deepEqual(context.people, []);
 });
 
-test("projects pod shows owners and keeps the activity graph; channels hides both", () => {
+test("projects pod shows owners; channels hides people", () => {
   const projects = peopleContext("projects");
   const channels = peopleContext("channels");
 
   assert.deepEqual(projects.people, [OWNER]);
-  assert.deepEqual(projects.activityByDay, { "2026-08-01": 4 });
   assert.deepEqual(channels.people, []);
-  assert.equal(channels.activityByDay, null);
-});
-
-test("activity, projects, and repositories pods show the contribution graph", () => {
-  const expected = { "2026-08-01": 4 };
-  assert.deepEqual(peopleContext("all").activityByDay, expected);
-  assert.deepEqual(peopleContext("projects").activityByDay, expected);
-  assert.deepEqual(peopleContext("repositories").activityByDay, expected);
-  assert.equal(peopleContext("issues").activityByDay, null);
-  assert.equal(peopleContext("prs").activityByDay, null);
-  assert.equal(peopleContext("channels").activityByDay, null);
 });

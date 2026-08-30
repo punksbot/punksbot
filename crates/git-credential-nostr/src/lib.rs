@@ -1,4 +1,4 @@
-//! git-credential-nostr — NIP-98 git credential helper for Buzz.
+//! git-credential-punks — NIP-98 Git credential helper for Punks.
 //!
 //! Git calls this via the credential helper protocol (stdin/stdout).
 //! We read the request, sign a kind:27235 event, and return the base64-encoded
@@ -71,12 +71,12 @@ fn load_key() -> Result<String, String> {
     Ok(raw.trim().to_string())
 }
 
-/// Load the NIP-OA owner attestation injected by Buzz Desktop/ACP.
+/// Load the NIP-OA owner attestation injected by Punks Desktop/ACP.
 ///
 /// The tag must be part of the signed NIP-98 event: Git's credential protocol
 /// can return an Authorization value, but it cannot add a separate HTTP header.
 fn load_auth_tag() -> Result<Option<Tag>, String> {
-    let raw = std::env::var("BUZZ_AUTH_TAG")
+    let raw = std::env::var("PUNKS_AUTH_TAG")
         .ok()
         .filter(|value| !value.is_empty())
         .or_else(|| git_config("nostr.authtag"));
@@ -134,8 +134,7 @@ fn parse_stdin() -> CredRequest {
 
 fn parse_method(wwwauth: &str) -> Option<HttpMethod> {
     // Strip the scheme prefix ("Nostr ") if present, then split on commas.
-    // Handles variations: `Nostr method="GET", realm="buzz"` and
-    // `Nostr method="GET",realm="buzz"` (with or without space after comma).
+    // Handles method hints with or without whitespace after a comma.
     let params = wwwauth.strip_prefix("Nostr ").unwrap_or(wwwauth);
     for param in params.split(',') {
         let param = param.trim();
@@ -175,9 +174,9 @@ pub fn run() -> i32 {
         };
     }
 
-    // No Nostr challenge from the server — this isn't a Buzz remote.
+    // No Nostr challenge from the server — this isn't a Punks remote.
     // Exit silently so git falls through to the next credential helper.
-    // This check comes FIRST so non-Buzz remotes never hit validation errors.
+    // This check comes FIRST so non-Punks remotes never hit validation errors.
     let wwwauth = match req.wwwauth.as_deref() {
         Some(v) => v,
         None => return 0,

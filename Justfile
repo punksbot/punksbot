@@ -43,6 +43,7 @@ bootstrap:
         cp .env.example .env
         echo "Created .env from .env.example — review it before running just dev."
     fi
+    ./scripts/ensure-local-relay-key.sh .env
 
 # Start Docker services, run migrations, install desktop deps
 setup: bootstrap
@@ -102,15 +103,6 @@ file-size-check:
     node desktop/scripts/check-file-sizes.mjs
     node web/scripts/check-file-sizes.mjs
     node mobile/scripts/check-file-sizes.mjs
-
-# Validate the Punks migration manifests (withdrawal inventory + goldens
-# ledger) and the release graph: duplicates, omissions, invalid references,
-# incomplete verdicts, reproducible canonical hashes, derived-view drift, and
-# the sealed expansion/activation/contraction policy with its attestation model.
-migration-check:
-    node --test scripts/check-migration-manifests.test.mjs scripts/check-release-graph.test.mjs scripts/release-graph-live-state.test.mjs scripts/check-promotion-dossier.test.mjs scripts/promotion-dossier-lib.test.mjs scripts/promotion-materials-lib.test.mjs scripts/promotion-local-emission.test.mjs scripts/candidate/installed-app.test.mjs scripts/candidate/promotion-dossier.test.mjs scripts/candidate/promotion-dossier-cli.test.mjs
-    node scripts/check-migration-manifests.mjs
-    node scripts/check-release-graph.mjs
 
 # Format all Rust code
 fmt:
@@ -282,13 +274,26 @@ desktop-release-build target="aarch64-apple-darwin":
 # Run desktop checks suitable for CI / pre-push
 desktop-ci: desktop-check desktop-test desktop-tauri-fmt-check desktop-build desktop-tauri-check desktop-tauri-test
 
+# Seed deterministic channel data for desktop Playwright tests
+desktop-e2e-seed: _ensure-migrations
+    ./scripts/setup-desktop-test-data.sh
+
 # Run desktop browser smoke tests
 desktop-e2e-smoke:
     cd {{desktop_dir}} && pnpm test:e2e:smoke
 
+# Run desktop relay-backed e2e tests
+desktop-e2e-integration: _ensure-migrations
+    cd {{desktop_dir}} && pnpm test:e2e:integration
+
 # Run the deterministic desktop correctness smoke against an isolated local relay
 desktop-release-smoke:
     ./scripts/run-desktop-release-smoke.sh
+
+# Run only the e2e specs changed vs origin/main (both projects) before pushing
+desktop-e2e-pre-push: _ensure-migrations
+    git fetch origin main
+    cd {{desktop_dir}} && pnpm build:e2e && pnpm exec playwright test --only-changed=origin/main
 
 # Run all checks suitable for CI / pre-push (no infra needed)
 ci: check test-unit desktop-test desktop-build desktop-tauri-check desktop-tauri-test web-build mobile-test
@@ -303,6 +308,7 @@ test:
 test-unit:
     #!/usr/bin/env bash
     set -euo pipefail
+    ./scripts/test-ensure-local-relay-key.sh
     if command -v cargo-nextest &>/dev/null; then
         cargo nextest run -p buzz-core -p buzz-auth --lib
         cargo nextest run -p buzz-voice --lib
@@ -331,7 +337,7 @@ test-unit:
         # buzz-agent model-capabilities corpus: the Rust half of the
         # cross-language drift guard. `model_capabilities.rs` embeds
         # scripts/model-capabilities.json + scripts/normative-corpus.json via
-        # include_str! and replays all 103 vectors as pure in-process tests (no
+        # include_str! and replays the full locked corpus as pure in-process tests (no
         # infra). Enumerated explicitly because nothing in CI runs
         # `cargo test --workspace`; without this step a manifest edit that
         # diverges Rust from the corpus ships green.
@@ -419,6 +425,9 @@ relay: bootstrap _ensure-migrations
     #!/usr/bin/env bash
     set -euo pipefail
     export PATH="{{justfile_directory()}}/bin:$PATH"
+    set -o allexport
+    source .env
+    set +o allexport
     cargo run -p buzz-relay
 
 # Start the relay with the built web UI served from it
@@ -426,6 +435,9 @@ relay-web: bootstrap _ensure-migrations
     #!/usr/bin/env bash
     set -euo pipefail
     export PATH="{{justfile_directory()}}/bin:$PATH"
+    set -o allexport
+    source .env
+    set +o allexport
     [[ -d node_modules ]] || pnpm install
     pnpm -C web build
     BUZZ_WEB_DIR=./web/dist cargo run -p buzz-relay
@@ -435,6 +447,9 @@ admin: bootstrap _ensure-migrations
     #!/usr/bin/env bash
     set -euo pipefail
     export PATH="{{justfile_directory()}}/bin:$PATH"
+    set -o allexport
+    source .env
+    set +o allexport
     [[ -d node_modules ]] || pnpm install
     pnpm -C admin-web build
     export BUZZ_ADMIN_HOST="${BUZZ_ADMIN_HOST:-admin.localhost:3000}"
@@ -455,7 +470,12 @@ admin-check: fmt-check
     pnpm -C admin-web exec playwright test
 
 # Start the relay server in release mode
-relay-release: _ensure-migrations
+relay-release: bootstrap _ensure-migrations
+    #!/usr/bin/env bash
+    set -euo pipefail
+    set -o allexport
+    source .env
+    set +o allexport
     cargo run -p buzz-relay --release
 
 
@@ -464,6 +484,9 @@ dev *ARGS: bootstrap _ensure-sidecar-stubs _ensure-migrations
     #!/usr/bin/env bash
     set -euo pipefail
     export PATH="{{justfile_directory()}}/bin:$PATH"
+    set -o allexport
+    source .env
+    set +o allexport
     bind_addr="${BUZZ_BIND_ADDR:-0.0.0.0:3000}"
     relay_port="${bind_addr##*:}"; [[ -n "$relay_port" ]] || relay_port=3000
     health_port="${BUZZ_HEALTH_PORT:-8080}"
@@ -545,6 +568,50 @@ desktop-standalone *ARGS: _ensure-sidecar-stubs
     trap '../scripts/cleanup-instance-agents.sh "$INSTANCE_ID" || true' EXIT
     echo "Starting standalone desktop on Vite port ${BUZZ_VITE_PORT}; no relay services were started"
     pnpm exec tauri dev --config "$BUZZ_TAURI_CONFIG" {{ARGS}}
+
+# Run the complete desktop product against the embedded persistent local
+# authority. No relay process, Docker service, database server, or Cloudflare
+# Worker is started. Sidecars are built from this checkout before Tauri starts.
+punks-full-local *ARGS:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export PATH="{{justfile_directory()}}/bin:$PATH"
+    [[ "$(node -p 'process.versions.node.split(`.`)[0]')" == "24" ]] || { echo "Punks Full Local requires Node 24" >&2; exit 1; }
+    [[ "$(pnpm --version | cut -d. -f1)" == "11" ]] || { echo "Punks Full Local requires pnpm 11" >&2; exit 1; }
+    command -v cargo >/dev/null || { echo "Punks Full Local requires cargo" >&2; exit 1; }
+    command -v git >/dev/null || { echo "Punks Full Local requires git" >&2; exit 1; }
+    export PUNKS_LOCAL_PORT="${PUNKS_LOCAL_PORT:-18787}"
+    PUNKS_VITE_PORT="${PUNKS_VITE_PORT:-1420}"
+    assert_free_port() {
+        local port="$1"
+        if lsof -nP -iTCP:"$port" -sTCP:LISTEN -t 2>/dev/null | grep -q .; then
+            echo "Punks Full Local refused to start: 127.0.0.1:${port} is already occupied" >&2
+            exit 1
+        fi
+    }
+    assert_free_port "$PUNKS_LOCAL_PORT"
+    assert_free_port "$PUNKS_VITE_PORT"
+    cargo build --quiet -p buzz-acp -p buzz-agent -p buzz-dev-mcp -p buzz-cli -p git-credential-nostr
+    TARGET=$(rustc -vV | sed -n 's|host: ||p')
+    TARGET_DIR=$(cargo metadata --format-version 1 --no-deps | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).target_directory")
+    mkdir -p desktop/src-tauri/binaries
+    SOURCE_BINS=(buzz-acp buzz-agent buzz-dev-mcp git-credential-nostr buzz)
+    PUNKS_BINS=(punks-acp punks-agent punks-dev-mcp git-credential-punks punks)
+    for index in "${!SOURCE_BINS[@]}"; do
+        source_bin="${SOURCE_BINS[$index]}"
+        punks_bin="${PUNKS_BINS[$index]}"
+        cp "${TARGET_DIR}/debug/${source_bin}" "desktop/src-tauri/binaries/${punks_bin}-${TARGET}"
+        chmod +x "desktop/src-tauri/binaries/${punks_bin}-${TARGET}"
+    done
+    cd {{desktop_dir}}
+    [[ -d node_modules ]] || pnpm install
+    export VITE_PUNKS_LOCAL=1
+    export VITE_PUNKS_LOCAL_PORT="$PUNKS_LOCAL_PORT"
+    export VITE_PORT="$PUNKS_VITE_PORT"
+    export PUNKS_DEV_KEYRING_SERVICE="punks-full-local-dev"
+    unset BUZZ_PRIVATE_KEY BUZZ_SHARE_IDENTITY BUZZ_DEV_KEYRING_SERVICE
+    echo "Starting Punks Full Local with embedded authority on 127.0.0.1:${PUNKS_LOCAL_PORT}"
+    pnpm exec tauri dev --features punks-local,mesh-llm --config src-tauri/tauri.punks.local.conf.json {{ARGS}}
 
 # Run the desktop app against the internal staging relay (installs deps + builds agent tools automatically)
 staging *ARGS: bootstrap _ensure-sidecar-stubs
@@ -775,7 +842,7 @@ bump-desktop-version version:
     "
     # Regenerate lockfiles
     pnpm install --lockfile-only
-    cargo update -p desktop-shell --manifest-path desktop/src-tauri/Cargo.toml
+    cargo update -p buzz-desktop --manifest-path desktop/src-tauri/Cargo.toml
     echo "Bumped desktop manifests to {{ version }} and regenerated lockfiles"
 
 # Bump the relay crate version and regenerate the lockfile
@@ -991,6 +1058,31 @@ benchmark *ARGS:
     export PATH="{{justfile_directory()}}/bin:$PATH"
     uv run --project benchmarks/harbor-buzz-orchestra/testbed \
         benchmarks/harbor-buzz-orchestra/scripts/benchmark.py {{ARGS}}
+
+# Run the benchmark adapter + testbed gate exactly as CI does (pytest + ruff, pinned ruff from pyproject)
+benchmark-check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{justfile_directory()}}/benchmarks/harbor-buzz-orchestra"
+    # CI installs the dev extra with pip, so pyproject — not uv.lock — decides
+    # which ruff lints. Read the pin from there so this recipe cannot drift
+    # from the workflow (a floating specifier once meant CI failed on RUF100
+    # while the locked local ruff passed).
+    ruff_pin="$(grep -oE 'ruff==[0-9.]+' pyproject.toml | head -1 | cut -d= -f3)"
+    for project in . testbed; do
+        (
+            cd "$project"
+            echo "── harbor-buzz-orchestra/$project (ruff $ruff_pin)"
+            uv run --frozen pytest -q
+            uvx "ruff@$ruff_pin" check .
+            uvx "ruff@$ruff_pin" format --check .
+        )
+    done
+    # The task verifiers live in the sibling benchmarks/buzz-dataset, so they
+    # need the harness config passed explicitly to stay linted.
+    echo "── buzz-dataset (ruff $ruff_pin)"
+    uvx "ruff@$ruff_pin" check --config pyproject.toml ../buzz-dataset
+    uvx "ruff@$ruff_pin" format --check --config pyproject.toml ../buzz-dataset
 
 # Stop the benchmark Docker stack (state and channels are kept)
 benchmark-down:

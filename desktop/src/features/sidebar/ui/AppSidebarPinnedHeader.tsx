@@ -3,7 +3,6 @@ import { Activity, Bot, Folders, Inbox, Zap } from "lucide-react";
 import { TopbarSearch } from "@/features/search/ui/TopbarSearch";
 import { SidebarProjectsSection } from "@/features/sidebar/ui/SidebarProjectsSection";
 import { FeatureGate } from "@/shared/features";
-import { CapabilityGate } from "@/shared/capabilities";
 import type { Channel, SearchHit } from "@/shared/api/types";
 import {
   SidebarHeader,
@@ -31,7 +30,7 @@ type AppSidebarPinnedHeaderProps = {
   onCreateAgent: () => void;
   onCreateChannel: () => void;
   onOpenDm: (input: { pubkeys: string[] }) => Promise<void>;
-  onOpenSearchResult: (hit: SearchHit) => void;
+  onOpenSearchResult: (hit: SearchHit, query: string) => void;
   onSelectChannel: (channelId: string) => void;
   searchChannels: Channel[];
   searchFocusRequest: number;
@@ -46,6 +45,7 @@ type AppSidebarPrimaryMenuProps = {
   onSelectProjects: () => void;
   onSelectPulse: () => void;
   onSelectWorkflows: () => void;
+  projectsOverviewActive: boolean;
   selectedView: SidebarSelectedView;
 };
 
@@ -69,23 +69,21 @@ export function AppSidebarPinnedHeader({
       className="mx-[3px] shrink-0 px-2 pb-2 pt-3"
       data-testid="sidebar-pinned-header"
     >
-      <CapabilityGate capability="command-palette">
-        <TopbarSearch
-          channelLabels={channelLabels}
-          channels={searchChannels}
-          currentChannelId={currentChannelId}
-          currentPubkey={currentPubkey}
-          focusRequest={searchFocusRequest}
-          onOpenChannel={onSelectChannel}
-          onOpenResult={onOpenSearchResult}
-          onOpenUser={(user) => onOpenDm({ pubkeys: [user.pubkey] })}
-          onBrowseChannels={onBrowseChannels}
-          onCreateAgent={onCreateAgent}
-          onCreateChannel={onCreateChannel}
-          scopeFocusRequest={scopeSearchFocusRequest}
-          suggestionChannels={suggestionChannels}
-        />
-      </CapabilityGate>
+      <TopbarSearch
+        channelLabels={channelLabels}
+        channels={searchChannels}
+        currentChannelId={currentChannelId}
+        currentPubkey={currentPubkey}
+        focusRequest={searchFocusRequest}
+        onOpenChannel={onSelectChannel}
+        onOpenResult={onOpenSearchResult}
+        onOpenUser={(user) => onOpenDm({ pubkeys: [user.pubkey] })}
+        onBrowseChannels={onBrowseChannels}
+        onCreateAgent={onCreateAgent}
+        onCreateChannel={onCreateChannel}
+        scopeFocusRequest={scopeSearchFocusRequest}
+        suggestionChannels={suggestionChannels}
+      />
     </div>
   );
 }
@@ -97,6 +95,7 @@ export function AppSidebarPrimaryMenu({
   onSelectProjects,
   onSelectPulse,
   onSelectWorkflows,
+  projectsOverviewActive,
   selectedView,
 }: AppSidebarPrimaryMenuProps) {
   return (
@@ -107,91 +106,81 @@ export function AppSidebarPrimaryMenu({
         data-testid="sidebar-primary-menu"
       >
         <SidebarMenu className="sidebar-primary-menu pb-2">
-          <CapabilityGate capability="home">
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              className="data-[active=true]:font-normal"
+              isActive={selectedView === "home"}
+              onClick={onSelectHome}
+              tooltip="Inbox"
+              type="button"
+            >
+              <Inbox className="h-4 w-4" />
+              <SidebarMenuLabel>Inbox</SidebarMenuLabel>
+            </SidebarMenuButton>
+            {homeBadgeCount > 0 ? (
+              <SidebarMenuBadge
+                className="right-2 rounded-full bg-primary/15 px-1.5 text-2xs text-primary peer-data-[active=true]/menu-button:bg-sidebar-active-foreground/20 peer-data-[active=true]/menu-button:text-sidebar-active-foreground"
+                data-testid="sidebar-home-count"
+              >
+                {Math.min(homeBadgeCount, 99)}
+              </SidebarMenuBadge>
+            ) : null}
+          </SidebarMenuItem>
+          <FeatureGate feature="pulse">
             <SidebarMenuItem>
               <SidebarMenuButton
-                className="data-[active=true]:font-normal"
-                isActive={selectedView === "home"}
-                onClick={onSelectHome}
-                tooltip="Inbox"
+                data-testid="open-pulse-view"
+                isActive={selectedView === "pulse"}
+                onClick={onSelectPulse}
+                tooltip="Pulse"
                 type="button"
               >
-                <Inbox className="h-4 w-4" />
-                <SidebarMenuLabel>Inbox</SidebarMenuLabel>
+                <Activity className="h-4 w-4" />
+                <SidebarMenuLabel>Pulse</SidebarMenuLabel>
               </SidebarMenuButton>
-              {homeBadgeCount > 0 ? (
-                <SidebarMenuBadge
-                  className="right-2 rounded-full bg-primary/15 px-1.5 text-2xs text-primary peer-data-[active=true]/menu-button:bg-sidebar-active-foreground/20 peer-data-[active=true]/menu-button:text-sidebar-active-foreground"
-                  data-testid="sidebar-home-count"
-                >
-                  {Math.min(homeBadgeCount, 99)}
-                </SidebarMenuBadge>
-              ) : null}
             </SidebarMenuItem>
-          </CapabilityGate>
-          <CapabilityGate capability="pulse">
-            <FeatureGate feature="pulse">
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  data-testid="open-pulse-view"
-                  isActive={selectedView === "pulse"}
-                  onClick={onSelectPulse}
-                  tooltip="Pulse"
-                  type="button"
-                >
-                  <Activity className="h-4 w-4" />
-                  <SidebarMenuLabel>Pulse</SidebarMenuLabel>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </FeatureGate>
-          </CapabilityGate>
-          <CapabilityGate capability="repositories">
-            <FeatureGate feature="projects">
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  data-testid="open-projects-view"
-                  isActive={selectedView === "projects"}
-                  onClick={onSelectProjects}
-                  tooltip="Projects"
-                  type="button"
-                >
-                  <Folders className="h-4 w-4" />
-                  <SidebarMenuLabel>Projects</SidebarMenuLabel>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </FeatureGate>
-          </CapabilityGate>
-          <CapabilityGate capability="bots">
+          </FeatureGate>
+          <FeatureGate feature="projects">
             <SidebarMenuItem>
               <SidebarMenuButton
-                className="data-[active=true]:font-normal"
-                data-testid="open-agents-view"
-                isActive={selectedView === "agents"}
-                onClick={onSelectAgents}
-                tooltip="Agents"
+                data-testid="open-projects-view"
+                isActive={selectedView === "projects" && projectsOverviewActive}
+                onClick={onSelectProjects}
+                tooltip="Projects"
                 type="button"
               >
-                <Bot className="h-4 w-4" />
-                <SidebarMenuLabel>Agents</SidebarMenuLabel>
+                <Folders className="h-4 w-4" />
+                <SidebarMenuLabel>Projects</SidebarMenuLabel>
               </SidebarMenuButton>
             </SidebarMenuItem>
-          </CapabilityGate>
-          <CapabilityGate capability="workflows">
-            <FeatureGate feature="workflows">
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  data-testid="open-workflows-view"
-                  isActive={selectedView === "workflows"}
-                  onClick={onSelectWorkflows}
-                  tooltip="Workflows"
-                  type="button"
-                >
-                  <Zap className="h-4 w-4" />
-                  <SidebarMenuLabel>Workflows</SidebarMenuLabel>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </FeatureGate>
-          </CapabilityGate>
+          </FeatureGate>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              className="data-[active=true]:font-normal"
+              data-testid="open-agents-view"
+              isActive={selectedView === "agents"}
+              onClick={onSelectAgents}
+              tooltip="Agents"
+              type="button"
+            >
+              <Bot className="h-4 w-4" />
+              <SidebarMenuLabel>Agents</SidebarMenuLabel>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <FeatureGate feature="workflows">
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                data-testid="open-workflows-view"
+                isActive={selectedView === "workflows"}
+                onClick={onSelectWorkflows}
+                tooltip="Workflows"
+                type="button"
+              >
+                <Zap className="h-4 w-4" />
+                <SidebarMenuLabel>Workflows</SidebarMenuLabel>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </FeatureGate>
         </SidebarMenu>
       </SidebarHeader>
       <SidebarProjectsSection />

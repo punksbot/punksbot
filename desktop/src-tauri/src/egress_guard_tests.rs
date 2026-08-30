@@ -268,6 +268,7 @@ const EVENTS_INVENTORY: &[(&str, usize, usize)] = &[
     ("src/commands/team_snapshot.rs", 1, 1),            // boundary 6
     ("src/commands/personas/snapshot/import.rs", 2, 1), // boundary 7 + its in-file injection-test fixture URL
     ("src/native_websocket.rs", 0, 2),                  // boundary 8 (WS frames; no events URL)
+    ("src/local_authority_http.rs", 1, 0), // loopback ingress route, never outbound egress
     // Test-only fixtures — no production egress, no guard:
     ("src/relay_admission.rs", 1, 0),
     ("src/archive/mod_tests.rs", 1, 0),
@@ -435,7 +436,8 @@ fn ncryptsec_handling_is_confined_to_allowlisted_files() {
         "src/egress_guard_tests.rs",
         "src/commands/identity.rs",
         "src/commands/identity_key_backup_tests.rs",
-        "src/lib.rs", // module registration + invoke handler
+        "src/local_accounts.rs", // encrypted multi-account import/export stays native-only
+        "src/lib.rs",            // module registration + invoke handler
         // boundary wiring (guard call sites name the module, not the codec):
         "src/relay.rs",
         "src/relay/submit.rs",

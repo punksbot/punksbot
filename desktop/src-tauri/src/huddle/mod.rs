@@ -23,14 +23,17 @@
 //!    takes `stt_pipeline`/`tts_pipeline` out of the lock, then calls `shutdown()`
 //!    and drops them outside the lock (thread joins can block ~200ms).
 
+mod agent_tts_publisher;
 mod agent_tts_routing;
 pub mod agent_voice;
 pub mod agents;
 pub mod audio_output;
 mod commands;
+mod human_floor;
 pub mod jitter;
 #[cfg(test)]
 mod latency_bench;
+mod local_barge_in;
 pub mod models;
 pub mod pipeline;
 pub mod playout;
@@ -42,6 +45,8 @@ pub mod state;
 pub mod stt;
 pub mod transcription;
 pub mod tts;
+#[path = "tts_playback.rs"]
+mod tts_playback;
 pub mod tts_settings;
 mod tts_voice_import;
 mod tts_voice_registry;
@@ -81,7 +86,7 @@ pub use window::{close_huddle_companion, open_huddle_window};
 
 // ── Imports ───────────────────────────────────────────────────────────────────
 
-use std::sync::atomic::Ordering;
+use std::sync::{atomic::Ordering, Arc};
 use tauri::State;
 use uuid::Uuid;
 
@@ -150,7 +155,7 @@ pub async fn set_voice_input_mode(
             // Best-effort restart — if models aren't ready, the pipeline
             // stays down until the next hotstart cycle picks it up.
             if let Err(e) = maybe_start_stt_pipeline(&state, &eph_id).await {
-                eprintln!("buzz-desktop: STT pipeline restart on mode switch failed: {e}");
+                eprintln!("punks-full-local: STT pipeline restart on mode switch failed: {e}");
             }
         }
     }
@@ -262,7 +267,7 @@ pub async fn start_huddle(
             events::build_huddle_guidelines(&ephemeral_channel_id, &guidelines)
         {
             if let Err(e) = submit_event(guidelines_builder, &state).await {
-                eprintln!("buzz-desktop: huddle guidelines (kind:48106) failed: {e}");
+                eprintln!("punks-full-local: huddle guidelines (kind:48106) failed: {e}");
             }
         }
 
@@ -273,7 +278,7 @@ pub async fn start_huddle(
             match submit_event(add_builder, &state).await {
                 Ok(_) => successful_agents.push(pubkey.clone()),
                 Err(e) => {
-                    eprintln!("buzz-desktop: huddle add_member failed for {pubkey}: {e}");
+                    eprintln!("punks-full-local: huddle add_member failed for {pubkey}: {e}");
                     // Intentionally not added — policy rejected this agent.
                 }
             }
@@ -365,7 +370,7 @@ pub async fn start_huddle(
                 if let Ok(archive_builder) = events::build_archive(ephemeral_uuid) {
                     if let Err(ae) = submit_event(archive_builder, &state).await {
                         eprintln!(
-                            "buzz-desktop: rollback archive of {ephemeral_channel_id} failed: {ae}"
+                            "punks-full-local: rollback archive of {ephemeral_channel_id} failed: {ae}"
                         );
                     }
                 }
@@ -489,7 +494,7 @@ fn teardown_huddle(state: &AppState) -> Result<(), String> {
         // Increment generation first — this immediately invalidates any
         // in-flight transcription task, even before pipelines shut down.
         hs.session_generation.fetch_add(1, Ordering::Release);
-        let stt = hs.stt_pipeline.take();
+        let stt = hs.take_stt_pipeline();
         let tts = hs.tts_pipeline.take();
         let cancel = hs.audio_ws_cancel.take();
         // Cancel the relay token BEFORE dropping the sender. If we drop
@@ -532,7 +537,7 @@ async fn emit_end_and_archive(
             events::build_huddle_ended(parent_channel_id, ephemeral_channel_id)
         {
             if let Err(e) = submit_event(ended_builder, state).await {
-                eprintln!("buzz-desktop: huddle_ended event failed: {e}");
+                eprintln!("punks-full-local: huddle_ended event failed: {e}");
             }
         }
     }
@@ -541,7 +546,7 @@ async fn emit_end_and_archive(
         if let Ok(uuid) = parse_channel_uuid(ephemeral_channel_id) {
             if let Ok(archive_builder) = events::build_archive(uuid) {
                 if let Err(e) = submit_event(archive_builder, state).await {
-                    eprintln!("buzz-desktop: archive ephemeral channel failed: {e}");
+                    eprintln!("punks-full-local: archive ephemeral channel failed: {e}");
                 }
             }
         }
@@ -565,7 +570,7 @@ async fn remove_huddle_agents(ephemeral_channel_id: &str, state: &AppState) {
     {
         Ok(pubkeys) => pubkeys,
         Err(e) => {
-            eprintln!("buzz-desktop: fetch huddle agents for cleanup failed: {e}");
+            eprintln!("punks-full-local: fetch huddle agents for cleanup failed: {e}");
             return;
         }
     };
@@ -575,7 +580,7 @@ async fn remove_huddle_agents(ephemeral_channel_id: &str, state: &AppState) {
             continue;
         };
         if let Err(e) = submit_event(remove_builder, state).await {
-            eprintln!("buzz-desktop: remove huddle agent {pubkey} failed: {e}");
+            eprintln!("punks-full-local: remove huddle agent {pubkey} failed: {e}");
         }
     }
 }
@@ -623,14 +628,14 @@ pub async fn leave_huddle(app: tauri::AppHandle, state: State<'_, AppState>) -> 
             // Archive subsumes leave (the channel is gone, membership is moot).
             // This avoids the "cannot remove the last owner" relay error that
             // build_leave hits when the creator is the sole remaining member.
-            eprintln!("buzz-desktop: last human left huddle — auto-ending");
+            eprintln!("punks-full-local: last human left huddle — auto-ending");
             emit_end_and_archive(&parent_channel_id, &ephemeral_channel_id, &state).await;
         } else {
             // Other humans still in the huddle — just remove self from membership.
             if let Ok(eph_uuid) = parse_channel_uuid(&ephemeral_channel_id) {
                 if let Ok(leave_builder) = events::build_leave(eph_uuid) {
                     if let Err(e) = submit_event(leave_builder, &state).await {
-                        eprintln!("buzz-desktop: huddle leave ephemeral channel failed: {e}");
+                        eprintln!("punks-full-local: huddle leave ephemeral channel failed: {e}");
                     }
                 }
             }
@@ -809,14 +814,14 @@ pub async fn speak_agent_message(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    eprintln!("buzz-desktop: tts stage=invoke status=started route_id={route_id}");
+    eprintln!("punks-full-local: tts stage=invoke status=started route_id={route_id}");
     // Truncate oversized messages — agents shouldn't monologue in a voice huddle.
     // Use char count (not byte length) to avoid panicking on multi-byte UTF-8.
     let text = normalize_agent_tts_text(text);
 
     if !state.huddle()?.tts_enabled {
         eprintln!(
-            "buzz-desktop: tts stage=invoke status=no_op reason=disabled route_id={route_id}"
+            "punks-full-local: tts stage=invoke status=no_op reason=disabled route_id={route_id}"
         );
         return Ok(());
     }
@@ -825,7 +830,7 @@ pub async fn speak_agent_message(
         agent_voice::voice_reference_for_agent(&app, &state, &speaker_pubkey)?
     else {
         eprintln!(
-            "buzz-desktop: tts stage=invoke status=no_op reason=agent_disabled route_id={route_id}"
+            "punks-full-local: tts stage=invoke status=no_op reason=agent_disabled route_id={route_id}"
         );
         return Ok(());
     };
@@ -842,13 +847,13 @@ pub async fn speak_agent_message(
         match classify_agent_tts_runtime(hs.tts_enabled, &hs.phase, hs.tts_pipeline.is_some()) {
             AgentTtsRuntimeGate::Disabled => {
                 eprintln!(
-                    "buzz-desktop: tts stage=invoke status=no_op reason=disabled route_id={route_id}"
+                    "punks-full-local: tts stage=invoke status=no_op reason=disabled route_id={route_id}"
                 );
                 return Ok(());
             }
             AgentTtsRuntimeGate::Inactive => {
                 eprintln!(
-                    "buzz-desktop: tts stage=invoke status=failed reason=inactive_huddle route_id={route_id}"
+                    "punks-full-local: tts stage=invoke status=failed reason=inactive_huddle route_id={route_id}"
                 );
                 return Err(
                     "Agent text to speech is unavailable outside an active huddle".to_string(),
@@ -863,17 +868,17 @@ pub async fn speak_agent_message(
     if needs_pipeline {
         maybe_start_tts_pipeline(&state).await.inspect_err(|_| {
             eprintln!(
-                "buzz-desktop: tts stage=invoke status=failed reason=startup_failed route_id={route_id}"
+                "punks-full-local: tts stage=invoke status=failed reason=startup_failed route_id={route_id}"
             );
         })?;
         await_inflight_tts_start(&state).await.inspect_err(|_| {
             eprintln!(
-                "buzz-desktop: tts stage=invoke status=failed reason=startup_timeout route_id={route_id}"
+                "punks-full-local: tts stage=invoke status=failed reason=startup_timeout route_id={route_id}"
             );
         })?;
     }
 
-    let sender = {
+    let pipeline = {
         let hs = state.huddle()?;
         let agent_is_present = hs
             .agent_pubkeys
@@ -883,24 +888,31 @@ pub async fn speak_agent_message(
             .any(|pubkey| pubkey.eq_ignore_ascii_case(&speaker_pubkey));
         if !agent_is_present {
             eprintln!(
-                "buzz-desktop: tts stage=queue status=dropped reason=speaker_removed route_id={route_id}"
+                "punks-full-local: tts stage=queue status=dropped reason=speaker_removed route_id={route_id}"
             );
             return Ok(());
         }
-        hs.tts_pipeline
-            .as_ref()
-            .map(|pipeline| pipeline.text_sender())
-            .map(|sender| {
-                let speaker_generation = sender.speaker_generation(&speaker_pubkey);
-                (sender, speaker_generation)
-            })
+        hs.tts_pipeline.as_ref().map(Arc::clone)
     };
-    let Some((sender, speaker_generation)) = sender else {
+    let Some(pipeline) = pipeline else {
         eprintln!(
-            "buzz-desktop: tts stage=invoke status=failed reason=unavailable route_id={route_id}"
+            "punks-full-local: tts stage=invoke status=failed reason=unavailable route_id={route_id}"
         );
         return Err("Agent text to speech is enabled but its audio pipeline is unavailable".into());
     };
+    match agent_tts_publisher::ensure(&app, &state, &pipeline, &speaker_pubkey).await {
+        Ok(true) => eprintln!(
+            "punks-full-local: tts broadcast status=ready route_id={route_id}"
+        ),
+        Ok(false) => eprintln!(
+            "punks-full-local: tts broadcast status=unavailable reason=agent_identity_not_local route_id={route_id}"
+        ),
+        Err(error) => eprintln!(
+            "punks-full-local: tts broadcast status=unavailable reason=publisher_setup_failed route_id={route_id} error={error}"
+        ),
+    }
+    let sender = pipeline.text_sender();
+    let speaker_generation = sender.speaker_generation(&speaker_pubkey);
     enqueue_agent_tts_text(route_id, text, move |route_id, text| {
         sender
             .send(
@@ -913,8 +925,10 @@ pub async fn speak_agent_message(
             .map_err(|error| format!("TTS queue closed while waiting to enqueue: {error}"))
     })
     .await
-    .inspect(|_| eprintln!("buzz-desktop: tts stage=queue status=accepted route_id={route_id}"))
+    .inspect(|_| eprintln!("punks-full-local: tts stage=queue status=accepted route_id={route_id}"))
     .inspect_err(|_| {
-        eprintln!("buzz-desktop: tts stage=queue status=failed reason=closed route_id={route_id}")
+        eprintln!(
+            "punks-full-local: tts stage=queue status=failed reason=closed route_id={route_id}"
+        )
     })
 }

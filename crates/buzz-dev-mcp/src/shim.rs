@@ -11,7 +11,7 @@ use zeroize::Zeroize;
 ///    builds ephemeral `GIT_CONFIG_*` env vars, then removes the env var
 /// 3. Prepends the shim dir to PATH
 ///
-/// Shell children receive `path_env`, `git_env`, and `BUZZ_PRIVATE_KEY` (for
+/// Shell children receive `path_env`, `git_env`, and `PUNKS_PRIVATE_KEY` (for
 /// the buzz CLI). `NOSTR_PRIVATE_KEY` is removed from the process env after
 /// the keyfile is written — git helpers read from the keyfile only.
 /// Cleaned up on drop (TempDir).
@@ -152,7 +152,7 @@ fn write_keyfile_atomic(path: &Path, data: &[u8]) -> std::io::Result<()> {
 /// Format: `<hex_pubkey>@<relay_host>` (e.g., `ab12...cd@relay.buzz.dev`).
 /// Falls back to `<hex_pubkey>@buzz` if no relay URL is configured.
 fn derive_git_email(pubkey_hex: &str) -> String {
-    let host = std::env::var("BUZZ_RELAY_URL")
+    let host = std::env::var("PUNKS_RELAY_URL")
         .ok()
         .and_then(|url| {
             // Strip scheme, port, and trailing paths
@@ -174,13 +174,13 @@ fn derive_git_email(pubkey_hex: &str) -> String {
 /// Stable identity contract for git attribution: the bare agent display name,
 /// never channel-qualified, safe to embed in commit history.
 ///
-/// Deliberately distinct from `BUZZ_ACP_SESSION_TITLE`, which is per-session UI
+/// Deliberately distinct from `PUNKS_ACP_SESSION_TITLE`, which is per-session UI
 /// chrome and may be composed (`Agent · #channel`) by consumers. Commits
 /// outlive sessions, so git attribution must not follow a mutable title.
 ///
 /// Nothing writes this yet — when unset, [`build_git_env`] falls back to the
 /// npub, which is byte-for-byte today's behavior.
-const DISPLAY_NAME_ENV_VAR: &str = "BUZZ_ACP_DISPLAY_NAME";
+const DISPLAY_NAME_ENV_VAR: &str = "PUNKS_ACP_DISPLAY_NAME";
 
 /// Max characters in a git author name. Nostr display names are unbounded.
 const MAX_GIT_USER_NAME_CHARS: usize = 80;
@@ -241,7 +241,7 @@ fn is_unicode_format(c: char) -> bool {
     )
 }
 
-/// Normalize a Buzz display name into a git author name, or `None` to fall
+/// Normalize a Punks display name into a git author name, or `None` to fall
 /// back to the npub.
 ///
 /// Strips control and Unicode format characters plus angle brackets, collapses
@@ -289,14 +289,14 @@ fn build_git_env(info: &KeyInfo) -> Vec<(String, String)> {
         .and_then(sanitize_git_user_name)
         .unwrap_or_else(|| info.npub.clone());
     let entries: Vec<(&str, String)> = vec![
-        // Identity — Buzz display name (npub fallback), NIP-05-style email
+        // Identity — Punks display name (npub fallback), NIP-05-style email
         ("user.name", user_name),
         ("user.email", email),
-        // Nostr credential helper is additive — it silently declines non-Buzz
+        // Nostr credential helper is additive — it silently declines non-Punks
         // remotes (exits 0, no credential), so git falls through to system
         // helpers (osxkeychain, store, etc.) for GitHub/GitLab/etc.
         ("credential.helper", "nostr".into()),
-        // Required: Buzz relay verifies NIP-98 against the full repo-root URL.
+        // Required: Punks relay verifies NIP-98 against the full repo-root URL.
         // Without useHttpPath, git only passes the host and auth is rejected.
         ("credential.useHttpPath", "true".into()),
         ("nostr.keyfile", info.keyfile_path.clone()),
@@ -626,11 +626,11 @@ mod git_user_name_tests {
     #[test]
     fn test_build_git_env_uses_display_name_and_leaves_email_on_the_pubkey() {
         let _guard = ENV_LOCK.lock().unwrap();
-        std::env::set_var("BUZZ_ACP_DISPLAY_NAME", "Duncan");
-        std::env::remove_var("BUZZ_RELAY_URL");
+        std::env::set_var("PUNKS_ACP_DISPLAY_NAME", "Duncan");
+        std::env::remove_var("PUNKS_RELAY_URL");
         std::env::remove_var("GIT_CONFIG_COUNT");
         let env = build_git_env(&key_info());
-        std::env::remove_var("BUZZ_ACP_DISPLAY_NAME");
+        std::env::remove_var("PUNKS_ACP_DISPLAY_NAME");
 
         assert_eq!(git_config(&env, "user.name").as_deref(), Some("Duncan"));
         // The pubkey — the thing NIP-98 auth, NIP-GS signing, and contributor
@@ -648,13 +648,13 @@ mod git_user_name_tests {
     #[test]
     fn test_build_git_env_falls_back_to_npub_when_display_name_unset() {
         let _guard = ENV_LOCK.lock().unwrap();
-        std::env::remove_var("BUZZ_ACP_DISPLAY_NAME");
-        std::env::remove_var("BUZZ_RELAY_URL");
+        std::env::remove_var("PUNKS_ACP_DISPLAY_NAME");
+        std::env::remove_var("PUNKS_RELAY_URL");
         std::env::remove_var("GIT_CONFIG_COUNT");
         let env = build_git_env(&key_info());
 
         // Today's behavior, and what every agent gets until a writer for
-        // BUZZ_ACP_DISPLAY_NAME lands on the Desktop side.
+        // PUNKS_ACP_DISPLAY_NAME lands on the Desktop side.
         assert_eq!(git_config(&env, "user.name").as_deref(), Some(NPUB));
         assert_eq!(
             git_config(&env, "user.email").as_deref(),
@@ -665,13 +665,13 @@ mod git_user_name_tests {
     #[test]
     fn test_build_git_env_falls_back_to_npub_when_display_name_is_unusable() {
         let _guard = ENV_LOCK.lock().unwrap();
-        std::env::remove_var("BUZZ_RELAY_URL");
+        std::env::remove_var("PUNKS_RELAY_URL");
         std::env::remove_var("GIT_CONFIG_COUNT");
 
         // Crud-only and format-only names both reach git as the npub — one
         // would abort every commit, the other would render as blank.
         for raw in ["<>", "\u{200B}"] {
-            std::env::set_var("BUZZ_ACP_DISPLAY_NAME", raw);
+            std::env::set_var("PUNKS_ACP_DISPLAY_NAME", raw);
             let env = build_git_env(&key_info());
             assert_eq!(
                 git_config(&env, "user.name").as_deref(),
@@ -679,7 +679,7 @@ mod git_user_name_tests {
                 "unusable display name {raw:?} must reach git as the npub"
             );
         }
-        std::env::remove_var("BUZZ_ACP_DISPLAY_NAME");
+        std::env::remove_var("PUNKS_ACP_DISPLAY_NAME");
     }
 
     #[test]
