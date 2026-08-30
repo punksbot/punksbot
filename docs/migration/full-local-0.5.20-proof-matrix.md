@@ -40,7 +40,7 @@ frais n’a pas produit les observations correspondantes.
 | T | Capacité | Coutures présentes | UI native | Commit + relecture | Événement / projection | Redémarrage + persistance | Verdict |
 |---:|---|---|---|---|---|---|---|
 | 1 | Boucle sociale Punks | `local_authority_content*`, HTTP/WS loopback | Message racine publié et relu dans le `.app` | Événement kind 9 confirmé dans SQLite et relu via la fenêtre autoritaire | Livraison live puis page `Message + bounds` observées | Même Message relu après fermeture/réouverture des mêmes octets | PARTIELLE — réponse, sujet et réaction restent à prouver |
-| 2 | Cycle de vie des Messages | `local_authority_content*`, `local_authority_lifecycle` | À prouver | À prouver | À prouver | À prouver | NON TERMINALE |
+| 2 | Cycle de vie des Messages | `local_authority_content*`, `local_authority_lifecycle` | Réaction 👍 et réponse publiées puis relues dans le `.app` | Événements de réaction/réponse committés et rechargés | Fermeture auxiliaire + résumé signé `1 reply` observés | Réaction, compteur et texte exact de la réponse relus après redémarrage | PARTIELLE — édition, rétraction, restauration et effacement restent à prouver |
 | 3 | Fusion de Comptes Punks | `local_accounts`, `local_authority_account_tests` | À prouver | À prouver | À prouver | À prouver | NON TERMINALE |
 | 4 | Identité sociale et gouvernance | `local_authority_accounts`, `local_authority_membership`, `local_authority_governance` | À prouver | À prouver | À prouver | À prouver | NON TERMINALE |
 | 5 | Cycle de vie d’un Workspace | `local_workspaces`, `local_authority_workspace_hub`, `local_authority_workspace` | À prouver | À prouver | À prouver | À prouver | NON TERMINALE |
