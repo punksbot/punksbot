@@ -25,18 +25,18 @@ function childProcessDouble() {
 test("describes the managed Punks backend and Tauri commands", () => {
   assert.deepEqual(localDevelopmentCommands(), {
     backend: ["cloudflare:dev"],
-    desktop: ["--dir", "desktop", "punks:dev"],
+    desktop: ["punks:dev"],
   });
 });
 
 test("the desktop command resolves to a checked-in package script", () => {
   const manifest = JSON.parse(
     readFileSync(
-      resolve(import.meta.dirname, "../../desktop/package.json"),
+      resolve(import.meta.dirname, "../../package.json"),
       "utf8",
     ),
   );
-  assert.equal(manifest.name, "@punks/app");
+  assert.equal(manifest.name, "punksbot-workspace");
   assert.equal(typeof manifest.scripts?.["punks:dev"], "string");
 });
 
@@ -74,7 +74,7 @@ test("starts Tauri only after the local Punks API is healthy", async () => {
     "start:cloudflare:dev",
     "wait:backend",
     "ready:backend",
-    "start:--dir desktop punks:dev",
+    "start:punks:dev",
   ]);
 
   desktop.emit("exit", 0, null);
@@ -119,7 +119,7 @@ test("reuses a healthy local backend without taking ownership of it", async () =
   });
 
   await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(starts, [["--dir", "desktop", "punks:dev"]]);
+  assert.deepEqual(starts, [["punks:dev"]]);
 
   desktop.emit("exit", 0, null);
   await running;
