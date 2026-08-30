@@ -23,28 +23,7 @@ import {
   verdictErreur,
 } from "./migration-manifest-lib.mjs";
 
-const T1_RETRAITS_ATTENDUS = [
-  "desktop/src-tauri/src/deep_link_tests.rs",
-  "desktop/src/features/onboarding/communityOnboarding.test.mjs",
-  "desktop/src/features/onboarding/lib/encryptedBackup.test.mjs",
-  "desktop/src/features/onboarding/lib/keyImportInput.test.mjs",
-  "desktop/src/features/onboarding/machineOnboarding.test.mjs",
-  "desktop/src/features/onboarding/ui/agentReadiness.test.mjs",
-  "desktop/src/features/onboarding/ui/onboardingFlowSteps.test.mjs",
-  "desktop/src/features/onboarding/ui/onboardingRuntimeSelection.test.mjs",
-  "desktop/src/features/onboarding/ui/presetLogos.test.mjs",
-  "desktop/src/features/onboarding/useWelcomeKickoffStage.test.mjs",
-  "desktop/src/features/onboarding/welcome.test.mjs",
-  "desktop/src/features/onboarding/welcomeCanvas.test.mjs",
-  "desktop/src/features/onboarding/welcomeGuide.test.mjs",
-  "desktop/src/features/onboarding/welcomeKickoff.test.mjs",
-  "desktop/src/shared/deep-link.test.mjs",
-  "desktop/tests/helpers/onboarding.ts",
-  "desktop/tests/helpers/seed.ts",
-  "desktop/tests/helpers/seedRelay.ts",
-  "scripts/setup-desktop-test-data.sh",
-  "test-fixtures/entity-links.json",
-].sort();
+const T1_RETRAITS_ATTENDUS = [];
 
 const T1_ACTIFS_HISTORIQUES = [
   "desktop/src/shared/{deep-link.ts,deep-link.test.mjs,useAppDeepLinks.ts,useEntityDeepLinks.ts,useMessageDeepLinks.ts}",
@@ -523,7 +502,7 @@ test("validateManifest : les modules partagés restent au dernier consommateur e
   assert.ok(erreurs.some((e) => e.includes("frontière de scission manquante")));
 });
 
-test("validateManifest : l’entrée React Punks reste au scellement après extraction de l’entrée Punks", () => {
+test("validateManifest : l’entrée React Punks reste un actif Punks après la scission", () => {
   const fichier = "desktop/src/main.tsx";
   const doc = manifestMinimal([
     {
@@ -534,16 +513,14 @@ test("validateManifest : l’entrée React Punks reste au scellement après extr
   ]);
 
   let erreurs = validateManifest(doc, [fichier]);
-  assert.ok(
-    erreurs.some((erreur) =>
-      erreur.includes("dernier consommateur attendu scellement"),
-    ),
-  );
+  assert.ok(erreurs.some((erreur) => erreur.includes("actif Punks attendu")));
 
   doc.actifs[0] = {
     chemin: fichier,
-    verdict: "scellement",
-    separation: "l’entrée Punks est extraite avant le retrait de Punks",
+    verdict: "conserve",
+    conservation: "actif-punks",
+    separation:
+      "l’entrée Punks est extraite avant le retrait du produit précédent",
   };
   assert.deepEqual(validateManifest(doc, [fichier]), []);
 

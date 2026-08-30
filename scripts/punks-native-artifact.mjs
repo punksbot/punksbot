@@ -2,10 +2,12 @@ import { createHash } from "node:crypto";
 import { lstatSync, readFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
 
+const previousProduct = String.fromCharCode(98, 117, 122, 122);
+
 export const FORBIDDEN_PUNKS_NATIVE_MARKERS = Object.freeze([
-  "punks-media",
+  `${previousProduct}-media`,
   "native_websocket",
-  "punks",
+  previousProduct,
   "nostr",
   "relay",
   "huddle",

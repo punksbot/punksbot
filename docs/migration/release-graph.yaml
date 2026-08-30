@@ -185,7 +185,7 @@ releases:
         sha256: 7e3c938676454cd4e82055b8597d3fbc70c1b7030e96c0bd5c61b9a172c5a56f
       schemas:
         version: 1
-        sha256: ed10540af8dd81f71741f6c0e99977264743ad2d2ff3c02e9e925452427853d6
+        sha256: f676303cb43a2a141d04d94ef7f558697ecdb92c50c8686425df32c5e702ac08
       generes:
         version: 1
         sha256: e5782767020ce31330de1eb38a41affad9177d838ca0a2bd0982bfcd0aa6780f
@@ -195,10 +195,10 @@ releases:
         sha256: af4acfd973d0956ac7c52af8a7a9a6d3c454483cd2ed57a18d55a6d6a858e093
       registre-goldens:
         version: 1
-        sha256: e317ab42ffa0c0aaea7bc7b6ebe5d8ede446a4f0cc9738ed750c96f73d75e483
+        sha256: 951106dc42268b38808ce1392f8a84b6ab5ec653e187eed58dbd2baeb64fe9b5
       manifeste-retrait:
         version: 1
-        sha256: 1c81c5047632332ea0d761ae83f3568ce9762d4e0814dc751e6111850e84cffb
+        sha256: 93c4d2151b2fb303b1fed1d7296a71c12fcc6b660502d598ff216a5e66092432
     staging:
       environnement: staging
       compte: 3a391620584c792dbbd8cfa148d7634a

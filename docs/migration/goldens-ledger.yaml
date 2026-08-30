@@ -59,7 +59,6 @@ entrees:
     preuve:
       - cloudflare/packages/client/test/conformance.test.ts
       - cloudflare/workers/api/test/conformance-workerd.test.ts
-      - desktop/src-tauri/crates/punks-account-client/src/tests.rs
     note: >
       Le corpus commun Rust/TypeScript/workerd reprend la discipline de
       couverture et refuse une opération ou un cas absent du profil fermé.
@@ -218,84 +217,4 @@ retraits-par-tranche:
     quatre ci-dessus ; `preuve` obligatoire pour preuve-punks, `decision`
     obligatoire pour difference-intentionnelle, `echeance` bornée obligatoire
     pour capacite-indisponible et `note` obligatoire pour hors-perimetre.
-  lignes:
-    - test: desktop/src-tauri/src/deep_link_tests.rs
-      tranche: tranche:1
-      verdict: difference-intentionnelle
-      decision: "#47 — décisions 2.5 et 4.1–4.2 (aucune coordonnée Punks/Nostr n'est importée par le desktop Punks)"
-    - test: desktop/src/features/onboarding/communityOnboarding.test.mjs
-      tranche: tranche:1
-      verdict: difference-intentionnelle
-      decision: "#47 — décisions 2.4 et 5 (Compte Punks neuf et cérémonie dans le navigateur système, sans onboarding Punks)"
-    - test: desktop/src/features/onboarding/lib/encryptedBackup.test.mjs
-      tranche: tranche:1
-      verdict: difference-intentionnelle
-      decision: "#47 — décisions 2.4 et 5 (aucune clé ou sauvegarde d'identité Punks n'est lue, importée ou supprimée)"
-    - test: desktop/src/features/onboarding/lib/keyImportInput.test.mjs
-      tranche: tranche:1
-      verdict: difference-intentionnelle
-      decision: "#47 — décisions 2.4 et 5 (aucun import de clé Nostr dans un Compte Punks neuf)"
-    - test: desktop/src/features/onboarding/machineOnboarding.test.mjs
-      tranche: tranche:1
-      verdict: difference-intentionnelle
-      decision: "#47 — décisions 2.4 et 5 (la distribution Punks ne reprend pas l'onboarding machine Punks)"
-    - test: desktop/src/features/onboarding/ui/agentReadiness.test.mjs
-      tranche: tranche:1
-      verdict: difference-intentionnelle
-      decision: "#47 — tranches 22 et 26 (l'exécution et la configuration des Installations restent indisponibles à T1)"
-    - test: desktop/src/features/onboarding/ui/onboardingFlowSteps.test.mjs
-      tranche: tranche:1
-      verdict: difference-intentionnelle
-      decision: "#47 — décisions 2.4 et 5 (la cérémonie de Compte Punks remplace le flux d'onboarding Punks)"
-    - test: desktop/src/features/onboarding/ui/onboardingRuntimeSelection.test.mjs
-      tranche: tranche:1
-      verdict: difference-intentionnelle
-      decision: "#47 — tranches 22 et 26 (aucune sélection de runtime d'Installation n'est disponible à T1)"
-    - test: desktop/src/features/onboarding/ui/presetLogos.test.mjs
-      tranche: tranche:1
-      verdict: difference-intentionnelle
-      decision: "#47 — tranches 22 et 26 (les presets de runtime Punks ne font pas partie de T1)"
-    - test: desktop/src/features/onboarding/useWelcomeKickoffStage.test.mjs
-      tranche: tranche:1
-      verdict: difference-intentionnelle
-      decision: "#47 — décisions 2 et 7 (le Workspace Punks n'exécute aucun Welcome Team ou kickoff Punks)"
-    - test: desktop/src/features/onboarding/welcome.test.mjs
-      tranche: tranche:1
-      verdict: difference-intentionnelle
-      decision: "#47 — décisions 2 et 7 (les Streams Punks n'importent aucun canal de bienvenue Punks)"
-    - test: desktop/src/features/onboarding/welcomeCanvas.test.mjs
-      tranche: tranche:1
-      verdict: difference-intentionnelle
-      decision: "#47 — tranche 20 (Canvas reste indisponible et aucun Canvas Punks n'est créé à T1)"
-    - test: desktop/src/features/onboarding/welcomeGuide.test.mjs
-      tranche: tranche:1
-      verdict: difference-intentionnelle
-      decision: "#47 — tranches 14 et 22 (aucun guide ni Installation de Bot Punks n'est créé à T1)"
-    - test: desktop/src/features/onboarding/welcomeKickoff.test.mjs
-      tranche: tranche:1
-      verdict: difference-intentionnelle
-      decision: "#47 — décisions 2 et 7 (aucun kickoff social Punks n'est rejoué dans le Workspace Punks)"
-    - test: desktop/src/shared/deep-link.test.mjs
-      tranche: tranche:1
-      verdict: difference-intentionnelle
-      decision: "#47 — décisions 2.5 et 4.1–4.2 (seules les enveloppes de coordonnées canoniques Punks sont admises)"
-    - test: desktop/tests/helpers/onboarding.ts
-      tranche: tranche:1
-      verdict: difference-intentionnelle
-      decision: "#47 — décisions 2.4 et 5 (les scénarios Punks utilisent la cérémonie publique, pas le seed d'onboarding Punks)"
-    - test: desktop/tests/helpers/seed.ts
-      tranche: tranche:1
-      verdict: difference-intentionnelle
-      decision: "#47 — règles de test 1 et 5 (fixtures Punks isolées sans relay ni base historique)"
-    - test: desktop/tests/helpers/seedRelay.ts
-      tranche: tranche:1
-      verdict: difference-intentionnelle
-      decision: "#47 — règles de test 1 et 5 (staging Workers géré, sans seed du relay Punks)"
-    - test: scripts/setup-desktop-test-data.sh
-      tranche: tranche:1
-      verdict: difference-intentionnelle
-      decision: "#47 — règles de test 1 et 5 (aucune infrastructure relay, PostgreSQL ou Redis n'est démarrée pour Punks)"
-    - test: test-fixtures/entity-links.json
-      tranche: tranche:1
-      verdict: difference-intentionnelle
-      decision: "#47 — décisions 2.5 et 4.1–4.2 (les identifiants Punks/Nostr historiques ne sont pas importés)"
+  lignes: []
