@@ -1,8 +1,8 @@
-import 'package:buzz/shared/read_state/read_state_format.dart';
-import 'package:buzz/shared/read_state/read_state_provider.dart';
-import 'package:buzz/shared/community/community_provider.dart';
-import 'package:buzz/shared/relay/relay.dart';
-import 'package:buzz/shared/theme/theme_provider.dart';
+import 'package:punks/shared/read_state/read_state_format.dart';
+import 'package:punks/shared/read_state/read_state_provider.dart';
+import 'package:punks/shared/community/community_provider.dart';
+import 'package:punks/shared/relay/relay.dart';
+import 'package:punks/shared/theme/theme_provider.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';

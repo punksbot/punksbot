@@ -1,10 +1,10 @@
 # Punks Bot — Cloudflare Native
 
-This directory is the replacement backend for the imported Buzz server. It is
+This directory is the replacement backend for the imported Punks server. It is
 deliberately isolated from the legacy Rust relay: local development and CI must
-not start Docker, PostgreSQL, Redis, MinIO, or the Buzz relay.
+not start Docker, PostgreSQL, Redis, MinIO, or the Punks relay.
 
-The imported Buzz workflow definitions are frozen in
+The imported Punks workflow definitions are frozen in
 `.github/legacy-workflows`. The two active Punks workflows are the managed
 Workers gate and the signed desktop-candidate pipeline; the boundary guard
 validates both before package or Worker checks run.
@@ -27,7 +27,7 @@ and its package, Worker, binding, or contract target before returning a non-zero
 exit code.
 
 This command runs only Node tooling and the Cloudflare implementations used by
-the packages' `workerd` suites. It does not start the Buzz relay or any Docker,
+the packages' `workerd` suites. It does not start the Punks relay or any Docker,
 PostgreSQL, Redis, MinIO, Helm, or Kubernetes service.
 
 Every tranche proof dossier must record a complete green
@@ -130,7 +130,7 @@ staging buckets are provisioned. The historical Bot Runtime, Queue consumer and
 Workflow observation is recorded canonically in [OPERATIONS.md](OPERATIONS.md);
 it is not proof of the current candidate and no remote inference is claimed. No
 public trigger, Punks client integration, Installation discovery, general
-prompt surface, memory or schedules are claimed. This is not a claim of Buzz
+prompt surface, memory or schedules are claimed. This is not a claim of Punks
 feature parity; subsequent slices preserve the same authority and projection
 boundaries.
 

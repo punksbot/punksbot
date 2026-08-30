@@ -6,9 +6,9 @@ pub(super) fn previous_product_nest(home: &Path, current_nest: &Path) -> PathBuf
             .file_name()
             .is_some_and(|name| name == ".punks-dev")
         {
-            ".buzz-dev"
+            ".punks-dev"
         } else {
-            ".buzz"
+            ".punks"
         },
     )
 }
@@ -23,7 +23,7 @@ pub(super) fn migrate_previous_product_repos_dir(
         return;
     }
     let previous = home
-        .join(if is_dev { ".buzz-dev" } else { ".buzz" })
+        .join(if is_dev { ".punks-dev" } else { ".punks" })
         .join(".repos-dir");
     if !previous.is_file() {
         return;

@@ -1,0 +1,18 @@
+{{- include "punks.validate" . -}}
+{{- if and .Values.podDisruptionBudget.enabled (gt (include "punks.minimumReplicas" . | int) 1) -}}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "punks.fullname" . }}
+  labels:
+    {{- include "punks.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "punks.relaySelectorLabels" . | nindent 6 }}
+  {{- if .Values.podDisruptionBudget.minAvailable }}
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  {{- else if .Values.podDisruptionBudget.maxUnavailable }}
+  maxUnavailable: {{ .Values.podDisruptionBudget.maxUnavailable }}
+  {{- end }}
+{{- end }}

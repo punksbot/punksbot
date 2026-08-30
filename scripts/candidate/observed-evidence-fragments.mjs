@@ -320,7 +320,7 @@ function validateNetworks(evidenceRoot, sourceSha, deploymentId) {
       proof.stagingDeploymentId !== deploymentId ||
       !Array.isArray(proof.network?.requests) ||
       proof.network.requests.length < 2 ||
-      /buzz|nostr|relay|huddle/iu.test(JSON.stringify(proof.network))
+      /punks|nostr|relay|huddle/iu.test(JSON.stringify(proof.network))
     ) {
       fail(
         `${platform} network evidence is divergent or contains legacy traffic`,

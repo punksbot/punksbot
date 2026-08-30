@@ -1,8 +1,8 @@
-# Inventaire de retrait Buzz → Punks — manifeste canonique
+# Inventaire de retrait Punks → Punks — manifeste canonique
 # Parent : issue #47 ; création exigée par l’issue #49.
 # Source de décision : issues #13 (preuves/seuils), #14 (ordre des tranches), #17 (présente décision).
 # Checkpoint de récupération : 50e16de180dda4365f8001a8a73503f16977a175.
-# Baseline Buzz gelée : da818eddc2f470c006a1073c8c5452f8a989f272.
+# Baseline Punks gelée : da818eddc2f470c006a1073c8c5452f8a989f272.
 #
 # Règles (décidées en #17) :
 #   - La ligne d’inventaire est le module (fichier ou répertoire, globs de famille admis).
@@ -28,7 +28,7 @@
 
 version: 1
 checkpoint-recuperation: 50e16de180dda4365f8001a8a73503f16977a175
-baseline-buzz: da818eddc2f470c006a1073c8c5452f8a989f272
+baseline-punks: da818eddc2f470c006a1073c8c5452f8a989f272
 
 clients-requis: [desktop, web, mobile, admin-web]
 
@@ -50,10 +50,10 @@ goldens:
   foyer: goldens/
   registre: docs/migration/goldens-ledger.yaml
   univers: docs/migration/goldens-universe.yaml
-  univers-tests: docs/migration/buzz-tests-universe.yaml
+  univers-tests: docs/migration/punks-tests-universe.yaml
   politique: >
     Clé par invariant, jamais par fichier source ; exécution sans relay, Docker,
-    PostgreSQL, Redis ni autre runtime serveur historique ; chaque test Buzz retiré
+    PostgreSQL, Redis ni autre runtime serveur historique ; chaque test Punks retiré
     obtient exactement une ligne (preuve Punks, différence intentionnelle, capacité
     indisponible, hors périmètre). Le registre est rempli tranche par tranche ; le
     foyer matérialise les goldens déplacés lors de ces retraits.
@@ -97,7 +97,7 @@ actifs:
   - chemin: desktop/src/shared/constants/kinds.ts
     classe: modele
     verdict: scellement
-    note: registre des kinds Nostr Buzz
+    note: registre des kinds Nostr Punks
   - chemin: desktop/src/shared/lib/{nostrUtils.ts,pubkey.ts,normalizeRelayUrl.ts,relayError.ts,useRelayOrigin.ts,ncryptsecSourceScan.ts}
     classe: conversion
     verdict: scellement
@@ -112,11 +112,11 @@ actifs:
     conservation: ui-neutre
     separation: "api/ et lib Nostr scellés ci-dessus ; constants/kinds.ts au scellement ; deep-links à la tranche:1"
     note: reste neutre (context, hooks, layout, theme, styles, lib datetime/emoji/markdown/clipboard…)
-  - chemin: desktop/src/shared/ui/buzz-logo/
+  - chemin: desktop/src/shared/ui/punks-logo/
     classe: ui
     verdict: conserve
     conservation: attente-refonte-ui
-    note: identité Buzz remplacée par l’effort Punks UI (hors périmètre de cette carte)
+    note: identité Punks remplacée par l’effort Punks UI (hors périmètre de cette carte)
   - chemin: desktop/src/shared/features/
     classe: store
     verdict: conserve
@@ -134,7 +134,7 @@ actifs:
   - chemin: desktop/src/app/routes/index.tsx
     classe: route
     verdict: tranche:17
-    separation: "onboarding Buzz → tranche:1 ; dernier consommateur : Home à la tranche:17"
+    separation: "onboarding Punks → tranche:1 ; dernier consommateur : Home à la tranche:17"
   - chemin: desktop/src/app/routes/{ChannelRouteScreen.tsx,channels.$channelId.tsx,channels.$channelId.posts.$postId.tsx}
     classe: route
     verdict: tranche:11
@@ -168,7 +168,7 @@ actifs:
     classe: route
     verdict: scellement
     separation: >
-      onboarding/session Buzz → tranche:1 ; communautés → tranche:5 ; huddle →
+      onboarding/session Punks → tranche:1 ; communautés → tranche:5 ; huddle →
       tranche:25 ; providers React et shell visuel neutres conservés après scission ;
       les dernières arêtes identité/relay meurent au scellement
   - chemin: desktop/src/app/AppShell.tsx
@@ -179,12 +179,12 @@ actifs:
       tranche:7 ; présence → tranche:8 ; DMs → tranche:12 ; Bots/Home →
       tranches:14/17 ; emoji → tranche:19 ; Workflows/Huddle/Agents/Reminders/
       Templates/Pulse → tranches:23/25/26/27/28/30 ; le chrome neutre est
-      extrait, les dernières arêtes relay, RelayEvent et identité Buzz meurent
+      extrait, les dernières arêtes relay, RelayEvent et identité Punks meurent
       au scellement
   - chemin: desktop/src/app/routes/root.tsx
     classe: route
     verdict: scellement
-    separation: "la route racine reste le point de montage du shell ; AppShell Buzz est remplacé avant conservation de l'enveloppe neutre"
+    separation: "la route racine reste le point de montage du shell ; AppShell Punks est remplacé avant conservation de l'enveloppe neutre"
   - chemin: desktop/src/app/
     classe: route
     verdict: scellement
@@ -201,14 +201,14 @@ actifs:
     verdict: conserve
     conservation: actif-punks
     separation: >
-      l'ancien bootstrap Buzz est retiré ; cette entrée monte uniquement la façade
+      l'ancien bootstrap Punks est retiré ; cette entrée monte uniquement la façade
       riche Punks et son client sémantique natif
     note: entrée React unique du produit desktop Punks
   - chemin: desktop/src/{features-manifest.d.ts,jdenticon.d.ts,types/,upng-js.d.ts,vite-env.d.ts}
     classe: ui
     verdict: conserve
     conservation: ui-neutre
-    note: "déclarations de types et shims sans sémantique Buzz"
+    note: "déclarations de types et shims sans sémantique Punks"
   - chemin: desktop/src/punks.css
     classe: ui
     verdict: conserve
@@ -237,7 +237,7 @@ actifs:
     classe: feature
     verdict: conserve
     conservation: ui-neutre
-    separation: "types Channel Buzz remplacés par les vues Conversation Punks ; chrome et rendu neutres conservés"
+    separation: "types Channel Punks remplacés par les vues Conversation Punks ; chrome et rendu neutres conservés"
     note: rendu neutre alimenté par les vues Punks
   - chemin: desktop/src/features/punks/
     classe: feature
@@ -266,7 +266,7 @@ actifs:
   - chemin: desktop/src/features/identity-archive/
     classe: feature
     verdict: tranche:3
-    note: "aucune archive identitaire Buzz ne survit (décision #7, pseudo-fusion interdit)"
+    note: "aucune archive identitaire Punks ne survit (décision #7, pseudo-fusion interdit)"
   - chemin: desktop/src/features/local-archive/
     classe: feature
     verdict: tranche:26
@@ -308,7 +308,7 @@ actifs:
       sauvegarde Nostr, pairing mobile et feedback relay → tranche:1 ; communautés
       hébergées → tranche:5 ; notifications → tranche:7 ; modération → tranche:10 ;
       emoji → tranche:19 ; Huddle/voix → tranches:25/29 ; Agents et Templates →
-      tranches:26/28 ; dernier consommateur Buzz : réglages Mesh Compute à la
+      tranches:26/28 ; dernier consommateur Punks : réglages Mesh Compute à la
       tranche:31 ; apparence, mises à jour et composants visuels neutres sont
       extraits vers le shell Punks conservé avant le retrait du module mixte
   - chemin: desktop/src/features/sidebar/
@@ -318,7 +318,7 @@ actifs:
       communautés et stores relay/pubkey → tranche:6 ; Forum → tranche:11 ;
       recherche → tranche:13 ; Projects → tranche:24 ; Huddle → tranche:25 ;
       Agents → tranche:26 ; Reminders → tranche:27 ; Templates → tranche:28 ;
-      dernier consommateur Buzz : navigation Pulse à la tranche:30 ; chrome,
+      dernier consommateur Punks : navigation Pulse à la tranche:30 ; chrome,
       mise à jour et primitives visuelles neutres extraits avant le retrait
     note: sidebar mixte conservée jusqu’au dernier consommateur, jamais retirée avec les seules communautés
   - chemin: desktop/src/features/terminal/
@@ -343,11 +343,11 @@ actifs:
   - chemin: desktop/src/testing/
     classe: mock-test
     verdict: scellement
-    separation: "harnais Buzz (signature nostr-tools, émission RelayEvent) retirés par tranche ; façade Punks extraite et conservée dans le harnais du candidat"
+    separation: "harnais Punks (signature nostr-tools, émission RelayEvent) retirés par tranche ; façade Punks extraite et conservée dans le harnais du candidat"
   - chemin: desktop/tests/
     classe: mock-test
     verdict: scellement
-    separation: "scénarios Buzz retirés avec leur dernière capacité et enregistrés dans retraits-par-tranche ; mécanismes Playwright neutres extraits"
+    separation: "scénarios Punks retirés avec leur dernière capacité et enregistrés dans retraits-par-tranche ; mécanismes Playwright neutres extraits"
   - chemin: desktop/tests/e2e/capability-masking.spec.ts
     classe: mock-test
     verdict: conserve
@@ -370,12 +370,12 @@ actifs:
     classe: ui
     verdict: conserve
     conservation: ui-neutre
-    separation: "marque Buzz (buzz.svg, landing/) reprise par l’effort Punks UI ; visuels d’onboarding retirés à la tranche:1"
+    separation: "marque Punks (punks.svg, landing/) reprise par l’effort Punks UI ; visuels d’onboarding retirés à la tranche:1"
   - chemin: desktop/scripts/
     classe: script
     verdict: conserve
     conservation: outillage
-    separation: "checks et entrée produit Punks classés explicitement ; outils Buzz restants suivent leur actif ou le scellement"
+    separation: "checks et entrée produit Punks classés explicitement ; outils Punks restants suivent leur actif ou le scellement"
   - chemin: desktop/scripts/*punks*
     classe: script
     verdict: conserve
@@ -430,7 +430,7 @@ actifs:
   - chemin: desktop/src-tauri/src/managed_agents/
     classe: commande
     verdict: tranche:22
-    separation: "runtime ACP local et découverte de fournisseurs conservables (Atelier) ; injection BUZZ_*/relay retirée"
+    separation: "runtime ACP local et découverte de fournisseurs conservables (Atelier) ; injection PUNKS_*/relay retirée"
   - chemin: desktop/src-tauri/src/archive/
     classe: commande
     verdict: scellement
@@ -459,7 +459,7 @@ actifs:
   - chemin: desktop/src-tauri/src/{migration.rs,migration/}
     classe: store
     verdict: scellement
-    note: réconciliation des données Buzz persistées (renames Sprout→Buzz, partage dev)
+    note: réconciliation des données Punks persistées (renames Sprout→Punks, partage dev)
   - chemin: desktop/src-tauri/src/reset.rs
     classe: store
     verdict: conserve
@@ -471,7 +471,7 @@ actifs:
     verdict: conserve
     conservation: actif-punks
     separation: >
-      modules, commandes et diagnostics sous cfg buzz-desktop retirés avec leurs
+      modules, commandes et diagnostics sous cfg punks-desktop retirés avec leurs
       tranches puis au scellement ; dispatcher desktop_lib::run et branche
       punks_runtime::run conservés pour le produit natif Punks
     note: entrypoints Tauri mixtes dont la branche Punks est une dépendance active du candidat
@@ -488,7 +488,7 @@ actifs:
     classe: transport
     verdict: scellement
     note: >
-      reste du socle relay/Nostr du backend Tauri (modules Buzz résiduels,
+      reste du socle relay/Nostr du backend Tauri (modules Punks résiduels,
       modèles d’identité) — retiré au gate terminal avec ses arêtes Cargo
 
   # ── Desktop : mécanismes OS du backend Tauri ───────────────────────────────
@@ -499,7 +499,7 @@ actifs:
     note: fenêtrage, menus, notifications natives, rendu WebKit — mécanismes OS neutres
 
   # ── Desktop : workspace Cargo local du backend Tauri ───────────────────────
-  - chemin: desktop/src-tauri/crates/buzz-terminal/
+  - chemin: desktop/src-tauri/crates/punks-terminal/
     classe: crate
     verdict: conserve
     conservation: atelier
@@ -521,16 +521,16 @@ actifs:
     classe: mock-test
     verdict: conserve
     conservation: mecanisme-test
-  - chemin: desktop/src-tauri/Cargo.toml (arêtes buzz-core, buzz-sdk, buzz-ws-client, buzz-media dev)
+  - chemin: desktop/src-tauri/Cargo.toml (arêtes punks-core, punks-sdk, punks-ws-client, punks-media dev)
     classe: manifeste
     verdict: scellement
-  - chemin: desktop/src-tauri/Cargo.toml (arête buzz-persona)
+  - chemin: desktop/src-tauri/Cargo.toml (arête punks-persona)
     classe: manifeste
     verdict: tranche:26
-  - chemin: desktop/src-tauri/Cargo.toml (arête buzz-agent)
+  - chemin: desktop/src-tauri/Cargo.toml (arête punks-agent)
     classe: manifeste
     verdict: tranche:22
-  - chemin: desktop/src-tauri/Cargo.toml (arête buzz-voice)
+  - chemin: desktop/src-tauri/Cargo.toml (arête punks-voice)
     classe: manifeste
     verdict: tranche:29
   - chemin: desktop/src-tauri/
@@ -568,47 +568,47 @@ actifs:
   - chemin: web/
     classe: client
     verdict: retrait-global
-    note: client Buzz gelé ; aucune partie migrée par les tranches desktop ; nostr-client/nostr-signer/nip98/invite/repos git-on-Nostr inclus
+    note: client Punks gelé ; aucune partie migrée par les tranches desktop ; nostr-client/nostr-signer/nip98/invite/repos git-on-Nostr inclus
   - chemin: mobile/
     classe: client
     verdict: retrait-global
-    note: client Buzz gelé ; shared/relay, crypto NIP, pairing, features inclus
+    note: client Punks gelé ; shared/relay, crypto NIP, pairing, features inclus
   - chemin: admin-web/
     classe: client
     verdict: retrait-global
-    note: console d’administration Buzz gelée
+    note: console d’administration Punks gelée
 
   # ── Crates Rust ────────────────────────────────────────────────────────────
-  - chemin: crates/{buzz-relay,buzz-db,buzz-pubsub,buzz-auth,buzz-search,buzz-audit,buzz-deletion,buzz-workflow,buzz-media,buzz-relay-mesh,buzz-push-gateway,buzz-pair-relay,buzz-datastore-tracing,buzz-backend-kubernetes}/
+  - chemin: crates/{punks-relay,punks-db,punks-pubsub,punks-auth,punks-search,punks-audit,punks-deletion,punks-workflow,punks-media,punks-relay-mesh,punks-push-gateway,punks-pair-relay,punks-datastore-tracing,punks-backend-kubernetes}/
     classe: crate
     verdict: retrait-global
-  - chemin: crates/{buzz-core,buzz-sdk,buzz-ws-client}/
+  - chemin: crates/{punks-core,punks-sdk,punks-ws-client}/
     classe: crate
     verdict: retrait-global
     separation: "arêtes desktop rompues au scellement"
-  - chemin: crates/{buzz-acp,buzz-cli,buzz-admin,buzz-pairing-cli,buzz-test-client,buzz-dev-mcp,sprig,git-credential-nostr,git-sign-nostr}/
+  - chemin: crates/{punks-acp,punks-cli,punks-admin,punks-pairing-cli,punks-test-client,punks-dev-mcp,sprig,git-credential-nostr,git-sign-nostr}/
     classe: crate
     verdict: retrait-global
-  - chemin: crates/buzz-persona/
+  - chemin: crates/punks-persona/
     classe: crate
     verdict: retrait-global
     separation: "arête desktop rompue à la tranche:26"
-  - chemin: crates/buzz-agent/
+  - chemin: crates/punks-agent/
     classe: crate
     verdict: retrait-global
     separation: "arête desktop rompue à la tranche:22"
-  - chemin: crates/buzz-voice/
+  - chemin: crates/punks-voice/
     classe: crate
     verdict: tranche:29
     note: desktop est son unique client ; disparaît avec la dernière capacité vocale
-  - chemin: crates/buzz-conformance/
+  - chemin: crates/punks-conformance/
     classe: crate
     verdict: retrait-global
     separation: "tests/fixtures/*.jsonl conservés comme goldens neutres attachés à la baseline (registre goldens-ledger.yaml)"
   - chemin: examples/
     classe: crate
     verdict: retrait-global
-    note: countdown-bot (buzz-sdk) et meadow-core (patrimoine d’agents Buzz)
+    note: countdown-bot (punks-sdk) et meadow-core (patrimoine d’agents Punks)
 
   # ── Serveur historique et infrastructure ───────────────────────────────────
   - chemin: migrations/
@@ -621,7 +621,7 @@ actifs:
   - chemin: deploy/
     classe: docker
     verdict: retrait-global
-    note: charts Helm buzz + buzz-push-gateway, compose Caddy, déploiement local HA
+    note: charts Helm punks + punks-push-gateway, compose Caddy, déploiement local HA
   - chemin: script/start
     classe: docker
     verdict: retrait-global
@@ -639,7 +639,7 @@ actifs:
   - chemin: Cargo.toml
     classe: manifeste
     verdict: retrait-global
-    note: manifeste racine du workspace Rust Buzz ; ses parties sont détaillées ci-dessous
+    note: manifeste racine du workspace Rust Punks ; ses parties sont détaillées ci-dessous
   - chemin: Cargo.toml ([patch.crates-io] aws-creds)
     classe: manifeste
     verdict: retrait-global
@@ -651,14 +651,14 @@ actifs:
   - chemin: Cargo.lock
     classe: manifeste
     verdict: retrait-global
-    note: graphe généré des crates Buzz ; régénéré à mesure des retraits
+    note: graphe généré des crates Punks ; régénéré à mesure des retraits
 
   # ── Outillage : Justfile et scripts ────────────────────────────────────────
   - chemin: Justfile
     classe: script
     verdict: conserve
     conservation: outillage
-    separation: "les cibles Buzz qualifiées ci-dessous meurent à leurs échéances ; le conteneur Justfile et les cibles Punks/neutres restent"
+    separation: "les cibles Punks qualifiées ci-dessous meurent à leurs échéances ; le conteneur Justfile et les cibles Punks/neutres restent"
   - chemin: Justfile (cibles relay, relay-web, admin, staging, production, dev, test-integration, mesh-*, benchmark, goose, release-relay, bootstrap, down, logs, ps)
     classe: script
     verdict: retrait-global
@@ -669,7 +669,7 @@ actifs:
   - chemin: Justfile (cibles desktop-release-smoke)
     classe: script
     verdict: tranche:5
-  - chemin: "scripts/{start-relay-for-tests.sh,start-isolated-test-relay.sh,buzz-adopt-prod-agents.sh,ci-mesh-lifecycle-smoke.sh,e2e-git-perms.sh,e2e-large-channel-roster.sh,seed-local-community.sh,seed-admin-dashboard.sh,cleanup-instance-agents.sh,instance-env.sh,dev-setup.sh,dev-reset.sh,_goose-env.sh,grab-emoji.sh,test-signed-canary-contract.sh,run-tests.sh,test-video-upload.sh}"
+  - chemin: "scripts/{start-relay-for-tests.sh,start-isolated-test-relay.sh,punks-adopt-prod-agents.sh,ci-mesh-lifecycle-smoke.sh,e2e-git-perms.sh,e2e-large-channel-roster.sh,seed-local-community.sh,seed-admin-dashboard.sh,cleanup-instance-agents.sh,instance-env.sh,dev-setup.sh,dev-reset.sh,_goose-env.sh,grab-emoji.sh,test-signed-canary-contract.sh,run-tests.sh,test-video-upload.sh}"
     classe: script
     verdict: retrait-global
   - chemin: scripts/{cutover/,maintenance/,attach-schema-partitions.sql,backfill-d-tag.sql,release-rulesets.sh}
@@ -737,8 +737,8 @@ actifs:
   - chemin: .env.example
     classe: variable
     verdict: retrait-global
-    separation: "le bloc VITE_BUZZ_FORCE_FRESH_ONBOARDING disparaît à la tranche:1 ; le reste appartient au runtime Buzz historique"
-  - chemin: .env.example (blocs relay, db, redis, s3/minio, typesense, git, média, BUZZ_ACP_*, BUZZ_RATE_LIMIT_*)
+    separation: "le bloc VITE_PUNKS_FORCE_FRESH_ONBOARDING disparaît à la tranche:1 ; le reste appartient au runtime Punks historique"
+  - chemin: .env.example (blocs relay, db, redis, s3/minio, typesense, git, média, PUNKS_ACP_*, PUNKS_RATE_LIMIT_*)
     classe: variable
     verdict: retrait-global
   - chemin: patches/isomorphic-git*
@@ -778,7 +778,7 @@ actifs:
     classe: doc
     verdict: retrait-global
     note: "conservés comme source de parité jusqu’au retrait global (#13 goldens de baseline)"
-  - chemin: "docs/{nips/,multi-tenant-relay.md,multi-tenant-conformance.md,push-gateway-deployment.md,remote-agents.md,buzz-shared-compute-dev.md,git-on-object-storage.md,MCP_DRIVEN_HOOKS.md,bridge-channel-window.md,welcome-kickoff-silent-failures.md}"
+  - chemin: "docs/{nips/,multi-tenant-relay.md,multi-tenant-conformance.md,push-gateway-deployment.md,remote-agents.md,punks-shared-compute-dev.md,git-on-object-storage.md,MCP_DRIVEN_HOOKS.md,bridge-channel-window.md,welcome-kickoff-silent-failures.md}"
     classe: doc
     verdict: retrait-global
   - chemin: docs/linux-rendering-troubleshooting.md
@@ -805,8 +805,8 @@ actifs:
     classe: doc
     verdict: conserve
     conservation: actif-punks
-    separation: "sections guide Buzz retirées au retrait global"
-    note: le lien historique CLAUDE.md reste inventorié séparément avec la documentation Buzz
+    separation: "sections guide Punks retirées au retrait global"
+    note: le lien historique CLAUDE.md reste inventorié séparément avec la documentation Punks
 
   # ── Actifs Punks ───────────────────────────────────────────────────────────
   - chemin: cloudflare/

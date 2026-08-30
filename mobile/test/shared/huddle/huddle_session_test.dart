@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:typed_data';
 
-import 'package:buzz/shared/huddle/huddle.dart';
+import 'package:punks/shared/huddle/huddle.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
@@ -332,7 +332,7 @@ HuddleRemoteAudioFrame _remoteFrame({
 );
 
 HuddleConnectionParameters _parameters() => HuddleConnectionParameters(
-  relayWebSocketUrl: 'wss://buzz.example',
+  relayWebSocketUrl: 'wss://punks.example',
   nsec: _privateKey,
   parentChannelId: _parentChannelId,
   ephemeralChannelId: _ephemeralChannelId,

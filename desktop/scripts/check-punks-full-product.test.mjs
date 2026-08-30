@@ -62,7 +62,7 @@ test("rejects an isolated entry and retired product markers", () => {
   rmSync(isolated, { recursive: true, force: true });
 
   const marked = fixture();
-  write(marked, "src/main.tsx", "const retired = 'Buzz'; void retired;");
+  write(marked, "src/main.tsx", "const retired = 'Punks'; void retired;");
   assert.throws(
     () => verifyPunksFullProduct({ root: marked }),
     /retired product marker/u,

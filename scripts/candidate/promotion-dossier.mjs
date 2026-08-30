@@ -9,7 +9,7 @@ import {
   validateStagingDeploymentProof,
 } from "../../cloudflare/scripts/staging-deployment-proof.mjs";
 import {
-  BASELINE_BUZZ,
+  BASELINE_PUNKS,
   CHECKPOINT_RECUPERATION,
 } from "../migration-manifest-lib.mjs";
 import {
@@ -940,7 +940,7 @@ function construireDossier({
   return {
     version: 1,
     "checkpoint-recuperation": CHECKPOINT_RECUPERATION,
-    "baseline-buzz": BASELINE_BUZZ,
+    "baseline-punks": BASELINE_PUNKS,
     candidat: { sha: candidat.candidateSha, tranche: candidat.data.tranche },
     profil: {
       id: profil.id,

@@ -23,23 +23,23 @@ fn test_rewrite_npm_install_uses_private_prefix() {
 #[test]
 fn test_rewrite_npm_i_uses_private_prefix() {
     assert_eq!(
-        rewrite_npm_global_install("npm i -g some-package", "'/tmp/buzz'"),
-        "npm i --global --prefix '/tmp/buzz' some-package"
+        rewrite_npm_global_install("npm i -g some-package", "'/tmp/punks'"),
+        "npm i --global --prefix '/tmp/punks' some-package"
     );
 }
 
 #[test]
 fn test_rewrite_npm_uninstall_uses_private_prefix() {
     assert_eq!(
-        rewrite_npm_global_install("npm uninstall -g @zed-industries/codex-acp", "'/tmp/buzz'"),
-        "npm uninstall --global --prefix '/tmp/buzz' @zed-industries/codex-acp"
+        rewrite_npm_global_install("npm uninstall -g @zed-industries/codex-acp", "'/tmp/punks'"),
+        "npm uninstall --global --prefix '/tmp/punks' @zed-industries/codex-acp"
     );
 }
 
 #[test]
 fn test_rewrite_ignores_non_global_command() {
     assert_eq!(
-        rewrite_npm_global_install("npm install foo", "'/tmp/buzz'"),
+        rewrite_npm_global_install("npm install foo", "'/tmp/punks'"),
         "npm install foo"
     );
 }
@@ -239,7 +239,7 @@ fn test_should_invalidate_adapter_keeps_managed_shim_when_node_healthy() {
 
 #[test]
 fn test_resolve_adapter_path_returns_none_when_binary_absent() {
-    let commands: &[&str] = &["nonexistent-buzz-test-binary-xyz"];
+    let commands: &[&str] = &["nonexistent-punks-test-binary-xyz"];
     let adapter_install_commands: &[&str] = &["curl -fsSL https://example.com | bash"];
     assert!(
         resolve_adapter_path(commands, adapter_install_commands).is_none(),

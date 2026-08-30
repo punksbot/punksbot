@@ -26,7 +26,7 @@
  *     deux buckets R2 du compte Punks (create-only, verrouillage d'objet) ;
  *   - le roll-forward scelle un nouveau graphe et repart à E0 ; un retour à
  *     une version Punks antérieure recalcule les treize contrôles exacts et un
- *     nouveau Reçu à l'instant du retour ; Buzz reste hors vocabulaire.
+ *     nouveau Reçu à l'instant du retour ; Punks reste hors vocabulaire.
  *
  * Utilisé par scripts/check-release-graph.mjs (gate) et ses tests.
  */
@@ -36,7 +36,7 @@ import {
   verify as verifierEd25519,
 } from "node:crypto";
 import {
-  BASELINE_BUZZ,
+  BASELINE_PUNKS,
   baseMatches,
   CHECKPOINT_RECUPERATION,
   canonicalJson,
@@ -217,14 +217,14 @@ export const ANCRAGE_APPROBATEURS_RELEASE =
 
 export const RECUPERATION_NORMALE = "roll-forward";
 export const RETOUR_PUNKS = "certificat-compatibilite-exige";
-export const RETOUR_BUZZ = "interdit";
+export const RETOUR_PUNKS = "interdit";
 export const TYPES_RECUPERATION = ["roll-forward", "retour-punks"];
 
 /** Les treize contrôles fermés du certificat d'éligibilité décidé en #16. */
 export const CONTROLES_CERTIFICAT = [
   "bundle-manifeste-originaux",
   "attestation-valide-non-revoquee",
-  "securite-isolation-effacement-sans-buzz",
+  "securite-isolation-effacement-sans-punks",
   "profils-desktop-actifs",
   "versions-etat-durable-objects",
   "migrations-durable-objects-franchissables",
@@ -322,7 +322,7 @@ export const BUDGETS_PRODUCTION = Object.freeze(
     ["plaintext-lisible-apres-effacement", "occurrences", 0],
     ["r2-double-ecriture-hash-lock-ou-chaine-invalide", "occurrences", 0],
     ["discordance-artefact-ou-attestation", "occurrences", 0],
-    ["tentative-buzz-ou-nostr-public", "occurrences", 0],
+    ["tentative-punks-ou-nostr-public", "occurrences", 0],
   ].map(([nom, unite, maximum]) => Object.freeze({ nom, unite, maximum })),
 );
 
@@ -340,7 +340,7 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const INSTANT_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
 const TRANCHE_ID_RE = /^tranche:([0-9]+)$/;
 const IDENTITE_HISTORIQUE_INTERDITE_RE =
-  /(?:^|[-_.:/])(buzz|nostr(?:-public)?|relay)(?:$|[-_.:/])/iu;
+  /(?:^|[-_.:/])(punks|nostr(?:-public)?|relay)(?:$|[-_.:/])/iu;
 export const CANAL_RELEASE = "punks-desktop";
 const ADR_RELEASE =
   "docs/adr/0060-graphe-de-release-expansion-activation-contraction.md";
@@ -388,7 +388,7 @@ function estShaCandidat(valeur) {
 }
 
 function shaReserve(valeur) {
-  return valeur === BASELINE_BUZZ || valeur === CHECKPOINT_RECUPERATION;
+  return valeur === BASELINE_PUNKS || valeur === CHECKPOINT_RECUPERATION;
 }
 
 function shaCanoniqueOptionnel(valeur) {
@@ -504,7 +504,7 @@ export function validateReleaseGraph(graph, contexte = {}) {
   if (
     !listeEgale(Object.keys(graph).sort(), [
       "approbateurs-release",
-      "baseline-buzz",
+      "baseline-punks",
       "canal",
       "checkpoint-recuperation",
       "controles-certificat-retour-punks",
@@ -533,8 +533,8 @@ export function validateReleaseGraph(graph, contexte = {}) {
   if (graph["checkpoint-recuperation"] !== CHECKPOINT_RECUPERATION) {
     push("en-tête invalide : checkpoint de récupération invalide");
   }
-  if (graph["baseline-buzz"] !== BASELINE_BUZZ) {
-    push("en-tête invalide : baseline Buzz invalide");
+  if (graph["baseline-punks"] !== BASELINE_PUNKS) {
+    push("en-tête invalide : baseline Punks invalide");
   }
   if (graph.canal !== CANAL_RELEASE) {
     push(`canal doit être ${CANAL_RELEASE}`);
@@ -886,7 +886,7 @@ function validerPolitique(politique, push) {
     if (
       !listeEgale(Object.keys(recuperation).sort(), [
         "normale",
-        "retour-buzz",
+        "retour-punks",
         "retour-punks-anterieur",
       ])
     ) {
@@ -902,9 +902,9 @@ function validerPolitique(politique, push) {
         "politique : recuperation.retour-punks-anterieur doit exiger un certificat de compatibilité",
       );
     }
-    if (recuperation["retour-buzz"] !== RETOUR_BUZZ) {
+    if (recuperation["retour-punks"] !== RETOUR_PUNKS) {
       push(
-        "politique : recuperation.retour-buzz doit être interdit — aucun retour vers Buzz n'est possible",
+        "politique : recuperation.retour-punks doit être interdit — aucun retour vers Punks n'est possible",
       );
     }
   }
@@ -1373,7 +1373,7 @@ function validerRetrait(retrait, release, lignesAttendues, push) {
   if (release.etat === "preparation") {
     if (retrait !== null && retrait !== undefined) {
       push(
-        `${release.id} : un candidat en preparation n'a pas encore retiré de chemin Buzz`,
+        `${release.id} : un candidat en preparation n'a pas encore retiré de chemin Punks`,
       );
     }
     return;
@@ -1394,7 +1394,7 @@ function validerRetrait(retrait, release, lignesAttendues, push) {
     retrait["lignes-registre"].some((l) => !estCheminGitCanonique(l))
   ) {
     push(
-      `${release.id} : retrait.lignes-registre doit citer les tests Buzz retirés par ce candidat (chemins canoniques)`,
+      `${release.id} : retrait.lignes-registre doit citer les tests Punks retirés par ce candidat (chemins canoniques)`,
     );
   }
   if (
@@ -1440,7 +1440,7 @@ function validerAttestation(attestation, release, push) {
       `${release.id} : attestation.sha (${String(attestation.sha)}) doit sceller le SHA exact du candidat (${String(release.sha)})`,
     );
   }
-  if (attestation["checkpoint-baseline"] !== BASELINE_BUZZ) {
+  if (attestation["checkpoint-baseline"] !== BASELINE_PUNKS) {
     push(`${release.id} : attestation.checkpoint-baseline invalide`);
   }
   if (
@@ -1954,7 +1954,7 @@ function validerTopologieInstantane(topologie, libelle, push) {
     )
   ) {
     push(
-      `${libelle} : liste fermée non vide des Moyens de connexion Punks exigée, sans Buzz/Nostr public`,
+      `${libelle} : liste fermée non vide des Moyens de connexion Punks exigée, sans Punks/Nostr public`,
     );
   }
   validerListeObjetsUniques(
@@ -2183,7 +2183,7 @@ function validerInstantaneRelease(
   }
   if (!estShaCandidat(release.sha) || shaReserve(release.sha)) {
     push(
-      `${libelle} : SHA Punks exact exigé, distinct des checkpoints Buzz interdits`,
+      `${libelle} : SHA Punks exact exigé, distinct des checkpoints Punks interdits`,
     );
   }
   if (
@@ -4089,7 +4089,7 @@ function validerReleases(graph, contexte, registre, push) {
       push(`${release.id} : sha invalide (40 hexadécimaux attendus)`);
     } else if (shaReserve(release.sha)) {
       push(
-        `${release.id} : le SHA d'une release Punks doit être distinct des checkpoints Buzz interdits`,
+        `${release.id} : le SHA d'une release Punks doit être distinct des checkpoints Punks interdits`,
       );
     }
 
@@ -5459,7 +5459,7 @@ function validerExecutions(
       registre.shasRecuperations.has(sha)
     ) {
       push(
-        `${libelle} : l'exécution doit sceller un SHA Punks neuf, jamais Buzz ni un candidat historique`,
+        `${libelle} : l'exécution doit sceller un SHA Punks neuf, jamais Punks ni un candidat historique`,
       );
     } else if (!shasHistoriques.has(sha)) {
       shasHistoriques.add(sha);
@@ -6092,14 +6092,14 @@ function validerRecuperations(
     }
     if (!TYPES_RECUPERATION.includes(recuperation.type)) {
       push(
-        `${id} : type inconnu « ${String(recuperation.type)} » — le vocabulaire fermé (${TYPES_RECUPERATION.join(", ")}) exclut structurellement tout retour vers Buzz`,
+        `${id} : type inconnu « ${String(recuperation.type)} » — le vocabulaire fermé (${TYPES_RECUPERATION.join(", ")}) exclut structurellement tout retour vers Punks`,
       );
       continue;
     }
     const cible = releases.find((r) => r?.id === recuperation.cible);
     if (!cible) {
       push(
-        `${id} : cible « ${String(recuperation.cible)} » inconnue — une récupération ne peut viser que le graphe Punks, jamais Buzz`,
+        `${id} : cible « ${String(recuperation.cible)} » inconnue — une récupération ne peut viser que le graphe Punks, jamais Punks`,
       );
       continue;
     }
@@ -6455,7 +6455,7 @@ function validerRollForward(
     (registre.shasRecuperations.has(nouveauSha) && !reserveParExecution)
   ) {
     push(
-      `${cible.id} : un roll-forward doit sceller un nouveau SHA Punks, jamais Buzz ni un candidat historique`,
+      `${cible.id} : un roll-forward doit sceller un nouveau SHA Punks, jamais Punks ni un candidat historique`,
     );
   } else if (!registre.shasRecuperations.has(nouveauSha)) {
     registre.shasRecuperations.add(nouveauSha);
@@ -6662,12 +6662,12 @@ function detailsControleValides(
         invalidee: false,
         revoquee: false,
       });
-    case "securite-isolation-effacement-sans-buzz":
+    case "securite-isolation-effacement-sans-punks":
       return proprietesEgales(details, {
         vulnerabilite: false,
         "violation-isolation": false,
         "violation-effacement": false,
-        "chemin-buzz-nostr-public": false,
+        "chemin-punks-nostr-public": false,
       });
     case "profils-desktop-actifs":
       return (

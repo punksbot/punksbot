@@ -32,7 +32,7 @@ Le Rust natif possède la socket, le heartbeat et la reconnexion. React conserve
 les vues dans des Maps strictement mémoire liées à la génération de
 `WorkspaceSession`, applique les expirations localement et affiche une
 dégradation explicite. Il n’existe ni cache persistant, ni réhydratation, ni
-fallback Buzz/Nostr, ni retry de mutation.
+fallback Punks/Nostr, ni retry de mutation.
 
 La source préparée transporte le snapshot et les deltas Workspace sur le canal
 du Bail. La décision #23 destine ces patches au FOLLOW d’Attention lorsque T7
@@ -40,4 +40,4 @@ est disponible. Cette intégration et le Reçu T7 restent un gate d’activation
 la capacité `presence` demeure absente du profil actif et du graphe produit
 tant que ce séquencement et le dossier distribué T8 ne sont pas scellés. Cette
 préparation ne revendique donc ni activation, ni retrait physique des chemins
-Buzz de Présence.
+Punks de Présence.

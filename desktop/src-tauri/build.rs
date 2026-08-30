@@ -70,15 +70,15 @@ fn main() {
                 );
             }
             // The baked env is written into every spawned agent's environment
-            // LAST (see `managed_agents/runtime.rs`), after Buzz sets the
+            // LAST (see `managed_agents/runtime.rs`), after Punks sets the
             // access gates and identity vars. A baked reserved key would
             // therefore silently override the gate the UI promises, so reject
             // it at build time instead of shipping a binary that bypasses its
             // own enforcement.
             if is_reserved_env_key(key) {
                 panic!(
-                    "PUNKS_BUILD_AGENT_ENV line {}: `{}` is reserved by Buzz and cannot be baked \
-                     into a build (it would override Buzz's own identity/access env)",
+                    "PUNKS_BUILD_AGENT_ENV line {}: `{}` is reserved by Punks and cannot be baked \
+                     into a build (it would override Punks's own identity/access env)",
                     line_no + 1,
                     key
                 );

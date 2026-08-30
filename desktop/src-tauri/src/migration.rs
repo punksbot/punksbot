@@ -10,7 +10,7 @@ use crate::util::replace_with_symlink;
 #[path = "migration_punks.rs"]
 mod punks_migration;
 
-const CANONICAL_DEV_IDENTIFIER: &str = "xyz.block.buzz.app.dev";
+const CANONICAL_DEV_IDENTIFIER: &str = "xyz.block.punks.app.dev";
 const LEGACY_CANONICAL_DEV_IDENTIFIER: &str = "xyz.block.sprout.app.dev";
 const LEGACY_RELEASE_IDENTIFIER: &str = "xyz.block.sprout.app";
 
@@ -30,8 +30,8 @@ const SHARED_AGENT_DIRS: &[&str] = &["agents/teams"];
 
 /// Returns `true` when `name` is a dev data dir name — i.e. it is exactly the
 /// canonical dev identifier or a worktree variant separated by a `.` (e.g.
-/// `xyz.block.buzz.app.dev.my-branch`). Rejects prefix-collisions such as
-/// `xyz.block.buzz.app.developer`. This is the authoritative dev/prod
+/// `xyz.block.punks.app.dev.my-branch`). Rejects prefix-collisions such as
+/// `xyz.block.punks.app.developer`. This is the authoritative dev/prod
 /// discriminator shared by `run_boot_migrations`, `sync_shared_agent_data`,
 /// and `reconcile_target_dir`.
 pub(crate) fn is_dev_data_dir_name(name: &str) -> bool {
@@ -49,8 +49,8 @@ pub(crate) fn legacy_app_data_dir(current: &Path) -> Option<PathBuf> {
     let name = current.file_name()?.to_str()?;
     let legacy_name = if name.starts_with(CANONICAL_DEV_IDENTIFIER) {
         name.replacen(CANONICAL_DEV_IDENTIFIER, LEGACY_CANONICAL_DEV_IDENTIFIER, 1)
-    } else if name.starts_with("xyz.block.buzz.app") {
-        name.replacen("xyz.block.buzz.app", LEGACY_RELEASE_IDENTIFIER, 1)
+    } else if name.starts_with("xyz.block.punks.app") {
+        name.replacen("xyz.block.punks.app", LEGACY_RELEASE_IDENTIFIER, 1)
     } else {
         return None;
     };
@@ -152,7 +152,7 @@ fn run_boot_migrations_inner(app: &tauri::AppHandle, reset_completed: bool) {
     migrate_legacy_app_data_dir(app);
     sync_shared_agent_data(app);
     // Dev-build-only: copy any agent keys that exist in the production
-    // keyring ("buzz-desktop") into the dev service ("buzz-desktop-dev")
+    // keyring ("punks-desktop") into the dev service ("punks-desktop-dev")
     // so existing agents don't lose their keys after the service-name split.
     // Must run after sync_shared_agent_data (JSON symlinked) and before
     // any load_managed_agents call (which runs hydrate_keys against the
@@ -343,7 +343,7 @@ pub(crate) fn should_migrate_dev_repos_dir(is_dev: bool, reset_completed: bool) 
     is_dev && !reset_completed
 }
 
-/// Injectable core: copy `.repos-dir` from `<home>/.buzz/` into `dev_nest`,
+/// Injectable core: copy `.repos-dir` from `<home>/.punks/` into `dev_nest`,
 /// non-destructively. Extracted so tests can inject temp paths without
 /// touching `dirs::home_dir()` or the global `nest_dir()` OnceLock.
 pub(crate) fn migrate_dev_repos_dir_at(home: &Path, dev_nest: &Path) {
@@ -1265,7 +1265,7 @@ fn reconcile_databricks_v1_to_v2_in_file(path: &Path, rewrite_v1_provider: bool)
             // Also clear the model field — a V1 model name (e.g. "dbrx-instruct")
             // on a V2 provider would shadow the baked DATABRICKS_MODEL at spawn time
             // (PUNKS_AGENT_MODEL from runtime_metadata_env_vars takes priority in
-            // buzz-agent config.rs). Clearing it lets the baked V2 default win.
+            // punks-agent config.rs). Clearing it lets the baked V2 default win.
             if obj.remove("model").is_some() {
                 eprintln!("punks: databricks-v1-to-v2: {name:?}: cleared stale V1 model field",);
             }

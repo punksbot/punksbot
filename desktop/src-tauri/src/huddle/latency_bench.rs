@@ -19,7 +19,7 @@
 //!   t_first_audio  tts_active rising edge = first player.append accepted
 //!
 //! Run:
-//!   PUNKS_BENCH_WAV=<48k f32 mono wav> cargo test --release -p buzz-desktop \
+//!   PUNKS_BENCH_WAV=<48k f32 mono wav> cargo test --release -p punks-desktop \
 //!     --lib huddle::latency_bench -- --ignored --nocapture
 
 use std::sync::{
@@ -110,8 +110,8 @@ struct TurnResult {
 #[ignore = "ad-hoc latency baseline; needs models in ~/.punks/models and an audio output device"]
 fn baseline_stt_fake_llm_tts_first_audio() {
     let home = dirs::home_dir().expect("home");
-    let stt_dir = home.join(".buzz/models/parakeet-tdt-ctc-110m-en");
-    let tts_dir = home.join(".buzz/models/pocket-tts");
+    let stt_dir = home.join(".punks/models/parakeet-tdt-ctc-110m-en");
+    let tts_dir = home.join(".punks/models/pocket-tts");
     assert!(
         stt_dir.join("model.int8.onnx").exists(),
         "parakeet model missing"

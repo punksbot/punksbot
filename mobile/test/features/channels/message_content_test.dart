@@ -5,15 +5,15 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:hooks_riverpod/misc.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:nostr/nostr.dart' as nostr;
-import 'package:buzz/features/channels/channel.dart';
-import 'package:buzz/features/channels/channels_provider.dart';
-import 'package:buzz/features/channels/message_content.dart';
-import 'package:buzz/features/channels/media_viewer_page.dart';
-import 'package:buzz/shared/deeplink/deep_link.dart';
-import 'package:buzz/shared/deeplink/pending_deep_link_provider.dart';
-import 'package:buzz/shared/emoji/emoji_only.dart';
-import 'package:buzz/shared/relay/relay.dart';
-import 'package:buzz/shared/theme/theme.dart';
+import 'package:punks/features/channels/channel.dart';
+import 'package:punks/features/channels/channels_provider.dart';
+import 'package:punks/features/channels/message_content.dart';
+import 'package:punks/features/channels/media_viewer_page.dart';
+import 'package:punks/shared/deeplink/deep_link.dart';
+import 'package:punks/shared/deeplink/pending_deep_link_provider.dart';
+import 'package:punks/shared/emoji/emoji_only.dart';
+import 'package:punks/shared/relay/relay.dart';
+import 'package:punks/shared/theme/theme.dart';
 
 Widget _testable(
   Widget child, {
@@ -436,20 +436,20 @@ void main() {
       testWidgets('renders markdown link', (tester) async {
         await tester.pumpWidget(
           _testable(
-            const MessageContent(content: 'Check [Buzz](https://example.com)'),
+            const MessageContent(content: 'Check [Punks](https://example.com)'),
           ),
         );
 
         final allText = _allRichText(tester);
-        expect(allText, contains('Buzz'));
+        expect(allText, contains('Punks'));
         // Should not show raw markdown syntax.
-        expect(allText, isNot(contains('[Buzz]')));
+        expect(allText, isNot(contains('[Punks]')));
         expect(allText, isNot(contains('(https://example.com)')));
       });
 
-      testWidgets('renders and routes a buzz message link', (tester) async {
+      testWidgets('renders and routes a punks message link', (tester) async {
         const url =
-            'buzz://message?channel=580ca78b-9dae-46f3-8854-bd671853ba32&id=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb&thread=dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd';
+            'punks://message?channel=580ca78b-9dae-46f3-8854-bd671853ba32&id=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb&thread=dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd';
 
         await tester.pumpWidget(
           _testable(const MessageContent(content: '[Open message]($url)')),
@@ -474,16 +474,16 @@ void main() {
         );
       });
 
-      testWidgets('renders and routes bare Buzz message links', (tester) async {
+      testWidgets('renders and routes bare Punks message links', (tester) async {
         const url =
-            'buzz://message?channel=580ca78b-9dae-46f3-8854-bd671853ba32&id=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+            'punks://message?channel=580ca78b-9dae-46f3-8854-bd671853ba32&id=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 
         await tester.pumpWidget(
           _testable(const MessageContent(content: 'See $url now')),
         );
 
-        expect(find.byKey(ValueKey('buzz-link-chip:$url')), findsOneWidget);
-        await tester.tap(find.byKey(ValueKey('buzz-link-chip:$url')));
+        expect(find.byKey(ValueKey('punks-link-chip:$url')), findsOneWidget);
+        await tester.tap(find.byKey(ValueKey('punks-link-chip:$url')));
         await tester.pump();
 
         final container = ProviderScope.containerOf(
@@ -499,19 +499,19 @@ void main() {
         );
       });
 
-      testWidgets('keeps Markdown delimiters outside bare Buzz links', (
+      testWidgets('keeps Markdown delimiters outside bare Punks links', (
         tester,
       ) async {
         const url =
-            'buzz://message?channel=580ca78b-9dae-46f3-8854-bd671853ba32&id=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+            'punks://message?channel=580ca78b-9dae-46f3-8854-bd671853ba32&id=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 
         await tester.pumpWidget(
           _testable(const MessageContent(content: '**$url**. and _${url}_')),
         );
 
-        expect(find.byKey(ValueKey('buzz-link-chip:$url')), findsNWidgets(2));
+        expect(find.byKey(ValueKey('punks-link-chip:$url')), findsNWidgets(2));
 
-        await tester.tap(find.byKey(ValueKey('buzz-link-chip:$url')).first);
+        await tester.tap(find.byKey(ValueKey('punks-link-chip:$url')).first);
         await tester.pump();
         final container = ProviderScope.containerOf(
           tester.element(find.byType(MessageContent)),
@@ -530,7 +530,7 @@ void main() {
         tester,
       ) async {
         const url =
-            'buzz://message?channel=580ca78b-9dae-46f3-8854-bd671853ba32&id=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+            'punks://message?channel=580ca78b-9dae-46f3-8854-bd671853ba32&id=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 
         await tester.pumpWidget(
           _testable(
@@ -542,12 +542,12 @@ void main() {
           ),
         );
 
-        expect(find.byKey(ValueKey('buzz-link-chip:$url')), findsNWidgets(4));
+        expect(find.byKey(ValueKey('punks-link-chip:$url')), findsNWidgets(4));
         final container = ProviderScope.containerOf(
           tester.element(find.byType(MessageContent)),
         );
         for (final link
-            in find.byKey(ValueKey('buzz-link-chip:$url')).evaluate()) {
+            in find.byKey(ValueKey('punks-link-chip:$url')).evaluate()) {
           await tester.tap(find.byWidget(link.widget));
           await tester.pump();
           expect(
@@ -562,13 +562,13 @@ void main() {
         }
       });
 
-      testWidgets('excludes sentence punctuation from bare Buzz links', (
+      testWidgets('excludes sentence punctuation from bare Punks links', (
         tester,
       ) async {
         const messageUrl =
-            'buzz://message?channel=580ca78b-9dae-46f3-8854-bd671853ba32&id=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+            'punks://message?channel=580ca78b-9dae-46f3-8854-bd671853ba32&id=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
         const joinUrl =
-            'buzz://join?relay=wss%3A%2F%2Frelay.example.com&code=invite-1';
+            'punks://join?relay=wss%3A%2F%2Frelay.example.com&code=invite-1';
 
         await tester.pumpWidget(
           _testable(
@@ -577,13 +577,13 @@ void main() {
         );
 
         expect(
-          find.byKey(ValueKey('buzz-link-chip:$messageUrl')),
+          find.byKey(ValueKey('punks-link-chip:$messageUrl')),
           findsOneWidget,
         );
         expect(find.text(joinUrl), findsOneWidget);
         expect(_allRichText(tester), contains('See \u{FFFC}. Then \u{FFFC}!'));
 
-        await tester.tap(find.byKey(ValueKey('buzz-link-chip:$messageUrl')));
+        await tester.tap(find.byKey(ValueKey('punks-link-chip:$messageUrl')));
         await tester.pump();
         final container = ProviderScope.containerOf(
           tester.element(find.byType(MessageContent)),
@@ -609,18 +609,18 @@ void main() {
         );
       });
 
-      testWidgets('renders and routes autolinked Buzz thread links', (
+      testWidgets('renders and routes autolinked Punks thread links', (
         tester,
       ) async {
         const url =
-            'buzz://message?channel=580ca78b-9dae-46f3-8854-bd671853ba32&id=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc&thread=dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd';
+            'punks://message?channel=580ca78b-9dae-46f3-8854-bd671853ba32&id=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc&thread=dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd';
 
         await tester.pumpWidget(
           _testable(const MessageContent(content: '<$url>')),
         );
 
-        expect(find.byKey(ValueKey('buzz-link-chip:$url')), findsOneWidget);
-        await tester.tap(find.byKey(ValueKey('buzz-link-chip:$url')));
+        expect(find.byKey(ValueKey('punks-link-chip:$url')), findsOneWidget);
+        await tester.tap(find.byKey(ValueKey('punks-link-chip:$url')));
         await tester.pump();
 
         final container = ProviderScope.containerOf(
@@ -638,9 +638,9 @@ void main() {
         );
       });
 
-      testWidgets('renders and routes bare Buzz join links', (tester) async {
+      testWidgets('renders and routes bare Punks join links', (tester) async {
         const url =
-            'buzz://join?relay=wss%3A%2F%2Frelay.example.com&code=invite-1';
+            'punks://join?relay=wss%3A%2F%2Frelay.example.com&code=invite-1';
 
         await tester.pumpWidget(
           _testable(const MessageContent(content: 'Join with $url')),
@@ -662,15 +662,15 @@ void main() {
         );
       });
 
-      testWidgets('renders and routes bare Buzz channel links', (tester) async {
-        const url = 'buzz://channel/580ca78b-9dae-46f3-8854-bd671853ba32';
+      testWidgets('renders and routes bare Punks channel links', (tester) async {
+        const url = 'punks://channel/580ca78b-9dae-46f3-8854-bd671853ba32';
 
         await tester.pumpWidget(
           _testable(const MessageContent(content: 'See $url now')),
         );
 
-        expect(find.byKey(ValueKey('buzz-link-chip:$url')), findsOneWidget);
-        await tester.tap(find.byKey(ValueKey('buzz-link-chip:$url')));
+        expect(find.byKey(ValueKey('punks-link-chip:$url')), findsOneWidget);
+        await tester.tap(find.byKey(ValueKey('punks-link-chip:$url')));
         await tester.pump();
 
         final container = ProviderScope.containerOf(
@@ -684,10 +684,10 @@ void main() {
         );
       });
 
-      testWidgets('renders and routes labeled Buzz channel links', (
+      testWidgets('renders and routes labeled Punks channel links', (
         tester,
       ) async {
-        const url = 'buzz://channel/580ca78b-9dae-46f3-8854-bd671853ba32';
+        const url = 'punks://channel/580ca78b-9dae-46f3-8854-bd671853ba32';
 
         await tester.pumpWidget(
           _testable(const MessageContent(content: '[Open channel]($url)')),
@@ -707,11 +707,11 @@ void main() {
         );
       });
 
-      testWidgets('routes rendered Buzz channel links through callback', (
+      testWidgets('routes rendered Punks channel links through callback', (
         tester,
       ) async {
         const channelId = '580ca78b-9dae-46f3-8854-bd671853ba32';
-        const url = 'buzz://channel/$channelId';
+        const url = 'punks://channel/$channelId';
         String? tappedChannelId;
 
         await tester.pumpWidget(
@@ -733,16 +733,16 @@ void main() {
         expect(container.read(pendingDeepLinkProvider), isNull);
       });
 
-      testWidgets('renders and routes autolinked Buzz channel links', (
+      testWidgets('renders and routes autolinked Punks channel links', (
         tester,
       ) async {
-        const url = 'buzz://channel/580ca78b-9dae-46f3-8854-bd671853ba32';
+        const url = 'punks://channel/580ca78b-9dae-46f3-8854-bd671853ba32';
 
         await tester.pumpWidget(
           _testable(const MessageContent(content: '<$url>')),
         );
 
-        await tester.tap(find.byKey(ValueKey('buzz-link-chip:$url')));
+        await tester.tap(find.byKey(ValueKey('punks-link-chip:$url')));
         await tester.pump();
 
         final container = ProviderScope.containerOf(
@@ -756,11 +756,11 @@ void main() {
         );
       });
 
-      testWidgets('leaves malformed Buzz channel forms as plain text', (
+      testWidgets('leaves malformed Punks channel forms as plain text', (
         tester,
       ) async {
         const url =
-            'buzz://channel?channel=580ca78b-9dae-46f3-8854-bd671853ba32';
+            'punks://channel?channel=580ca78b-9dae-46f3-8854-bd671853ba32';
 
         await tester.pumpWidget(
           _testable(const MessageContent(content: 'See $url now')),
@@ -1690,17 +1690,17 @@ Photos
       });
     });
 
-    group('Buzz permalink chips', () {
-      testWidgets('keeps authored Buzz labels as ordinary links', (
+    group('Punks permalink chips', () {
+      testWidgets('keeps authored Punks labels as ordinary links', (
         tester,
       ) async {
         final owner = 'ab' * 32;
         final id = 'cd' * 32;
         const channelId = '580ca78b-9dae-46f3-8854-bd671853ba32';
         final links = {
-          'Open message': 'buzz://message?channel=$channelId&id=$id',
-          'Open channel': 'buzz://channel/$channelId',
-          'Release candidate': 'buzz://pr?id=$id&owner=$owner&d=buzz',
+          'Open message': 'punks://message?channel=$channelId&id=$id',
+          'Open channel': 'punks://channel/$channelId',
+          'Release candidate': 'punks://pr?id=$id&owner=$owner&d=punks',
         };
 
         await tester.pumpWidget(
@@ -1716,21 +1716,21 @@ Photos
 
         for (final entry in links.entries) {
           expect(
-            find.byKey(ValueKey('buzz-link-chip:${entry.value}')),
+            find.byKey(ValueKey('punks-link-chip:${entry.value}')),
             findsNothing,
           );
           expect(find.text(entry.key), findsOneWidget);
         }
       });
 
-      testWidgets('preserves formatting in authored Buzz labels', (
+      testWidgets('preserves formatting in authored Punks labels', (
         tester,
       ) async {
         const channelId = '580ca78b-9dae-46f3-8854-bd671853ba32';
         await tester.pumpWidget(
           _testable(
             const MessageContent(
-              content: '[**design discussion**](buzz://channel/$channelId)',
+              content: '[**design discussion**](punks://channel/$channelId)',
             ),
           ),
         );
@@ -1746,11 +1746,11 @@ Photos
           final id = 'cd' * 32;
           const channelId = '580ca78b-9dae-46f3-8854-bd671853ba32';
           final urls = [
-            'buzz://message?channel=$channelId&id=$id',
-            'buzz://channel/$channelId',
-            'buzz://repo?owner=$owner&d=buzz',
-            'buzz://pr?id=$id&owner=$owner&d=buzz',
-            'buzz://issue?id=$id&owner=$owner&d=buzz',
+            'punks://message?channel=$channelId&id=$id',
+            'punks://channel/$channelId',
+            'punks://repo?owner=$owner&d=punks',
+            'punks://pr?id=$id&owner=$owner&d=punks',
+            'punks://issue?id=$id&owner=$owner&d=punks',
           ];
           await tester.pumpWidget(
             _testable(
@@ -1763,12 +1763,12 @@ Photos
           await tester.pump();
 
           for (final url in urls) {
-            expect(find.byKey(ValueKey('buzz-link-chip:$url')), findsOneWidget);
+            expect(find.byKey(ValueKey('punks-link-chip:$url')), findsOneWidget);
           }
           expect(find.text('engineering · cdcdcdcd'), findsOneWidget);
           expect(find.text('engineering'), findsOneWidget);
-          expect(find.text('buzz'), findsOneWidget);
-          expect(find.text('buzz · cdcdcdcd'), findsNWidgets(2));
+          expect(find.text('punks'), findsOneWidget);
+          expect(find.text('punks · cdcdcdcd'), findsNWidgets(2));
           expect(find.byIcon(LucideIcons.messageSquare), findsOneWidget);
           expect(find.byIcon(LucideIcons.hash), findsOneWidget);
           expect(find.byIcon(LucideIcons.folderGit2), findsOneWidget);
@@ -1781,11 +1781,11 @@ Photos
             findsOneWidget,
           );
           expect(
-            find.bySemanticsLabel('Pull request cdcdcdcd in repository buzz'),
+            find.bySemanticsLabel('Pull request cdcdcdcd in repository punks'),
             findsOneWidget,
           );
           for (final url in urls.skip(2)) {
-            final chipKey = ValueKey('buzz-link-chip:$url');
+            final chipKey = ValueKey('punks-link-chip:$url');
             final ignoredChip = find.ancestor(
               of: find.byKey(chipKey),
               matching: find.byWidgetPredicate(
@@ -1807,8 +1807,8 @@ Photos
       ) async {
         final id = 'cd' * 32;
         const channelId = '580ca78b-9dae-46f3-8854-bd671853ba32';
-        final messageUrl = 'buzz://message?channel=$channelId&id=$id';
-        const channelUrl = 'buzz://channel/$channelId';
+        final messageUrl = 'punks://message?channel=$channelId&id=$id';
+        const channelUrl = 'punks://channel/$channelId';
 
         await tester.pumpWidget(
           _testable(MessageContent(content: '$messageUrl $channelUrl')),

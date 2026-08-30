@@ -1,5 +1,5 @@
-import 'package:buzz/shared/theme/theme.dart';
-import 'package:buzz/shared/widgets/frosted_app_bar.dart';
+import 'package:punks/shared/theme/theme.dart';
+import 'package:punks/shared/widgets/frosted_app_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 

@@ -97,7 +97,7 @@ function toggleCommand(
 }
 
 describe("Message Reaction domain", () => {
-  it("normalizes Buzz-compatible reactions to one bounded canonical value", () => {
+  it("normalizes Punks-compatible reactions to one bounded canonical value", () => {
     expect(canonicalMessageReaction("")).toBe("+");
     expect(canonicalMessageReaction("  e\u0301  ")).toBe("é");
     expect(canonicalMessageReaction(":Party_Parrot:")).toBe(":party_parrot:");

@@ -6,7 +6,7 @@
  *
  *   - doublons : deux actifs ne portent pas le même chemin (qualificatif inclus) ;
  *   - omissions : tout fichier suivi ou nouveau non ignoré est couvert par un actif,
- *     et tout golden dérivé de la baseline Buzz figée a sa ligne au registre ;
+ *     et tout golden dérivé de la baseline Punks figée a sa ligne au registre ;
  *   - références invalides : chaque chemin d’actif et chaque source/preuve
  *     résout un fichier réel du dépôt ;
  *   - verdicts incomplets : vocabulaire fermé, conservation typée exigée,
@@ -23,15 +23,15 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  BASELINE_BUZZ,
-  BUZZ_TEST_SOURCE_SET_SHA256,
+  BASELINE_PUNKS,
+  PUNKS_TEST_SOURCE_SET_SHA256,
   canonicalSha256,
   CHEMINS_GOLDENS,
-  discoverBuzzTestSources,
+  discoverPunksTestSources,
   discoverGoldenSources,
   GOLDEN_SOURCE_SET_SHA256,
   loadYamlDocument,
-  validateBuzzTestUniverse,
+  validatePunksTestUniverse,
   validateGoldenUniverse,
   validateLedger,
   validateManifest,
@@ -99,7 +99,7 @@ function workingFiles() {
 
 function baselineTrackedFiles() {
   try {
-    return trackedFiles(BASELINE_BUZZ);
+    return trackedFiles(BASELINE_PUNKS);
   } catch {
     // Les clones shallow ne possèdent pas toujours l'objet baseline. Dans ce
     // cas l'empreinte indépendante figée ci-dessus reste le garde-fou opposable.
@@ -117,7 +117,7 @@ export function runValidation() {
   const historicalGoldenSources =
     baselineFiles === null ? undefined : discoverGoldenSources(baselineFiles);
   const historicalTestSources =
-    baselineFiles === null ? undefined : discoverBuzzTestSources(baselineFiles);
+    baselineFiles === null ? undefined : discoverPunksTestSources(baselineFiles);
 
   const erreursManifeste = validateManifest(manifest, files);
   const erreursUnivers = validateGoldenUniverse(
@@ -134,10 +134,10 @@ export function runValidation() {
     universe.sources,
     testsUniverse.sources,
   );
-  const erreursUniversTests = validateBuzzTestUniverse(
+  const erreursUniversTests = validatePunksTestUniverse(
     testsUniverse,
     historicalTestSources,
-    BUZZ_TEST_SOURCE_SET_SHA256,
+    PUNKS_TEST_SOURCE_SET_SHA256,
   );
 
   const erreurs = [
@@ -168,7 +168,7 @@ export function runValidation() {
     manifest.goldens?.["univers-tests"] !== CHEMINS_GOLDENS["univers-tests"]
   ) {
     erreurs.push(
-      "[manifeste] section goldens : univers des tests Buzz manquant ou invalide",
+      "[manifeste] section goldens : univers des tests Punks manquant ou invalide",
     );
   } else if (!repoFileExists(manifest.goldens["univers-tests"])) {
     erreurs.push(
@@ -207,7 +207,7 @@ export function main() {
     `✓ registre des goldens : ${ledger.entrees.length} invariants couvrent ${universe.sources.length} sources indépendantes`,
   );
   console.log(
-    `✓ retraits des tests : ${testsUniverse.sources.length} fichiers Buzz figés`,
+    `✓ retraits des tests : ${testsUniverse.sources.length} fichiers Punks figés`,
   );
   if (process.argv.includes("--hashes")) {
     console.log(
@@ -220,7 +220,7 @@ export function main() {
       `goldens-universe.yaml version=${universe.version} sha256=${canonicalSha256(universe)}`,
     );
     console.log(
-      `buzz-tests-universe.yaml version=${testsUniverse.version} sha256=${canonicalSha256(testsUniverse)}`,
+      `punks-tests-universe.yaml version=${testsUniverse.version} sha256=${canonicalSha256(testsUniverse)}`,
     );
   }
 }

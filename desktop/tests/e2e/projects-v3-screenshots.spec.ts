@@ -50,13 +50,13 @@ async function expectProjectContextGroups(
   await expect(panel.getByTestId("project-repository-people")).toHaveCount(0);
 }
 
-async function openBuzzProject(page: import("@playwright/test").Page) {
+async function openPunksProject(page: import("@playwright/test").Page) {
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await page.getByTestId("open-projects-view").click();
   await page.getByTestId("projects-section-projects").click();
   const projectEntry = page
     .locator(
-      '[data-testid="project-card-buzz"], [data-testid="project-row-buzz"]',
+      '[data-testid="project-card-punks"], [data-testid="project-row-punks"]',
     )
     .first();
   await expect(projectEntry).toBeVisible({ timeout: 10_000 });
@@ -65,7 +65,7 @@ async function openBuzzProject(page: import("@playwright/test").Page) {
 
 test("projects activity overview screenshot", async ({ page }) => {
   await page.addInitScript(() => {
-    window.localStorage.setItem("buzz-theme", "light");
+    window.localStorage.setItem("punks-theme", "light");
   });
   await installMockBridge(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
@@ -138,7 +138,7 @@ test("submitted project context stays compact and expandable", async ({
 test("sidebar project add flow browses before creating", async ({ page }) => {
   await installMockBridge(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await expect(page.getByTestId("sidebar-project-buzz")).toHaveCount(0);
+  await expect(page.getByTestId("sidebar-project-punks")).toHaveCount(0);
   await page.getByTestId("sidebar-projects-section-label").hover();
   await page.getByTestId("sidebar-projects-create").click();
 
@@ -155,13 +155,13 @@ test("sidebar project add flow browses before creating", async ({ page }) => {
   await page.getByRole("button", { name: "Back to projects" }).click();
   await expect(browser).toBeVisible();
 
-  await search.fill("buzz");
-  await browser.getByTestId("project-browser-result-buzz").click();
+  await search.fill("punks");
+  await browser.getByTestId("project-browser-result-punks").click();
   await expect(browser).toBeHidden();
   await expect(
     page.getByRole("navigation", { name: "Project breadcrumb" }),
-  ).toContainText("buzz");
-  const addedProject = page.getByTestId("sidebar-project-buzz");
+  ).toContainText("punks");
+  const addedProject = page.getByTestId("sidebar-project-punks");
   await expect(addedProject).toBeVisible();
   await addedProject.click({ button: "right" });
   await page.getByRole("menuitem", { name: "Remove from sidebar" }).click();
@@ -172,13 +172,13 @@ test("restricted repositories keep event work visible and offer access help", as
   page,
 }) => {
   await page.addInitScript((owner) => {
-    window.__BUZZ_E2E_PROJECT_OWNER_OVERRIDE__ = owner;
+    window.__PUNKS_E2E_PROJECT_OWNER_OVERRIDE__ = owner;
   }, TEST_IDENTITIES.alice.pubkey);
   await installMockBridge(page, {
     projectAccessChannelId: "11111111-1111-4111-8111-111111111111",
     projectRepoSnapshotError: "remote: repository not found",
   });
-  await openBuzzProject(page);
+  await openPunksProject(page);
 
   const unavailableState = page
     .getByTestId("project-repository-unavailable")
@@ -230,21 +230,21 @@ test("restricted repositories keep event work visible and offer access help", as
   await expect(chatPanel.getByTestId("message-composer")).toBeVisible();
 });
 
-test("repository pages show a centered Buzz loader while fetching", async ({
+test("repository pages show a centered Punks loader while fetching", async ({
   page,
 }) => {
   await installMockBridge(page, { projectRepoSnapshotDelayMs: 750 });
-  await openBuzzProject(page);
+  await openPunksProject(page);
 
-  const loader = page.getByTestId("buzz-loading-state");
+  const loader = page.getByTestId("punks-loading-state");
   await expect(loader).toBeVisible();
   await expect(
     loader.getByRole("img", { name: "Loading repository" }),
   ).toBeVisible();
-  const animatedMark = loader.locator(".buzz-logo__mark");
+  const animatedMark = loader.locator(".punks-logo__mark");
   await expect(animatedMark).toHaveCSS(
     "animation-name",
-    "buzz-logo-scale-pulse",
+    "punks-logo-scale-pulse",
   );
   await expect(animatedMark).toHaveCSS("opacity", "1");
   await expect(loader).toHaveCSS("justify-content", "center");
@@ -256,7 +256,7 @@ test("repository pages show a centered Buzz loader while fetching", async ({
 // plus, issue detail with inline copy link + avatar timeline, PR detail).
 test("projects v3 workspace screenshot states", async ({ page }) => {
   await installMockBridge(page);
-  await openBuzzProject(page);
+  await openPunksProject(page);
   const initialProjectBreadcrumb = page.getByRole("navigation", {
     name: "Project breadcrumb",
   });
@@ -327,7 +327,7 @@ test("projects v3 workspace screenshot states", async ({ page }) => {
   await expect(projectContextCard).toBeVisible();
   await expect(projectContextCard).toHaveCSS("border-radius", "16px");
   const repositoryHeading = repositoryActionsPanel.getByRole("heading", {
-    name: "buzz",
+    name: "punks",
     exact: true,
   });
   await expect(repositoryHeading).toBeVisible();
@@ -465,7 +465,7 @@ test("projects v3 workspace screenshot states", async ({ page }) => {
   const projectPanelLayout = page.getByTestId("project-panel-layout");
   const projectContentPod = page.getByTestId("project-content-pod");
   const appContentSurface = page
-    .locator("[data-buzz-content-surface]")
+    .locator("[data-punks-content-surface]")
     .filter({ has: projectPanelLayout })
     .first();
   await expect(projectPanelLayout).toHaveAttribute("data-detached", "true");
@@ -641,7 +641,7 @@ test("projects v3 workspace screenshot states", async ({ page }) => {
   const agentContext = agentChatPanel.getByTestId("project-agent-context");
   await expect(agentContext).toBeVisible();
   await expect(agentContext).toContainText("Overview");
-  await expect(agentContext).not.toContainText("Buzz /");
+  await expect(agentContext).not.toContainText("Punks /");
   // The context rail reveals the chat panel with a width transition; measure
   // only after it settles or the panel's unclipped box overhangs the rail.
   await waitForAnimations(page);
@@ -709,7 +709,7 @@ test("projects v3 workspace screenshot states", async ({ page }) => {
     async ({ channelId, parentEventId }) => {
       if (!channelId)
         throw new Error("Project agent DM channel was not recorded.");
-      await window.__BUZZ_E2E_INVOKE_MOCK_COMMAND__?.("send_channel_message", {
+      await window.__PUNKS_E2E_INVOKE_MOCK_COMMAND__?.("send_channel_message", {
         channelId,
         content: "A persisted threaded agent response.",
         parentEventId: parentEventId ?? undefined,
@@ -819,7 +819,7 @@ test("projects v3 workspace screenshot states", async ({ page }) => {
   await expect(localSourceTrigger).toBeVisible();
   await expect(
     repositoryActionsPanel.getByTestId("project-repository-local-path"),
-  ).toHaveText("…/buzz/REPOS/buzz");
+  ).toHaveText("…/punks/REPOS/punks");
   await expect(
     repositoryActionsPanel.getByRole("button", {
       name: "Open",
@@ -1177,7 +1177,7 @@ test("projects v3 workspace screenshot states", async ({ page }) => {
 
 test("projects v3 work-item list metadata", async ({ page }) => {
   await page.addInitScript(() => {
-    window.localStorage.setItem("buzz.projects.viewMode", "list");
+    window.localStorage.setItem("punks.projects.viewMode", "list");
   });
   await installMockBridge(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
@@ -1219,7 +1219,7 @@ test("projects v3 work-item list metadata", async ({ page }) => {
   const pullRequestRow = page.getByTestId(/^projects-pr-row-/).first();
   await expect(pullRequestRow).toBeVisible();
   await expectSinglePrimaryTextColumn(pullRequestRow);
-  await expect(pullRequestRow).toContainText(/relay-tools|buzz|design-system/);
+  await expect(pullRequestRow).toContainText(/relay-tools|punks|design-system/);
   await waitForAnimations(page);
   await page.screenshot({ path: `${SHOTS}/05-pr-list-metadata.png` });
 
@@ -1229,7 +1229,7 @@ test("projects v3 work-item list metadata", async ({ page }) => {
   const issueRow = page.getByTestId(/^projects-issue-row-/).first();
   await expect(issueRow).toBeVisible();
   await expectSinglePrimaryTextColumn(issueRow);
-  await expect(issueRow).toContainText(/relay-tools|buzz|design-system/);
+  await expect(issueRow).toContainText(/relay-tools|punks|design-system/);
   await waitForAnimations(page);
   await page.screenshot({ path: `${SHOTS}/06-issue-list-metadata.png` });
 

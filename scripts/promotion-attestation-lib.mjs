@@ -8,7 +8,7 @@ export function construireEmissionAttestation(dossier) {
   const attestation = {
     sha: dossier.candidat.sha,
     dossier: { sha256: canonicalSha256(dossier) },
-    "checkpoint-baseline": dossier["baseline-buzz"],
+    "checkpoint-baseline": dossier["baseline-punks"],
     profil: { ...dossier.profil },
     registres: liaison.registres.map((registre) => ({
       nom: registre.nom,

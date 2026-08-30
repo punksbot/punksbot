@@ -1,8 +1,8 @@
-//! Git Bash discovery shared by Doctor and the buzz-agent readiness gate.
+//! Git Bash discovery shared by Doctor and the punks-agent readiness gate.
 //!
 //! The MCP child receives a deliberately small environment. Discovery inspects
 //! exactly the shared resolver-key contract forwarded into that child, plus the
-//! Git-for-Windows registry. A Doctor green state therefore means `buzz-dev-mcp`
+//! Git-for-Windows registry. A Doctor green state therefore means `punks-dev-mcp`
 //! can actually start its shell.
 
 #[cfg(all(not(windows), test))]

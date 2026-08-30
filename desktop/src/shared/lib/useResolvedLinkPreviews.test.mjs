@@ -100,9 +100,9 @@ test("transient and rejected image fetches use the stable fallback treatment", (
 test("metadata cache keys deduplicate URL fragments", () => {
   assert.equal(
     __linkPreviewMetadataTest.metadataCacheKey(
-      "https://github.com/block/punks/pull/3834#issuecomment-1",
+      "https://github.com/punksbot/punksbot/pull/3834#issuecomment-1",
     ),
-    "https://github.com/block/punks/pull/3834",
+    "https://github.com/punksbot/punksbot/pull/3834",
   );
 });
 

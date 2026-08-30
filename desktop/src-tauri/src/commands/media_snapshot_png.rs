@@ -5,7 +5,7 @@
 //! (`punks_agent_snapshot` / `punks_team_snapshot`); the sanitizer's re-encode
 //! would destroy it and the relay would previously reject it. These helpers
 //! extract the chunk before the re-encode and re-inject it afterwards. The
-//! relay allowlists exactly these keywords in `buzz-media::validation` — the
+//! relay allowlists exactly these keywords in `punks-media::validation` — the
 //! two lists must stay in sync.
 
 /// tEXt keywords that carry Punks snapshot manifests (`.agent.png` /

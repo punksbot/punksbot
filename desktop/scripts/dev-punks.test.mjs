@@ -24,12 +24,12 @@ test("runs the integrated desktop with the Punks-only flavor", () => {
   ]);
 });
 
-test("the native manifest selects Punks instead of Buzz by default", () => {
+test("the native manifest selects Punks instead of Punks by default", () => {
   const manifest = readFileSync(
     resolve(import.meta.dirname, "../src-tauri/Cargo.toml"),
     "utf8",
   );
   assert.match(manifest, /^default = \["punks-desktop-social-loop"\]$/mu);
-  assert.doesNotMatch(manifest, /^default = .*buzz-desktop.*$/mu);
-  assert.doesNotMatch(manifest.split("[package]", 1)[0], /buzz/iu);
+  assert.doesNotMatch(manifest, /^default = .*punks-desktop.*$/mu);
+  assert.doesNotMatch(manifest.split("[package]", 1)[0], /punks/iu);
 });

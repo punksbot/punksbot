@@ -514,12 +514,14 @@ mod tests {
 
     #[test]
     fn local_clone_url_allows_only_public_github_https_urls() {
-        assert!(validate_local_clone_url("https://github.com/block/buzz").is_ok());
-        assert!(validate_local_clone_url("https://github.com/block/buzz.git").is_ok());
-        assert!(validate_local_clone_url("http://github.com/block/buzz").is_err());
-        assert!(validate_local_clone_url("https://github.com/block/buzz/issues").is_err());
-        assert!(validate_local_clone_url("https://user@github.com/block/buzz").is_err());
-        assert!(validate_local_clone_url("https://github.com.evil.test/block/buzz").is_err());
-        assert!(validate_local_clone_url("https://gitlab.com/block/buzz").is_err());
+        assert!(validate_local_clone_url("https://github.com/punksbot/punksbot").is_ok());
+        assert!(validate_local_clone_url("https://github.com/punksbot/punksbot.git").is_ok());
+        assert!(validate_local_clone_url("http://github.com/punksbot/punksbot").is_err());
+        assert!(validate_local_clone_url("https://github.com/punksbot/punksbot/issues").is_err());
+        assert!(validate_local_clone_url("https://user@github.com/punksbot/punksbot").is_err());
+        assert!(
+            validate_local_clone_url("https://github.com.evil.test/punksbot/punksbot").is_err()
+        );
+        assert!(validate_local_clone_url("https://gitlab.com/punksbot/punksbot").is_err());
     }
 }

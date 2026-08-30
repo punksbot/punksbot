@@ -1,6 +1,6 @@
-# Buzz Mobile
+# Punks Mobile
 
-Flutter mobile client for Buzz.
+Flutter mobile client for Punks.
 
 ## Setup
 
@@ -22,9 +22,9 @@ cd mobile && flutter run
 ### Worktree-aware debug identity
 
 Debug builds produced from a git worktree get a unique app identifier keyed
-to the **worktree directory name** (`com.buzz.buzzMobile.<slug>` on iOS,
-`xyz.block.buzz.mobile.<slug>` on Android) plus a display-only branch label
-in the app name (`Buzz (my-branch)`, or a short SHA when the worktree is
+to the **worktree directory name** (`com.punks.punksMobile.<slug>` on iOS,
+`xyz.block.punks.mobile.<slug>` on Android) plus a display-only branch label
+in the app name (`Punks (my-branch)`, or a short SHA when the worktree is
 detached). Because the identifier follows the directory rather than the
 branch, one worktree keeps exactly one installed app — and its login state —
 across branch switches, and builds from multiple worktrees install side by
@@ -46,21 +46,21 @@ over the generated worktree values by creating the gitignored
 `mobile/android/AppOverrides.properties`:
 
 ```properties
-appName=Buzz Pairing
+appName=Punks Pairing
 applicationIdSuffix=.device_pairing_e2e1
 ```
 
 These values are consumed by the debug build type only. The standard
 `just mobile-build-android` command can still be used; regenerating
 `worktree.properties` does not overwrite `AppOverrides.properties`. Release
-and profile builds keep the production `Buzz` name and application ID.
+and profile builds keep the production `Punks` name and application ID.
 
 For direct Xcode / Android Studio / `flutter run` development, run
 `./scripts/mobile-worktree-overrides.sh` from the repo root once per branch
 switch to refresh the display label (the install identity never changes);
 the persisted files are then picked up by any subsequent build. In the main
 checkout the script is a no-op that removes stale override files, restoring
-the plain `Buzz` identity.
+the plain `Punks` identity.
 
 To remove leftover worktree-suffixed installs from booted iOS simulators and
 connected Android emulators, run `just mobile-clean` (add `--dry-run` via
@@ -82,18 +82,18 @@ Or from the repo root: `just mobile-check` and `just mobile-test`.
 Android release builds fail unless all upload-key inputs are supplied through the
 environment:
 
-- `BUZZ_ANDROID_UPLOAD_KEYSTORE_PATH`: path to a CI-vended keystore file
-- `BUZZ_ANDROID_UPLOAD_KEYSTORE_PASSWORD`
-- `BUZZ_ANDROID_UPLOAD_KEY_ALIAS`
-- `BUZZ_ANDROID_UPLOAD_KEY_PASSWORD`
+- `PUNKS_ANDROID_UPLOAD_KEYSTORE_PATH`: path to a CI-vended keystore file
+- `PUNKS_ANDROID_UPLOAD_KEYSTORE_PASSWORD`
+- `PUNKS_ANDROID_UPLOAD_KEY_ALIAS`
+- `PUNKS_ANDROID_UPLOAD_KEY_PASSWORD`
 
 The keystore path must be absolute, and the keystore must remain outside the
 repository. Development and debug builds do not require these variables.
 
 Release pipelines that sign through the central APK Signer service instead of
-a local upload keystore must set `BUZZ_ANDROID_RELEASE_SIGNING=external`. That
+a local upload keystore must set `PUNKS_ANDROID_RELEASE_SIGNING=external`. That
 mode produces an unsigned release bundle and refuses to run if any
-`BUZZ_ANDROID_UPLOAD_*` value is also set.
+`PUNKS_ANDROID_UPLOAD_*` value is also set.
 
 ## Architecture
 

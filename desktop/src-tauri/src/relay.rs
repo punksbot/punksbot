@@ -5,7 +5,7 @@ use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
-// nostr 0.36 alias — required for cross-version bridging with buzz-sdk.
+// nostr 0.36 alias — required for cross-version bridging with punks-sdk.
 
 use crate::app_state::AppState;
 
@@ -458,7 +458,7 @@ pub fn parse_command_response<T: DeserializeOwned>(message: &str) -> Result<T, S
 /// This is a pure function (no I/O) extracted from `sync_managed_agent_profile` so that
 /// the event-building and auth-tag-injection logic can be unit tested without HTTP calls.
 ///
-/// `buzz-sdk` uses `nostr 0.36` while the desktop crate uses `nostr 0.37`. Cross-version
+/// `punks-sdk` uses `nostr 0.36` while the desktop crate uses `nostr 0.37`. Cross-version
 /// bridging is done via hex-encoded public keys and raw tag slices — both versions share the
 /// same wire format.
 fn build_profile_event(

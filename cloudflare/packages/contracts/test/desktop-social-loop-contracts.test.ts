@@ -39,7 +39,7 @@ describe("desktop social loop contracts", () => {
     expect(
       validates("punks://contracts/desktop.compatibility@1", {
         ...request,
-        backend: "buzz",
+        backend: "punks",
       }),
     ).toBe(false);
   });

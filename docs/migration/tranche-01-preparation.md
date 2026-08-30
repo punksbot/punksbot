@@ -7,7 +7,7 @@ disponibilité produit.
 Références figées par la spec :
 
 - checkpoint de récupération : `50e16de180dda4365f8001a8a73503f16977a175` ;
-- baseline Buzz : `da818eddc2f470c006a1073c8c5452f8a989f272` ;
+- baseline Punks : `da818eddc2f470c006a1073c8c5452f8a989f272` ;
 - profil préparé : `desktop-social-loop@1`, registre version 1.
 
 ## Préparé dans le code
@@ -25,7 +25,7 @@ Références figées par la spec :
 - gate `punks:check` redirigé vers l’application riche avec la feature Punks.
 
 Le retrait source de la tranche 1 est désormais préparé dans le candidat : le
-prototype desktop minimal, son runner, l’ancien onboarding, les deeplinks Buzz
+prototype desktop minimal, son runner, l’ancien onboarding, les deeplinks Punks
 et les harnais relay exclusifs ont été retirés, et chaque test historique
 concerné possède un verdict dans le registre des goldens. Ce retrait source ne
 constitue toutefois ni un dossier indivisible, ni un scellement, ni une

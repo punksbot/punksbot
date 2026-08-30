@@ -718,7 +718,7 @@ function checksForMetric(
     checks = [...lockChecks(infrastructure), ...archiveChecks(infrastructure)];
   } else if (metric === "discordance-artefact-ou-attestation") {
     checks = artifactChecks(candidate);
-  } else if (metric === "tentative-buzz-ou-nostr-public") {
+  } else if (metric === "tentative-punks-ou-nostr-public") {
     checks = [
       ...networkChecks(candidate),
       ...PLATEFORMES.map((platform) =>

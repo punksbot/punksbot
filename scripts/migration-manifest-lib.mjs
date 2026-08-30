@@ -24,7 +24,7 @@ import { parse } from "yaml";
 export const TRANCHES = 31;
 export const CHECKPOINT_RECUPERATION =
   "50e16de180dda4365f8001a8a73503f16977a175";
-export const BASELINE_BUZZ = "da818eddc2f470c006a1073c8c5452f8a989f272";
+export const BASELINE_PUNKS = "da818eddc2f470c006a1073c8c5452f8a989f272";
 export const VERDITS_CONSERVATION = [
   "atelier",
   "ui-neutre",
@@ -51,7 +51,7 @@ export const CHEMINS_GOLDENS = {
   foyer: "goldens/",
   registre: "docs/migration/goldens-ledger.yaml",
   univers: "docs/migration/goldens-universe.yaml",
-  "univers-tests": "docs/migration/buzz-tests-universe.yaml",
+  "univers-tests": "docs/migration/punks-tests-universe.yaml",
 };
 export const VERDITS_GOLDENS = [
   "preuve-punks",
@@ -65,7 +65,7 @@ export const GOLDEN_SOURCES_ADDITIONNELLES = [
 ];
 export const GOLDEN_SOURCE_SET_SHA256 =
   "53f8cc91f3cd17771f94ba6b51972fb4e277ce3615147c54a65d1d2100df6c80";
-export const BUZZ_TEST_SOURCE_SET_SHA256 =
+export const PUNKS_TEST_SOURCE_SET_SHA256 =
   "0a47804d8c40c74c08d619e059d1463fbfcb80bb6864264282c7622e47b52512";
 
 /** Empreinte stable d'un ensemble de chemins, ordre et doublons neutralisés. */
@@ -93,7 +93,7 @@ export function discoverGoldenSources(baselineFiles) {
 }
 
 /** Dérive les fichiers de tests exécutables/helpers, hors données fixtures. */
-export function discoverBuzzTestSources(baselineFiles) {
+export function discoverPunksTestSources(baselineFiles) {
   return baselineFiles
     .filter((path) => {
       const directories = path.split("/").slice(0, -1);
@@ -424,8 +424,8 @@ export function validateManifest(manifest, trackedFiles) {
   if (manifest["checkpoint-recuperation"] !== CHECKPOINT_RECUPERATION) {
     push("en-tête invalide : checkpoint de récupération invalide");
   }
-  if (manifest["baseline-buzz"] !== BASELINE_BUZZ) {
-    push("en-tête invalide : baseline Buzz invalide");
+  if (manifest["baseline-punks"] !== BASELINE_PUNKS) {
+    push("en-tête invalide : baseline Punks invalide");
   }
   if (!listeExacte(manifest["clients-requis"], CLIENTS_REQUIS)) {
     push(
@@ -639,7 +639,7 @@ export function validateManifest(manifest, trackedFiles) {
     if (
       manifest.goldens["univers-tests"] !== CHEMINS_GOLDENS["univers-tests"]
     ) {
-      push("section goldens : univers des tests Buzz invalide");
+      push("section goldens : univers des tests Punks invalide");
     }
     if (!texteNonVide(manifest.goldens.politique)) {
       push("section goldens : politique des goldens manquante");
@@ -679,8 +679,8 @@ export function validateGoldenUniverse(
   if (universe["checkpoint-recuperation"] !== CHECKPOINT_RECUPERATION) {
     push("en-tête invalide : checkpoint de récupération invalide");
   }
-  if (universe["baseline-buzz"] !== BASELINE_BUZZ) {
-    push("en-tête invalide : baseline Buzz invalide");
+  if (universe["baseline-punks"] !== BASELINE_PUNKS) {
+    push("en-tête invalide : baseline Punks invalide");
   }
   if (!Array.isArray(universe.sources) || universe.sources.length === 0) {
     return [...errors, "sources manquantes dans l'univers des goldens"];
@@ -728,8 +728,8 @@ export function validateGoldenUniverse(
   return errors;
 }
 
-/** Valide l'univers exact des fichiers de tests Buzz de la baseline. */
-export function validateBuzzTestUniverse(
+/** Valide l'univers exact des fichiers de tests Punks de la baseline. */
+export function validatePunksTestUniverse(
   universe,
   expectedSources,
   expectedSourceSetSha256,
@@ -745,11 +745,11 @@ export function validateBuzzTestUniverse(
   if (universe["checkpoint-recuperation"] !== CHECKPOINT_RECUPERATION) {
     push("en-tête invalide : checkpoint de récupération invalide");
   }
-  if (universe["baseline-buzz"] !== BASELINE_BUZZ) {
-    push("en-tête invalide : baseline Buzz invalide");
+  if (universe["baseline-punks"] !== BASELINE_PUNKS) {
+    push("en-tête invalide : baseline Punks invalide");
   }
   if (!Array.isArray(universe.sources) || universe.sources.length === 0) {
-    return [...errors, "sources manquantes dans l'univers des tests Buzz"];
+    return [...errors, "sources manquantes dans l'univers des tests Punks"];
   }
   const sources = new Set();
   for (const source of universe.sources) {
@@ -780,7 +780,7 @@ export function validateBuzzTestUniverse(
     expectedSourceSetSha256 !== undefined &&
     goldenSourceSetSha256([...sources]) !== expectedSourceSetSha256
   ) {
-    push("empreinte indépendante de l'univers des tests Buzz invalide");
+    push("empreinte indépendante de l'univers des tests Punks invalide");
   }
   return errors;
 }
@@ -819,8 +819,8 @@ export function validateLedger(
   if (ledger["checkpoint-recuperation"] !== CHECKPOINT_RECUPERATION) {
     push("en-tête invalide : checkpoint de récupération invalide");
   }
-  if (ledger["baseline-buzz"] !== BASELINE_BUZZ) {
-    push("en-tête invalide : baseline Buzz invalide");
+  if (ledger["baseline-punks"] !== BASELINE_PUNKS) {
+    push("en-tête invalide : baseline Punks invalide");
   }
   const fermes = ledger["verdicts-fermes"];
   const fermesUniques = Array.isArray(fermes) ? new Set(fermes) : new Set();
@@ -968,7 +968,7 @@ export function validateLedger(
   if (testsAttendus !== null) {
     for (const test of testsAttendus) {
       if (!tracked.has(test) && !sourcesRetirees.has(test)) {
-        push(`${test} : test Buzz retiré sans ligne retraits-par-tranche`);
+        push(`${test} : test Punks retiré sans ligne retraits-par-tranche`);
       }
     }
   }

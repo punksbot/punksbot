@@ -363,7 +363,7 @@ fn spawn_without_stdio(mut command: Command) -> Result<(), String> {
 #[cfg(target_os = "macos")]
 fn launch_visible_terminal(argv: &[String]) -> Result<(), String> {
     let mut script = tempfile::Builder::new()
-        .prefix("buzz-auth-")
+        .prefix("punks-auth-")
         .suffix(".command")
         .tempfile()
         .map_err(|error| format!("failed to create terminal login script: {error}"))?;
@@ -473,7 +473,7 @@ mod tests {
     #[test]
     fn append_inherited_path_appends_after_augmented() {
         let sep = if cfg!(windows) { ';' } else { ':' };
-        let augmented = format!("{0}buzz-bin{1}{0}exe-dir", std::path::MAIN_SEPARATOR, sep);
+        let augmented = format!("{0}punks-bin{1}{0}exe-dir", std::path::MAIN_SEPARATOR, sep);
         let inherited = format!(
             "{0}user-bin{1}{0}system-bin",
             std::path::MAIN_SEPARATOR,
@@ -664,7 +664,7 @@ mod tests {
             method_type: Some("terminal".into()),
             args: vec!["should-not".into(), "be-used".into()],
             command: vec![
-                "definitely-not-on-path-buzz-test".into(),
+                "definitely-not-on-path-punks-test".into(),
                 "auth".into(),
                 "login".into(),
             ],
@@ -673,7 +673,7 @@ mod tests {
         assert_eq!(
             adapter_terminal_argv("Claude Code", &method, "claude-agent-acp").unwrap(),
             vec![
-                "definitely-not-on-path-buzz-test".to_string(),
+                "definitely-not-on-path-punks-test".to_string(),
                 "auth".to_string(),
                 "login".to_string()
             ]
@@ -721,9 +721,9 @@ mod tests {
             meta: None,
         };
         assert_eq!(
-            adapter_terminal_argv("Claude Code", &method, "definitely-not-on-path-buzz-test")
+            adapter_terminal_argv("Claude Code", &method, "definitely-not-on-path-punks-test")
                 .unwrap(),
-            vec!["definitely-not-on-path-buzz-test".to_string()]
+            vec!["definitely-not-on-path-punks-test".to_string()]
         );
     }
 }

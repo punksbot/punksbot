@@ -1,9 +1,9 @@
-import 'package:buzz/shared/custom_emoji/custom_emoji.dart';
-import 'package:buzz/shared/emoji/emoji_only.dart';
+import 'package:punks/shared/custom_emoji/custom_emoji.dart';
+import 'package:punks/shared/emoji/emoji_only.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 const _customEmoji = [
-  CustomEmoji(shortcode: 'buzz', url: 'https://example.test/buzz.png'),
+  CustomEmoji(shortcode: 'punks', url: 'https://example.test/punks.png'),
 ];
 
 /// Keycaps carry no `Extended_Pictographic` code point of their own, so they
@@ -50,15 +50,15 @@ void main() {
     });
 
     test('counts a known custom shortcode as emoji', () {
-      expect(emojiOnly(':buzz:', customEmoji: _customEmoji), isTrue);
-      expect(emojiOnly(':buzz: \u{1F600}', customEmoji: _customEmoji), isTrue);
-      expect(emojiOnly('hi :buzz:', customEmoji: _customEmoji), isFalse);
+      expect(emojiOnly(':punks:', customEmoji: _customEmoji), isTrue);
+      expect(emojiOnly(':punks: \u{1F600}', customEmoji: _customEmoji), isTrue);
+      expect(emojiOnly('hi :punks:', customEmoji: _customEmoji), isFalse);
     });
 
     test('an unknown shortcode is just text', () {
       // Desktop behaves the same: without the palette it renders literally, so
       // it must not be scaled up as if it were a glyph.
-      expect(emojiOnly(':buzz:'), isFalse);
+      expect(emojiOnly(':punks:'), isFalse);
       expect(emojiOnly(':nope:', customEmoji: _customEmoji), isFalse);
       expect(emojiOnly(':', customEmoji: _customEmoji), isFalse);
       expect(emojiOnly('::', customEmoji: _customEmoji), isFalse);

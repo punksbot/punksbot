@@ -1,9 +1,9 @@
 import 'dart:async';
 
-import 'package:buzz/features/activity/activity_provider.dart';
-import 'package:buzz/features/channels/channel.dart';
-import 'package:buzz/features/channels/channels_provider.dart';
-import 'package:buzz/shared/relay/relay.dart';
+import 'package:punks/features/activity/activity_provider.dart';
+import 'package:punks/features/channels/channel.dart';
+import 'package:punks/features/channels/channels_provider.dart';
+import 'package:punks/shared/relay/relay.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 

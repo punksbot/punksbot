@@ -365,7 +365,7 @@ function validateVisiblePayload(
   if (new TextEncoder().encode(content).byteLength > 64 * 1_024) {
     throw new MessageDomainError(
       "invalid_transition",
-      "Message content exceeds the Buzz-compatible 64 KiB limit",
+      "Message content exceeds the Punks-compatible 64 KiB limit",
     );
   }
   if (content.length === 0 && mediaIds.length === 0) {

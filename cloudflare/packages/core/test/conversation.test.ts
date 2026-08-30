@@ -103,7 +103,7 @@ describe("Conversation decisions", () => {
     ).toBeLessThan(300_000);
   });
 
-  it("preserves Buzz DM participant-set constraints", () => {
+  it("preserves Punks DM participant-set constraints", () => {
     const dm = decideCreateConversation(
       null,
       {

@@ -89,7 +89,7 @@ pub async fn start_coordinator(app: AppHandle) {
     });
 
     // Brad #2304 / #2062: ensure_relay_mesh_for_record only runs on explicit
-    // start + launch restore. After launch, local buzz-agent processes talk
+    // start + launch restore. After launch, local punks-agent processes talk
     // directly to :9337; there is no desktop "turn dispatch" hook. This
     // watchdog is the post-launch seam: probe ingress, drop a zombie handle,
     // re-arm via ensure_relay_mesh_for_record, surface last_error on failure.

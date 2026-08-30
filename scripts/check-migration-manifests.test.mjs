@@ -10,14 +10,14 @@ import { fileURLToPath } from "node:url";
 import {
   baseMatches,
   canonicalSha256,
-  discoverBuzzTestSources,
+  discoverPunksTestSources,
   discoverGoldenSources,
   goldenSourceSetSha256,
   loadYamlDocument,
   parseChemin,
   tranchesCitees,
   validateGoldenUniverse,
-  validateBuzzTestUniverse,
+  validatePunksTestUniverse,
   validateLedger,
   validateManifest,
   verdictErreur,
@@ -55,8 +55,8 @@ const T1_ACTIFS_HISTORIQUES = [
   "desktop/src-tauri/src/{deep_link.rs,deep_link_tests.rs}",
   "Justfile (cibles desktop-e2e-integration, desktop-e2e-seed, desktop-e2e-pre-push)",
   "scripts/setup-desktop-test-data.sh",
-  ".env.example (VITE_BUZZ_FORCE_FRESH_ONBOARDING)",
-  "docs/buzz-entity-links.md",
+  ".env.example (VITE_PUNKS_FORCE_FRESH_ONBOARDING)",
+  "docs/punks-entity-links.md",
   "punks-desktop/",
 ].sort();
 
@@ -64,7 +64,7 @@ function manifestMinimal(actifs) {
   return {
     version: 1,
     "checkpoint-recuperation": "50e16de180dda4365f8001a8a73503f16977a175",
-    "baseline-buzz": "da818eddc2f470c006a1073c8c5452f8a989f272",
+    "baseline-punks": "da818eddc2f470c006a1073c8c5452f8a989f272",
     "clients-requis": ["desktop", "web", "mobile", "admin-web"],
     "critere-retrait-global":
       "les quatre clients possèdent un verdict terminal",
@@ -83,7 +83,7 @@ function manifestMinimal(actifs) {
       foyer: "goldens/",
       registre: "docs/migration/goldens-ledger.yaml",
       univers: "docs/migration/goldens-universe.yaml",
-      "univers-tests": "docs/migration/buzz-tests-universe.yaml",
+      "univers-tests": "docs/migration/punks-tests-universe.yaml",
       politique: "une ligne par invariant et par test retiré",
     },
   };
@@ -93,7 +93,7 @@ function ledgerMinimal(entrees) {
   return {
     version: 1,
     "checkpoint-recuperation": "50e16de180dda4365f8001a8a73503f16977a175",
-    "baseline-buzz": "da818eddc2f470c006a1073c8c5452f8a989f272",
+    "baseline-punks": "da818eddc2f470c006a1073c8c5452f8a989f272",
     "verdicts-fermes": [
       "preuve-punks",
       "difference-intentionnelle",
@@ -113,7 +113,7 @@ function universeMinimal(sources = ["goldens/g.json"]) {
   return {
     version: 1,
     "checkpoint-recuperation": "50e16de180dda4365f8001a8a73503f16977a175",
-    "baseline-buzz": "da818eddc2f470c006a1073c8c5452f8a989f272",
+    "baseline-punks": "da818eddc2f470c006a1073c8c5452f8a989f272",
     sources,
   };
 }
@@ -124,7 +124,7 @@ function testsUniverseMinimal(
   return {
     version: 1,
     "checkpoint-recuperation": "50e16de180dda4365f8001a8a73503f16977a175",
-    "baseline-buzz": "da818eddc2f470c006a1073c8c5452f8a989f272",
+    "baseline-punks": "da818eddc2f470c006a1073c8c5452f8a989f272",
     sources,
   };
 }
@@ -222,15 +222,15 @@ test("validateManifest : seules les versions de format supportées sont admises"
   assert.ok(erreurs.some((e) => e.includes("version non supportée")));
 });
 
-test("validateManifest : le checkpoint de récupération ne peut pas remplacer la baseline Buzz", () => {
+test("validateManifest : le checkpoint de récupération ne peut pas remplacer la baseline Punks", () => {
   const doc = manifestMinimal([
     { chemin: "a/", verdict: "conserve", conservation: "outillage" },
     { chemin: "web/", verdict: "retrait-global" },
   ]);
   doc["checkpoint-recuperation"] = "50e16de180dda4365f8001a8a73503f16977a175";
-  doc["baseline-buzz"] = "50e16de180dda4365f8001a8a73503f16977a175";
+  doc["baseline-punks"] = "50e16de180dda4365f8001a8a73503f16977a175";
   const erreurs = validateManifest(doc, [...MANIFEST_FILES]);
-  assert.ok(erreurs.some((e) => e.includes("baseline Buzz invalide")));
+  assert.ok(erreurs.some((e) => e.includes("baseline Punks invalide")));
 });
 
 test("validateManifest : doublon de chemin refusé", () => {
@@ -523,7 +523,7 @@ test("validateManifest : les modules partagés restent au dernier consommateur e
   assert.ok(erreurs.some((e) => e.includes("frontière de scission manquante")));
 });
 
-test("validateManifest : l’entrée React Buzz reste au scellement après extraction de l’entrée Punks", () => {
+test("validateManifest : l’entrée React Punks reste au scellement après extraction de l’entrée Punks", () => {
   const fichier = "desktop/src/main.tsx";
   const doc = manifestMinimal([
     {
@@ -543,7 +543,7 @@ test("validateManifest : l’entrée React Buzz reste au scellement après extra
   doc.actifs[0] = {
     chemin: fichier,
     verdict: "scellement",
-    separation: "l’entrée Punks est extraite avant le retrait de Buzz",
+    separation: "l’entrée Punks est extraite avant le retrait de Punks",
   };
   assert.deepEqual(validateManifest(doc, [fichier]), []);
 
@@ -589,7 +589,7 @@ test("validateManifest : les entrypoints Tauri mixtes conservent la branche Punk
     {
       chemin: "desktop/src-tauri/src/",
       verdict: "scellement",
-      separation: "les branches Buzz meurent au scellement",
+      separation: "les branches Punks meurent au scellement",
     },
   ]);
 
@@ -608,7 +608,7 @@ test("validateManifest : les entrypoints Tauri mixtes conservent la branche Punk
     chemin: "desktop/src-tauri/src/{lib.rs,main.rs}",
     verdict: "conserve",
     conservation: "actif-punks",
-    separation: "les branches Buzz sont retirées, le dispatcher Punks survit",
+    separation: "les branches Punks sont retirées, le dispatcher Punks survit",
   });
   assert.deepEqual(validateManifest(doc, fichiers), []);
 
@@ -647,7 +647,7 @@ test("validateManifest : les actifs Punks desktop ne peuvent pas être absorbés
   }
 });
 
-test("validateManifest : les harnais Buzz desktop restent au scellement après extraction du test Punks", () => {
+test("validateManifest : les harnais Punks desktop restent au scellement après extraction du test Punks", () => {
   const fichiers = [
     "desktop/src/testing/e2eBridge.ts",
     "desktop/tests/e2e/channels.spec.ts",
@@ -657,12 +657,12 @@ test("validateManifest : les harnais Buzz desktop restent au scellement après e
     {
       chemin: "desktop/src/testing/",
       verdict: "scellement",
-      separation: "la façade Punks est extraite du pont Buzz",
+      separation: "la façade Punks est extraite du pont Punks",
     },
     {
       chemin: "desktop/tests/",
       verdict: "scellement",
-      separation: "les scénarios Buzz meurent avec leurs dernières capacités",
+      separation: "les scénarios Punks meurent avec leurs dernières capacités",
     },
     {
       chemin: "desktop/tests/e2e/capability-masking.spec.ts",
@@ -772,8 +772,8 @@ test("validateGoldenUniverse : l’empreinte indépendante protège les clones s
   assert.ok(erreurs.some((e) => e.includes("empreinte indépendante")));
 });
 
-test("validateBuzzTestUniverse : sélectionne les tests, pas leurs fixtures", () => {
-  const sources = discoverBuzzTestSources([
+test("validatePunksTestUniverse : sélectionne les tests, pas leurs fixtures", () => {
+  const sources = discoverPunksTestSources([
     "desktop/tests/e2e/channels.spec.ts",
     "desktop/tests/helpers/seed.ts",
     "desktop/tests/fixtures/image.png",
@@ -804,7 +804,7 @@ test("validateBuzzTestUniverse : sélectionne les tests, pas leurs fixtures", ()
     "worker/handler_test.go",
   ]);
   assert.deepEqual(
-    validateBuzzTestUniverse(
+    validatePunksTestUniverse(
       testsUniverseMinimal(),
       testsUniverseMinimal().sources,
       goldenSourceSetSha256(testsUniverseMinimal().sources),
@@ -869,7 +869,7 @@ test("validateLedger : une ligne de retrait autorise l’absence courante sans p
   );
 });
 
-test("validateLedger : chaque test Buzz retiré exige une ligne et refuse les fantômes", () => {
+test("validateLedger : chaque test Punks retiré exige une ligne et refuse les fantômes", () => {
   const testHistorique = "desktop/tests/e2e/channels.spec.ts";
   const entree = {
     cle: "invariant.a",
@@ -886,7 +886,7 @@ test("validateLedger : chaque test Buzz retiré exige une ligne et refuse les fa
       () => true,
       universeMinimal().sources,
       [testHistorique],
-    ).some((e) => e.includes("test Buzz retiré sans ligne")),
+    ).some((e) => e.includes("test Punks retiré sans ligne")),
   );
 
   const avecRetrait = ledgerMinimal([entree]);
@@ -971,7 +971,7 @@ test("validateLedger : seules les versions de format supportées sont admises", 
   assert.ok(erreurs.some((e) => e.includes("version non supportée")));
 });
 
-test("validateLedger : le checkpoint de récupération ne peut pas remplacer la baseline Buzz", () => {
+test("validateLedger : le checkpoint de récupération ne peut pas remplacer la baseline Punks", () => {
   const doc = ledgerMinimal([
     {
       cle: "invariant.a",
@@ -982,9 +982,9 @@ test("validateLedger : le checkpoint de récupération ne peut pas remplacer la 
     },
   ]);
   doc["checkpoint-recuperation"] = "50e16de180dda4365f8001a8a73503f16977a175";
-  doc["baseline-buzz"] = "50e16de180dda4365f8001a8a73503f16977a175";
+  doc["baseline-punks"] = "50e16de180dda4365f8001a8a73503f16977a175";
   const erreurs = validateLedger(doc, [...LEDGER_FILES], () => true);
-  assert.ok(erreurs.some((e) => e.includes("baseline Buzz invalide")));
+  assert.ok(erreurs.some((e) => e.includes("baseline Punks invalide")));
 });
 
 test("validateLedger : doublon de cle refusé", () => {
@@ -1299,7 +1299,7 @@ test("validateLedger : les verdicts de retrait incomplets sont refusés", () => 
   }
 });
 
-test("intégration : la tranche 1 ne conserve aucun actif Buzz et prépare ses retraits", () => {
+test("intégration : la tranche 1 ne conserve aucun actif Punks et prépare ses retraits", () => {
   const manifest = loadYamlDocument(
     fileURLToPath(
       new URL("../docs/migration/withdrawal-inventory.yaml", import.meta.url),

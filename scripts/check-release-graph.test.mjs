@@ -5,7 +5,7 @@
  * liaison explicite des matériaux, dossier indivisible preuves + retrait sur
  * le même SHA, fenêtre de support 90 jours, contraction < 1 % pendant 14
  * jours, contenu complet de l'attestation, immuabilité et publication R2,
- * roll-forward, certificat de compatibilité et interdiction de retour Buzz.
+ * roll-forward, certificat de compatibilité et interdiction de retour Punks.
  */
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -14,7 +14,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  BASELINE_BUZZ,
+  BASELINE_PUNKS,
   CHECKPOINT_RECUPERATION,
   canonicalJson,
   canonicalSha256,
@@ -173,7 +173,7 @@ function preuvesCompletes(sha = SHA_CANDIDAT) {
 function attestationComplete(release) {
   return {
     sha: release.sha,
-    "checkpoint-baseline": BASELINE_BUZZ,
+    "checkpoint-baseline": BASELINE_PUNKS,
     dossier: { sha256: release["dossier-preuve-sha256"] },
     registres: [
       {
@@ -1810,11 +1810,11 @@ function preuveControle({
       invalidee: false,
       revoquee: false,
     },
-    "securite-isolation-effacement-sans-buzz": {
+    "securite-isolation-effacement-sans-punks": {
       vulnerabilite: false,
       "violation-isolation": false,
       "violation-effacement": false,
-      "chemin-buzz-nostr-public": false,
+      "chemin-punks-nostr-public": false,
     },
     "profils-desktop-actifs": { profils },
     "versions-etat-durable-objects": {
@@ -2140,7 +2140,7 @@ function graphValide(surcharges = {}) {
   const graph = {
     version: 1,
     "checkpoint-recuperation": CHECKPOINT_RECUPERATION,
-    "baseline-buzz": BASELINE_BUZZ,
+    "baseline-punks": BASELINE_PUNKS,
     canal: "punks-desktop",
     politique: {
       "cadence-promotion": {
@@ -2153,7 +2153,7 @@ function graphValide(surcharges = {}) {
       recuperation: {
         normale: "roll-forward",
         "retour-punks-anterieur": "certificat-compatibilite-exige",
-        "retour-buzz": "interdit",
+        "retour-punks": "interdit",
       },
       "rpo-logique-nul": true,
       immuabilite: {
@@ -2327,8 +2327,8 @@ test("l'en-tête est figé (version, checkpoint, baseline)", () => {
     "checkpoint de récupération invalide",
   );
   attendu(
-    erreurs(graphValide({ "baseline-buzz": "cd" })),
-    "baseline Buzz invalide",
+    erreurs(graphValide({ "baseline-punks": "cd" })),
+    "baseline Punks invalide",
   );
 });
 
@@ -2362,17 +2362,17 @@ test("la politique ne peut pas dériver des décisions closes", () => {
   graph2.politique.recuperation["retour-punks-anterieur"] = "libre";
   attendu(erreurs(graph2), "certificat de compatibilité");
   const graph3 = graphValide();
-  graph3.politique.recuperation["retour-buzz"] = "permis";
-  attendu(erreurs(graph3), "retour-buzz doit être interdit");
+  graph3.politique.recuperation["retour-punks"] = "permis";
+  attendu(erreurs(graph3), "retour-punks doit être interdit");
   const graph4 = graphValide();
   graph4.politique["rpo-logique-nul"] = false;
   attendu(erreurs(graph4), "rpo-logique-nul doit être vrai");
 
-  const extensionBuzz = graphValide();
-  extensionBuzz.politique.recuperation["redirection-buzz"] = "autorisee";
-  extensionBuzz["fallback-nostr-public"] = { actif: true };
-  attendu(erreurs(extensionBuzz), "schéma racine fermé");
-  attendu(erreurs(extensionBuzz), "arête implicite interdite");
+  const extensionPunks = graphValide();
+  extensionPunks.politique.recuperation["redirection-punks"] = "autorisee";
+  extensionPunks["fallback-nostr-public"] = { actif: true };
+  attendu(erreurs(extensionPunks), "schéma racine fermé");
+  attendu(erreurs(extensionPunks), "arête implicite interdite");
 });
 
 test("la politique de promotion est explicitement immédiate et fondée sur les preuves", () => {
@@ -2459,7 +2459,7 @@ test("les références de spec, décisions et ADR sont exigées", () => {
     [],
   );
   attendu(
-    erreurs(graphValide({ canal: "buzz-desktop" })),
+    erreurs(graphValide({ canal: "punks-desktop" })),
     "canal doit être punks-desktop",
   );
 });
@@ -2554,12 +2554,12 @@ test("un candidat scellé exige son SHA exact", () => {
   release2.sha = "zz";
   attendu(erreurs(graphValide({ releases: [release2] })), "sha invalide");
 
-  for (const shaInterdit of [BASELINE_BUZZ, CHECKPOINT_RECUPERATION]) {
+  for (const shaInterdit of [BASELINE_PUNKS, CHECKPOINT_RECUPERATION]) {
     const interdit = releaseScellee({ etat: "expansion" });
     interdit.sha = shaInterdit;
     attendu(
       erreurs(graphValide({ releases: [interdit] })),
-      "distinct des checkpoints Buzz interdits",
+      "distinct des checkpoints Punks interdits",
     );
   }
 });
@@ -2678,17 +2678,17 @@ test("le retrait scellé doit correspondre aux lignes du registre des goldens", 
   const release = releaseScellee({
     etat: "expansion",
     dates: ["2026-08-01"],
-    lignesRegistre: ["crates/buzz-agent/tests/golden.rs"],
+    lignesRegistre: ["crates/punks-agent/tests/golden.rs"],
   });
   const contexte = contexteStandard({
     ledgerRetraits: [
       {
-        test: "crates/buzz-agent/tests/golden.rs",
+        test: "crates/punks-agent/tests/golden.rs",
         tranche: "tranche:1",
         verdict: "preuve-punks",
       },
       {
-        test: "crates/buzz-db/tests/autre.rs",
+        test: "crates/punks-db/tests/autre.rs",
         tranche: "tranche:1",
         verdict: "difference-intentionnelle",
       },
@@ -3969,7 +3969,7 @@ test("une exécution partielle scelle E0 puis un échec E1 sans prétendre clore
   nostalgieNostr.executions[0].graphe.contenu.topologie["moyens-connexion"] = [
     "nostr-public",
   ];
-  attendu(erreurs(nostalgieNostr), "sans Buzz/Nostr public");
+  attendu(erreurs(nostalgieNostr), "sans Punks/Nostr public");
 });
 
 test("un échec d'exécution lie un budget réellement rouge et son incident causal exact", () => {
@@ -4881,7 +4881,7 @@ test("le roll-forward rejoue E0 à E4 puis A0 à A4 sur un nouveau graphe", () =
   memeCandidat.recuperations[0].graphes.nouveau.sha256 = canonicalSha256(
     memeCandidat.recuperations[0].graphes.nouveau.contenu,
   );
-  attendu(erreurs(memeCandidat), "jamais Buzz ni un candidat historique");
+  attendu(erreurs(memeCandidat), "jamais Punks ni un candidat historique");
 
   const ancienCandidatExpansion = structuredClone(graph);
   ancienCandidatExpansion.recuperations[0].graphes.nouveau.contenu.release.sha =
@@ -4892,16 +4892,16 @@ test("le roll-forward rejoue E0 à E4 puis A0 à A4 sur un nouveau graphe", () =
     );
   attendu(
     erreurs(ancienCandidatExpansion),
-    "jamais Buzz ni un candidat historique",
+    "jamais Punks ni un candidat historique",
   );
 
   const baselineInterdite = structuredClone(graph);
   baselineInterdite.recuperations[0].graphes.nouveau.contenu.release.sha =
-    BASELINE_BUZZ;
+    BASELINE_PUNKS;
   baselineInterdite.recuperations[0].graphes.nouveau.sha256 = canonicalSha256(
     baselineInterdite.recuperations[0].graphes.nouveau.contenu,
   );
-  attendu(erreurs(baselineInterdite), "jamais Buzz ni un candidat historique");
+  attendu(erreurs(baselineInterdite), "jamais Punks ni un candidat historique");
 
   const grapheIncomplet = structuredClone(graph);
   delete grapheIncomplet.recuperations[0].graphes.nouveau.contenu.release
@@ -5079,7 +5079,7 @@ test("le certificat recalcule les treize contrôles obligatoires et produit un n
   assert.deepEqual(erreurs(graph), []);
 
   const recuperationAvecChampImplicite = structuredClone(graph);
-  recuperationAvecChampImplicite.recuperations[0]["retour-buzz"] = true;
+  recuperationAvecChampImplicite.recuperations[0]["retour-punks"] = true;
   attendu(
     erreurs(recuperationAvecChampImplicite),
     "récupération à schéma fermé",
@@ -5101,16 +5101,16 @@ test("le certificat recalcule les treize contrôles obligatoires et produit un n
   resignerCertificat(recuAvecChampImplicite.recuperations[0].certificat);
   attendu(erreurs(recuAvecChampImplicite), "Reçu d'éligibilité à schéma fermé");
 
-  const securiteAvecRedirectionBuzz = structuredClone(graph);
+  const securiteAvecRedirectionPunks = structuredClone(graph);
   const controleSecurite =
-    securiteAvecRedirectionBuzz.recuperations[0].certificat.controles.find(
+    securiteAvecRedirectionPunks.recuperations[0].certificat.controles.find(
       (controle) =>
-        controle.controle === "securite-isolation-effacement-sans-buzz",
+        controle.controle === "securite-isolation-effacement-sans-punks",
     );
-  controleSecurite.preuve.details["redirection-buzz"] = true;
-  resignerCertificat(securiteAvecRedirectionBuzz.recuperations[0].certificat);
+  controleSecurite.preuve.details["redirection-punks"] = true;
+  resignerCertificat(securiteAvecRedirectionPunks.recuperations[0].certificat);
   attendu(
-    erreurs(securiteAvecRedirectionBuzz),
+    erreurs(securiteAvecRedirectionPunks),
     "ne prouve pas son invariant exact",
   );
 
@@ -5618,18 +5618,18 @@ test("la référence historique utilise l'instant exact même le jour d'une acti
   assert.deepEqual(erreurs(graph), []);
 });
 
-test("aucun retour vers Buzz n'existe dans le vocabulaire fermé", () => {
+test("aucun retour vers Punks n'existe dans le vocabulaire fermé", () => {
   const graph = graphValide({
-    recuperations: [{ date: "2026-08-10", type: "retour-buzz", cible: "buzz" }],
+    recuperations: [{ date: "2026-08-10", type: "retour-punks", cible: "punks" }],
   });
   attendu(erreurs(graph), "type inconnu");
-  attendu(erreurs(graph), "exclut structurellement tout retour vers Buzz");
+  attendu(erreurs(graph), "exclut structurellement tout retour vers Punks");
   const graph2 = graphValide({
     recuperations: [
-      { date: "2026-08-10", type: "roll-forward", cible: "buzz" },
+      { date: "2026-08-10", type: "roll-forward", cible: "punks" },
     ],
   });
-  attendu(erreurs(graph2), "cible « buzz » inconnue");
+  attendu(erreurs(graph2), "cible « punks » inconnue");
   const graph3 = graphValide({
     releases: [candidatPreparation()],
     recuperations: [
@@ -5643,7 +5643,7 @@ test("les lignes de retrait préparent le candidat sans le déclarer scellé", (
   const contexte = contexteStandard({
     ledgerRetraits: [
       {
-        test: "crates/buzz-db/tests/x.rs",
+        test: "crates/punks-db/tests/x.rs",
         tranche: "tranche:1",
         verdict: "preuve-punks",
       },
@@ -5653,18 +5653,18 @@ test("les lignes de retrait préparent le candidat sans le déclarer scellé", (
 
   const graphAvecFaussePreuve = graphValide();
   graphAvecFaussePreuve.releases[0].retrait = {
-    "lignes-registre": ["crates/buzz-db/tests/x.rs"],
+    "lignes-registre": ["crates/punks-db/tests/x.rs"],
     "verdicts-manifeste": 1,
   };
   attendu(
     erreurs(graphAvecFaussePreuve, contexte),
-    "un candidat en preparation n'a pas encore retiré de chemin Buzz",
+    "un candidat en preparation n'a pas encore retiré de chemin Punks",
   );
 
   const contexteSansCandidate = contexteStandard({
     ledgerRetraits: [
       {
-        test: "crates/buzz-db/tests/x.rs",
+        test: "crates/punks-db/tests/x.rs",
         tranche: "tranche:2",
         verdict: "preuve-punks",
       },
@@ -5680,10 +5680,10 @@ test("le retrait physique du manifeste est prouvé pour les candidats scellés",
   const release = releaseScellee({ etat: "expansion", dates: ["2026-08-01"] });
   const contexte = contexteStandard({
     manifestActifs: [
-      { chemin: "crates/buzz-conformance/", verdict: "tranche:1" },
+      { chemin: "crates/punks-conformance/", verdict: "tranche:1" },
     ],
     trackedFiles: [
-      "crates/buzz-conformance/src/lib.rs",
+      "crates/punks-conformance/src/lib.rs",
       "scripts/release-graph-lib.mjs",
     ],
   });
@@ -5693,7 +5693,7 @@ test("le retrait physique du manifeste est prouvé pour les candidats scellés",
   );
   const contexteRetire = contexteStandard({
     manifestActifs: [
-      { chemin: "crates/buzz-conformance/", verdict: "tranche:1" },
+      { chemin: "crates/punks-conformance/", verdict: "tranche:1" },
     ],
     trackedFiles: ["scripts/release-graph-lib.mjs"],
   });

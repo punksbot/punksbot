@@ -17,7 +17,7 @@ pub(crate) const KNOWN_AGENT_BINARIES: &[&str] = &[
     "codex-acp",
     "codex_acp",
     "goose",
-    // buzz-dev-mcp's multicall personalities (rg, tree, buzz,
+    // punks-dev-mcp's multicall personalities (rg, tree, punks,
     // git-credential-nostr, git-sign-nostr) are short-lived per-tool-call
     // invocations — not listed here.
     "punks-dev-mcp",
@@ -125,7 +125,7 @@ pub(crate) fn process_belongs_to_us(_pid: u32) -> bool {
 
 /// The value stamped into the `PUNKS_MANAGED_AGENT` env var of every agent we
 /// spawn, identifying *which* desktop instance owns it. We use the app's bundle
-/// identifier (`xyz.block.buzz.app` for release, `xyz.block.buzz.app.dev`
+/// identifier (`xyz.block.punks.app` for release, `xyz.block.punks.app.dev`
 /// for `just dev`) because it is stable across restarts — a relaunched dev
 /// instance still recognizes its own previously-spawned agents as reclaimable,
 /// while never matching another instance's (e.g. a dev build never reaps a DMG
@@ -307,7 +307,7 @@ fn sigterm_then_sigkill(pids: &[i32]) {
 }
 
 /// Resolve orphan candidate PIDs to their actual process group IDs, dedupe,
-/// and signal the groups. An orphaned grandchild (e.g. `goose` or `buzz-dev-mcp`)
+/// and signal the groups. An orphaned grandchild (e.g. `goose` or `punks-dev-mcp`)
 /// whose harness has exited retains the harness's PGID — signaling that PGID
 /// kills the entire orphaned subtree. Falls back to the candidate PID itself
 /// when PGID resolution fails (process may have exited between detection and

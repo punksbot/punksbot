@@ -647,7 +647,7 @@ fn event_to_relay_json(event: &nostr::Event) -> String {
     format!("[\"EVENT\",{}]", nostr::JsonUtil::as_json(event))
 }
 
-/// Parse a relay EVENT message into a nostr 0.36 Event (buzz-core compatible).
+/// Parse a relay EVENT message into a nostr 0.36 Event (punks-core compatible).
 fn parse_relay_event(text: &str, sub_id: &str) -> Option<nostr::Event> {
     let arr: serde_json::Value = serde_json::from_str(text).ok()?;
     let arr = arr.as_array()?;

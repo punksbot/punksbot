@@ -21,7 +21,7 @@ use std::path::{Path, PathBuf};
 
 /// Sentinel path: `<app_data_dir.parent>/.<bundle_id>.reset-pending`
 /// where `bundle_id` is the file-name component of `app_data_dir`
-/// (e.g. `xyz.block.buzz.app` or `xyz.block.buzz.app.dev`).
+/// (e.g. `xyz.block.punks.app` or `xyz.block.punks.app.dev`).
 pub(crate) fn sentinel_path(app_data_dir: &Path) -> PathBuf {
     let bundle_id = app_data_dir
         .file_name()
@@ -98,7 +98,7 @@ pub(crate) struct ResetContext<'a> {
     /// present and non-empty, wiped alongside `app_data_dir` to prevent
     /// `migrate_legacy_app_data_dir` from restoring the old identity.
     pub legacy_app_data_dir: Option<PathBuf>,
-    /// Nest dir (`~/.buzz` or `~/.buzz-dev`) scoped to this build's variant,
+    /// Nest dir (`~/.punks` or `~/.punks-dev`) scoped to this build's variant,
     /// injected so unit tests can override without touching the global OnceLock.
     pub nest_dir: Option<PathBuf>,
     pub keychain: &'a dyn ResetKeychain,
@@ -211,7 +211,7 @@ pub(crate) fn run_boot_reset_with_keychain(ctx: ResetContext<'_>) -> ResetOutcom
         None
     };
 
-    // ── Step 3: remove nest, ~/.sprout, ~/.config/buzz-agent, CLI symlink ────
+    // ── Step 3: remove nest, ~/.sprout, ~/.config/punks-agent, CLI symlink ────
     if let Some(ref nest) = ctx.nest_dir {
         let _ = std::fs::remove_dir_all(nest);
     }
@@ -391,7 +391,7 @@ mod tests {
         let dir = tmp
             .path()
             .join("Application Support")
-            .join("xyz.block.buzz.app");
+            .join("xyz.block.punks.app");
         std::fs::create_dir_all(&dir).unwrap();
         dir
     }
@@ -564,15 +564,15 @@ mod tests {
         let tmp = TempDir::new().unwrap();
 
         // Create both nests.
-        let dev_nest = tmp.path().join(".buzz-dev");
-        let prod_nest = tmp.path().join(".buzz");
+        let dev_nest = tmp.path().join(".punks-dev");
+        let prod_nest = tmp.path().join(".punks");
         std::fs::create_dir_all(&dev_nest).unwrap();
         std::fs::create_dir_all(&prod_nest).unwrap();
 
         let app_data = tmp
             .path()
             .join("Application Support")
-            .join("xyz.block.buzz.app.dev");
+            .join("xyz.block.punks.app.dev");
         std::fs::create_dir_all(&app_data).unwrap();
         write_sentinel(&app_data).unwrap();
 
@@ -600,15 +600,15 @@ mod tests {
         let tmp = TempDir::new().unwrap();
 
         // Create both nests.
-        let dev_nest = tmp.path().join(".buzz-dev");
-        let prod_nest = tmp.path().join(".buzz");
+        let dev_nest = tmp.path().join(".punks-dev");
+        let prod_nest = tmp.path().join(".punks");
         std::fs::create_dir_all(&dev_nest).unwrap();
         std::fs::create_dir_all(&prod_nest).unwrap();
 
         let app_data = tmp
             .path()
             .join("Application Support")
-            .join("xyz.block.buzz.app");
+            .join("xyz.block.punks.app");
         std::fs::create_dir_all(&app_data).unwrap();
         write_sentinel(&app_data).unwrap();
 
@@ -715,7 +715,7 @@ mod tests {
         let app_data = tmp
             .path()
             .join("Application Support")
-            .join("xyz.block.buzz.app.dev");
+            .join("xyz.block.punks.app.dev");
         std::fs::create_dir_all(&app_data).unwrap();
         write_sentinel(&app_data).unwrap();
 
@@ -777,13 +777,13 @@ mod tests {
     fn test_crash_retry_cleans_prior_deterministic_trash() {
         let tmp = TempDir::new().unwrap();
         let app_support = tmp.path().join("Application Support");
-        let app_data = app_support.join("xyz.block.buzz.app");
+        let app_data = app_support.join("xyz.block.punks.app");
         std::fs::create_dir_all(&app_data).unwrap();
         write_sentinel(&app_data).unwrap();
 
         // Simulate a prior crashed boot: originals absent, deterministic trash
         // present from the crash (as if the process renamed then died).
-        let trash_app_dir = app_support.join("xyz.block.buzz.app.reset-trash");
+        let trash_app_dir = app_support.join("xyz.block.punks.app.reset-trash");
         std::fs::create_dir_all(&trash_app_dir).unwrap();
         std::fs::write(trash_app_dir.join("identity.key"), b"old-key").unwrap();
 
@@ -811,7 +811,7 @@ mod tests {
     fn test_keychain_fail_restores_all_then_retry_cleans() {
         let tmp = TempDir::new().unwrap();
         let app_support = tmp.path().join("Application Support");
-        let app_data = app_support.join("xyz.block.buzz.app");
+        let app_data = app_support.join("xyz.block.punks.app");
         std::fs::create_dir_all(&app_data).unwrap();
         std::fs::write(app_data.join("config.json"), b"{}").unwrap();
 
@@ -859,7 +859,7 @@ mod tests {
         assert!(!app_data.exists(), "app-data must be gone");
         assert!(!legacy.exists(), "legacy must be gone");
         // No trash directories should remain.
-        let trash_app = app_support.join("xyz.block.buzz.app.reset-trash");
+        let trash_app = app_support.join("xyz.block.punks.app.reset-trash");
         let trash_legacy = app_support.join("xyz.block.sprout.app.reset-trash");
         assert!(!trash_app.exists(), "app trash must be cleaned");
         assert!(!trash_legacy.exists(), "legacy trash must be cleaned");

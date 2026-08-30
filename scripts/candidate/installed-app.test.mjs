@@ -480,7 +480,7 @@ test("rejects missing stories, false UI claims, legacy traffic and tampering", a
         transport: "wss",
         method: "FOLLOW",
         origin: "wss://legacy.example",
-        path: "/buzz/relay",
+        path: "/punks/relay",
         status: 101,
       }),
     (value) => (value.accessibility.focus.resultat = "echec"),

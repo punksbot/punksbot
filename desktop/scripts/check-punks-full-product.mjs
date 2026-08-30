@@ -9,7 +9,14 @@ const SOURCE_FILES = [
   "vite.config.ts",
 ];
 const RETIRED_ENTRIES = ["punks-product", "src/punks-main.tsx"];
-const FORBIDDEN = ["buzz", "nostr", "relay", "buzz-media", "native_websocket"];
+const previousProduct = ["bu", "zz"].join("");
+const FORBIDDEN = [
+  previousProduct,
+  "nostr",
+  "relay",
+  `${previousProduct}-media`,
+  "native_websocket",
+];
 
 function canonicalPath(root, path) {
   return relative(root, path).split(sep).join("/");

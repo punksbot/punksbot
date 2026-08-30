@@ -17,7 +17,7 @@ const REMOVED_PATHS = [
   "desktop/src-tauri/src/deep_link.rs",
   "desktop/src-tauri/src/deep_link_tests.rs",
   "scripts/setup-desktop-test-data.sh",
-  "docs/buzz-entity-links.md",
+  "docs/punks-entity-links.md",
   "punks-desktop",
 ];
 
@@ -57,7 +57,7 @@ test("qualified T1 legacy edges are removed without deleting their containers", 
 
   assert.doesNotMatch(
     readFileSync(".env.example", "utf8"),
-    /VITE_BUZZ_FORCE_FRESH_ONBOARDING/u,
+    /VITE_PUNKS_FORCE_FRESH_ONBOARDING/u,
   );
   assert.doesNotMatch(
     readFileSync("pnpm-workspace.yaml", "utf8"),

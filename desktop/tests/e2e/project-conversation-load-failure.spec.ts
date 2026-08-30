@@ -20,14 +20,14 @@ import { installMockBridge, TEST_IDENTITIES } from "../helpers/bridge";
  */
 
 const DEFAULT_MOCK_PUBKEY = "deadbeef".repeat(8);
-const ROOT_CONTENT = `Projects conversation root ${DEFAULT_MOCK_PUBKEY} buzz`;
+const ROOT_CONTENT = `Projects conversation root ${DEFAULT_MOCK_PUBKEY} punks`;
 const REPLY_CONTENT = "Projects conversation reply body";
 
 // The projects surface is a preview feature — opt in before the app mounts.
 async function enableProjectsFeature(page: Page) {
   await page.addInitScript(() => {
     window.localStorage.setItem(
-      "buzz-feature-overrides-v1",
+      "punks-feature-overrides-v1",
       JSON.stringify({ projects: true }),
     );
   });
@@ -95,9 +95,9 @@ test.describe("project conversation load failure", () => {
           () =>
             typeof (
               window as typeof window & {
-                __BUZZ_E2E_EMIT_MOCK_MESSAGE__?: unknown;
+                __PUNKS_E2E_EMIT_MOCK_MESSAGE__?: unknown;
               }
-            ).__BUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function",
+            ).__PUNKS_E2E_EMIT_MOCK_MESSAGE__ === "function",
         ),
       )
       .toBe(true);
@@ -106,7 +106,7 @@ test.describe("project conversation load failure", () => {
         const now = Math.floor(Date.now() / 1000);
         const emit = (
           window as typeof window & {
-            __BUZZ_E2E_EMIT_MOCK_MESSAGE__: (input: {
+            __PUNKS_E2E_EMIT_MOCK_MESSAGE__: (input: {
               channelName: string;
               content: string;
               parentEventId?: string;
@@ -114,7 +114,7 @@ test.describe("project conversation load failure", () => {
               createdAt?: number;
             }) => { id: string };
           }
-        ).__BUZZ_E2E_EMIT_MOCK_MESSAGE__;
+        ).__PUNKS_E2E_EMIT_MOCK_MESSAGE__;
         const root = emit({
           channelName: "general",
           content: rootContent,
@@ -143,7 +143,7 @@ test.describe("project conversation load failure", () => {
     await page.getByTestId("projects-section-projects").click();
     const projectEntry = page
       .locator(
-        '[data-testid="project-card-buzz"], [data-testid="project-row-buzz"]',
+        '[data-testid="project-card-punks"], [data-testid="project-row-punks"]',
       )
       .first();
     await expect(projectEntry).toBeVisible({ timeout: 10_000 });

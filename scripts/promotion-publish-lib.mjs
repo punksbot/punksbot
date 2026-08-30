@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { parse as parseYaml } from "yaml";
 import {
-  BASELINE_BUZZ,
+  BASELINE_PUNKS,
   CHECKPOINT_RECUPERATION,
   canonicalJson,
   canonicalSha256,
@@ -350,7 +350,7 @@ function validerContextePublicationPromotion(
   if (
     graphe?.version !== 1 ||
     graphe?.["checkpoint-recuperation"] !== CHECKPOINT_RECUPERATION ||
-    graphe?.["baseline-buzz"] !== BASELINE_BUZZ ||
+    graphe?.["baseline-punks"] !== BASELINE_PUNKS ||
     graphe?.canal !== identite.canal ||
     bootstrap?.["premiere-activation"] !== "github-puis-r2" ||
     bootstrap?.reference !== "bootstrap-github-attestation-sha256"
@@ -720,7 +720,7 @@ function identiteReleaseOperationnelle(options, recu) {
   }
   if (
     !/^[0-9a-f]{40}$/.test(options.sha ?? "") ||
-    options.sha === BASELINE_BUZZ ||
+    options.sha === BASELINE_PUNKS ||
     options.sha === CHECKPOINT_RECUPERATION
   ) {
     throw new Error("un SHA Punks exact non réservé est exigé");

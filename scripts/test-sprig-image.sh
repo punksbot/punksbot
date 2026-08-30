@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-IMAGE="${1:-buzz-sprig:contract-test}"
+IMAGE="${1:-punks-sprig:contract-test}"
 if [[ "${SKIP_BUILD:-0}" != 1 ]]; then
     docker build --file Dockerfile.sprig --tag "$IMAGE" .
 fi
@@ -12,8 +12,8 @@ assert_run() {
 
 assert_run '
   command -v bash git update-ca-certificates >/dev/null
-  test "$(readlink /usr/local/bin/buzz-acp)" = sprig
-  for name in buzz-agent buzz-dev-mcp rg tree buzz git-credential-nostr git-sign-nostr; do
+  test "$(readlink /usr/local/bin/punks-acp)" = sprig
+  for name in punks-agent punks-dev-mcp rg tree punks git-credential-nostr git-sign-nostr; do
     test "$(readlink "/usr/local/bin/$name")" = sprig
   done
   test "$(git config --system gpg.x509.program)" = /usr/local/bin/git-sign-nostr
@@ -23,12 +23,12 @@ assert_run '
 '
 
 assert_run '
-  grep -Eq "^[[:space:]]*exec buzz-acp" /usr/local/bin/sprig-entrypoint
-  ! grep -Eq "^[[:space:]]*(buzz-acp|bash -c .*buzz-acp)" /usr/local/bin/sprig-entrypoint
+  grep -Eq "^[[:space:]]*exec punks-acp" /usr/local/bin/sprig-entrypoint
+  ! grep -Eq "^[[:space:]]*(punks-acp|bash -c .*punks-acp)" /usr/local/bin/sprig-entrypoint
 '
 
 docker run --rm --entrypoint /bin/bash \
-  -e BUZZ_RELAY_URL=wss://relay.example.test/ "$IMAGE" -ceu '
+  -e PUNKS_RELAY_URL=wss://relay.example.test/ "$IMAGE" -ceu '
     /usr/local/bin/sprig-entrypoint --help >/dev/null 2>&1 & pid=$!
     for _ in 1 2 3 4 5; do
       git config --global --get credential.https://relay.example.test/git.helper >/dev/null 2>&1 && break

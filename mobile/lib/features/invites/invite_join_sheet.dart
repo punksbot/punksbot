@@ -3,13 +3,13 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../shared/theme/theme.dart';
-import '../../shared/widgets/buzz_loading_indicator.dart';
+import '../../shared/widgets/punks_loading_indicator.dart';
 import '../../shared/widgets/modal_presentation.dart';
 import '../pairing/pairing_page.dart';
 import 'invite_join_provider.dart';
 
 Future<void> showInviteJoinSheet(BuildContext context, WidgetRef ref) {
-  return showBuzzModalBottomSheet<void>(
+  return showPunksModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
@@ -41,7 +41,7 @@ class InviteJoinSheet extends ConsumerWidget {
             Icon(LucideIcons.userPlus, size: 40, color: context.colors.primary),
             const SizedBox(height: Grid.sm),
             Text(
-              'Join this Buzz community?',
+              'Join this Punks community?',
               style: context.textTheme.titleLarge,
             ),
             const SizedBox(height: Grid.xxs),
@@ -118,7 +118,7 @@ class InviteJoinSheet extends ConsumerWidget {
                         ? SizedBox(
                             width: 16,
                             height: 16,
-                            child: BuzzLoadingIndicator(
+                            child: PunksLoadingIndicator(
                               size: 16,
                               semanticLabel: 'Joining community',
                             ),

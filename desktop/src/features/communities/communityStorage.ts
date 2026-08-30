@@ -52,7 +52,7 @@ export function migrateLegacyCommunityStorage(
     }
   } catch (error) {
     // WebKit throws SecurityError from getItem when storage access is denied
-    // for the origin (block/punks#5078). Fencing here so the app can still
+    // for the origin (punksbot/punksbot#5078). Fencing here so the app can still
     // boot with an empty/default community list instead of a blank window.
     console.warn(
       "[communityStorage] migrateLegacyCommunityStorage failed (storage denied?):",
@@ -116,7 +116,7 @@ export function loadCommunityDiscoveryAfterLeave(
   try {
     return storage.getItem(COMMUNITY_DISCOVERY_AFTER_LEAVE_KEY) === "1";
   } catch (error) {
-    // block/punks#5078 — storage access can be denied for the origin; degrade
+    // punksbot/punksbot#5078 — storage access can be denied for the origin; degrade
     // to the default ("didn't just leave") instead of crashing the boot path.
     console.warn(
       "[communityStorage] loadCommunityDiscoveryAfterLeave failed:",
@@ -152,7 +152,7 @@ export function clearCommunityStorage(storage: Storage = localStorage): void {
 
 export function loadActiveCommunityId(): string | null {
   migrateLegacyCommunityStorage();
-  // block/punks#5078 — WebKit can throw SecurityError from a denied-storage
+  // punksbot/punksbot#5078 — WebKit can throw SecurityError from a denied-storage
   // getItem. Fail closed so the boot path renders the default community UI
   // instead of unmounting the root.
   return getStorageItem(ACTIVE_COMMUNITY_KEY);
@@ -228,7 +228,7 @@ export function initFirstCommunity(
     pubkey,
     addedAt: new Date().toISOString(),
   };
-  // block/punks#5078 — read the prior active id through the throw-safe helper;
+  // punksbot/punksbot#5078 — read the prior active id through the throw-safe helper;
   // a denied-storage origin would otherwise kill onboarding before a single
   // write is attempted.
   const previousActiveCommunityId = getStorageItem(ACTIVE_COMMUNITY_KEY);

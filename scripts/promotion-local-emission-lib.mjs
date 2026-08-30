@@ -1,6 +1,6 @@
 /** Validation locale de la paire attestation/Reçu avant publication. */
 import {
-  BASELINE_BUZZ,
+  BASELINE_PUNKS,
   CHECKPOINT_RECUPERATION,
   canonicalSha256,
 } from "./migration-manifest-lib.mjs";
@@ -65,7 +65,7 @@ function validerAttestationLocale(attestation) {
       "l'attestation locale complète doit lier le hash canonique du dossier de preuve",
     );
   }
-  if (attestation["checkpoint-baseline"] !== BASELINE_BUZZ) {
+  if (attestation["checkpoint-baseline"] !== BASELINE_PUNKS) {
     throw new Error(
       "l'attestation locale complète doit lier le checkpoint de baseline exact",
     );
@@ -210,11 +210,11 @@ export function validerPaireLocale(attestation, recu) {
     );
   }
   if (
-    attestation.sha === BASELINE_BUZZ ||
+    attestation.sha === BASELINE_PUNKS ||
     attestation.sha === CHECKPOINT_RECUPERATION
   ) {
     throw new Error(
-      "le SHA de publication Punks doit être distinct des checkpoints Buzz interdits",
+      "le SHA de publication Punks doit être distinct des checkpoints Punks interdits",
     );
   }
   validerAttestationLocale(attestation);

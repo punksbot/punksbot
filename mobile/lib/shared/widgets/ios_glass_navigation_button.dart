@@ -53,7 +53,7 @@ class IosGlassNavigationButton extends HookWidget {
     this.nativeViewSuppressed,
   });
 
-  static const viewType = 'buzz/navigation_glass';
+  static const viewType = 'punks/navigation_glass';
 
   /// The SF Symbol-style glyph rendered by the native control.
   final IosGlassNavigationIcon icon;

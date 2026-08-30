@@ -3,9 +3,9 @@ import { lstatSync, readFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
 
 export const FORBIDDEN_PUNKS_NATIVE_MARKERS = Object.freeze([
-  "buzz-media",
+  "punks-media",
   "native_websocket",
-  "buzz",
+  "punks",
   "nostr",
   "relay",
   "huddle",

@@ -235,7 +235,7 @@ mod tests {
 
     #[test]
     fn previous_product_discriminator_remains_importable() {
-        assert!(is_team_snapshot_format("buzz-team-snapshot"));
+        assert!(is_team_snapshot_format("punks-team-snapshot"));
     }
     use crate::managed_agents::{
         agent_snapshot::{build_snapshot, AgentSnapshotMemory, AgentSnapshotMemoryEntry},

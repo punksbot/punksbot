@@ -53,7 +53,7 @@ final class JumpToLatestGlassButtonPlatformView: NSObject, FlutterPlatformView {
   ) {
     containerView = UIView(frame: frame)
     channel = FlutterMethodChannel(
-      name: "buzz/jump_to_latest_glass/\(viewId)",
+      name: "punks/jump_to_latest_glass/\(viewId)",
       binaryMessenger: messenger
     )
     super.init()

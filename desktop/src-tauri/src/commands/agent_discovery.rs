@@ -170,7 +170,7 @@ pub async fn save_custom_harness(
 /// Remove a user-defined harness definition from `<app-data>/custom_harnesses/`.
 ///
 /// Only `source: custom` harnesses may be deleted. Attempting to delete a
-/// built-in id (goose, claude, codex, buzz-agent) returns an error without
+/// built-in id (goose, claude, codex, punks-agent) returns an error without
 /// touching the filesystem.
 #[tauri::command]
 pub async fn delete_custom_harness(id: String, app: tauri::AppHandle) -> Result<(), String> {
@@ -710,7 +710,7 @@ fn install_shell_args(
         "-c".into(),
         format!("export PATH=\"$1\"; set -o pipefail; {command}").into(),
         // `$0` is the shell-name slot, so the PATH must be the second positional.
-        "buzz-install".into(),
+        "punks-install".into(),
         path.to_os_string(),
     ]
 }
@@ -1415,8 +1415,8 @@ mod tests {
     /// always fires. See `install_shell_args` for the full reasoning.
     #[test]
     fn test_install_shell_args_shape_per_platform() {
-        let composed = std::ffi::OsString::from("/buzz/node/bin:/usr/bin");
-        let windows_composed = std::ffi::OsString::from(r"C:\buzz\node;C:\Windows\system32");
+        let composed = std::ffi::OsString::from("/punks/node/bin:/usr/bin");
+        let windows_composed = std::ffi::OsString::from(r"C:\punks\node;C:\Windows\system32");
         let bare = ["-l", "-c", "set -o pipefail; echo hi"].map(std::ffi::OsString::from);
 
         assert_eq!(
@@ -1425,8 +1425,8 @@ mod tests {
                 "-l",
                 "-c",
                 "export PATH=\"$1\"; set -o pipefail; echo hi",
-                "buzz-install",
-                "/buzz/node/bin:/usr/bin",
+                "punks-install",
+                "/punks/node/bin:/usr/bin",
             ]
             .map(std::ffi::OsString::from),
             "Unix must re-export the composed PATH after login init"
@@ -1454,7 +1454,7 @@ mod tests {
         let home = tempfile::tempdir().expect("temp HOME");
         std::fs::write(home.path().join(".bash_profile"), "export PATH=\n")
             .expect("plant a hostile login profile");
-        let composed = std::ffi::OsString::from("/buzz/sentinel/bin:/usr/bin:/bin");
+        let composed = std::ffi::OsString::from("/punks/sentinel/bin:/usr/bin:/bin");
 
         // `echo` is a shell builtin, so the child needs no PATH to report one.
         let out = std::process::Command::new("/bin/bash")
@@ -1471,7 +1471,7 @@ mod tests {
 
         let path = String::from_utf8_lossy(&out.stdout);
         assert!(
-            path.contains("/buzz/sentinel/bin"),
+            path.contains("/punks/sentinel/bin"),
             "the composed PATH must survive login init; got: {path:?}"
         );
     }
@@ -1602,13 +1602,13 @@ mod tests {
         );
     }
 
-    /// buzz-agent has no install commands on any platform.
+    /// punks-agent has no install commands on any platform.
     #[test]
     fn test_punks_agent_has_no_install_commands() {
-        let buzz = crate::managed_agents::known_acp_runtime_exact("punks-agent").unwrap();
+        let punks = crate::managed_agents::known_acp_runtime_exact("punks-agent").unwrap();
         assert!(
-            buzz.cli_install_commands_for_os().is_empty(),
-            "buzz-agent ships with the app — must never have install commands"
+            punks.cli_install_commands_for_os().is_empty(),
+            "punks-agent ships with the app — must never have install commands"
         );
     }
 
@@ -1714,7 +1714,7 @@ mod tests {
     #[test]
     fn test_powershell_command_argv_exact() {
         // Catalog format: body wrapped in one outer double-quote pair (Bash-layer serialization).
-        let body = "$ErrorActionPreference='Stop'; $installer=Join-Path $env:TEMP 'buzz-install-codex.ps1'; Invoke-RestMethod https://chatgpt.com/codex/install.ps1 -OutFile $installer; & $installer; exit $LASTEXITCODE";
+        let body = "$ErrorActionPreference='Stop'; $installer=Join-Path $env:TEMP 'punks-install-codex.ps1'; Invoke-RestMethod https://chatgpt.com/codex/install.ps1 -OutFile $installer; & $installer; exit $LASTEXITCODE";
         let cmd = super::install_powershell_command(&format!(
             r#"powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "{body}""#
         ));
@@ -1749,7 +1749,7 @@ mod tests {
     #[test]
     fn test_powershell_command_claude_catalog_dequoted() {
         let cmd = super::install_powershell_command(
-            r#"powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $installer=Join-Path $env:TEMP 'buzz-install-claude.ps1'; Invoke-RestMethod https://claude.ai/install.ps1 -OutFile $installer; & $installer; exit $LASTEXITCODE""#,
+            r#"powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $installer=Join-Path $env:TEMP 'punks-install-claude.ps1'; Invoke-RestMethod https://claude.ai/install.ps1 -OutFile $installer; & $installer; exit $LASTEXITCODE""#,
         );
         assert_eq!(
             cmd.get_args()
@@ -1760,7 +1760,7 @@ mod tests {
                 "-ExecutionPolicy",
                 "Bypass",
                 "-Command",
-                "$ErrorActionPreference='Stop'; $installer=Join-Path $env:TEMP 'buzz-install-claude.ps1'; Invoke-RestMethod https://claude.ai/install.ps1 -OutFile $installer; & $installer; exit $LASTEXITCODE",
+                "$ErrorActionPreference='Stop'; $installer=Join-Path $env:TEMP 'punks-install-claude.ps1'; Invoke-RestMethod https://claude.ai/install.ps1 -OutFile $installer; & $installer; exit $LASTEXITCODE",
             ],
             "Claude catalog command must be dequoted correctly"
         );
@@ -1775,7 +1775,7 @@ mod tests {
     #[test]
     fn test_powershell_command_goose_catalog_dequoted() {
         let cmd = super::install_powershell_command(
-            r#"powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$env:CONFIGURE='false'; $ErrorActionPreference='Stop'; $installer=Join-Path $env:TEMP 'buzz-install-goose.ps1'; Invoke-RestMethod https://raw.githubusercontent.com/aaif-goose/goose/main/download_cli.ps1 -OutFile $installer; & $installer; exit $LASTEXITCODE""#,
+            r#"powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$env:CONFIGURE='false'; $ErrorActionPreference='Stop'; $installer=Join-Path $env:TEMP 'punks-install-goose.ps1'; Invoke-RestMethod https://raw.githubusercontent.com/aaif-goose/goose/main/download_cli.ps1 -OutFile $installer; & $installer; exit $LASTEXITCODE""#,
         );
         assert_eq!(
             cmd.get_args()
@@ -1786,14 +1786,14 @@ mod tests {
                 "-ExecutionPolicy",
                 "Bypass",
                 "-Command",
-                "$env:CONFIGURE='false'; $ErrorActionPreference='Stop'; $installer=Join-Path $env:TEMP 'buzz-install-goose.ps1'; Invoke-RestMethod https://raw.githubusercontent.com/aaif-goose/goose/main/download_cli.ps1 -OutFile $installer; & $installer; exit $LASTEXITCODE",
+                "$env:CONFIGURE='false'; $ErrorActionPreference='Stop'; $installer=Join-Path $env:TEMP 'punks-install-goose.ps1'; Invoke-RestMethod https://raw.githubusercontent.com/aaif-goose/goose/main/download_cli.ps1 -OutFile $installer; & $installer; exit $LASTEXITCODE",
             ],
             "Goose catalog command must dequote with bare $env: (no backslash before $)"
         );
     }
 }
 
-/// Returns the Windows-only Git Bash prerequisite used by buzz-agent's shell MCP.
+/// Returns the Windows-only Git Bash prerequisite used by punks-agent's shell MCP.
 /// `None` on other platforms keeps the shared Doctor surfaces platform-neutral.
 #[tauri::command]
 pub async fn discover_git_bash_prerequisite(

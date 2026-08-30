@@ -966,7 +966,7 @@ pub(crate) fn classify_runtime(
 /// The oldest `codex-acp` version supported by Punks managed agents.
 ///
 /// Older 1.x adapters are detected successfully, but can still bundle a Codex runtime
-/// that does not reliably give `buzz` CLI subprocesses outbound relay access.
+/// that does not reliably give `punks` CLI subprocesses outbound relay access.
 ///
 /// Bump policy: raise this only when a newer adapter fixes a defect that breaks managed
 /// agents, and only to a version already published on npm — every user below the floor is

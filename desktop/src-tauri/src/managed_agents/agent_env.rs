@@ -1,6 +1,6 @@
 //! Build-time agent env passthrough.
 //!
-//! Internal builds (buzz-releases) bake arbitrary `KEY=VALUE` pairs into the
+//! Internal builds (punks-releases) bake arbitrary `KEY=VALUE` pairs into the
 //! binary via `PUNKS_BUILD_AGENT_ENV` (base64-encoded, newline-delimited).
 //! OSS builds leave the compile-time var unset — nothing is injected.
 
@@ -29,7 +29,7 @@ pub(super) fn idle_pool_sleep_env(lazy: bool) -> &'static str {
 
 /// Return the baked-in build-time env pairs as a map.
 ///
-/// Internal builds (buzz-releases) bake provider/model defaults and arbitrary
+/// Internal builds (punks-releases) bake provider/model defaults and arbitrary
 /// `KEY=VALUE` pairs into the binary at compile time. This function returns
 /// those pairs as an owned map so callers can fold them into an in-process env
 /// at the **lowest** precedence layer — user/persona values layered on top

@@ -203,11 +203,11 @@ fn surface_reports_mcp_specific_config_path() {
 fn goose_mcp_config_path_follows_path_root_override() {
     let record = test_record();
     let runtime = test_runtime();
-    let surface = with_goose_path_root(Some("/tmp/buzz-goose-root"), || {
+    let surface = with_goose_path_root(Some("/tmp/punks-goose-root"), || {
         read_config_surface(&record, Some(runtime), None, &no_tiers(), None)
     });
 
-    let expected_path = Path::new("/tmp/buzz-goose-root")
+    let expected_path = Path::new("/tmp/punks-goose-root")
         .join("config")
         .join("config.yaml");
     assert_eq!(
@@ -611,9 +611,9 @@ fn extra_env_var_skipped_when_already_in_file_config_extra() {
     );
 }
 
-// ── buzz-agent normalized env-var field tests ─────────────────────────────────
+// ── punks-agent normalized env-var field tests ─────────────────────────────────
 //
-// buzz-agent uses env vars (not a config file) for max_output_tokens and
+// punks-agent uses env vars (not a config file) for max_output_tokens and
 // context_limit. build_numeric_env_field must surface these as PunksExplicit
 // when the env var is present in record.env_vars, and must not double-surface
 // them in the advanced tier.
@@ -698,7 +698,7 @@ fn punks_agent_context_limit_from_env_is_punks_explicit() {
 
 #[test]
 fn punks_agent_max_tokens_absent_when_no_env_var_or_file() {
-    // buzz-agent has no config file, and env var is not set.
+    // punks-agent has no config file, and env var is not set.
     let record = test_record();
     let runtime = punks_agent_runtime();
 
@@ -820,7 +820,7 @@ fn missing_optional_provider_stays_hidden() {
 
 fn punks_agent_rt() -> &'static KnownAcpRuntime {
     crate::managed_agents::discovery::known_acp_runtime_exact("punks-agent")
-        .expect("buzz-agent must be in catalog")
+        .expect("punks-agent must be in catalog")
 }
 
 /// AC-1: no record effort, global env has effort → GlobalDefault.

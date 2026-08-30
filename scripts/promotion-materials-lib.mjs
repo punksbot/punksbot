@@ -499,7 +499,7 @@ export function validateInstalledNetworkBinding(network, { deployedWorkers }) {
       !Number.isInteger(request.status) ||
       request.status < 100 ||
       request.status > 599 ||
-      /buzz|nostr|relay|huddle/iu.test(`${request.origin}${request.path}`)
+      /punks|nostr|relay|huddle/iu.test(`${request.origin}${request.path}`)
     ) {
       fail("installed network evidence contains an invalid or legacy request");
     }

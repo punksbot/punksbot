@@ -33,7 +33,7 @@
  * Utilisé par scripts/check-promotion-dossier.mjs et ses tests.
  */
 import {
-  BASELINE_BUZZ,
+  BASELINE_PUNKS,
   CHECKPOINT_RECUPERATION,
 } from "./migration-manifest-lib.mjs";
 import { construireEmissionAttestation } from "./promotion-attestation-lib.mjs";
@@ -165,8 +165,8 @@ export function validerDossier(dossier, contexte = {}) {
   if (dossier["checkpoint-recuperation"] !== CHECKPOINT_RECUPERATION) {
     push("en-tête invalide : checkpoint de récupération invalide");
   }
-  if (dossier["baseline-buzz"] !== BASELINE_BUZZ) {
-    push("en-tête invalide : baseline Buzz invalide");
+  if (dossier["baseline-punks"] !== BASELINE_PUNKS) {
+    push("en-tête invalide : baseline Punks invalide");
   }
 
   const candidat = dossier.candidat;
@@ -177,11 +177,11 @@ export function validerDossier(dossier, contexte = {}) {
   ) {
     push("candidat : SHA exact (40 hexadécimaux) manquant");
   } else if (
-    candidat.sha === BASELINE_BUZZ ||
+    candidat.sha === BASELINE_PUNKS ||
     candidat.sha === CHECKPOINT_RECUPERATION
   ) {
     push(
-      "candidat : un SHA Punks doit être distinct des checkpoints Buzz interdits",
+      "candidat : un SHA Punks doit être distinct des checkpoints Punks interdits",
     );
   }
   if (!Number.isInteger(candidat?.tranche) || candidat?.tranche < 1) {

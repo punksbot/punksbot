@@ -732,7 +732,7 @@ pub(super) async fn upload_media_bytes_inner(
         let cancellation = cancellation.cloned();
         tokio::task::spawn_blocking(move || -> Result<(Vec<u8>, Option<Vec<u8>>), String> {
             let tmp_input =
-                std::env::temp_dir().join(format!("buzz-drop-{}", uuid::Uuid::new_v4()));
+                std::env::temp_dir().join(format!("punks-drop-{}", uuid::Uuid::new_v4()));
             // Cleanup guard: remove temp file on ALL exit paths (including write failure).
             let result = (|| {
                 std::fs::write(&tmp_input, &data)
@@ -752,7 +752,7 @@ pub(super) async fn upload_media_bytes_inner(
         let cancellation = cancellation.cloned();
         tokio::task::spawn_blocking(move || -> Result<(Vec<u8>, Option<Vec<u8>>), String> {
             let tmp_input =
-                std::env::temp_dir().join(format!("buzz-drop-{}", uuid::Uuid::new_v4()));
+                std::env::temp_dir().join(format!("punks-drop-{}", uuid::Uuid::new_v4()));
             // Cleanup guard: remove temp file on ALL exit paths (including write failure).
             let result = (|| {
                 std::fs::write(&tmp_input, &data)

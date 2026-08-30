@@ -87,13 +87,13 @@ const packages = new Set(
     .filter(Boolean),
 );
 const forbiddenPackages = [
-  "buzz-agent",
-  "buzz-core",
-  "buzz-persona",
-  "buzz-sdk",
-  "buzz-terminal",
-  "buzz-voice",
-  "buzz-ws-client",
+  "punks-agent",
+  "punks-core",
+  "punks-persona",
+  "punks-sdk",
+  "punks-terminal",
+  "punks-voice",
+  "punks-ws-client",
   "nostr",
   "nostr-sdk",
   "rodio",
@@ -138,7 +138,7 @@ if (
 }
 
 console.log(
-  `Punks native graph verified: ${packages.size} packages, no Buzz/Nostr/media/agent runtime packages.`,
+  `Punks native graph verified: ${packages.size} packages, no Punks/Nostr/media/agent runtime packages.`,
 );
 if (nativeArtifact) {
   const proof = verifyPunksNativeArtifact(nativeArtifact);

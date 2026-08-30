@@ -1580,7 +1580,7 @@ const mutations = [
       const step = workflowStep(workflow.jobs.build, "build_macos");
       step.run = step.run.replace(
         "--features punks-desktop-social-loop",
-        "--features buzz-desktop",
+        "--features punks-desktop",
       );
     },
     error: /punks-desktop-social-loop/,

@@ -391,7 +391,7 @@ macro_rules! status_or_fail {
 
 /// Load the private key from env vars or git config keyfile.
 ///
-/// Priority: NOSTR_PRIVATE_KEY > BUZZ_PRIVATE_KEY > git config nostr.keyfile
+/// Priority: NOSTR_PRIVATE_KEY > PUNKS_PRIVATE_KEY > git config nostr.keyfile
 ///
 /// Returns a zeroize-on-drop string containing the raw key material.
 fn load_key() -> Result<zeroize::Zeroizing<String>, Error> {
@@ -415,21 +415,21 @@ fn load_key() -> Result<zeroize::Zeroizing<String>, Error> {
         }
     }
 
-    // 2. BUZZ_PRIVATE_KEY
-    if let Ok(mut val) = std::env::var("BUZZ_PRIVATE_KEY") {
+    // 2. PUNKS_PRIVATE_KEY
+    if let Ok(mut val) = std::env::var("PUNKS_PRIVATE_KEY") {
         // Cap at 128 bytes: nsec1 bech32 is ~63 chars, hex is 64 chars.
         // 128 bytes is generous headroom; anything larger is malformed input.
         if val.len() > 128 {
             val.zeroize();
-            std::env::remove_var("BUZZ_PRIVATE_KEY");
+            std::env::remove_var("PUNKS_PRIVATE_KEY");
             return Err(Error::Fatal(
-                "BUZZ_PRIVATE_KEY exceeds 128-byte size limit".to_string(),
+                "PUNKS_PRIVATE_KEY exceeds 128-byte size limit".to_string(),
             ));
         }
         let trimmed = val.trim().to_string();
         val.zeroize();
         // Remove from process environment to minimize exposure window
-        std::env::remove_var("BUZZ_PRIVATE_KEY");
+        std::env::remove_var("PUNKS_PRIVATE_KEY");
         if !trimmed.is_empty() {
             return Ok(zeroize::Zeroizing::new(trimmed));
         }
@@ -438,7 +438,7 @@ fn load_key() -> Result<zeroize::Zeroizing<String>, Error> {
     // 3. nostr.keyfile git config
     let path = git_config("nostr.keyfile").ok_or_else(|| {
         Error::Fatal(
-            "no key available: set NOSTR_PRIVATE_KEY, BUZZ_PRIVATE_KEY, \
+            "no key available: set NOSTR_PRIVATE_KEY, PUNKS_PRIVATE_KEY, \
              or git config nostr.keyfile"
                 .to_string(),
         )
@@ -664,7 +664,7 @@ fn git_config(key: &str) -> Option<String> {
     let mut child = process::Command::new("git")
         .args(["config", "--get", key])
         .env_remove("NOSTR_PRIVATE_KEY")
-        .env_remove("BUZZ_PRIVATE_KEY")
+        .env_remove("PUNKS_PRIVATE_KEY")
         .stdout(process::Stdio::piped())
         .stderr(process::Stdio::null())
         .spawn()
@@ -718,7 +718,7 @@ fn git_config_strict(key: &str) -> Result<Option<String>, String> {
     let mut child = process::Command::new("git")
         .args(["config", "--get", key])
         .env_remove("NOSTR_PRIVATE_KEY")
-        .env_remove("BUZZ_PRIVATE_KEY")
+        .env_remove("PUNKS_PRIVATE_KEY")
         .stdout(process::Stdio::piped())
         .stderr(process::Stdio::null())
         .spawn()

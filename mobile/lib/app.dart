@@ -22,7 +22,7 @@ import 'shared/emoji/emoji_burst.dart';
 import 'shared/relay/relay.dart';
 import 'shared/read_state/read_state_provider.dart';
 import 'shared/theme/theme.dart';
-import 'shared/widgets/buzz_loading_indicator.dart';
+import 'shared/widgets/punks_loading_indicator.dart';
 
 /// App-shell projection that joins Activity state for the Home navigation.
 ///
@@ -70,11 +70,11 @@ class App extends HookConsumerWidget {
     // Derive the gradient from the themes that produced each color scheme.
     // This keeps fallbacks and pinned brightness changes aligned with the
     // rendered palette rather than the raw persisted selection.
-    final buzzLightGradient = buzzTopSectionGradient(
+    final punksLightGradient = punksTopSectionGradient(
       resolved.lightTheme?.name ?? '',
       lightScheme.brightness,
     );
-    final buzzDarkGradient = buzzTopSectionGradient(
+    final punksDarkGradient = punksTopSectionGradient(
       resolved.darkTheme?.name ?? '',
       darkScheme.brightness,
     );
@@ -90,7 +90,7 @@ class App extends HookConsumerWidget {
       hasUnreadInbox = ref.watch(_unreadInboxItemCountProvider) > 0;
     }
 
-    // Start listening for buzz:// links immediately (even pre-auth) so a
+    // Start listening for punks:// links immediately (even pre-auth) so a
     // cold-start link survives until the authenticated UI can dispatch it.
     ref.watch(pendingDeepLinkProvider);
 
@@ -113,14 +113,14 @@ class App extends HookConsumerWidget {
     });
 
     return MaterialApp(
-      title: 'Buzz',
+      title: 'Punks',
       theme: AppTheme.light(
         colorScheme: lightScheme,
-        topSectionGradient: buzzLightGradient,
+        topSectionGradient: punksLightGradient,
       ),
       darkTheme: AppTheme.dark(
         colorScheme: darkScheme,
-        topSectionGradient: buzzDarkGradient,
+        topSectionGradient: punksDarkGradient,
       ),
       themeMode: effectiveMode,
       // Above the navigator, so a burst keeps playing over a pushed thread page
@@ -162,7 +162,7 @@ class _SplashScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return const Scaffold(
       body: Center(
-        child: BuzzLoadingIndicator(size: 56, semanticLabel: 'Starting Buzz'),
+        child: PunksLoadingIndicator(size: 56, semanticLabel: 'Starting Punks'),
       ),
     );
   }

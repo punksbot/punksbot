@@ -22,7 +22,7 @@ import {
   STAGING_DEPLOYMENT_PROOF_SCHEMA,
 } from "../cloudflare/scripts/staging-deployment-proof.mjs";
 import {
-  BASELINE_BUZZ,
+  BASELINE_PUNKS,
   CHECKPOINT_RECUPERATION,
   canonicalJson,
   canonicalSha256,
@@ -100,12 +100,12 @@ function technologieLecteurEcran(plateforme) {
 }
 export const LIGNES_REGISTRE = [
   {
-    test: "crates/buzz-agent/tests/golden.rs",
+    test: "crates/punks-agent/tests/golden.rs",
     tranche: "tranche:1",
     verdict: "preuve-punks",
   },
   {
-    test: "crates/buzz-db/tests/isolement.rs",
+    test: "crates/punks-db/tests/isolement.rs",
     tranche: "tranche:1",
     verdict: "difference-intentionnelle",
   },
@@ -437,9 +437,9 @@ export function preuvesPourDossier(dossier) {
         frontendSha256: scanDocument.frontend.sha256,
         fichiersFrontend: scanDocument.frontend.files.length,
         marqueursInterdits: [
-          "buzz-media",
+          "punks-media",
           "native_websocket",
-          "buzz",
+          "punks",
           "nostr",
           "relay",
           "huddle",
@@ -780,7 +780,7 @@ export function dossierValide(surcharges = {}) {
   const dossier = {
     version: 1,
     "checkpoint-recuperation": CHECKPOINT_RECUPERATION,
-    "baseline-buzz": BASELINE_BUZZ,
+    "baseline-punks": BASELINE_PUNKS,
     candidat: { sha: SHA_CANDIDAT, tranche: 1 },
     profil: {
       id: PROFIL_PROMOTION.id,

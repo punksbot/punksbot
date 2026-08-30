@@ -64,7 +64,7 @@ const CANONICAL_SKILL_DIR: &str = ".agents/skills/punks";
 const NEST_DIR_PROD: &str = ".punks";
 
 /// Nest directory name for dev builds. Dev builds (those whose Tauri app-data
-/// directory name starts with `"xyz.block.buzz.app.dev"`) use a separate nest
+/// directory name starts with `"xyz.block.punks.app.dev"`) use a separate nest
 /// so that the DMG and dev-build instances don't clobber each other's
 /// `.repos-dir` dotfile and `REPOS` symlink.
 const NEST_DIR_DEV: &str = ".punks-dev";
@@ -85,7 +85,7 @@ static NEST_DIR: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new
 /// `OnceLock` is set exactly once.
 ///
 /// `is_dev` should be `true` when the running binary is a dev build — i.e.
-/// when the Tauri app-data directory name starts with `"xyz.block.buzz.app.dev"`.
+/// when the Tauri app-data directory name starts with `"xyz.block.punks.app.dev"`.
 /// Pass `false` for production (signed DMG) builds.
 pub fn init_nest_dir(is_dev: bool) {
     let suffix = if is_dev { NEST_DIR_DEV } else { NEST_DIR_PROD };
@@ -331,8 +331,8 @@ pub fn cli_link_name(is_dev: bool) -> &'static str {
 /// overwrite each other's target — the same isolation that separates the
 /// `~/.punks` and `~/.punks-dev` nests (see [`NEST_DIR_DEV`]).
 ///
-/// On every boot: replaces any existing symlink unconditionally (the `buzz` /
-/// `buzz-dev` name is our namespace), creates a new one if absent, and leaves
+/// On every boot: replaces any existing symlink unconditionally (the `punks` /
+/// `punks-dev` name is our namespace), creates a new one if absent, and leaves
 /// regular files alone to avoid clobbering a user-compiled binary.
 ///
 /// Non-fatal: callers should ignore errors — the symlink is a convenience

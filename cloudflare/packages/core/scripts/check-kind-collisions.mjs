@@ -4,8 +4,8 @@ import { fileURLToPath } from "node:url";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repositoryRoot = resolve(packageRoot, "../../..");
-const buzzRegistry = await readFile(
-  resolve(repositoryRoot, "crates/buzz-core/src/kind.rs"),
+const punksRegistry = await readFile(
+  resolve(repositoryRoot, "crates/punks-core/src/kind.rs"),
   "utf8",
 );
 const punksRegistry = await readFile(
@@ -13,8 +13,8 @@ const punksRegistry = await readFile(
   "utf8",
 );
 
-const buzzKinds = new Set(
-  [...buzzRegistry.matchAll(/pub const [A-Z0-9_]+: u32 = ([0-9_]+);/g)].map(
+const punksKinds = new Set(
+  [...punksRegistry.matchAll(/pub const [A-Z0-9_]+: u32 = ([0-9_]+);/g)].map(
     (match) => Number(match[1].replaceAll("_", "")),
   ),
 );
@@ -32,8 +32,8 @@ if (new Set(punksKinds).size !== punksKinds.length) {
   throw new Error("Punks event kind registry contains a duplicate value");
 }
 for (const kind of punksKinds) {
-  if (buzzKinds.has(kind)) {
-    throw new Error(`Punks event kind ${kind} collides with frozen Buzz`);
+  if (punksKinds.has(kind)) {
+    throw new Error(`Punks event kind ${kind} collides with frozen Punks`);
   }
   if (kind < 50_000 || kind > 59_999) {
     throw new Error(
@@ -43,5 +43,5 @@ for (const kind of punksKinds) {
 }
 
 console.log(
-  `Verified ${punksKinds.length} Punks kinds against ${buzzKinds.size} Buzz constants.`,
+  `Verified ${punksKinds.length} Punks kinds against ${punksKinds.size} Punks constants.`,
 );

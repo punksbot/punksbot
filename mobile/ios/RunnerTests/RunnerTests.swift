@@ -3,7 +3,7 @@ import Flutter
 import UIKit
 import XCTest
 
-@testable import Buzz
+@testable import Punks
 
 class RunnerTests: XCTestCase {
 

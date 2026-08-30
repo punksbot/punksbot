@@ -1,35 +1,35 @@
 [workspace]
 members = [
-    "crates/buzz-relay",
-    "crates/buzz-core",
-    "crates/buzz-conformance",
-    "crates/buzz-push-gateway",
-    "crates/buzz-db",
-    "crates/buzz-pubsub",
-    "crates/buzz-auth",
-    "crates/buzz-search",
-    "crates/buzz-audit",
-    "crates/buzz-acp",
-    "crates/buzz-agent",
+    "crates/punks-relay",
+    "crates/punks-core",
+    "crates/punks-conformance",
+    "crates/punks-push-gateway",
+    "crates/punks-db",
+    "crates/punks-pubsub",
+    "crates/punks-auth",
+    "crates/punks-search",
+    "crates/punks-audit",
+    "crates/punks-acp",
+    "crates/punks-agent",
     "crates/sprig",
-    "crates/buzz-test-client",
-    "crates/buzz-ws-client",
-    "crates/buzz-admin",
-    "crates/buzz-deletion",
-    "crates/buzz-workflow",
-    "crates/buzz-media",
-    "crates/buzz-cli",
-    "crates/buzz-pairing-cli",
-    "crates/buzz-sdk",
-    "crates/buzz-persona",
+    "crates/punks-test-client",
+    "crates/punks-ws-client",
+    "crates/punks-admin",
+    "crates/punks-deletion",
+    "crates/punks-workflow",
+    "crates/punks-media",
+    "crates/punks-cli",
+    "crates/punks-pairing-cli",
+    "crates/punks-sdk",
+    "crates/punks-persona",
     "crates/git-credential-nostr",
     "crates/git-sign-nostr",
-    "crates/buzz-pair-relay",
-    "crates/buzz-relay-mesh",
-    "crates/buzz-dev-mcp",
-    "crates/buzz-voice",
-    "crates/buzz-backend-kubernetes",
-    "crates/buzz-datastore-tracing",
+    "crates/punks-pair-relay",
+    "crates/punks-relay-mesh",
+    "crates/punks-dev-mcp",
+    "crates/punks-voice",
+    "crates/punks-backend-kubernetes",
+    "crates/punks-datastore-tracing",
     "examples/countdown-bot",
 ]
 exclude = ["desktop/src-tauri"]
@@ -61,9 +61,9 @@ sqlx = { version = "0.9", features = [
 redis        = { version = "1.0", features = ["tokio-comp", "connection-manager", "tokio-rustls-comp"] }
 deadpool-redis = { version = "0.23", features = ["rt_tokio_1"] }
 
-# Kubernetes (buzz-backend-kubernetes provider). No `ring` feature here: the
+# Kubernetes (punks-backend-kubernetes provider). No `ring` feature here: the
 # process-level CryptoProvider is installed explicitly at startup, matching
-# buzz-cli/buzz-acp/buzz-admin/buzz-relay/buzz-dev-mcp — see the comment on the
+# punks-cli/punks-acp/punks-admin/punks-relay/punks-dev-mcp — see the comment on the
 # crate's own rustls dependency.
 kube = { version = "2.0", default-features = false, features = ["client", "rustls-tls"] }
 k8s-openapi = { version = "0.26", features = ["v1_31"] }
@@ -75,7 +75,7 @@ nostr = { version = "0.44", features = ["nip44", "nip98"] }
 serde       = { version = "1", features = ["derive"] }
 postcard    = { version = "1", default-features = false, features = ["use-std"] }
 
-# Inter-relay mesh transport (buzz-relay-mesh)
+# Inter-relay mesh transport (punks-relay-mesh)
 iroh = { version = "1.0.0-rc.0", default-features = false, features = ["tls-ring"] }
 serde_json  = "1"
 serde_yaml  = "0.9"
@@ -128,25 +128,25 @@ url = "2"
 # Property-based testing (dev-only)
 proptest = "1"
 
-# MCP SDK (used by buzz-dev-mcp and buzz-agent)
+# MCP SDK (used by punks-dev-mcp and punks-agent)
 rmcp = { version = "1.1.0", features = ["server", "transport-io", "macros"] }
 schemars = { version = "1", default-features = false }
 
 # Internal crates
-buzz-core = { path = "crates/buzz-core" }
-buzz-conformance = { path = "crates/buzz-conformance" }
-buzz-db = { path = "crates/buzz-db" }
-buzz-deletion = { path = "crates/buzz-deletion" }
-buzz-auth = { path = "crates/buzz-auth" }
-buzz-pubsub = { path = "crates/buzz-pubsub" }
-buzz-search = { path = "crates/buzz-search" }
-buzz-audit = { path = "crates/buzz-audit" }
-buzz-workflow = { path = "crates/buzz-workflow" }
-buzz-media = { path = "crates/buzz-media" }
-buzz-sdk = { path = "crates/buzz-sdk" }
-buzz-ws-client = { path = "crates/buzz-ws-client" }
-buzz-relay-mesh = { path = "crates/buzz-relay-mesh" }
-buzz-datastore-tracing = { path = "crates/buzz-datastore-tracing" }
+punks-core = { path = "crates/punks-core" }
+punks-conformance = { path = "crates/punks-conformance" }
+punks-db = { path = "crates/punks-db" }
+punks-deletion = { path = "crates/punks-deletion" }
+punks-auth = { path = "crates/punks-auth" }
+punks-pubsub = { path = "crates/punks-pubsub" }
+punks-search = { path = "crates/punks-search" }
+punks-audit = { path = "crates/punks-audit" }
+punks-workflow = { path = "crates/punks-workflow" }
+punks-media = { path = "crates/punks-media" }
+punks-sdk = { path = "crates/punks-sdk" }
+punks-ws-client = { path = "crates/punks-ws-client" }
+punks-relay-mesh = { path = "crates/punks-relay-mesh" }
+punks-datastore-tracing = { path = "crates/punks-datastore-tracing" }
 
 # CI profile — builds the relay for desktop e2e. Dependencies keep full
 # release optimization (warm from main's cache; they carry the runtime hot
