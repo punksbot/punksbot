@@ -112,6 +112,10 @@ pub fn run_boot_migrations(app: &tauri::AppHandle) {
     run_boot_migrations_inner(app, false);
 }
 
+pub(crate) const fn legacy_boot_migrations_enabled() -> bool {
+    !cfg!(feature = "punks-local")
+}
+
 /// Entry point when a completed reset must suppress dev-nest re-import.
 pub fn run_boot_migrations_after_reset(app: &tauri::AppHandle) {
     run_boot_migrations_inner(app, true);

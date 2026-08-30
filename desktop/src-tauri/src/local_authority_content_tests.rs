@@ -252,7 +252,7 @@ fn pulse_uses_a_stable_timestamp_and_event_id_cursor_with_replies_and_reactions(
     for note in &notes {
         authority.submit(note.clone()).expect("publish Pulse note");
     }
-    notes.sort_by(|left, right| right.id.to_hex().cmp(&left.id.to_hex()));
+    notes.sort_by_key(|note| std::cmp::Reverse(note.id.to_hex()));
     let first_page = authority
         .query(&[json!({"kinds": [1], "limit": 2})])
         .expect("first Pulse page");

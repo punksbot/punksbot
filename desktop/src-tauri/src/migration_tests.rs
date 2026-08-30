@@ -991,3 +991,10 @@ fn migrate_legacy_nest_preserves_user_edited_agents_md() {
         "a user-edited live AGENTS.md must never be clobbered"
     );
 }
+#[test]
+fn punks_local_never_runs_legacy_boot_migrations() {
+    assert!(
+        !super::legacy_boot_migrations_enabled(),
+        "Punks Full Local must not inspect or import any previous Buzz product data"
+    );
+}

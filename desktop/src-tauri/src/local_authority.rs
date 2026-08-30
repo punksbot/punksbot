@@ -24,6 +24,8 @@ pub(crate) mod accounts;
 mod canvas;
 #[path = "local_authority_channel_ttl.rs"]
 mod channel_ttl;
+#[path = "local_authority_channel_window.rs"]
+mod channel_window;
 #[path = "local_authority_channels.rs"]
 mod channels;
 #[path = "local_authority_content.rs"]
