@@ -262,6 +262,13 @@ pub(super) async fn start_local_agent_with_preflight(
     let workspace_owner =
         crate::relay::bind_expected_signer(expected_signer_pubkey, workspace_owner_hex(state)?)?;
 
+    #[cfg(feature = "punks-local")]
+    crate::local_authority::ensure_managed_agent_workspace_member(
+        app,
+        workspace_relay_url.as_str(),
+        pubkey,
+    )?;
+
     let _store_guard = state
         .managed_agents_store_lock
         .lock()

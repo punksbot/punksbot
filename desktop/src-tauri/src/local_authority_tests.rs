@@ -382,6 +382,36 @@ fn onboarding_a_local_account_materializes_profile_and_general_membership() {
 }
 
 #[test]
+fn adding_a_channel_bot_activates_its_workspace_membership() {
+    let (_directory, authority, owner) = authority();
+    authority
+        .seed_minimum_authorities(&owner)
+        .expect("seed Workspace owner");
+    let bot = Keys::generate().public_key().to_hex();
+    let add = EventBuilder::new(Kind::Custom(9_000), "")
+        .tags([
+            parse_tag(["h", GENERAL_CHANNEL_ID]).expect("channel scope"),
+            parse_tag(["p", &bot]).expect("bot target"),
+            parse_tag(["role", "bot"]).expect("bot role"),
+        ])
+        .sign_with_keys(&owner)
+        .expect("sign channel bot add");
+
+    authority.submit(add).expect("add channel bot");
+
+    assert_eq!(
+        authority
+            .member_role(&bot)
+            .expect("read bot Workspace role")
+            .as_deref(),
+        Some("bot")
+    );
+    authority
+        .assert_member_can_authenticate(&bot)
+        .expect("channel bot can authenticate to its Workspace");
+}
+
+#[test]
 fn moderation_reports_are_private_and_bans_are_role_enforced() {
     let (_directory, authority, owner) = authority();
     authority

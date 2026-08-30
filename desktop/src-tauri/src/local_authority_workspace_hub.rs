@@ -240,6 +240,39 @@ impl LocalAuthorityHub {
         Ok(())
     }
 
+    pub(crate) fn ensure_agent_member_for_relay(
+        &self,
+        relay_url: &str,
+        pubkey: &str,
+    ) -> Result<(), String> {
+        if pubkey.len() != 64 || !pubkey.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            return Err("managed agent membership requires a valid pubkey".to_string());
+        }
+        let url = reqwest::Url::parse(relay_url)
+            .map_err(|error| format!("parse managed agent Workspace relay: {error}"))?;
+        if !matches!(url.scheme(), "ws" | "wss") {
+            return Err("managed agent Workspace relay must use ws or wss".to_string());
+        }
+        let host = url
+            .host_str()
+            .unwrap_or_default()
+            .trim()
+            .to_ascii_lowercase();
+        let workspace_id = if matches!(host.as_str(), "127.0.0.1" | "localhost") {
+            Self::PRIMARY_ID.to_string()
+        } else {
+            let workspace_id = host.strip_suffix(".localhost").ok_or_else(|| {
+                "managed agent membership accepts local Workspace relays only".to_string()
+            })?;
+            Uuid::parse_str(workspace_id)
+                .map_err(|_| "managed agent Workspace relay has an invalid host".to_string())?;
+            workspace_id.to_string()
+        };
+        let authority = self.authority(&workspace_id)?;
+        authority.ensure_community_member(pubkey, "bot")?;
+        authority.publish_membership_snapshot()
+    }
+
     pub(crate) fn authorities(&self) -> Result<Vec<Arc<LocalAuthority>>, String> {
         self.list_workspaces()?
             .into_iter()
