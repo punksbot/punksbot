@@ -12,7 +12,7 @@ persisté.
 - Version : `0.5.20`
 - Branche : `staging`
 - Base consolidée publiée : `e85f8c65fb9a24340bc07a2ffe00b2861f0b9616`
-- Correctif sous preuve locale : `26beca51b830b8676bdb66da2199b15dc9086bb0`
+- Correctif sous preuve locale : `0c6e1d4f36634ec6c3354f7a3bc1f8f1542f0ac1`
 - Autorité : `LocalAuthority` SQLite embarquée, loopback `127.0.0.1:18787`
 - Interdits : Cloudflare, workerd, relay historique, Docker, PostgreSQL, Redis,
   MinIO, Helm et Kubernetes
@@ -27,8 +27,8 @@ persisté.
 | Frontend tests | `5533 passed`, `0 failed` |
 | Build Vite `VITE_PUNKS_LOCAL=1` | Vert |
 | Scan frontend Punks | Vert |
-| Rust desktop | `2941 passed`, `19 ignored`, `0 failed` avec `punks-local,mesh-llm` après les correctifs TTL, recherche et Fil |
-| Clippy `punks-local,mesh-llm` | Vert avec `-D warnings` après les correctifs TTL, recherche et Fil |
+| Rust desktop | `2943 passed`, `19 ignored`, `0 failed` avec `punks-local,mesh-llm` après les correctifs TTL, recherche, Fil et adhésion Agent |
+| Clippy `punks-local,mesh-llm` | Vert avec `-D warnings` après les correctifs TTL, recherche, Fil et adhésion Agent |
 | Frontière CI managed-only | Verte ; 14 workflows Punks actifs |
 | Lancement natif | Bundle `.app` reconstruit après le correctif TTL ; comptes, Workspaces, Messages, Fil et Conversation temporaire relus après relaunch réel |
 
@@ -53,7 +53,7 @@ frais n’a pas produit les observations correspondantes.
 | 11 | Conversations Forum | UI Forum + autorité de contenu | À prouver | À prouver | À prouver | À prouver | NON TERMINALE |
 | 12 | Conversations directes fiables | `local_authority_dms` | À prouver à deux identités | À prouver | À prouver | À prouver | NON TERMINALE |
 | 13 | Cmd+K | UI Search + requêtes locales | Cmd+K a trouvé `edited lifecycle` puis navigué vers le Message | Résultat lié à l’ID autoritaire du Message, pas à l’événement d’édition | Route Conversation + `messageId` + Fil ouverte depuis le résultat | Recherche et navigation répétées après relaunch du bundle | PARTIELLE — fournisseurs Conversations, Punks, actions et résultats partiels restent à prouver |
-| 14 | Premier Bot Punks | runtime ACP et `managed_agents` | À prouver | À prouver | À prouver | À prouver | NON TERMINALE |
+| 14 | Premier Bot Punks | runtime ACP et `managed_agents` | Honey démarré depuis sa carte, relu `running`, puis arrêté proprement | Sa clé exacte a été réparée comme membre Workspace `bot` avant spawn ; isolation par URL de Workspace couverte en TDD | Processus `punks-acp` vivant sans erreur de harness, puis absent après `Stop` | Après relaunch, Honey reste arrêté et l’UI repropose `Start Agent` tandis que l’adhésion `bot` persiste | PARTIELLE — Message/réaction, Admission, budgets et Reçu restent à prouver |
 | 15 | Références et broadcasts | autorité de contenu + mentions UI | À prouver | À prouver | À prouver | À prouver | NON TERMINALE |
 | 16 | Organisation des Messages | réactions, épingles et signets locaux | `Pin to Workspace` et `Bookmark privately` exercés dans le `.app` | Toasts de commit `Message pinned` et `Message bookmarked` observés | Menu relu avec les inverses autoritaires `Unpin` et `Remove private bookmark` | Les deux inverses sont encore présents après rebuild et relaunch | PARTIELLE — note de signet et séparation explicite par second Compte restent à prouver |
 | 17 | Home | projection Home existante | À prouver | À prouver | À prouver | À prouver | NON TERMINALE |
@@ -61,11 +61,11 @@ frais n’a pas produit les observations correspondantes.
 | 19 | Identités visuelles | profils, emoji et média locaux | À prouver | À prouver | À prouver | À prouver | NON TERMINALE |
 | 20 | Canvas | `local_authority_canvas` | Canvas créé puis édité en deux révisions Markdown depuis les réglages de `#general` | Seconde révision acceptée avec précondition autoritaire ; conflits et historique couverts par le test Rust dédié | Vue rendue avec titre et trois items, dont `second authoritative revision` | Résumé dans les réglages et contenu complet exact relus après fermeture/relaunch du `.app` | PARTIELLE — conflit natif, resynchronisation et chiffrement/versionnement restent à prouver |
 | 21 | Repositories humains | `local_authority_git` et parcours Projects | À prouver sur un dépôt réel choisi | À prouver | À prouver | À prouver | NON TERMINALE |
-| 22 | Corps local d’une Installation | sidecars Punks + runtime ACP local | À prouver | À prouver | À prouver | À prouver | NON TERMINALE |
+| 22 | Corps local d’une Installation | sidecars Punks + runtime ACP local | `Start` puis `Stop` exercés sur Honey dans le `.app` | Adhésion Workspace `bot` autoritaire écrite avant spawn ; aucune adhésion n’est créée dans l’autre Workspace | Sidecar packagé `punks-acp` observé vivant puis terminé ; aucun processus Agent résiduel | État arrêté relu après relaunch et aucun auto-start non demandé | PARTIELLE — bail court, permissions locales, révocation et changement de génération restent à prouver |
 | 23 | Workflows essentiels | `local_authority_workflows`, approbations et traces | À prouver | À prouver | À prouver | À prouver | NON TERMINALE |
 | 24 | Forge | `local_authority_git` + UI Projects/PR/issues | À prouver | À prouver | À prouver | À prouver | NON TERMINALE |
 | 25 | Huddles humains | `local_authority_huddles`, audio loopback | À prouver à deux identités | À prouver | À prouver | Lifecycle à prouver après redémarrage | NON TERMINALE |
-| 26 | Agents avancés | personas, équipes, fournisseurs et modèles locaux | À prouver avec un modèle local réel | À prouver | À prouver | À prouver | NON TERMINALE |
+| 26 | Agents avancés | personas, équipes, fournisseurs et modèles locaux | Personas Fizz/Honey/Pollen, Welcome Team et deux instances Fizz relus ; cycle runtime Honey exercé | Instance Honey et son identité Workspace restent distinctes des définitions/personas | UI expose runtime, provider, modèle, accès owner-only, équipe et instances sans inventer de valeurs manquantes | Roster et état arrêté relus après relaunch | PARTIELLE — modèle local réel, mémoire, budgets, versionnement et corps distant restent à prouver |
 | 27 | Workflows temporels et externes | scheduler, webhooks et `local_authority_reminders` | À prouver | À prouver | À prouver | À prouver | NON TERMINALE |
 | 28 | Templates de Conversation | UI Templates + commandes Tauri existantes | À prouver | À prouver | À prouver | À prouver | NON TERMINALE |
 | 29 | Extensions vocales | STT/TTS locaux, consentement Huddle | À prouver avec consentement explicite | À prouver | À prouver | Préférences et absence d’enregistrement à prouver | NON TERMINALE |
@@ -76,9 +76,8 @@ frais n’a pas produit les observations correspondantes.
 
 1. Prouver encore les rétractions, restaurations et effacements de Messages ;
    l’édition est maintenant cohérente entre timeline, recherche et Fil.
-2. Rejouer l’amorçage Welcome après découverte ACP forcée et obtenir trois
-   installations configurées ou un état d’action honnête si un modèle/credential
-   manque.
+2. Rejouer Fizz et Pollen avec un modèle réel ; l’adhésion Workspace des corps
+   locaux est réparée et Honey démarre/arrête désormais sans erreur d’auth.
 3. Conserver captures, arbre d’accessibilité et actions natives par ligne du
    `.app` désormais adressable à l’automatisation macOS.
 4. Étendre les preuves natives aux sept actions de Workflow maintenant routées
