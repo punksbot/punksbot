@@ -31,6 +31,7 @@ import {
   discoverGoldenSources,
   GOLDEN_SOURCE_SET_SHA256,
   loadYamlDocument,
+  projectHistoricalPath,
   validatePunksTestUniverse,
   validateGoldenUniverse,
   validateLedger,
@@ -115,9 +116,13 @@ export function runValidation() {
   const files = workingFiles();
   const baselineFiles = baselineTrackedFiles();
   const historicalGoldenSources =
-    baselineFiles === null ? undefined : discoverGoldenSources(baselineFiles);
+    baselineFiles === null
+      ? undefined
+      : discoverGoldenSources(baselineFiles).map(projectHistoricalPath);
   const historicalTestSources =
-    baselineFiles === null ? undefined : discoverPunksTestSources(baselineFiles);
+    baselineFiles === null
+      ? undefined
+      : discoverPunksTestSources(baselineFiles).map(projectHistoricalPath);
 
   const erreursManifeste = validateManifest(manifest, files);
   const erreursUnivers = validateGoldenUniverse(

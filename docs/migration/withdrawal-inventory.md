@@ -3,7 +3,7 @@
 > Vue dérivée de [`withdrawal-inventory.yaml`](./withdrawal-inventory.yaml), qui est canonique.
 > Régénérée par `scripts/render-withdrawal-inventory.mjs` (`pnpm migration:render`) — ne pas éditer.
 > Décisions : issues [#13](https://github.com/punksbot/punksbot/issues/13), [#14](https://github.com/punksbot/punksbot/issues/14) et [#17](https://github.com/punksbot/punksbot/issues/17).
-> Checkpoint de récupération : `50e16de180dda4365f8001a8a73503f16977a175` — baseline Punks gelée : `da818eddc2f470c006a1073c8c5452f8a989f272` — version 1 — sha256 canonique `1c81c5047632332ea0d761ae83f3568ce9762d4e0814dc751e6111850e84cffb`.
+> Checkpoint de récupération : `50e16de180dda4365f8001a8a73503f16977a175` — baseline Punks gelée : `da818eddc2f470c006a1073c8c5452f8a989f272` — version 1 — sha256 canonique `93c4d2151b2fb303b1fed1d7296a71c12fcc6b660502d598ff216a5e66092432`.
 
 Chaque actif reçoit exactement un verdict. Un module partagé appartient à la tranche de
 son **dernier** consommateur ; ses parties antérieures disparaissent plus tôt (champ
@@ -117,7 +117,6 @@ L’entrée « Retrait global du serveur historique » s’ouvre uniquement lors
 - `desktop/src-tauri/src/{mesh_llm/,mesh_llm_stubs.rs}` — séparation : arêtes relay/mesh retirées à la tranche:31 — noyau LLM local (MLX/ggml) de l’Atelier
 - `desktop/src-tauri/src/{terminal_runtime.rs,terminal_runtime/,terminal_transport.rs}`
 - `desktop/src-tauri/src/{app_menu.rs,initial_window.rs,macos_notifications.rs,mouse_nav.rs,prevent_sleep.rs,shutdown.rs,tray_menu.rs,webkit_rendering.rs,webkit_rendering/}` — fenêtrage, menus, notifications natives, rendu WebKit — mécanismes OS neutres
-- `desktop/src-tauri/crates/punks-terminal/`
 
 ### UI neutre
 
@@ -136,32 +135,24 @@ L’entrée « Retrait global du serveur historique » s’ouvre uniquement lors
 ### Goldens neutres
 
 - `scripts/{normative-corpus.json,model-capabilities.json}` — corpus croisé TS/Rust référencé par le registre des goldens
+- `test-fixtures/`
 
 ### Actifs Punks
 
-- `desktop/src/shared/api/punks*` — façade, erreurs, Réactions et adaptateur Tauri sémantiques Punks
-- `desktop/src/shared/capabilities/` — disponibilité Punks fermée et garde commune des surfaces desktop
-- `desktop/src/app/PunksFullApp.tsx` — façade unique du produit desktop riche vers le client sémantique Punks
 - `desktop/src/main.tsx` — séparation : l'ancien bootstrap Punks est retiré ; cette entrée monte uniquement la façade riche Punks et son client sémantique natif
  — entrée React unique du produit desktop Punks
-- `desktop/src/punks.css` — styles du produit desktop Punks vérifié
-- `desktop/src/features/punks/` — produit Punks, runtime Workspace et boucle sociale du candidat desktop
-- `desktop/tests/e2e/capability-masking.spec.ts` — garde structurelle Punks commune aux routes et surfaces indisponibles
-- `desktop/playwright.punks-capabilities.config.ts` — harnais Playwright isolé du bundle produit pour les capacités indisponibles
 - `desktop/scripts/*punks*` — gates du candidat, du frontend et de l’entrée produit desktop Punks
 - `desktop/src-tauri/src/{lib.rs,main.rs}` — séparation : modules, commandes et diagnostics sous cfg punks-desktop retirés avec leurs tranches puis au scellement ; dispatcher desktop_lib::run et branche punks_runtime::run conservés pour le produit natif Punks
  — entrypoints Tauri mixtes dont la branche Punks est une dépendance active du candidat
-- `desktop/src-tauri/src/punks*.rs` — commandes, runtime, lifecycle Message et store de Session Tauri Punks
-- `desktop/src-tauri/crates/punks-account-client/` — client sémantique Rust Punks (HTTP, cookies, FOLLOW, bail de génération)
-- `desktop/src-tauri/crates/punks-promotion-session/` — processus natif borné utilisé par la preuve de promotion Punks
+- `desktop/src-tauri/crates/punks-terminal/` — terminal natif embarqué dans le produit Full Local
 - `desktop/src-tauri/{capabilities/punks.json,Info.punks.plist,signing/punks-linux-release.asc}` — capacité Tauri et identité de signature native du candidat Punks
 - `desktop/src-tauri/tauri.punks*.json` — configurations Tauri fermées du produit et de la signature Windows Punks
-- `desktop/{tailwind.punks.config.js,tsconfig.punks.json}` — configurations de build fermées de la surface Punks
 - `scripts/{check-migration-manifests.mjs,check-migration-manifests.test.mjs,migration-manifest-lib.mjs,render-withdrawal-inventory.mjs}` — gate et générateur des manifestes de migration (issue #49)
 - `scripts/{release-graph-lib.mjs,check-release-graph.mjs,check-release-graph.test.mjs,release-graph-live-state.test.mjs}` — gate du graphe de release et du modèle d'attestation (issue #51)
 - `scripts/{github-attestation-lib.mjs,promotion-attestation-lib.mjs,promotion-installed-transcript-lib.mjs,promotion-materials-lib.mjs,promotion-materials-lib.test.mjs,promotion-test-fixtures.mjs,promotion-dossier-validator-fixture.mjs,promotion-dossier-lib.mjs,promotion-dossier-lib.test.mjs,promotion-proof-lib.mjs,promotion-resilience-lib.mjs,promotion-local-emission-lib.mjs,promotion-local-emission.test.mjs,check-promotion-dossier.mjs,check-promotion-dossier.test.mjs,promotion-publish-lib.mjs,promotion-publish.mjs,promotion-publish.test.mjs,promotion-frontiers.mjs,promotion-frontiers.test.mjs,receipt-publish.mjs,punks-desktop-candidate-workflow.test.mjs,punks-desktop-promotion-workflow.test.mjs,punks-operational-observation-workflow.test.mjs,check-punks-rust.mjs,punks-native-artifact.mjs,punks-native-artifact.test.mjs,macos-artifact-finalize.sh,macos-artifact-finalize.test.mjs,windows-artifact-sign.ps1,windows-artifact-sign.test.ps1}` — harnais d'acceptation d'une promotion : dossier de preuve, gates d'autorisation, chaîne de candidat Tauri signé et émission create-only de l'attestation (issues #52 et #58)
 - `scripts/candidate/` — collecte fermée, preuves natives et agrégation attestée des quatre plateformes du candidat Punks
 - `package.json` — workspace punksbot — gates Punks (cloudflare:check, punks:check, migration:check)
+- `.github/workflows/` — workflows actifs vérifiés par la frontière managed-only
 - `docs/{adr,agents,spec,research}/`
 - `docs/migration/` — manifeste de retrait, registre des goldens, dossiers de tranche
 - `CONTEXT.md`
@@ -182,6 +173,7 @@ L’entrée « Retrait global du serveur historique » s’ouvre uniquement lors
 - `Justfile (cibles desktop-*, mobile-*, web-*, cloudflare via package.json, fmt, clippy, check)`
 - `scripts/{prepare-desktop-release.sh,promote-oss-desktop-release.sh,verify-desktop-release-merge.sh,verify-release-ref.sh,test-release-ref-contract.sh,test-oss-desktop-promotion.sh,test-oss-desktop-promotion-behavior.sh,desktop_release.py,desktop-release-cache-key.py,desktop-native-toolchain-id.sh,test-desktop-release-cache-key.sh,test-desktop-release-cache-workflow.sh,test-desktop-release-candidate.sh}` — remplacés par le graphe de release scellé (#16) au fil des activations
 - `scripts/{reset-desktop-dev-state.sh,reset-desktop-standalone-state.sh,test-reset-desktop-standalone-state.sh,post-screenshots.sh,check-pr-image-urls.sh,check-branch-skew.sh,check-*-core*.mjs,generate-dev-icon.swift,required-check-succeeded.jq}`
+- `scripts/{check-push-head-scope.sh,create-deployment-eligibility-predicate.jq,ensure-local-relay-key.sh,select-qualified-ci-run.jq,setup-desktop-test-data.sh,test-ensure-local-relay-key.sh,test-relay-image-eligibility-workflow.sh,test-rust-cache-contract-regressions.sh,test-rust-cache-contract.sh}`
 - `bin/` — shims Hermit (Rust, Node) requis par les builds desktop et cloudflare
 - `patches/virtua*`
 - `{biome.json,lefthook.yml,deny.toml,rust-toolchain.toml,renovate.json,preview-features.json,pnpm-workspace.yaml,pnpm-lock.yaml}` — séparation : prototype punks-desktop retiré à la tranche:1 ; paquets web/admin-web retirés avec leur verdict terminal
@@ -189,6 +181,7 @@ L’entrée « Retrait global du serveur historique » s’ouvre uniquement lors
 - `{.gitignore,.gitattributes,.dockerignore,LICENSE,.cargo/config.toml,.intersect/sadscan.yaml,.release/,.vscode/settings.json}` — fichiers de configuration neutres du dépôt et des outils contributeurs
 - `{.agents/,.claude/,.codex/,.goose/}` — configuration des agents contributeurs
 - `docs/linux-rendering-troubleshooting.md`
+- `docs/{deployment-identity.md,gif-search.md,punks-entity-links.md,staging-dev-relay-images.md}`
 
 ### Attente refonte UI
 

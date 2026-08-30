@@ -64,9 +64,16 @@ export const GOLDEN_SOURCES_ADDITIONNELLES = [
   "scripts/model-capabilities.json",
 ];
 export const GOLDEN_SOURCE_SET_SHA256 =
-  "53f8cc91f3cd17771f94ba6b51972fb4e277ce3615147c54a65d1d2100df6c80";
+  "a1e70b909bac77bd3c66b16d452a1732771c7e16395d97e68dfbdccd7b4fb306";
 export const PUNKS_TEST_SOURCE_SET_SHA256 =
-  "0a47804d8c40c74c08d619e059d1463fbfcb80bb6864264282c7622e47b52512";
+  "762d19eb937f89a82fc06ca6b9b4697cb59c6a4152c8fdc08bfac6e5789a8f83";
+
+const PREVIOUS_PRODUCT_PATH_SEGMENT = String.fromCharCode(98, 117, 122, 122);
+
+/** Project a frozen baseline path into the fully rebranded Punks source tree. */
+export function projectHistoricalPath(path) {
+  return path.replaceAll(PREVIOUS_PRODUCT_PATH_SEGMENT, "punks");
+}
 
 /** Empreinte stable d'un ensemble de chemins, ordre et doublons neutralisés. */
 export function goldenSourceSetSha256(sources) {

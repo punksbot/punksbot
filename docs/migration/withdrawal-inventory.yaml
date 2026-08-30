@@ -85,11 +85,6 @@ actifs:
     verdict: conserve
     conservation: mecanisme-test
     note: "mécanisme React Query/invoke neutre ; l’instance devient par WorkspaceSession (décision #11)"
-  - chemin: desktop/src/shared/api/punks*
-    classe: client
-    verdict: conserve
-    conservation: actif-punks
-    note: façade, erreurs, Réactions et adaptateur Tauri sémantiques Punks
   - chemin: desktop/src/shared/api/
     classe: transport
     verdict: scellement
@@ -122,11 +117,6 @@ actifs:
     verdict: conserve
     conservation: outillage
     note: feature-gating local, sert les gardes de capacités indisponibles
-  - chemin: desktop/src/shared/capabilities/
-    classe: store
-    verdict: conserve
-    conservation: actif-punks
-    note: disponibilité Punks fermée et garde commune des surfaces desktop
   # ── Desktop : coquille React ───────────────────────────────────────────────
   - chemin: desktop/src/app/routes/messages.new.tsx
     classe: route
@@ -191,11 +181,6 @@ actifs:
     separation: >
       reste de l'orchestration de shell partagé ; les routes et capacités dont
       le dernier consommateur est connu ont une entrée plus spécifique ci-dessus
-  - chemin: desktop/src/app/PunksFullApp.tsx
-    classe: route
-    verdict: conserve
-    conservation: actif-punks
-    note: "façade unique du produit desktop riche vers le client sémantique Punks"
   - chemin: desktop/src/main.tsx
     classe: route
     verdict: conserve
@@ -209,11 +194,6 @@ actifs:
     verdict: conserve
     conservation: ui-neutre
     note: "déclarations de types et shims sans sémantique Punks"
-  - chemin: desktop/src/punks.css
-    classe: ui
-    verdict: conserve
-    conservation: actif-punks
-    note: styles du produit desktop Punks vérifié
 
   # ── Desktop : features ─────────────────────────────────────────────────────
   - chemin: desktop/src/features/channels/
@@ -239,11 +219,6 @@ actifs:
     conservation: ui-neutre
     separation: "types Channel Punks remplacés par les vues Conversation Punks ; chrome et rendu neutres conservés"
     note: rendu neutre alimenté par les vues Punks
-  - chemin: desktop/src/features/punks/
-    classe: feature
-    verdict: conserve
-    conservation: actif-punks
-    note: produit Punks, runtime Workspace et boucle sociale du candidat desktop
   - chemin: desktop/src/features/communities/
     classe: feature
     verdict: tranche:5
@@ -348,19 +323,9 @@ actifs:
     classe: mock-test
     verdict: scellement
     separation: "scénarios Punks retirés avec leur dernière capacité et enregistrés dans retraits-par-tranche ; mécanismes Playwright neutres extraits"
-  - chemin: desktop/tests/e2e/capability-masking.spec.ts
-    classe: mock-test
-    verdict: conserve
-    conservation: actif-punks
-    note: garde structurelle Punks commune aux routes et surfaces indisponibles
   - chemin: desktop/playwright.release-smoke.config.ts
     classe: mock-test
     verdict: tranche:5
-  - chemin: desktop/playwright.punks-capabilities.config.ts
-    classe: mock-test
-    verdict: conserve
-    conservation: actif-punks
-    note: harnais Playwright isolé du bundle produit pour les capacités indisponibles
   - chemin: desktop/{playwright.config.ts,playwright.perf.config.ts}
     classe: mock-test
     verdict: conserve
@@ -475,11 +440,6 @@ actifs:
       tranches puis au scellement ; dispatcher desktop_lib::run et branche
       punks_runtime::run conservés pour le produit natif Punks
     note: entrypoints Tauri mixtes dont la branche Punks est une dépendance active du candidat
-  - chemin: desktop/src-tauri/src/punks*.rs
-    classe: client
-    verdict: conserve
-    conservation: actif-punks
-    note: commandes, runtime, lifecycle Message et store de Session Tauri Punks
   - chemin: desktop/src-tauri/src/{terminal_runtime.rs,terminal_runtime/,terminal_transport.rs}
     classe: commande
     verdict: conserve
@@ -502,17 +462,8 @@ actifs:
   - chemin: desktop/src-tauri/crates/punks-terminal/
     classe: crate
     verdict: conserve
-    conservation: atelier
-  - chemin: desktop/src-tauri/crates/punks-account-client/
-    classe: crate
-    verdict: conserve
     conservation: actif-punks
-    note: client sémantique Rust Punks (HTTP, cookies, FOLLOW, bail de génération)
-  - chemin: desktop/src-tauri/crates/punks-promotion-session/
-    classe: crate
-    verdict: conserve
-    conservation: actif-punks
-    note: processus natif borné utilisé par la preuve de promotion Punks
+    note: terminal natif embarqué dans le produit Full Local
   - chemin: desktop/src-tauri/resources/
     classe: ui
     verdict: tranche:25
@@ -558,11 +509,6 @@ actifs:
     verdict: conserve
     conservation: outillage
     note: configuration de build du desktop (package.json, biome, vite, tsconfig, tailwind…)
-  - chemin: desktop/{tailwind.punks.config.js,tsconfig.punks.json}
-    classe: manifeste
-    verdict: conserve
-    conservation: actif-punks
-    note: configurations de build fermées de la surface Punks
 
   # ── Autres clients (gelés — décision #17) ─────────────────────────────────
   - chemin: web/
@@ -702,6 +648,10 @@ actifs:
     classe: script
     verdict: conserve
     conservation: outillage
+  - chemin: "scripts/{check-push-head-scope.sh,create-deployment-eligibility-predicate.jq,ensure-local-relay-key.sh,select-qualified-ci-run.jq,setup-desktop-test-data.sh,test-ensure-local-relay-key.sh,test-relay-image-eligibility-workflow.sh,test-rust-cache-contract-regressions.sh,test-rust-cache-contract.sh}"
+    classe: script
+    verdict: conserve
+    conservation: outillage
   - chemin: scripts/{normative-corpus.json,model-capabilities.json}
     classe: golden
     verdict: conserve
@@ -762,6 +712,11 @@ actifs:
     classe: workflow
     verdict: conserve
     conservation: outillage
+  - chemin: .github/workflows/
+    classe: workflow
+    verdict: conserve
+    conservation: actif-punks
+    note: workflows actifs vérifiés par la frontière managed-only
   - chemin: "{.gitignore,.gitattributes,.dockerignore,LICENSE,.cargo/config.toml,.intersect/sadscan.yaml,.release/,.vscode/settings.json}"
     classe: manifeste
     verdict: conserve
@@ -782,6 +737,10 @@ actifs:
     classe: doc
     verdict: retrait-global
   - chemin: docs/linux-rendering-troubleshooting.md
+    classe: doc
+    verdict: conserve
+    conservation: outillage
+  - chemin: "docs/{deployment-identity.md,gif-search.md,punks-entity-links.md,staging-dev-relay-images.md}"
     classe: doc
     verdict: conserve
     conservation: outillage
@@ -807,6 +766,10 @@ actifs:
     conservation: actif-punks
     separation: "sections guide Punks retirées au retrait global"
     note: le lien historique CLAUDE.md reste inventorié séparément avec la documentation Punks
+  - chemin: test-fixtures/
+    classe: golden
+    verdict: conserve
+    conservation: golden-neutre
 
   # ── Actifs Punks ───────────────────────────────────────────────────────────
   - chemin: cloudflare/
