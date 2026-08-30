@@ -9,8 +9,8 @@ import coincurve
 import pytest
 
 from harbor_punks_testbed.provisioner import (
-    PunksTrialProvisioner,
     ProvisioningError,
+    PunksTrialProvisioner,
     TestbedConfig,
 )
 

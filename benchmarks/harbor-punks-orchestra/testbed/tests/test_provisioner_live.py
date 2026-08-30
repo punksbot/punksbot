@@ -15,12 +15,12 @@ import uuid
 import psycopg
 import pytest
 
-from harbor_punks_testbed.punks_cli import PunksCli, PunksCliError
 from harbor_punks_testbed.provisioner import (
-    PunksTrialProvisioner,
     ProvisioningError,
+    PunksTrialProvisioner,
     TestbedConfig,
 )
+from harbor_punks_testbed.punks_cli import PunksCli, PunksCliError
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("PUNKS_TESTBED_LIVE") != "1",
