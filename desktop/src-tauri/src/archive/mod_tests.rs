@@ -638,7 +638,7 @@ mod agent_metric;
 //
 // Run (Linux/macOS only):
 //
-//   RELAY_URL=ws://localhost:3000 cargo test -p desktop-shell \
+//   RELAY_URL=ws://localhost:3000 cargo test -p buzz-desktop \
 //       archive::tests::real_relay -- --ignored --nocapture
 //
 // The relay must be running with a Postgres backend (same docker compose

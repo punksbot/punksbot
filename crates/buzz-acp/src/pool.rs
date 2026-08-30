@@ -101,7 +101,7 @@ pub struct AgentModelCapabilities {
 pub struct ChannelDeliveryState {
     /// Whether a legacy user message has successfully carried standing context.
     pub standing_context_sent: bool,
-    /// Buzz event IDs already delivered to this ACP session, either as trigger
+    /// Punks event IDs already delivered to this ACP session, either as trigger
     /// events or conversation context.
     pub delivered_event_ids: HashSet<String>,
 }
@@ -223,7 +223,7 @@ pub struct OwnedAgent {
     /// already emits its terminal immediately — so this gate prevents a
     /// double-emit there. Consumed (reset) at apply time.
     pub desired_model_pending_ack: bool,
-    /// Persisted startup effort value from `BUZZ_ACP_EFFORT_LEVEL` (carried from
+    /// Persisted startup effort value from `PUNKS_ACP_EFFORT_LEVEL` (carried from
     /// the Desktop record via `Config.effort_level`). Held per-worker and applied
     /// once, at the first session creation, by pairing with the adapter's
     /// advertised `thought_level` configId. This is spawn-scoped only — there is
@@ -632,10 +632,10 @@ pub struct PromptContext {
     /// the per-session core engram fetch is skipped and `core_sections`
     /// remains empty for every channel, so `format_prompt` renders no
     /// `[Agent Memory — core]` section. On by default; disabled via
-    /// `--no-memory` / `BUZZ_ACP_NO_MEMORY`.
+    /// `--no-memory` / `PUNKS_ACP_NO_MEMORY`.
     pub memory_enabled: bool,
     /// Harness identity string for NIP-AM `harness` field. Derived from the
-    /// configured `agent_command` at startup (e.g. `"goose"`, `"buzz-agent"`).
+    /// configured `agent_command` at startup (e.g. `"goose"`, `"punks-agent"`).
     pub harness_name: String,
     /// Relay URL this harness is connected to. Rides in observer payloads that
     /// the desktop keys per (agent, relay) pair, e.g. `session_config_captured`,
@@ -1202,7 +1202,7 @@ async fn create_session_and_apply_model(
     // Apply the worker's spawn-scoped startup effort, if configured and the
     // running model advertises a `thought_level` option. Runs on every session
     // creation (config options are per-session), mirroring the model-switch
-    // application above. The held value comes from `BUZZ_ACP_EFFORT_LEVEL` and
+    // application above. The held value comes from `PUNKS_ACP_EFFORT_LEVEL` and
     // never mutates — there is no pool-level effort state and no live switching.
     // Reads the post-switch snapshot so the configId is discovered on the model
     // the session is actually running; computed BEFORE the capture emission so
@@ -1274,13 +1274,13 @@ fn mcp_servers_with_git_origin(
     let mut servers = servers.to_vec();
     let origin = match (channel_id, channel_type) {
         (Some(channel_id), Some("stream")) => Some(EnvVar {
-            name: "BUZZ_GIT_ORIGIN_CHANNEL_ID".into(),
+            name: "PUNKS_GIT_ORIGIN_CHANNEL_ID".into(),
             value: channel_id.to_string(),
         }),
         (Some(_), _) => agent_name
             .filter(|name| !name.trim().is_empty())
             .map(|name| EnvVar {
-                name: "BUZZ_GIT_ORIGIN_AGENT_NAME".into(),
+                name: "PUNKS_GIT_ORIGIN_AGENT_NAME".into(),
                 value: name.trim().to_string(),
             }),
         (None, _) => None,
@@ -1608,64 +1608,39 @@ pub(crate) fn prepend_standing_for_legacy(
 }
 
 /// Frame the `session/new` `systemPrompt` so each present prompt carries its own
-/// header, keeping the base/persona boundary recoverable downstream.
+/// header, keeping the base/workspace/persona boundaries recoverable downstream.
 ///
-/// The header framing matches the legacy per-turn path (`queue::base_section`
-/// for `[Base]`, `[System]\n{...}` for the persona) so the desktop observer can
-/// split the combined value into labeled sub-sections. Each prompt is wrapped
-/// only when present, so a persona-only agent yields `[System]\n{persona}`
-/// rather than an unlabeled blob that would be mislabeled as `[Base]`.
-///
-/// Prepends a `[Workspace]` section naming the agent's absolute working
-/// directory. The base prompt describes the workspace layout but never its
-/// absolute root, so without this anchor a model fills the gap by searching
-/// `$HOME` (triggering macOS TCC prompts) or by inventing its own workspace
-/// directory. The line is emitted only when a real base prompt is present and
-/// `cwd` is an absolute path other than the `/` fallback — naming `/` as the
-/// workspace would itself invite a `$HOME`-wide scan.
+/// The static base remains first for prompt-prefix caching. When a base is
+/// present, the dynamic workspace anchor follows it and precedes the user-owned
+/// agent instructions. A persona-only agent still yields
+/// `[Agent Instructions]\n{persona}` rather than an unlabeled blob that would
+/// be mislabeled as `[Base]`.
 fn framed_system_prompt(
     cwd: &str,
     base_prompt: Option<&str>,
     system_prompt: Option<&str>,
 ) -> Option<String> {
-    let body = match (base_prompt, system_prompt) {
+    match (base_prompt, system_prompt) {
         (Some(bp), Some(sp)) => Some(format!(
-            "{}\n\n[System]\n{sp}",
-            crate::queue::base_section(bp)
+            "{}\n\n{}\n\n[Agent Instructions]\n{sp}",
+            crate::queue::base_section(bp),
+            workspace_section(cwd)
         )),
-        (Some(bp), None) => Some(crate::queue::base_section(bp)),
-        (None, Some(sp)) => Some(format!("[System]\n{sp}")),
+        (Some(bp), None) => Some(format!(
+            "{}\n\n{}",
+            crate::queue::base_section(bp),
+            workspace_section(cwd)
+        )),
+        (None, Some(sp)) => Some(format!("[Agent Instructions]\n{sp}")),
         (None, None) => None,
-    }?;
-    // Anchor the workspace only when a base prompt is present — the workspace
-    // section grounds the base prompt's layout description, so it is meaningless
-    // for a persona-only (`[System]`-only) agent that never received that layout.
-    match (base_prompt, workspace_section(cwd)) {
-        (Some(_), Some(workspace)) => Some(format!("{workspace}\n\n{body}")),
-        _ => Some(body),
     }
 }
 
-/// Render the `[Workspace]` grounding section, or `None` when `cwd` is unusable.
-///
-/// Skips relative paths and the `/` fallback (`std::env::current_dir()` resolves
-/// to `/` on failure): a `/`-rooted workspace line would actively encourage the
-/// `$HOME`-wide scan this section exists to prevent.
-fn workspace_section(cwd: &str) -> Option<String> {
-    if cwd != "/" && cwd.starts_with('/') {
-        Some(format!(
-            "[Workspace]\nYour absolute working directory is `{cwd}`. All workspace \
-             files — `AGENTS.md`, `RESEARCH/`, `PLANS/`, `GUIDES/`, `WORK_LOGS/`, \
-             `OUTBOX/` — and any repositories you clone (under `{cwd}/REPOS/`) live \
-             here. This is where you already are, so start here rather than scanning \
-             `$HOME`. Any specific path the user names is fine to read."
-        ))
-    } else {
-        None
-    }
+fn workspace_section(cwd: &str) -> String {
+    format!("[Workspace]\nCurrent working directory: {cwd}")
 }
 
-/// Append the team-owned instruction section after `[System]` and before core memory.
+/// Append the team-owned instruction section after `[Agent Instructions]` and before core memory.
 fn with_team(prompt: Option<String>, instructions: Option<&str>) -> Option<String> {
     let instructions = instructions
         .map(str::trim)
@@ -1856,7 +1831,7 @@ pub async fn run_prompt_task(
 
     //
     // Core memory is delivered inside the system prompt the harness already
-    // builds (system role for protocol >= 2, the `[System]` user-message
+    // builds (system role for protocol >= 2, the `[Agent Instructions]` user-message
     // section for legacy agents). To put it on the wire at `session/new` for
     // modern agents, the fetch must run *before* the session is created — so
     // we do it here and cache the rendered section in `state.core_sections`.
@@ -1878,7 +1853,7 @@ pub async fn run_prompt_task(
     // happens when a session is invalidated and recreated (see
     // `SessionState::invalidate_channel`).
     //
-    // Operator opt-out: `--no-memory` / `BUZZ_ACP_NO_MEMORY` skips the fetch.
+    // Operator opt-out: `--no-memory` / `PUNKS_ACP_NO_MEMORY` skips the fetch.
     if ctx.memory_enabled {
         if let (PromptSource::Channel(cid), Some(owner_pk)) =
             (&source, ctx.agent_owner_pubkey.as_ref())
@@ -2010,7 +1985,7 @@ pub async fn run_prompt_task(
                             .state
                             .deliveries
                             .insert(*cid, ChannelDeliveryState::default());
-                        // Seed a zero usage baseline: buzz-acp spawned this session
+                        // Seed a zero usage baseline: punks-acp spawned this session
                         // so prior usage is zero by definition — first turn is reliable.
                         agent.acp.notify_session_spawned(&sid);
                         // Commit canvas only after session creation succeeds (I3).
@@ -2072,7 +2047,7 @@ pub async fn run_prompt_task(
                             agent.index
                         );
                         agent.state.heartbeat_session = Some(sid.clone());
-                        // Seed a zero usage baseline: buzz-acp spawned this session.
+                        // Seed a zero usage baseline: punks-acp spawned this session.
                         agent.acp.notify_session_spawned(&sid);
                         (sid, true)
                     }
@@ -2303,7 +2278,7 @@ pub async fn run_prompt_task(
     // When the batch is a single slash-command message (e.g. "@Eva /goal …"),
     // `slash_command` holds the bare command. It is sent as the FIRST prompt
     // content block so ACP connectors' slash-command detection
-    // (`prompt[0].text.startsWith("/")`) fires; the wrapped Buzz context
+    // (`prompt[0].text.startsWith("/")`) fires; the wrapped Punks context
     // follows as a second block.
     let mut slash_command: Option<String> = None;
     // Event IDs represented by this prompt. Commit only after ACP reports a
@@ -2619,12 +2594,14 @@ pub async fn run_prompt_task(
                                 "control signal arrived but turn already completed — treating as success"
                             );
                         }
+                        log_stop_reason(&source, &StopReason::EndTurn);
                         if let PromptSource::Channel(cid) = &source {
                             let standing_sent = !agent.has_system_prompt_support();
-                            agent.state.mark_channel_delivery_success(
+                            record_channel_delivery_success(
+                                &mut agent,
                                 *cid,
                                 standing_sent,
-                                pending_delivered_event_ids.iter().cloned(),
+                                &pending_delivered_event_ids,
                             );
                         }
                         apply_completed_before_control_signal(
@@ -2663,10 +2640,11 @@ pub async fn run_prompt_task(
 
             if let PromptSource::Channel(cid) = &source {
                 let standing_sent = !agent.has_system_prompt_support();
-                agent.state.mark_channel_delivery_success(
+                record_channel_delivery_success(
+                    &mut agent,
                     *cid,
                     standing_sent,
-                    pending_delivered_event_ids.iter().cloned(),
+                    &pending_delivered_event_ids,
                 );
             } else if !agent.has_system_prompt_support() {
                 agent.state.heartbeat_standing_context_sent = true;
@@ -3231,7 +3209,7 @@ pub(crate) fn render_canvas_section(event_id: &str, timestamp: &str, channel_uui
         "[Channel Canvas]\n\
          Canvas revision (event ID): {event_id}\n\
          Last modified: {timestamp}\n\
-         Fetch current content with: buzz canvas get --channel {channel_uuid}"
+         Fetch current content with: punks canvas get --channel {channel_uuid}"
     )
 }
 
@@ -3249,7 +3227,7 @@ fn conversation_context_event_ids(context: Option<&ConversationContext>) -> Hash
 
 /// Remove events already delivered to this live ACP session. Triggering events
 /// are also excluded because they are rendered separately in `[Event]`.
-/// IDs are compared in Buzz's canonical 64-character lowercase hex form: relay
+/// IDs are compared in Punks's canonical 64-character lowercase hex form: relay
 /// context JSON supplies the same form emitted by `EventId::to_hex()`. A
 /// non-canonical or missing ID deliberately fails open and may be re-sent.
 fn conversation_context_delta(
@@ -4085,6 +4063,33 @@ fn log_stop_reason(source: &PromptSource, stop_reason: &StopReason) {
     }
 }
 
+fn delivery_receipt_line(channel_id: Uuid, event_ids: &HashSet<String>) -> String {
+    let mut event_ids: Vec<&str> = event_ids.iter().map(String::as_str).collect();
+    event_ids.sort_unstable();
+    format!(
+        "turn delivered Punks events for channel {channel_id}: {}",
+        event_ids.join(",")
+    )
+}
+
+fn record_channel_delivery_success(
+    agent: &mut OwnedAgent,
+    channel_id: Uuid,
+    standing_context_sent: bool,
+    event_ids: &HashSet<String>,
+) {
+    tracing::info!(
+        target: "pool::prompt",
+        "{}",
+        delivery_receipt_line(channel_id, event_ids)
+    );
+    agent.state.mark_channel_delivery_success(
+        channel_id,
+        standing_context_sent,
+        event_ids.iter().cloned(),
+    );
+}
+
 //
 // Two-phase lifecycle visible to users:
 //   👀  "seen"    — event was queued and an agent will handle it
@@ -4371,7 +4376,7 @@ pub(crate) fn build_turn_metric_counts(
         total_tokens: usage.cumulative_total_tokens,
         cost_usd: usage.cumulative_cost_usd,
         // Session-cumulative cache-read tokens; None when the harness never
-        // reported this field (e.g. goose or older buzz-agent sessions).
+        // reported this field (e.g. goose or older punks-agent sessions).
         // Passes through directly — do not wrap in Some() as the field already
         // carries provenance (None vs Some(0) are distinct meanings).
         cache_read_tokens: usage.cumulative_cache_read_tokens,
@@ -4703,10 +4708,21 @@ mod tests {
     fn test_mcp_server() -> McpServer {
         McpServer {
             name: "dev".into(),
-            command: "buzz-dev-mcp".into(),
+            command: "punks-dev-mcp".into(),
             args: vec![],
             env: vec![],
         }
+    }
+
+    #[test]
+    fn delivery_receipt_line_sorts_event_ids() {
+        let channel_id = Uuid::nil();
+        let event_ids = HashSet::from(["beta".to_string(), "alpha".to_string()]);
+
+        assert_eq!(
+            delivery_receipt_line(channel_id, &event_ids),
+            format!("turn delivered Punks events for channel {channel_id}: alpha,beta")
+        );
     }
 
     // MINOR (#2884): the permission-mode RPC is gated on agent_supports_mode.
@@ -4753,12 +4769,12 @@ mod tests {
             None,
         );
         assert!(servers[0].env.iter().any(|entry| {
-            entry.name == "BUZZ_GIT_ORIGIN_CHANNEL_ID" && entry.value == channel_id.to_string()
+            entry.name == "PUNKS_GIT_ORIGIN_CHANNEL_ID" && entry.value == channel_id.to_string()
         }));
         assert!(!servers[0]
             .env
             .iter()
-            .any(|entry| entry.name == "BUZZ_GIT_ORIGIN_AGENT_NAME"));
+            .any(|entry| entry.name == "PUNKS_GIT_ORIGIN_AGENT_NAME"));
     }
 
     #[test]
@@ -4770,12 +4786,12 @@ mod tests {
             Some("Builder"),
         );
         assert!(servers[0].env.iter().any(|entry| {
-            entry.name == "BUZZ_GIT_ORIGIN_AGENT_NAME" && entry.value == "Builder"
+            entry.name == "PUNKS_GIT_ORIGIN_AGENT_NAME" && entry.value == "Builder"
         }));
         assert!(!servers[0]
             .env
             .iter()
-            .any(|entry| entry.name == "BUZZ_GIT_ORIGIN_CHANNEL_ID"));
+            .any(|entry| entry.name == "PUNKS_GIT_ORIGIN_CHANNEL_ID"));
     }
 
     // These pin the initial_message dispatch path (run_prompt_task, ~line 855):
@@ -4817,7 +4833,7 @@ mod tests {
     fn test_heartbeat_standing_block_is_base_only() {
         // A heartbeat has no channel, so core and canvas are absent by
         // construction — and it has never carried the persona. Pin that the
-        // shared helper does not start handing heartbeats [System].
+        // shared helper does not start handing heartbeats [Agent Instructions].
         let composed = prepend_standing_for_legacy(1, &base_only(Some("be helpful")), "tick");
         assert_eq!(composed, "[Base]\nbe helpful\n\ntick");
     }
@@ -4828,7 +4844,7 @@ mod tests {
         assert!(!has_system_prompt_support(2, "goose", Some(false)));
         assert!(has_system_prompt_support(2, "goose", Some(true)));
         assert!(has_system_prompt_support(1, "goose", Some(true)));
-        assert!(has_system_prompt_support(2, "buzz-agent", None));
+        assert!(has_system_prompt_support(2, "punks-agent", None));
         // Goose never receives system prompt via session/new (uses post-hoc method).
         assert_eq!(
             session_new_system_prompt(true, 2, "goose", Some("instructions")),
@@ -4836,7 +4852,7 @@ mod tests {
         );
         // Protocol-v2 non-goose gets Field transport.
         assert_eq!(
-            session_new_system_prompt(false, 2, "buzz-agent", Some("instructions")),
+            session_new_system_prompt(false, 2, "punks-agent", Some("instructions")),
             Some(SystemPromptTransport::Field("instructions"))
         );
         // Protocol-v1 non-goose, non-claude gets None (legacy user-message framing).
@@ -4901,7 +4917,7 @@ mod tests {
         let composed = prepend_standing_for_legacy(1, &full_standing(), "do the thing");
         let positions: Vec<usize> = [
             "[Base]",
-            "[System]",
+            "[Agent Instructions]",
             "[Team Instructions]",
             "[Agent Memory — core]",
             "[Huddle Instructions]",
@@ -4957,86 +4973,64 @@ mod tests {
         // Also the regression guard against #2372: the session title travels
         // out of band in `_meta.sessionTitle`, so this exact-bytes assertion is
         // what pins the framing against a `[Session]` section reappearing here.
-        let framed = framed_system_prompt("/", Some("base text"), Some("persona text"))
+        let framed = framed_system_prompt("/workspace", Some("base text"), Some("persona text"))
             .expect("both present yields Some");
-        assert_eq!(framed, "[Base]\nbase text\n\n[System]\npersona text");
+        assert_eq!(
+            framed,
+            "[Base]\nbase text\n\n[Workspace]\nCurrent working directory: /workspace\n\n[Agent Instructions]\npersona text"
+        );
     }
 
     #[test]
     fn test_framed_system_prompt_base_only_labels_base() {
-        let framed = framed_system_prompt("/", Some("base text"), None).expect("base yields Some");
-        assert_eq!(framed, "[Base]\nbase text");
+        let framed =
+            framed_system_prompt("/workspace", Some("base text"), None).expect("base yields Some");
+        assert_eq!(
+            framed,
+            "[Base]\nbase text\n\n[Workspace]\nCurrent working directory: /workspace"
+        );
     }
 
     #[test]
-    fn test_framed_system_prompt_persona_only_labels_system() {
+    fn test_framed_system_prompt_persona_only_labels_agent_instructions() {
         // A bare persona would be mislabeled "Base" downstream — it must carry
-        // its own [System] header even when no base prompt exists.
-        let framed =
-            framed_system_prompt("/", None, Some("persona text")).expect("persona yields Some");
-        assert_eq!(framed, "[System]\npersona text");
+        // its own [Agent Instructions] header even when no base prompt exists.
+        let framed = framed_system_prompt("/workspace", None, Some("persona text"))
+            .expect("persona yields Some");
+        assert_eq!(framed, "[Agent Instructions]\npersona text");
     }
 
     #[test]
     fn test_framed_system_prompt_neither_is_none() {
-        assert!(framed_system_prompt("/", None, None).is_none());
+        assert!(framed_system_prompt("/workspace", None, None).is_none());
     }
 
     #[test]
-    fn test_framed_system_prompt_absolute_cwd_prepends_workspace_before_base() {
-        let framed = framed_system_prompt("/Users/me/.buzz", Some("base text"), None)
-            .expect("base yields Some");
-        assert!(
-            framed.starts_with("[Workspace]\n"),
-            "workspace section must lead: {framed}"
+    fn test_workspace_section_preserves_windows_cwd() {
+        assert_eq!(
+            workspace_section(r"C:\Users\me\buzz"),
+            "[Workspace]\nCurrent working directory: C:\\Users\\me\\buzz"
         );
-        assert!(framed.contains("`/Users/me/.buzz`"));
-        assert!(
-            framed.contains("\n\n[Base]\nbase text"),
-            "base must follow the workspace section: {framed}"
-        );
-    }
-
-    #[test]
-    fn test_framed_system_prompt_persona_only_omits_workspace() {
-        // The workspace section grounds the base prompt's layout; a persona-only
-        // agent never received that layout, so no [Workspace] anchor is emitted.
-        let framed = framed_system_prompt("/Users/me/.buzz", None, Some("persona text"))
-            .expect("persona yields Some");
-        assert_eq!(framed, "[System]\npersona text");
-    }
-
-    #[test]
-    fn test_framed_system_prompt_root_cwd_omits_workspace() {
-        // The "/" fallback must never be named — it would invite a $HOME scan.
-        let framed = framed_system_prompt("/", Some("base text"), None).expect("base yields Some");
-        assert_eq!(framed, "[Base]\nbase text");
-    }
-
-    #[test]
-    fn test_workspace_section_relative_cwd_is_none() {
-        assert!(workspace_section("relative/path").is_none());
-        assert!(workspace_section("").is_none());
     }
 
     #[test]
     fn test_with_core_appends_below_framed() {
         let framed = with_core(
-            Some("[System]\npersona".to_string()),
+            Some("[Agent Instructions]\npersona".to_string()),
             Some("[Agent Memory — core]\nbe helpful"),
         )
         .expect("both present yields Some");
         assert_eq!(
             framed,
-            "[System]\npersona\n\n[Agent Memory — core]\nbe helpful"
+            "[Agent Instructions]\npersona\n\n[Agent Memory — core]\nbe helpful"
         );
     }
 
     #[test]
     fn test_with_core_framed_only_passes_through() {
-        let framed = with_core(Some("[System]\npersona".to_string()), None)
+        let framed = with_core(Some("[Agent Instructions]\npersona".to_string()), None)
             .expect("framed-only yields Some");
-        assert_eq!(framed, "[System]\npersona");
+        assert_eq!(framed, "[Agent Instructions]\npersona");
     }
 
     #[test]
@@ -5957,7 +5951,7 @@ mod tests {
     #[tokio::test]
     async fn run_prompt_task_commits_standing_context_only_after_acp_success() {
         let capture = std::env::temp_dir().join(format!(
-            "buzz-acp-standing-lifecycle-{}.ndjson",
+            "punks-acp-standing-lifecycle-{}.ndjson",
             Uuid::new_v4()
         ));
         let quoted_capture = capture.to_string_lossy().replace('\'', "'\\''");
@@ -6053,7 +6047,7 @@ done"#
     #[tokio::test]
     async fn channel_prompt_commits_delivery_state_only_after_acp_success() {
         let capture = std::env::temp_dir().join(format!(
-            "buzz-acp-channel-delivery-lifecycle-{}.ndjson",
+            "punks-acp-channel-delivery-lifecycle-{}.ndjson",
             Uuid::new_v4()
         ));
         let quoted_capture = capture.to_string_lossy().replace('\'', "'\\''");
@@ -6233,7 +6227,7 @@ done"#
         });
 
         let capture = std::env::temp_dir().join(format!(
-            "buzz-acp-merged-delivery-wire-{}.ndjson",
+            "punks-acp-merged-delivery-wire-{}.ndjson",
             Uuid::new_v4()
         ));
         let quoted_capture = capture.to_string_lossy().replace('\'', "'\\''");
@@ -6389,7 +6383,7 @@ done"#
         });
 
         let capture = std::env::temp_dir().join(format!(
-            "buzz-acp-late-steer-wire-{}.ndjson",
+            "punks-acp-late-steer-wire-{}.ndjson",
             Uuid::new_v4()
         ));
         let quoted_capture = capture.to_string_lossy().replace('\'', "'\\''");
@@ -7662,18 +7656,18 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
     }
 
     /// `publish_agent_turn_metric` uses `ctx.harness_name` in the payload.
-    /// A buzz-agent-commanded context must not panic — verifies the harness
+    /// A punks-agent-commanded context must not panic — verifies the harness
     /// field flows through encrypt/sign without error.
     #[tokio::test]
     async fn test_publish_agent_turn_metric_buzz_agent_harness_name() {
         let agent_keys = nostr::Keys::generate();
         let owner_keys = nostr::Keys::generate();
         let mut ctx = make_prompt_context_with_owner(&agent_keys, owner_keys.public_key());
-        ctx.harness_name = "buzz-agent".to_string();
+        ctx.harness_name = "punks-agent".to_string();
         let usage = crate::usage::TurnUsage {
             session_id: "sess-ba".to_string(),
             turn_seq: 1,
-            delta_reliable: false, // first turn from buzz-agent
+            delta_reliable: false, // first turn from punks-agent
             turn_input_tokens: None,
             turn_output_tokens: None,
             turn_total_tokens: None,
@@ -7822,7 +7816,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
     /// not hardcoded to None.
     #[test]
     fn test_build_turn_metric_counts_cache_read_tokens_thread_through() {
-        // Wire-parse a buzz-agent payload with cache, run it through the tracker,
+        // Wire-parse a punks-agent payload with cache, run it through the tracker,
         // and verify the published TokenCounts carry the cache field.
         let raw1 = serde_json::json!({
             "sessionId": "cache-sess",
@@ -8028,7 +8022,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
             "[Channel Canvas]\n\
              Canvas revision (event ID): a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2\n\
              Last modified: 2024-01-15T10:30:00+00:00\n\
-             Fetch current content with: buzz canvas get --channel 00f1ccaf-1506-4dd7-9a0e-fa67e9e486ae"
+             Fetch current content with: punks canvas get --channel 00f1ccaf-1506-4dd7-9a0e-fa67e9e486ae"
         );
     }
 
@@ -8138,7 +8132,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
         let result = canvas_section_from_query_response(&[ev], CHANNEL_UUID);
         let section = result.expect("expected Some");
         assert!(section.contains(&id), "section must contain the event id");
-        assert!(section.contains("buzz canvas get --channel"));
+        assert!(section.contains("punks canvas get --channel"));
         assert!(section.contains(CHANNEL_UUID));
         assert!(section.starts_with("[Channel Canvas]"));
         // Timestamp must use Z suffix, not +00:00

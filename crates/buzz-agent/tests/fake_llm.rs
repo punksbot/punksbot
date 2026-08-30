@@ -16,6 +16,9 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 
+mod common;
+use common::approve_permission;
+
 async fn spawn_fake_llm(responses: Vec<Value>) -> String {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("http://{}", listener.local_addr().unwrap());
@@ -175,13 +178,13 @@ impl Harness {
     async fn spawn(base_url: &str) -> Self {
         let bin = env!("CARGO_BIN_EXE_buzz-agent");
         let mut cmd = tokio::process::Command::new(bin);
-        cmd.env("BUZZ_AGENT_PROVIDER", "openai")
+        cmd.env("PUNKS_AGENT_PROVIDER", "openai")
             .env("OPENAI_COMPAT_API_KEY", "test")
             .env("OPENAI_COMPAT_MODEL", "fake-model")
             .env("OPENAI_COMPAT_BASE_URL", base_url)
-            .env("BUZZ_AGENT_LLM_TIMEOUT_SECS", "5")
-            .env("BUZZ_AGENT_TOOL_TIMEOUT_SECS", "5")
-            .env("BUZZ_AGENT_MAX_ROUNDS", "4")
+            .env("PUNKS_AGENT_LLM_TIMEOUT_SECS", "5")
+            .env("PUNKS_AGENT_TOOL_TIMEOUT_SECS", "5")
+            .env("PUNKS_AGENT_MAX_ROUNDS", "4")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
@@ -275,7 +278,7 @@ async fn init_session(h: &mut Harness) -> String {
     .await;
     let r = h.recv().await;
     assert_eq!(r["result"]["protocolVersion"], 2);
-    assert_eq!(r["result"]["agentInfo"]["name"], "buzz-agent");
+    assert_eq!(r["result"]["agentInfo"]["name"], "punks-agent");
     h.send("session/new", json!({"cwd":"/tmp","mcpServers":[]}))
         .await;
     let r = h.recv().await;
@@ -396,12 +399,7 @@ async fn unsupported_image_response_recovers_without_replaying_image() {
     loop {
         let message = h.recv().await;
         if message.get("method") == Some(&json!("session/request_permission")) {
-            h.write(json!({
-                "jsonrpc": "2.0",
-                "id": message["id"],
-                "result": { "outcome": { "outcome": "selected", "optionId": "allow" } },
-            }))
-            .await;
+            h.write(approve_permission(&message)).await;
         } else if message["id"] == json!(prompt_id) {
             assert_eq!(message["result"]["stopReason"], "end_turn");
             break;
@@ -572,11 +570,11 @@ async fn rejects_oversized_line() {
     let url = spawn_fake_llm(vec![]).await;
     let bin = env!("CARGO_BIN_EXE_buzz-agent");
     let mut cmd = tokio::process::Command::new(bin);
-    cmd.env("BUZZ_AGENT_PROVIDER", "openai")
+    cmd.env("PUNKS_AGENT_PROVIDER", "openai")
         .env("OPENAI_COMPAT_API_KEY", "test")
         .env("OPENAI_COMPAT_MODEL", "fake-model")
         .env("OPENAI_COMPAT_BASE_URL", &url)
-        .env("BUZZ_AGENT_MAX_LINE_BYTES", "256")
+        .env("PUNKS_AGENT_MAX_LINE_BYTES", "256")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -689,7 +687,7 @@ async fn system_prompt_reaches_llm_system_role() {
 
     // The agent's default prompt must NOT appear — it is suppressed when
     // the harness provides a systemPrompt.
-    let default_prompt = "You are buzz-agent";
+    let default_prompt = "You are punks-agent";
     assert!(
         !system_content.contains(default_prompt),
         "system message must NOT contain the default prompt when systemPrompt is provided.\nGot: {system_content}"
@@ -750,7 +748,7 @@ async fn system_prompt_absent_no_canary() {
 
     // But the agent's default prompt should still be there.
     assert!(
-        system_content.contains("You are buzz-agent"),
+        system_content.contains("You are punks-agent"),
         "system message must still contain the agent's default prompt"
     );
 

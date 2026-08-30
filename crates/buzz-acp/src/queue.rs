@@ -1,4 +1,4 @@
-//! Event queue state machine for buzz-acp.
+//! Event queue state machine for punks-acp.
 //!
 //! Manages per-channel event queues with per-channel in-flight tracking.
 //! When the harness is ready to prompt the agent, it flushes the channel with
@@ -875,47 +875,30 @@ pub struct ThreadTags {
 
 /// Parse NIP-10 thread tags from a Nostr event.
 ///
-/// Detection logic (per research doc §4c):
-/// - Find an `e` tag with `root` marker → its value is `root_event_id`
-/// - Find an `e` tag with `reply` marker → its value is `parent_event_id`
-/// - If only `reply` marker found (direct reply to root), root == parent
-/// - `p` tags → mentioned pubkeys
+/// Marker parsing and the (root, reply) → (root, parent) collapse are delegated
+/// to [`buzz_core::nip10`] so ACP anchoring reads ancestry exactly as relay
+/// ingest does. Only `p`-tag mention collection is local to ACP.
 ///
-/// NOTE: Only handles NIP-10 marker-based format (preferred). The deprecated
-/// positional format (no markers, `["e", id, relay_url]`) is not supported —
-/// Buzz always generates marker-based tags (see relay messages.rs:762-783).
+/// Consequences of sharing the resolver:
+/// - A malformed (non-64-hex) marker id is ignored, never a thread link —
+///   restoring parity with ingest (ACP previously counted it).
+/// - A lone `root` marker (no `reply`) is top-level, not a reply — again
+///   matching ingest.
 pub fn parse_thread_tags(event: &Event) -> ThreadTags {
-    let mut root = None;
-    let mut reply = None;
-    let mut mentions = Vec::new();
-
-    for tag in event.tags.iter() {
-        let parts = tag.as_slice();
-        match parts.first().map(|s| s.as_str()) {
-            Some("e") if parts.len() >= 4 => {
-                let id = &parts[1];
-                let marker = &parts[3];
-                match marker.as_str() {
-                    "root" => root = Some(id.clone()),
-                    "reply" => reply = Some(id.clone()),
-                    _ => {}
-                }
-            }
-            Some("p") if parts.len() >= 2 => {
-                mentions.push(parts[1].clone());
-            }
-            _ => {}
-        }
-    }
-
-    // For direct replies to root: single "reply" tag, no "root" tag.
-    // In that case, root == parent.
-    let (root_event_id, parent_event_id) = match (root, reply) {
-        (Some(r), Some(p)) => (Some(r), Some(p)),
-        (Some(r), None) => (Some(r.clone()), Some(r)),
-        (None, Some(p)) => (Some(p.clone()), Some(p)),
-        (None, None) => (None, None),
+    let markers = buzz_core::nip10::parse_thread_markers(&event.tags);
+    let (root_event_id, parent_event_id) = match markers.resolve() {
+        Some((root, parent)) => (Some(root), Some(parent)),
+        None => (None, None),
     };
+
+    let mentions = event
+        .tags
+        .iter()
+        .filter_map(|tag| {
+            let parts = tag.as_slice();
+            (parts.len() >= 2 && parts[0] == "p").then(|| parts[1].clone())
+        })
+        .collect();
 
     ThreadTags {
         root_event_id,
@@ -927,7 +910,7 @@ pub fn parse_thread_tags(event: &Event) -> ThreadTags {
 /// Extract a leading slash command from message content.
 ///
 /// ACP connectors (claude-agent-acp, codex-acp) detect slash commands by
-/// checking whether the **first** prompt content block starts with `/`. Buzz
+/// checking whether the **first** prompt content block starts with `/`. Punks
 /// users must @mention an agent to reach it, so the wire content is typically
 /// `"@Eva /goal ship it"`. This strips leading mention tokens — `@word`,
 /// multi-word display names from `known_names`, and NIP-27 `nostr:npub1…` /
@@ -955,7 +938,7 @@ pub fn extract_slash_command(content: &str, known_names: &[&str]) -> Option<Stri
         } else if let Some(after_at) = rest.strip_prefix('@') {
             // Known display names first (longest match wins, case-insensitive,
             // must end at whitespace or end-of-string), then a single-word
-            // token of the characters Buzz allows in plain @mentions.
+            // token of the characters Punks allows in plain @mentions.
             let name_len = names
                 .iter()
                 .find_map(|name| {
@@ -1192,7 +1175,7 @@ pub(crate) fn format_event_block(
 fn append_reply_instruction(s: &mut String, event_id: &str) {
     s.push_str(&format!(
         "\nIMPORTANT: For ordinary replies in this turn, use `--reply-to {event_id}` \
-         on `buzz messages send` so the conversation stays threaded. \
+         on `punks messages send` so the conversation stays threaded. \
          If the human explicitly asks for a channel-root, top-level, \
          or broadcast post, send that message without `--reply-to`. \
          If the requested destination is ambiguous, ask before sending."
@@ -1207,7 +1190,7 @@ fn append_reply_instruction(s: &mut String, event_id: &str) {
 fn append_new_thread_reply_instruction(s: &mut String, event_id: &str) {
     s.push_str(&format!(
         "\nIMPORTANT: This is a new top-level message. For ordinary replies in \
-         this turn, use `--reply-to {event_id}` on `buzz messages send` — the \
+         this turn, use `--reply-to {event_id}` on `punks messages send` — the \
          triggering message is the thread root. Do NOT reply into any other \
          (older) thread. If the human explicitly asks for a channel-root, \
          top-level, or broadcast post, send that message without `--reply-to`."
@@ -1336,17 +1319,17 @@ fn format_context_hints(
         // DM replies use thread command because /messages excludes thread replies.
         // DM non-replies use get for recent conversation.
         let ctx_hint = if has_conversation_context && is_reply {
-            "Thread context included below. Use `buzz messages thread --channel <UUID> --event <ID>` for full history if truncated."
+            "Thread context included below. Use `punks messages thread --channel <UUID> --event <ID>` for full history if truncated."
         } else if has_conversation_context {
-            "Conversation context included below. Use `buzz messages get --channel <UUID>` for full history if truncated."
+            "Conversation context included below. Use `punks messages get --channel <UUID>` for full history if truncated."
         } else if conversation_context_had_delivered_events && is_reply {
-            "Earlier thread context was already delivered in this session. Use `buzz messages thread --channel <UUID> --event <ID>` to re-read the reply chain."
+            "Earlier thread context was already delivered in this session. Use `punks messages thread --channel <UUID> --event <ID>` to re-read the reply chain."
         } else if conversation_context_had_delivered_events {
-            "Earlier conversation context was already delivered in this session. Use `buzz messages get --channel <UUID>` to re-read it."
+            "Earlier conversation context was already delivered in this session. Use `punks messages get --channel <UUID>` to re-read it."
         } else if is_reply {
-            "Use `buzz messages thread --channel <UUID> --event <ID>` to fetch the reply chain."
+            "Use `punks messages thread --channel <UUID> --event <ID>` to fetch the reply chain."
         } else {
-            "Use `buzz messages get --channel <UUID>` for conversation context."
+            "Use `punks messages get --channel <UUID>` for conversation context."
         };
         let mut s = format!(
             "[Context]\n\
@@ -1369,11 +1352,11 @@ fn format_context_hints(
         s
     } else if let Some(ref root) = thread_tags.root_event_id {
         let ctx_hint = if has_conversation_context {
-            "Thread context included below. Use `buzz messages thread --channel <UUID> --event <ID>` for full history if truncated."
+            "Thread context included below. Use `punks messages thread --channel <UUID> --event <ID>` for full history if truncated."
         } else if conversation_context_had_delivered_events {
-            "Earlier thread context was already delivered in this session. Use `buzz messages thread --channel <UUID> --event <ID>` to re-read it."
+            "Earlier thread context was already delivered in this session. Use `punks messages thread --channel <UUID> --event <ID>` to re-read it."
         } else {
-            "Use `buzz messages thread --channel <UUID> --event <ID>` to fetch thread context."
+            "Use `punks messages thread --channel <UUID> --event <ID>` to fetch thread context."
         };
         let mut s = format!(
             "[Context]\n\
@@ -1400,7 +1383,7 @@ fn format_context_hints(
         );
         append_channel_description(&mut s, channel_info);
         s.push_str(
-            "\nHint: Use `buzz messages get --channel <UUID>` for recent messages if needed.",
+            "\nHint: Use `punks messages get --channel <UUID>` for recent messages if needed.",
         );
         if let Some(event_id) = reply_anchor {
             append_new_thread_reply_instruction(&mut s, event_id);
@@ -1458,13 +1441,13 @@ pub struct FormatPromptArgs<'a> {
     pub profile_lookup: Option<&'a PromptProfileLookup>,
     /// When true, base_prompt and system_prompt are delivered via the system
     /// role (session/new) and omitted from the user message. When false
-    /// (legacy agents), they are injected as `[Base]` and `[System]` sections.
+    /// (legacy agents), they are injected as `[Base]` and `[Agent Instructions]` sections.
     pub has_system_prompt_support: bool,
     /// Base prompt content for legacy agents (protocol_version < 2).
     pub base_prompt: Option<&'a str>,
     /// System prompt content for legacy agents (protocol_version < 2).
     pub system_prompt: Option<&'a str>,
-    /// Team instructions for legacy agents, rendered after `[System]`.
+    /// Team instructions for legacy agents, rendered after `[Agent Instructions]`.
     pub team_instructions: Option<&'a str>,
     /// Rendered `[Channel Canvas]` metadata section for legacy agents.
     ///
@@ -1510,7 +1493,7 @@ impl StandingContext<'_> {
             sections.push(base_section(bp));
         }
         if let Some(sp) = self.system_prompt {
-            sections.push(format!("[System]\n{sp}"));
+            sections.push(format!("[Agent Instructions]\n{sp}"));
         }
         if let Some(team) = self
             .team_instructions
@@ -1548,12 +1531,12 @@ pub(crate) fn base_section(base_prompt: &str) -> String {
 /// Format a [`FlushBatch`] into the per-section prompt blocks for the agent.
 ///
 /// Produces a stable prompt with these sections (in order):
-/// 0. [`StandingContext`] — `[Base]`, `[System]`, `[Team Instructions]`,
+/// 0. [`StandingContext`] — `[Base]`, `[Agent Instructions]`, `[Team Instructions]`,
 ///    `[Agent Memory — core]`, `[Channel Canvas]`. Legacy agents only, and only
 ///    on the session's first message (see `standing_context_sent`)
 /// 1. `[Context]` — scope, channel name, and contextual hints for the agent
 /// 2. `[Thread Context]` or `[Conversation Context]` — if fetched
-/// 3. `[Event]` / `[Buzz events]` — the triggering event(s)
+/// 3. `[Event]` / `[Punks events]` — the triggering event(s)
 ///
 /// Each section is returned as its own block rather than one joined string so
 /// the observer frame's size trimmer (`fit_observer_event_to_budget`) elides
@@ -1675,7 +1658,7 @@ pub fn format_prompt(batch: &FlushBatch, args: &FormatPromptArgs<'_>) -> Vec<Str
             )
         } else {
             format!(
-                "[Buzz event: {}]\n{}",
+                "[Punks event: {}]\n{}",
                 be.prompt_tag,
                 format_event_block(batch.channel_id, args.channel_info, be, args.profile_lookup)
             )
@@ -1688,7 +1671,7 @@ pub fn format_prompt(batch: &FlushBatch, args: &FormatPromptArgs<'_>) -> Vec<Str
                 batch.events.len()
             )
         } else {
-            format!("[Buzz events — {} events]", batch.events.len())
+            format!("[Punks events — {} events]", batch.events.len())
         };
         let mut s = header;
         for (i, be) in batch.events.iter().enumerate() {
@@ -2030,7 +2013,7 @@ mod tests {
         // Should contain [Context] section before the event.
         assert!(prompt.contains("[Context]"));
         assert!(prompt.contains("Scope: channel"));
-        assert!(prompt.contains("[Buzz event: @mention]\n"));
+        assert!(prompt.contains("[Punks event: @mention]\n"));
         assert!(prompt.contains(&format!("Channel: {}", ch)));
         assert!(prompt.contains(&format!("From: {}", npub)));
         assert!(prompt.contains("Content: Hello @agent"));
@@ -2429,7 +2412,7 @@ mod tests {
         let prompt = format_prompt(&batch, &FormatPromptArgs::default()).join("\n\n");
 
         assert!(prompt.contains("[Context]"));
-        assert!(prompt.contains("[Buzz events — 3 events]"));
+        assert!(prompt.contains("[Punks events — 3 events]"));
         assert!(prompt.contains("--- Event 1 (tag-a) ---"));
         assert!(prompt.contains("--- Event 2 (tag-b) ---"));
         assert!(prompt.contains("--- Event 3 (tag-c) ---"));
@@ -2457,7 +2440,7 @@ mod tests {
         let prompt = format_prompt(&batch, &FormatPromptArgs::default()).join("\n\n");
         // system_prompt and base_prompt are delivered via session/new system role,
         // so they must NOT appear in the user message.
-        assert!(!prompt.contains("[System]"));
+        assert!(!prompt.contains("[Agent Instructions]"));
         assert!(!prompt.contains("[Base]"));
         assert!(prompt.starts_with("[Context]"));
     }
@@ -2570,12 +2553,12 @@ mod tests {
         // They are delivered via session/new system role instead.
         let prompt = format_prompt(&batch, &FormatPromptArgs::default()).join("\n\n");
         assert!(!prompt.contains("[Base]"));
-        assert!(!prompt.contains("[System]"));
+        assert!(!prompt.contains("[Agent Instructions]"));
         assert!(prompt.starts_with("[Context]"));
     }
 
     #[test]
-    fn test_format_prompt_legacy_agent_emits_base_and_system() {
+    fn test_format_prompt_legacy_agent_emits_base_and_agent_instructions() {
         let ch = Uuid::new_v4();
         let event = make_event("hello");
 
@@ -2609,20 +2592,23 @@ mod tests {
             "missing [Base] section"
         );
         assert!(
-            prompt.contains("[System]\ntest system prompt"),
-            "missing [System] section"
+            prompt.contains("[Agent Instructions]\ntest system prompt"),
+            "missing [Agent Instructions] section"
         );
 
-        // [Base] and [System] must appear BEFORE [Agent Memory] and [Context]
+        // [Base] and [Agent Instructions] must appear BEFORE [Agent Memory] and [Context]
         let base_pos = prompt.find("[Base]").unwrap();
-        let system_pos = prompt.find("[System]").unwrap();
+        let system_pos = prompt.find("[Agent Instructions]").unwrap();
         let core_pos = prompt.find("[Agent Memory").unwrap();
         let context_pos = prompt.find("[Context]").unwrap();
 
-        assert!(base_pos < system_pos, "[Base] should come before [System]");
+        assert!(
+            base_pos < system_pos,
+            "[Base] should come before [Agent Instructions]"
+        );
         assert!(
             system_pos < core_pos,
-            "[System] should come before [Agent Memory]"
+            "[Agent Instructions] should come before [Agent Memory]"
         );
         assert!(
             core_pos < context_pos,
@@ -2666,7 +2652,7 @@ mod tests {
 
         for section in [
             "[Base]",
-            "[System]",
+            "[Agent Instructions]",
             "[Team Instructions]",
             "[Agent Memory — core]",
             "[Channel Canvas]",
@@ -2686,7 +2672,7 @@ mod tests {
     }
 
     #[test]
-    fn test_format_prompt_modern_agent_suppresses_base_and_system() {
+    fn test_format_prompt_modern_agent_suppresses_base_and_agent_instructions() {
         let ch = Uuid::new_v4();
         let event = make_event("hello");
 
@@ -2718,8 +2704,8 @@ mod tests {
             "[Base] should be suppressed for modern agents"
         );
         assert!(
-            !prompt.contains("[System]"),
-            "[System] should be suppressed for modern agents"
+            !prompt.contains("[Agent Instructions]"),
+            "[Agent Instructions] should be suppressed for modern agents"
         );
         assert!(prompt.starts_with("[Context]"));
     }
@@ -2778,9 +2764,9 @@ mod tests {
             context_pos < thread_pos,
             "[Context] must come before [Thread Context]"
         );
-        // No [Base] or [System] in user message
+        // No [Base] or [Agent Instructions] in user message
         assert!(!prompt.contains("[Base]"));
-        assert!(!prompt.contains("[System]"));
+        assert!(!prompt.contains("[Agent Instructions]"));
     }
 
     #[test]
@@ -3192,28 +3178,31 @@ mod tests {
     #[test]
     fn test_parse_thread_tags_direct_reply() {
         // Direct reply to root: single "reply" tag.
+        let root = "a".repeat(64);
         let event = make_event_with_tags(
             "reply to root",
-            vec![vec!["e".into(), "abc123".into(), "".into(), "reply".into()]],
+            vec![vec!["e".into(), root.clone(), "".into(), "reply".into()]],
         );
         let tags = parse_thread_tags(&event);
-        assert_eq!(tags.root_event_id.as_deref(), Some("abc123"));
-        assert_eq!(tags.parent_event_id.as_deref(), Some("abc123"));
+        assert_eq!(tags.root_event_id.as_deref(), Some(root.as_str()));
+        assert_eq!(tags.parent_event_id.as_deref(), Some(root.as_str()));
     }
 
     #[test]
     fn test_parse_thread_tags_nested_reply() {
         // Nested reply: root + reply tags.
+        let root = "a".repeat(64);
+        let parent = "b".repeat(64);
         let event = make_event_with_tags(
             "nested reply",
             vec![
-                vec!["e".into(), "root123".into(), "".into(), "root".into()],
-                vec!["e".into(), "parent456".into(), "".into(), "reply".into()],
+                vec!["e".into(), root.clone(), "".into(), "root".into()],
+                vec!["e".into(), parent.clone(), "".into(), "reply".into()],
             ],
         );
         let tags = parse_thread_tags(&event);
-        assert_eq!(tags.root_event_id.as_deref(), Some("root123"));
-        assert_eq!(tags.parent_event_id.as_deref(), Some("parent456"));
+        assert_eq!(tags.root_event_id.as_deref(), Some(root.as_str()));
+        assert_eq!(tags.parent_event_id.as_deref(), Some(parent.as_str()));
     }
 
     #[test]
@@ -3231,15 +3220,36 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_thread_tags_root_only() {
-        // Only root marker, no reply marker — root == parent.
+    fn test_parse_thread_tags_root_only_is_top_level() {
+        // Only a `root` marker, no `reply` — top-level, matching ingest. A lone
+        // `root` tag does not anchor a reply (behavior change from the old
+        // hand-rolled parser, which treated root == parent here).
+        let root = "a".repeat(64);
         let event = make_event_with_tags(
-            "reply",
-            vec![vec!["e".into(), "root123".into(), "".into(), "root".into()]],
+            "root only",
+            vec![vec!["e".into(), root, "".into(), "root".into()]],
         );
         let tags = parse_thread_tags(&event);
-        assert_eq!(tags.root_event_id.as_deref(), Some("root123"));
-        assert_eq!(tags.parent_event_id.as_deref(), Some("root123"));
+        assert!(tags.root_event_id.is_none());
+        assert!(tags.parent_event_id.is_none());
+    }
+
+    #[test]
+    fn test_parse_thread_tags_malformed_id_is_not_a_thread_link() {
+        // A non-64-hex marker id is ignored — parity with relay ingest, which
+        // never treats a malformed id as a thread link.
+        let event = make_event_with_tags(
+            "malformed marker",
+            vec![vec![
+                "e".into(),
+                "garbage".into(),
+                "".into(),
+                "reply".into(),
+            ]],
+        );
+        let tags = parse_thread_tags(&event);
+        assert!(tags.root_event_id.is_none());
+        assert!(tags.parent_event_id.is_none());
     }
 
     #[test]
@@ -3312,7 +3322,7 @@ mod tests {
             "yes go ahead",
             vec![vec![
                 "e".into(),
-                "root123".into(),
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
                 "".into(),
                 "reply".into(),
             ]],
@@ -3330,7 +3340,9 @@ mod tests {
 
         let prompt = format_prompt(&batch, &FormatPromptArgs::default()).join("\n\n");
         assert!(prompt.contains("Scope: thread"));
-        assert!(prompt.contains("Thread root: root123"));
+        assert!(prompt.contains(
+            "Thread root: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ));
     }
 
     #[test]
@@ -3340,7 +3352,7 @@ mod tests {
             "yes go ahead",
             vec![vec![
                 "e".into(),
-                "root123".into(),
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
                 "".into(),
                 "reply".into(),
             ]],
@@ -3645,7 +3657,7 @@ mod tests {
             "sounds good, do it",
             vec![vec![
                 "e".into(),
-                "root123".into(),
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
                 "".into(),
                 "reply".into(),
             ]],
@@ -3693,12 +3705,14 @@ mod tests {
         );
         // Hint should point to the thread command, not get.
         assert!(
-            prompt.contains("buzz messages thread"),
-            "DM reply hint should mention `buzz messages thread`, got:\n{prompt}"
+            prompt.contains("punks messages thread"),
+            "DM reply hint should mention `punks messages thread`, got:\n{prompt}"
         );
         // Thread structural info should be present.
         assert!(
-            prompt.contains("Thread root: root123"),
+            prompt.contains(
+                "Thread root: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            ),
             "DM reply should include thread root"
         );
         // Thread context should be included.
@@ -3712,7 +3726,7 @@ mod tests {
             "follow up",
             vec![vec![
                 "e".into(),
-                "root123".into(),
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
                 "".into(),
                 "reply".into(),
             ]],
@@ -3742,7 +3756,7 @@ mod tests {
         .join("\n\n");
 
         assert!(prompt.contains("Earlier thread context was already delivered in this session"));
-        assert!(prompt.contains("buzz messages thread"));
+        assert!(prompt.contains("punks messages thread"));
         assert!(!prompt.contains("Thread context included below"));
         assert!(!prompt.contains("[Thread Context"));
     }
@@ -3790,7 +3804,7 @@ mod tests {
         assert!(
             prompt.contains("Earlier conversation context was already delivered in this session")
         );
-        assert!(prompt.contains("buzz messages get"));
+        assert!(prompt.contains("punks messages get"));
         assert!(!prompt.contains("Conversation context included below"));
         assert!(!prompt.contains("[Conversation Context"));
     }
@@ -3826,12 +3840,12 @@ mod tests {
         .join("\n\n");
         assert!(prompt.contains("Scope: dm"));
         assert!(
-            prompt.contains("buzz messages get"),
-            "DM non-reply hint should mention `buzz messages get`"
+            prompt.contains("punks messages get"),
+            "DM non-reply hint should mention `punks messages get`"
         );
         assert!(
-            !prompt.contains("buzz messages thread"),
-            "DM non-reply should NOT mention `buzz messages thread`"
+            !prompt.contains("punks messages thread"),
+            "DM non-reply should NOT mention `punks messages thread`"
         );
     }
 
@@ -4459,7 +4473,7 @@ mod tests {
             "instruction should tell agents to honor explicit root/top-level requests"
         );
         assert!(
-            !prompt.contains("on EVERY `buzz messages send` call"),
+            !prompt.contains("on EVERY `punks messages send` call"),
             "instruction should not make reply-to absolute for every send"
         );
     }
@@ -4835,7 +4849,7 @@ mod tests {
 
     #[test]
     fn test_format_prompt_canvas_injected_for_legacy_agent() {
-        let canvas = "[Channel Canvas]\nCanvas revision (event ID): abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234\nLast modified: 2024-01-15T10:30:00+00:00\nFetch current content with: buzz canvas get --channel 00f1ccaf-1506-4dd7-9a0e-fa67e9e486ae";
+        let canvas = "[Channel Canvas]\nCanvas revision (event ID): abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234\nLast modified: 2024-01-15T10:30:00+00:00\nFetch current content with: punks canvas get --channel 00f1ccaf-1506-4dd7-9a0e-fa67e9e486ae";
         let ch = Uuid::new_v4();
         let batch = FlushBatch {
             channel_id: ch,
@@ -4864,7 +4878,7 @@ mod tests {
 
     #[test]
     fn test_format_prompt_canvas_omitted_for_modern_agent() {
-        let canvas = "[Channel Canvas]\nCanvas revision (event ID): abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234\nLast modified: 2024-01-15T10:30:00+00:00\nFetch current content with: buzz canvas get --channel 00f1ccaf-1506-4dd7-9a0e-fa67e9e486ae";
+        let canvas = "[Channel Canvas]\nCanvas revision (event ID): abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234\nLast modified: 2024-01-15T10:30:00+00:00\nFetch current content with: punks canvas get --channel 00f1ccaf-1506-4dd7-9a0e-fa67e9e486ae";
         let ch = Uuid::new_v4();
         let batch = FlushBatch {
             channel_id: ch,
@@ -5310,7 +5324,7 @@ mod tests {
             "reply in thread",
             vec![vec![
                 "e".into(),
-                "root123".into(),
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
                 "".into(),
                 "reply".into(),
             ]],

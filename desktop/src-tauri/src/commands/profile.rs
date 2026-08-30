@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use buzz_core_pkg::PresenceStatus;
+use punks_core_pkg::PresenceStatus;
 use serde_json::Value;
 use tauri::State;
 

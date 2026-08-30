@@ -144,6 +144,40 @@ function environnementStagingWorkerd(
 }
 
 describe("desktop-social-loop@1 discovery API", () => {
+  it("exposes the additional authoritative desktop capabilities only locally", async () => {
+    const response = await route(
+      new Request("https://punks.local/api/v1/desktop/compatibility", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          contract: "desktop.compatibility@1",
+          profile: "desktop-social-loop@1",
+          clientVersion: "0.6.0",
+          distribution: "development",
+          platform: "macos-arm64",
+        }),
+      }),
+      {
+        ...(env as ApiEnv),
+        ENVIRONMENT: "local",
+        DESKTOP_SOCIAL_LOOP_ENABLED: "true",
+      } as ApiEnv,
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      compatible: true,
+      environment: "local",
+      capabilities: expect.arrayContaining([
+        "conversation-follow",
+        "message-lifecycle",
+        "identity-governance",
+        "presence",
+        "search",
+      ]),
+    });
+  });
+
   it("fails closed on compatibility before any Workspace mount", async () => {
     const workerVersionId = "e7da36e8-7c29-44df-a672-ae132818d042";
     const workerVersions = [
@@ -161,9 +195,8 @@ describe("desktop-social-loop@1 discovery API", () => {
         versionId: versionsByName.get(name),
       }),
     });
-    const unavailable = await SELF.fetch(
-      "https://punks.bot/api/v1/desktop/compatibility",
-      {
+    const unavailable = await route(
+      new Request("https://punks.bot/api/v1/desktop/compatibility", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -173,7 +206,11 @@ describe("desktop-social-loop@1 discovery API", () => {
           distribution: "development",
           platform: "macos-arm64",
         }),
-      },
+      }),
+      {
+        ...(env as unknown as ApiEnv),
+        DESKTOP_SOCIAL_LOOP_ENABLED: "false",
+      } as unknown as ApiEnv,
     );
     expect(unavailable.status).toBe(200);
     await expect(unavailable.json()).resolves.toMatchObject({

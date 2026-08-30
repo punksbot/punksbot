@@ -128,7 +128,6 @@ pub async fn get_global_notes(
     before_id: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<UserNotesResponse, String> {
-    let _ = before_id;
     let mut filter = serde_json::Map::new();
     filter.insert("kinds".to_string(), serde_json::json!([1]));
     filter.insert(
@@ -137,6 +136,10 @@ pub async fn get_global_notes(
     );
     if let Some(t) = before {
         filter.insert("until".to_string(), serde_json::json!(t));
+    }
+    if let Some(before_id) = before_id {
+        validate_note_id(&before_id)?;
+        filter.insert("before_id".to_string(), serde_json::json!(before_id));
     }
 
     let events = query_relay(&state, &[serde_json::Value::Object(filter)]).await?;

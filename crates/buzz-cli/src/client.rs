@@ -518,7 +518,7 @@ fn advance_query_cursor(
     Ok(())
 }
 
-pub struct BuzzClient {
+pub struct PunksClient {
     http: reqwest::Client,
     relay_url: String, // base URL, no trailing slash, e.g. "https://relay.buzz.place"
     keys: Keys,
@@ -528,14 +528,14 @@ pub struct BuzzClient {
     auth_tag_json: Option<String>,
 }
 
-impl BuzzClient {
+impl PunksClient {
     /// Create a new client pointing at `relay_url`.
     ///
     /// Timeout defaults are tuned for degraded WAN links and can be overridden
     /// via environment variables:
     ///
-    /// - `BUZZ_CONNECT_TIMEOUT_SECS` — TCP connect timeout (default 15 s)
-    /// - `BUZZ_TIMEOUT_SECS` — per-request total timeout (default 30 s)
+    /// - `PUNKS_CONNECT_TIMEOUT_SECS` — TCP connect timeout (default 15 s)
+    /// - `PUNKS_TIMEOUT_SECS` — per-request total timeout (default 30 s)
     ///
     /// A value of zero for either variable is treated as invalid and falls back to the default.
     pub fn new(
@@ -545,8 +545,8 @@ impl BuzzClient {
         auth_tag_json: Option<String>,
     ) -> Result<Self, CliError> {
         let http = reqwest::Client::builder()
-            .timeout(env_duration_secs("BUZZ_TIMEOUT_SECS", 30))
-            .connect_timeout(env_duration_secs("BUZZ_CONNECT_TIMEOUT_SECS", 15))
+            .timeout(env_duration_secs("PUNKS_TIMEOUT_SECS", 30))
+            .connect_timeout(env_duration_secs("PUNKS_CONNECT_TIMEOUT_SECS", 15))
             .build()
             .map_err(|e| CliError::Other(e.to_string()))?;
         Ok(Self {
@@ -988,9 +988,9 @@ impl BuzzClient {
                                     .map(str::to_string)
                             })
                             .unwrap_or(body_text);
-                        let message = if status == 403 && std::env::var("BUZZ_AUTH_TAG").is_ok() {
+                        let message = if status == 403 && std::env::var("PUNKS_AUTH_TAG").is_ok() {
                             format!(
-                                "{message} (BUZZ_AUTH_TAG is set — it may be stale or revoked; try unsetting it)"
+                                "{message} (PUNKS_AUTH_TAG is set — it may be stale or revoked; try unsetting it)"
                             )
                         } else {
                             message
@@ -1268,9 +1268,9 @@ impl BuzzClient {
                         .map(|s| s.to_string())
                 })
                 .unwrap_or(body);
-            if status == 403 && std::env::var("BUZZ_AUTH_TAG").is_ok() {
+            if status == 403 && std::env::var("PUNKS_AUTH_TAG").is_ok() {
                 let message = format!(
-                    "{message} (BUZZ_AUTH_TAG is set — it may be stale or revoked; try unsetting it)"
+                    "{message} (PUNKS_AUTH_TAG is set — it may be stale or revoked; try unsetting it)"
                 );
                 return Err(CliError::Relay {
                     status,
@@ -1287,7 +1287,7 @@ impl BuzzClient {
 }
 
 /// Normalize a relay URL: ws:// → http://, wss:// → https://, strip trailing slash.
-/// BUZZ_RELAY_URL may be ws/wss (copied from MCP config).
+/// PUNKS_RELAY_URL may be ws/wss (copied from MCP config).
 pub fn normalize_relay_url(url: &str) -> String {
     url.replace("wss://", "https://")
         .replace("ws://", "http://")
@@ -1561,7 +1561,7 @@ mod retry_tests {
     #[test]
     fn env_duration_secs_parsing() {
         // All assertions share one env var key; sequential set/remove prevents races.
-        const KEY: &str = "BUZZ_CLI_TEST_DURATION_SECS";
+        const KEY: &str = "PUNKS_CLI_TEST_DURATION_SECS";
 
         // Valid numeric value is parsed.
         std::env::set_var(KEY, "42");
@@ -1584,7 +1584,7 @@ mod retry_tests {
 /// Integration tests for the kind-aware retry policy and body-boundary coverage.
 ///
 /// These tests spin up a local HTTP server using axum and issue real HTTP requests
-/// through `BuzzClient` to verify behavioural properties — not implementation details.
+/// through `PunksClient` to verify behavioural properties — not implementation details.
 #[cfg(test)]
 mod retry_policy_tests {
     use std::net::SocketAddr;
@@ -1600,7 +1600,7 @@ mod retry_policy_tests {
     use tokio::net::TcpListener;
 
     use super::super::error::CliError;
-    use super::BuzzClient;
+    use super::PunksClient;
 
     /// Spawn a one-shot axum server on a random port.  The handler `f` receives the
     /// attempt counter (incremented before every call) and returns a `(StatusCode,
@@ -1641,9 +1641,9 @@ mod retry_policy_tests {
         (format!("http://{addr}"), counter)
     }
 
-    fn test_client(base_url: &str) -> BuzzClient {
+    fn test_client(base_url: &str) -> PunksClient {
         let keys = Keys::generate();
-        BuzzClient::new(base_url.to_string(), keys, None, None).unwrap()
+        PunksClient::new(base_url.to_string(), keys, None, None).unwrap()
     }
 
     fn make_moderation_event(keys: &Keys, kind: u16) -> nostr::Event {
@@ -2304,7 +2304,7 @@ mod retry_policy_tests {
 mod tests {
     use super::{
         advance_query_cursor, create_response_with_id_if_accepted, extract_relay_response_field,
-        BuzzClient,
+        PunksClient,
     };
     use nostr::{EventBuilder, Keys, Kind, Tag};
 
@@ -2396,7 +2396,7 @@ mod tests {
     fn sign_event_unchecked_does_not_inject_ambient_auth_tag() {
         let keys = Keys::generate();
         let (auth_tag, auth_json) = make_auth_tag();
-        let client = BuzzClient::new(
+        let client = PunksClient::new(
             "https://test.relay".into(),
             keys,
             Some(auth_tag),
@@ -2424,7 +2424,7 @@ mod tests {
     fn sign_event_unchecked_preserves_callers_content_auth_tag() {
         let keys = Keys::generate();
         let (auth_tag, auth_json) = make_auth_tag();
-        let client = BuzzClient::new(
+        let client = PunksClient::new(
             "https://test.relay".into(),
             keys,
             Some(auth_tag),
@@ -2461,7 +2461,7 @@ mod tests {
     fn with_auth_tag_sets_header_when_configured() {
         let keys = Keys::generate();
         let (auth_tag, auth_json) = make_auth_tag();
-        let client = BuzzClient::new(
+        let client = PunksClient::new(
             "https://test.relay".into(),
             keys,
             Some(auth_tag),
@@ -2486,7 +2486,7 @@ mod tests {
     #[test]
     fn with_auth_tag_omits_header_when_not_configured() {
         let keys = Keys::generate();
-        let client = BuzzClient::new("https://test.relay".into(), keys, None, None).unwrap();
+        let client = PunksClient::new("https://test.relay".into(), keys, None, None).unwrap();
 
         let req = client.http.post("https://test.relay/events");
         let req = client.with_auth_tag(req);

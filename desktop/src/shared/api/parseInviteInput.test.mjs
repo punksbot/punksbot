@@ -57,12 +57,12 @@ test("parseInviteInput_https_url_encoded_code_decoded", () => {
 });
 
 // ---------------------------------------------------------------------------
-// buzz://join deep link URLs
+// punks-local://join deep link URLs
 // ---------------------------------------------------------------------------
 
-test("parseInviteInput_buzz_join_with_wss_relay_returns_relay_and_code", () => {
+test("parseInviteInput_punks_join_with_wss_relay_returns_relay_and_code", () => {
   const result = parseInviteInput(
-    "buzz://join?relay=wss://relay.example.com&code=abc123",
+    "punks-local://join?relay=wss://relay.example.com&code=abc123",
   );
   assert.deepEqual(result, {
     relayWsUrl: "wss://relay.example.com",
@@ -70,9 +70,9 @@ test("parseInviteInput_buzz_join_with_wss_relay_returns_relay_and_code", () => {
   });
 });
 
-test("parseInviteInput_buzz_join_with_ws_relay_returns_relay_and_code", () => {
+test("parseInviteInput_punks_join_with_ws_relay_returns_relay_and_code", () => {
   const result = parseInviteInput(
-    "buzz://join?relay=ws://localhost:3000&code=testcode",
+    "punks-local://join?relay=ws://localhost:3000&code=testcode",
   );
   assert.deepEqual(result, {
     relayWsUrl: "ws://localhost:3000",
@@ -80,9 +80,9 @@ test("parseInviteInput_buzz_join_with_ws_relay_returns_relay_and_code", () => {
   });
 });
 
-test("parseInviteInput_buzz_join_with_encoded_relay_param", () => {
+test("parseInviteInput_punks_join_with_encoded_relay_param", () => {
   const result = parseInviteInput(
-    "buzz://join?relay=wss%3A%2F%2Frelay.example.com&code=abc123",
+    "punks-local://join?relay=wss%3A%2F%2Frelay.example.com&code=abc123",
   );
   assert.deepEqual(result, {
     relayWsUrl: "wss://relay.example.com",
@@ -90,22 +90,22 @@ test("parseInviteInput_buzz_join_with_encoded_relay_param", () => {
   });
 });
 
-test("parseInviteInput_buzz_join_rejects_non_ws_relay", () => {
+test("parseInviteInput_punks_join_rejects_non_ws_relay", () => {
   const result = parseInviteInput(
-    "buzz://join?relay=https://relay.example.com&code=abc123",
+    "punks-local://join?relay=https://relay.example.com&code=abc123",
   );
   assert.equal(result, null);
 });
 
-test("parseInviteInput_buzz_join_rejects_missing_code", () => {
+test("parseInviteInput_punks_join_rejects_missing_code", () => {
   assert.equal(
-    parseInviteInput("buzz://join?relay=wss://relay.example.com"),
+    parseInviteInput("punks-local://join?relay=wss://relay.example.com"),
     null,
   );
 });
 
-test("parseInviteInput_buzz_join_rejects_missing_relay", () => {
-  assert.equal(parseInviteInput("buzz://join?code=abc123"), null);
+test("parseInviteInput_punks_join_rejects_missing_relay", () => {
+  assert.equal(parseInviteInput("punks-local://join?code=abc123"), null);
 });
 
 // ---------------------------------------------------------------------------
@@ -157,19 +157,19 @@ test("parseInviteInput_rejects_non_invite_https_pathname", () => {
   assert.equal(parseInviteInput("https://relay.example.com/invite/"), null);
 });
 
-test("parseInviteInput_rejects_buzz_join_with_credentials", () => {
+test("parseInviteInput_rejects_punks_join_with_credentials", () => {
   assert.equal(
     parseInviteInput(
-      "buzz://user:pass@join?relay=wss://relay.example.com&code=abc123",
+      "punks-local://user:pass@join?relay=wss://relay.example.com&code=abc123",
     ),
     null,
   );
 });
 
-test("parseInviteInput_rejects_buzz_join_with_hash", () => {
+test("parseInviteInput_rejects_punks_join_with_hash", () => {
   assert.equal(
     parseInviteInput(
-      "buzz://join?relay=wss://relay.example.com&code=abc123#frag",
+      "punks-local://join?relay=wss://relay.example.com&code=abc123#frag",
     ),
     null,
   );
@@ -194,19 +194,19 @@ test("parseInviteInput_rejects_input_with_scheme_as_bare_code", () => {
 // Nested relay param credential/fragment rejection (MINOR 6 regression)
 // ---------------------------------------------------------------------------
 
-test("parseInviteInput_buzz_join_rejects_credentials_in_nested_relay", () => {
+test("parseInviteInput_punks_join_rejects_credentials_in_nested_relay", () => {
   assert.equal(
     parseInviteInput(
-      "buzz://join?relay=wss%3A%2F%2Fuser%3Apass%40relay.example.com&code=abc",
+      "punks-local://join?relay=wss%3A%2F%2Fuser%3Apass%40relay.example.com&code=abc",
     ),
     null,
   );
 });
 
-test("parseInviteInput_buzz_join_rejects_fragment_in_nested_relay", () => {
+test("parseInviteInput_punks_join_rejects_fragment_in_nested_relay", () => {
   assert.equal(
     parseInviteInput(
-      "buzz://join?relay=wss%3A%2F%2Frelay.example.com%23frag&code=abc",
+      "punks-local://join?relay=wss%3A%2F%2Frelay.example.com%23frag&code=abc",
     ),
     null,
   );

@@ -1,5 +1,3 @@
-#![cfg(feature = "buzz-desktop")]
-
 //! Diagnostic regression test: rodio's `Player` is a single-queue FIFO, not a summing mixer.
 //!
 //! This pins the failure mode we hit at 3+ simultaneous speakers in `huddle`:

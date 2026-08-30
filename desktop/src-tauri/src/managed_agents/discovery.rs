@@ -5,14 +5,22 @@ use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use crate::managed_agents::{
-    buzz_managed_command_path, buzz_managed_node_bin_dir, buzz_managed_npm_bin_dir,
+    punks_managed_command_path, punks_managed_node_bin_dir, punks_managed_npm_bin_dir,
     AcpAvailabilityStatus, AcpRuntimeCatalogEntry, AuthStatus, CommandAvailabilityInfo,
     HarnessSource,
 };
+mod auth_status_cache;
+mod login_shell;
 mod presets;
 mod runtime_metadata;
 #[macro_use]
 mod windows_install;
+pub use login_shell::{find_nvm_default_bin, login_shell_path};
+pub(crate) use login_shell::{find_via_login_shell, refresh_login_shell_path};
+#[cfg(test)]
+pub(crate) use login_shell::{
+    is_login_shell_path_uninit, is_safe_nvm_tag, login_shell_candidates, parse_semver_tag,
+};
 pub(crate) use presets::{
     canonical_harness_command, command_for_runtime_id, preset_harness_definitions,
     preset_harness_ids,
@@ -23,8 +31,7 @@ pub(crate) use runtime_metadata::KnownAcpRuntime;
 const GOOSE_AVATAR_URL: &str = "https://goose-docs.ai/img/logo_dark.png";
 const CLAUDE_CODE_AVATAR_URL: &str = "https://anthropic.gallerycdn.vsassets.io/extensions/anthropic/claude-code/2.1.77/1773707456892/Microsoft.VisualStudio.Services.Icons.Default";
 const CODEX_AVATAR_URL: &str = "https://openai.gallerycdn.vsassets.io/extensions/openai/chatgpt/26.5313.41514/1773706730621/Microsoft.VisualStudio.Services.Icons.Default";
-const BUZZ_AGENT_AVATAR_URL: &str =
-    "https://raw.githubusercontent.com/block/buzz/refs/heads/main/crates/buzz-agent/buzz-agent.png";
+const PUNKS_AGENT_AVATAR_URL: &str = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23171717'/%3E%3Cpath d='M18 49V15h17c9 0 15 5 15 13S44 41 35 41h-7v8H18zm10-17h7c3 0 5-1 5-4s-2-4-5-4h-7v8z' fill='%23e9ff70'/%3E%3C/svg%3E";
 fn common_binary_paths() -> &'static [PathBuf] {
     static PATHS: OnceLock<Vec<PathBuf>> = OnceLock::new();
     PATHS.get_or_init(|| {
@@ -34,10 +41,10 @@ fn common_binary_paths() -> &'static [PathBuf] {
             PathBuf::from("/usr/bin"),
             PathBuf::from("/home/linuxbrew/.linuxbrew/bin"),
         ];
-        if let Some(managed_node_bin) = buzz_managed_node_bin_dir() {
+        if let Some(managed_node_bin) = punks_managed_node_bin_dir() {
             paths.insert(0, managed_node_bin);
         }
-        if let Some(managed_bin) = buzz_managed_npm_bin_dir() {
+        if let Some(managed_bin) = punks_managed_npm_bin_dir() {
             paths.insert(0, managed_bin);
         }
         if let Some(home) = dirs::home_dir() {
@@ -92,7 +99,7 @@ const KNOWN_ACP_RUNTIMES: &[KnownAcpRuntime] = &[
         adapter_install_commands: &[],
         cli_install_instructions_url: "https://goose-docs.ai/docs/getting-started/installation/",
         adapter_install_instructions_url: "",
-        cli_install_hint: "Buzz talks to Goose through the Goose CLI.",
+        cli_install_hint: "Punks talks to Goose through the Goose CLI.",
         adapter_install_hint: "",
         skill_dir: Some(".goose/skills"),
         supports_acp_model_switching: false,
@@ -125,8 +132,8 @@ const KNOWN_ACP_RUNTIMES: &[KnownAcpRuntime] = &[
         adapter_install_commands: &["npm install -g @agentclientprotocol/claude-agent-acp"],
         cli_install_instructions_url: "https://code.claude.com/docs/en/getting-started",
         adapter_install_instructions_url: "https://github.com/agentclientprotocol/claude-agent-acp",
-        cli_install_hint: "Buzz talks to Claude Code through the Claude Code CLI.",
-        adapter_install_hint: "Buzz talks to the Claude Code CLI through an ACP adapter. Install it with: npm install -g @agentclientprotocol/claude-agent-acp.",
+        cli_install_hint: "Punks talks to Claude Code through the Claude Code CLI.",
+        adapter_install_hint: "Punks talks to the Claude Code CLI through an ACP adapter. Install it with: npm install -g @agentclientprotocol/claude-agent-acp.",
         skill_dir: Some(".claude/skills"),
         supports_acp_model_switching: false,
         model_env_var: None,
@@ -150,7 +157,7 @@ const KNOWN_ACP_RUNTIMES: &[KnownAcpRuntime] = &[
         commands: &["codex-acp"],
         aliases: &[],
         avatar_url: CODEX_AVATAR_URL,
-        mcp_command: Some("buzz-dev-mcp"),
+        mcp_command: Some("punks-dev-mcp"),
         mcp_hooks: false,
         underlying_cli: Some("codex"),
         cli_install_commands: &["curl -fsSL https://chatgpt.com/codex/install.sh | sh"],
@@ -158,8 +165,8 @@ const KNOWN_ACP_RUNTIMES: &[KnownAcpRuntime] = &[
         adapter_install_commands: &["npm install -g @agentclientprotocol/codex-acp"],
         cli_install_instructions_url: "https://developers.openai.com/codex/cli/",
         adapter_install_instructions_url: "https://github.com/agentclientprotocol/codex-acp",
-        cli_install_hint: "Buzz talks to Codex through the Codex CLI.",
-        adapter_install_hint: "Buzz talks to the Codex CLI through an ACP adapter. Install it with: npm install -g @agentclientprotocol/codex-acp.",
+        cli_install_hint: "Punks talks to Codex through the Codex CLI.",
+        adapter_install_hint: "Punks talks to the Codex CLI through an ACP adapter. Install it with: npm install -g @agentclientprotocol/codex-acp.",
         skill_dir: Some(".codex/skills"),
         supports_acp_model_switching: false,
         model_env_var: None,
@@ -179,34 +186,34 @@ const KNOWN_ACP_RUNTIMES: &[KnownAcpRuntime] = &[
         auth_probe_args: Some(&["codex", "login", "status"]),
     },
     KnownAcpRuntime {
-        id: "buzz-agent",
-        label: "Buzz Agent",
-        commands: &["buzz-agent"],
+        id: "punks-agent",
+        label: "Punks Agent",
+        commands: &["punks-agent"],
         aliases: &[],
-        avatar_url: BUZZ_AGENT_AVATAR_URL,
-        mcp_command: Some("buzz-dev-mcp"),
+        avatar_url: PUNKS_AGENT_AVATAR_URL,
+        mcp_command: Some("punks-dev-mcp"),
         mcp_hooks: true,
         underlying_cli: None,
         cli_install_commands: &[],
         cli_install_commands_windows: &[],
         adapter_install_commands: &[],
-        cli_install_instructions_url: "https://github.com/block/buzz",
-        adapter_install_instructions_url: "https://github.com/block/buzz",
-        cli_install_hint: "Ships with the Buzz desktop app.",
+        cli_install_instructions_url: "https://github.com/punksbot/punksbot",
+        adapter_install_instructions_url: "https://github.com/punksbot/punksbot",
+        cli_install_hint: "Ships with the Punks desktop app.",
         adapter_install_hint: "",
         skill_dir: None,
         supports_acp_model_switching: true,
-        model_env_var: Some("BUZZ_AGENT_MODEL"),
-        provider_env_var: Some("BUZZ_AGENT_PROVIDER"),
+        model_env_var: Some("PUNKS_AGENT_MODEL"),
+        provider_env_var: Some("PUNKS_AGENT_PROVIDER"),
         provider_locked: false,
         default_env: &[],
         config_file_path: None,
         config_file_format: None,
         supports_acp_native_config: false,
-        thinking_env_var: Some("BUZZ_AGENT_THINKING_EFFORT"),
-        max_tokens_env_var: Some("BUZZ_AGENT_MAX_OUTPUT_TOKENS"),
-        context_limit_env_var: Some("BUZZ_AGENT_MAX_CONTEXT_TOKENS"),
-        max_rounds_env_var: Some("BUZZ_AGENT_MAX_ROUNDS"),
+        thinking_env_var: Some("PUNKS_AGENT_THINKING_EFFORT"),
+        max_tokens_env_var: Some("PUNKS_AGENT_MAX_OUTPUT_TOKENS"),
+        context_limit_env_var: Some("PUNKS_AGENT_MAX_CONTEXT_TOKENS"),
+        max_rounds_env_var: Some("PUNKS_AGENT_MAX_ROUNDS"),
         required_normalized_fields: &["model", "provider"],
         login_hint: None,
         auth_probe_args: None,
@@ -283,14 +290,14 @@ pub(crate) fn known_acp_runtime_exact(id: &str) -> Option<&'static KnownAcpRunti
 }
 
 /// The agent command a freshly-created agent defaults to when the create
-/// request supplies none. Resolves the bundled `buzz-agent` from the catalog so
+/// request supplies none. Resolves the bundled `punks-agent` from the catalog so
 /// the default cannot drift from the provider definition. Falls back to the id
 /// if the catalog entry is missing. (Previous default was bare `goose`, which
-/// is not on PATH on a stock Windows install; buzz-agent ships with the app.)
+/// is not on PATH on a stock Windows install; punks-agent ships with the app.)
 pub fn default_agent_command() -> String {
-    known_acp_runtime_exact("buzz-agent")
+    known_acp_runtime_exact("punks-agent")
         .and_then(|p| p.commands.first().copied())
-        .unwrap_or("buzz-agent")
+        .unwrap_or("punks-agent")
         .to_string()
 }
 
@@ -444,7 +451,7 @@ fn default_agent_args(command: &str) -> Option<Vec<String>> {
     match normalize_command_identity(command).as_str() {
         "goose" => Some(vec!["acp".to_string()]),
         "codex" | "codex-acp" | "claude-agent-acp" | "claude-code-acp" | "claude-code"
-        | "claudecode" | "buzz-agent" => Some(Vec::new()),
+        | "claudecode" | "punks-agent" => Some(Vec::new()),
         _ => None,
     }
 }
@@ -541,11 +548,10 @@ fn resolve_cache() -> &'static std::sync::Mutex<std::collections::HashMap<String
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-/// Resolve a command to an absolute path, caching results for the app lifetime.
-/// The cache eliminates redundant login-shell spawns when multiple agents share
 /// the same binaries (e.g. `npx`, `uvx`).
 pub fn resolve_command(command: &str) -> Option<PathBuf> {
-    if let Some(managed) = resolve_buzz_managed_command(command) {
+    let command = super::command_alias::punks_local_command_alias(command);
+    if let Some(managed) = resolve_punks_managed_command(command) {
         return Some(managed);
     }
 
@@ -558,25 +564,51 @@ pub fn resolve_command(command: &str) -> Option<PathBuf> {
         }
     }
 
-    // Slow path: resolve and cache.
+    // Slow path: resolve and cache. Negative results are cached too: an absent
+    // command must not re-run `resolve_command_uncached` (which spawns a login
+    // shell via `find_via_login_shell`) on every cheap discovery — that spawn
+    // on the channel-switch/composer hot path is exactly what this cache exists
+    // to prevent. `clear_resolve_cache` (run by every forced discovery) is the
+    // invalidation seam, so a newly-installed binary is still found on refresh.
     let result = resolve_command_uncached(command);
 
-    if result.is_some() {
-        if let Ok(mut guard) = cache.lock() {
-            guard.insert(command.to_string(), result.clone());
-        }
+    if let Ok(mut guard) = cache.lock() {
+        guard.insert(command.to_string(), result.clone());
     }
 
     result
 }
 
-/// Clear the resolve_command cache so that newly-installed binaries are detected.
+/// Cache-only command resolution for the cheap discovery path.
+///
+/// Consults the Punks-managed shim dir (a filesystem stat, never a spawn) and
+/// the resolve cache; on a miss it reports the command absent rather than
+/// resolving live via `resolve_command_uncached` → `find_via_login_shell`,
+/// which spawns a login shell on the channel-switch / composer hot path — the
+/// freeze the cheap path exists to avoid. `resolve_command` (the forced path)
+/// is the sole prober and cache populator.
+pub fn resolve_command_cached(command: &str) -> Option<PathBuf> {
+    let command = super::command_alias::punks_local_command_alias(command);
+    if let Some(managed) = resolve_punks_managed_command(command) {
+        return Some(managed);
+    }
+    resolve_cache()
+        .lock()
+        .ok()
+        .and_then(|guard| guard.get(command).cloned())
+        .flatten()
+}
+
+/// Clear cached paths so newly-installed binaries are detected.
 pub fn clear_resolve_cache() {
     let mut guard = resolve_cache().lock().unwrap_or_else(|e| e.into_inner());
     guard.clear();
     // Also invalidate the adapter-availability cache so a freshly-installed
     // adapter is reflected the next time the summary builder checks the badge.
     clear_adapter_availability_cache();
+    // And the auth-status cache so a forced re-discovery re-probes rather than
+    // reusing stale login state.
+    auth_status_cache::clear();
 }
 
 // ── Adapter availability cache (Phase-2 badge fallback) ─────────────────────
@@ -663,11 +695,11 @@ fn command_basenames(command: &str) -> Vec<String> {
     candidates
 }
 
-fn resolve_buzz_managed_command(command: &str) -> Option<PathBuf> {
+fn resolve_punks_managed_command(command: &str) -> Option<PathBuf> {
     let basenames = command_basenames(command);
     basenames
         .iter()
-        .find_map(|basename| buzz_managed_command_path(command, basename))
+        .find_map(|basename| punks_managed_command_path(command, basename))
 }
 
 fn resolve_command_uncached(command: &str) -> Option<PathBuf> {
@@ -682,7 +714,7 @@ fn resolve_command_uncached(command: &str) -> Option<PathBuf> {
         return path.exists().then_some(path);
     }
 
-    if let Some(managed) = resolve_buzz_managed_command(command) {
+    if let Some(managed) = resolve_punks_managed_command(command) {
         return Some(managed);
     }
 
@@ -757,222 +789,10 @@ fn path_candidates_from_env_raw(basename: &str) -> Vec<PathBuf> {
         .unwrap_or_default()
 }
 
-/// Collect login shell candidates for the current platform.
-///
-/// On Unix: `/bin/zsh`, `/bin/bash` (the historical defaults).
-/// On Windows: Git Bash via `resolve_bash_path` — skips `BUZZ_SHELL` because
-/// login-shell callers use bash-only `-l -c` syntax.
-fn login_shell_candidates() -> Vec<PathBuf> {
-    #[cfg(not(windows))]
-    {
-        vec![PathBuf::from("/bin/zsh"), PathBuf::from("/bin/bash")]
-    }
-    #[cfg(windows)]
-    {
-        super::git_bash::resolve_bash_path().into_iter().collect()
-    }
-}
-
-/// Run a command in a login shell (tries zsh then bash on Unix, Git Bash on Windows).
-/// Returns trimmed stdout if the command succeeds with non-empty output.
-fn run_in_login_shell(args: &[&str]) -> Option<String> {
-    for shell in login_shell_candidates() {
-        let mut cmd = Command::new(&shell);
-        cmd.args(args);
-        crate::util::configure_no_window(&mut cmd);
-        let Ok(output) = cmd.output() else {
-            continue;
-        };
-        if !output.status.success() {
-            continue;
-        }
-        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if !stdout.is_empty() {
-            return Some(stdout);
-        }
-    }
-    None
-}
-
-fn find_via_login_shell(command: &str) -> Option<PathBuf> {
-    let stdout = run_in_login_shell(&["-l", "-c", r#"command -v -- "$1""#, "_", command])?;
-    let resolved = stdout.lines().rfind(|line| !line.trim().is_empty())?;
-    let path = PathBuf::from(resolved.trim());
-    (path.is_absolute() && is_executable_file(&path)).then_some(path)
-}
-
-/// Three-state backing store for the login-shell PATH cache.
-#[derive(Clone)]
-enum LoginShellPath {
-    /// Cache has never been populated; the next call will spawn a login shell.
-    Uninit,
-    /// A login shell was invoked; the inner value is the PATH it returned
-    /// (`None` when the shell produced no output).
-    Probed(Option<String>),
-}
-
-fn path_cache() -> &'static std::sync::Mutex<LoginShellPath> {
-    use std::sync::{Mutex, OnceLock};
-    static CACHE: OnceLock<Mutex<LoginShellPath>> = OnceLock::new();
-    CACHE.get_or_init(|| Mutex::new(LoginShellPath::Uninit))
-}
-
-fn fetch_login_shell_path_inner() -> Option<String> {
-    // On Windows, Git Bash's `echo $PATH` returns POSIX colon-delimited paths
-    // (`/mingw64/bin:/c/Users/...`) which poison native Windows children that
-    // split on `;`. login_shell_path() feeds agent_models, runtime, and
-    // cli_probe — all native processes. Return None so they inherit the real
-    // Windows PATH instead.
-    #[cfg(windows)]
-    {
-        return None;
-    }
-
-    #[cfg(not(windows))]
-    {
-        let stdout = run_in_login_shell(&["-l", "-c", "echo $PATH"])?;
-        let last_line = stdout.lines().rfind(|l| !l.trim().is_empty())?;
-        Some(last_line.trim().to_string())
-    }
-}
-
-/// Return the user's full PATH from a login shell.
-///
-/// The result is cached after the first call. Call [`refresh_login_shell_path`]
-/// to invalidate the cache so the next call re-fetches — e.g. after the user
-/// installs Node.js mid-session and clicks Retry.
-///
-/// The lock is never held while the login shell spawns: we check for a cached
-/// value, release the lock, run the shell, then re-lock to write. Two concurrent
-/// callers may both run the shell (last-writer-wins is fine — both produce the
-/// same result), but neither blocks a concurrent agent spawn on the Mutex.
-pub fn login_shell_path() -> Option<String> {
-    // Fast path: return cached result without spawning a shell.
-    {
-        let guard = path_cache().lock().unwrap_or_else(|e| e.into_inner());
-        if let LoginShellPath::Probed(ref result) = *guard {
-            return result.clone();
-        }
-    }
-
-    // Slow path: spawn shell outside any lock.
-    let result = fetch_login_shell_path_inner();
-
-    // Write back; last-writer-wins is safe here.
-    {
-        let mut guard = path_cache().lock().unwrap_or_else(|e| e.into_inner());
-        *guard = LoginShellPath::Probed(result.clone());
-    }
-
-    result
-}
-
-/// Invalidate the login-shell PATH cache so the next [`login_shell_path`] call
-/// re-fetches from a fresh login shell.
-///
-/// Called before every install/retry operation and on Doctor Re-run so a
-/// newly-installed tool becomes visible without restarting the app.
-pub(crate) fn refresh_login_shell_path() {
-    let mut guard = path_cache().lock().unwrap_or_else(|e| e.into_inner());
-    *guard = LoginShellPath::Uninit;
-}
-
+/// Test-only counter for login-shell spawn attempts (see submodule).
 #[cfg(test)]
-fn is_login_shell_path_uninit() -> bool {
-    matches!(
-        *path_cache().lock().unwrap_or_else(|e| e.into_inner()),
-        LoginShellPath::Uninit
-    )
-}
-
-/// Return `true` when `tag` is a safe nvm alias/version tag that can be joined
-/// onto a `PathBuf` without escaping the nvm root.
-///
-/// nvm uses tags like `v22.1.0` or `lts/hydrogen`. We allow ASCII alphanumeric
-/// plus `. - / _` and require that no path component is `..` and that the tag
-/// does not start with `/` (which would replace the base in `PathBuf::join`).
-fn is_safe_nvm_tag(tag: &str) -> bool {
-    if tag.is_empty() {
-        return false;
-    }
-    // An absolute path in the alias file would let PathBuf::join silently
-    // replace the nvm root with an attacker-controlled path.
-    if tag.starts_with('/') {
-        return false;
-    }
-    // Reject any .. component to prevent upward traversal.
-    for component in tag.split('/') {
-        if component == ".." {
-            return false;
-        }
-    }
-    // Allow only the characters nvm uses in real tag names.
-    tag.chars()
-        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '/' | '_'))
-}
-
-/// Locate the `bin` directory for nvm's default Node.js version.
-///
-/// Reads `~/.nvm/alias/default`; resolves at most one alias hop to handle
-/// nvm alias chains; falls back to the highest-semver directory under
-/// `~/.nvm/versions/node/`. Returns the `bin` subdirectory only when it exists.
-///
-/// Cheap: at most two file reads or one `read_dir`. Never cached — computed
-/// fresh per call so a mid-session `nvm install` is visible at the next spawn.
-pub fn find_nvm_default_bin(home: &Path) -> Option<PathBuf> {
-    let nvm_root = home.join(".nvm");
-    let versions_root = nvm_root.join("versions").join("node");
-
-    // 1. Try alias/default, with at most one hop.
-    let default_alias = nvm_root.join("alias").join("default");
-    if let Ok(content) = std::fs::read_to_string(&default_alias) {
-        let tag = content.trim().to_string();
-        if is_safe_nvm_tag(&tag) {
-            let candidate = versions_root.join(&tag).join("bin");
-            if candidate.is_dir() {
-                return Some(candidate);
-            }
-            // One alias hop: ~/.nvm/alias/<tag>
-            let hop_file = nvm_root.join("alias").join(&tag);
-            if let Ok(hop_content) = std::fs::read_to_string(&hop_file) {
-                let hop_tag = hop_content.trim().to_string();
-                if is_safe_nvm_tag(&hop_tag) {
-                    let hop_candidate = versions_root.join(&hop_tag).join("bin");
-                    if hop_candidate.is_dir() {
-                        return Some(hop_candidate);
-                    }
-                }
-            }
-        }
-    }
-
-    // 2. Fall back to highest-semver directory under ~/.nvm/versions/node/.
-    let entries = std::fs::read_dir(&versions_root).ok()?;
-    let best = entries
-        .filter_map(|e| e.ok())
-        .filter_map(|e| {
-            let name = e.file_name();
-            let s = name.to_string_lossy().into_owned();
-            parse_semver_tag(&s).map(|v| (v, s))
-        })
-        .max_by(|(a, _), (b, _)| a.cmp(b));
-
-    let (_, tag) = best?;
-    let bin = versions_root.join(&tag).join("bin");
-    bin.is_dir().then_some(bin)
-}
-
-/// Parse a `vMAJ.MIN.PATCH` (or `vMAJ.MIN.PATCH-extra`) tag into a numeric
-/// triple for semver comparison.
-fn parse_semver_tag(s: &str) -> Option<(u64, u64, u64)> {
-    let s = s.strip_prefix('v')?;
-    let mut parts = s.splitn(3, '.');
-    let major = parts.next()?.parse::<u64>().ok()?;
-    let minor = parts.next()?.parse::<u64>().ok()?;
-    let patch_str = parts.next()?;
-    let patch = patch_str.split('-').next()?.parse::<u64>().ok()?;
-    Some((major, minor, patch))
-}
+#[path = "discovery/login_shell_spawn_probe.rs"]
+pub(crate) mod login_shell_spawn_probe;
 
 pub(crate) fn find_command(command: &str) -> Option<PathBuf> {
     resolve_command(command)
@@ -989,7 +809,7 @@ fn runtime_needs_npm(runtime: &KnownAcpRuntime) -> bool {
 
 /// Returns `true` when `cmd` is an npm global install/uninstall invocation.
 ///
-/// Buzz rewrites these catalog commands to an app-private npm prefix before
+/// Punks rewrites these catalog commands to an app-private npm prefix before
 /// execution; the global shape remains in the catalog so existing install plans
 /// and Doctor's Node.js-required detection stay simple.
 pub(crate) fn is_npm_global_install(cmd: &str) -> bool {
@@ -1113,7 +933,7 @@ pub fn missing_command_message(command: &str, role: &str) -> String {
     }
 
     format!(
-        "{role} `{command}` was not found. Make sure it is installed and on your PATH. Antivirus software can quarantine bundled binaries — if that happened, restore the file or reinstall Buzz. (Source builds: see TESTING.md.)"
+        "{role} `{command}` was not found. Make sure it is installed and on your PATH. Antivirus software can quarantine bundled binaries — if that happened, restore the file or reinstall Punks. (Source builds: see TESTING.md.)"
     )
 }
 
@@ -1143,7 +963,7 @@ pub(crate) fn classify_runtime(
     }
 }
 
-/// The oldest `codex-acp` version supported by Buzz managed agents.
+/// The oldest `codex-acp` version supported by Punks managed agents.
 ///
 /// Older 1.x adapters are detected successfully, but can still bundle a Codex runtime
 /// that does not reliably give `buzz` CLI subprocesses outbound relay access.
@@ -1295,27 +1115,39 @@ struct PartialEntry {
     entry: AcpRuntimeCatalogEntry,
 }
 
-fn discover_acp_runtime_phase1(runtime: &'static KnownAcpRuntime) -> PartialEntry {
+fn discover_acp_runtime_phase1(runtime: &'static KnownAcpRuntime, force: bool) -> PartialEntry {
+    // Cheap path is cache-only (no login-shell spawn); forced path resolves live.
+    let resolve = if force {
+        resolve_command
+    } else {
+        resolve_command_cached
+    };
     let adapter_result = runtime
         .commands
         .iter()
-        .find_map(|command| find_command(command).map(|path| (*command, path)));
+        .find_map(|command| resolve(command).map(|path| (*command, path)));
 
     let underlying_cli_found = runtime
         .underlying_cli
-        .map(|cli| find_command(cli).is_some())
+        .map(|cli| resolve(cli).is_some())
         .unwrap_or(false);
     let (mut availability, command, binary_path) =
         classify_runtime(adapter_result, runtime.underlying_cli, underlying_cli_found);
 
-    // For codex-acp: when the adapter resolves as Available, probe its full
-    // version. An adapter below MIN_CODEX_ACP_VERSION is treated as outdated.
+    // For codex-acp: when the adapter resolves as Available, determine its full
+    // version. A forced discovery probes the binary (spawns a subprocess); the
+    // cheap default path reuses the last cached availability so it stays
+    // process-free. An adapter below MIN_CODEX_ACP_VERSION is treated as outdated.
     if runtime.id == "codex"
         && availability == AcpAvailabilityStatus::Available
         && command.as_deref() == Some("codex-acp")
     {
-        if let Some(path_str) = &binary_path {
-            availability = codex_adapter_availability(&PathBuf::from(path_str));
+        if force {
+            if let Some(path_str) = &binary_path {
+                availability = codex_adapter_availability(&PathBuf::from(path_str));
+            }
+        } else if let Some(cached) = adapter_availability_cached() {
+            availability = cached;
         }
     }
 
@@ -1328,7 +1160,7 @@ fn discover_acp_runtime_phase1(runtime: &'static KnownAcpRuntime) -> PartialEntr
 
     let underlying_cli_path = runtime
         .underlying_cli
-        .and_then(find_command)
+        .and_then(resolve)
         .map(|p| p.display().to_string());
 
     let default_args = command
@@ -1365,16 +1197,16 @@ fn discover_acp_runtime_phase1(runtime: &'static KnownAcpRuntime) -> PartialEntr
         | AcpAvailabilityStatus::NotInstalled => runtime.cli_install_instructions_url,
     };
 
-    // node_required now means Buzz cannot provide npm for this platform.
-    // On supported desktop platforms, Buzz downloads a private Node/npm
+    // node_required now means Punks cannot provide npm for this platform.
+    // On supported desktop platforms, Punks downloads a private Node/npm
     // runtime into app data before running npm-backed adapter installs.
     let node_required = matches!(
         availability,
         AcpAvailabilityStatus::AdapterMissing | AcpAvailabilityStatus::NotInstalled
     ) && runtime_needs_npm(runtime)
-        && buzz_managed_node_bin_dir().is_none()
-        && resolve_command("npm").is_none()
-        && resolve_command("node").is_none();
+        && punks_managed_node_bin_dir().is_none()
+        && resolve("npm").is_none()
+        && resolve("node").is_none();
 
     PartialEntry {
         runtime,
@@ -1415,7 +1247,9 @@ fn discover_acp_runtime_phase1(runtime: &'static KnownAcpRuntime) -> PartialEntr
 /// resolves, so it should not pay the cost of authenticating every catalog entry.
 pub(crate) fn discover_acp_runtime_availability(runtime_id: &str) -> Option<AcpAvailabilityStatus> {
     known_acp_runtime_exact(runtime_id)
-        .map(discover_acp_runtime_phase1)
+        // Post-install verification wants fresh filesystem/version state, so
+        // probe rather than trust the cheap-path cache.
+        .map(|runtime| discover_acp_runtime_phase1(runtime, true))
         .map(|partial| partial.entry.availability)
 }
 
@@ -1438,47 +1272,24 @@ pub(crate) fn discover_acp_runtime_availability(runtime_id: &str) -> Option<AcpA
 /// re-running discovery.
 pub fn discover_acp_runtimes_from(
     custom_harnesses_dir: Option<&Path>,
+    force: bool,
 ) -> Vec<AcpRuntimeCatalogEntry> {
+    // Cheap path is cache-only (no login-shell spawn); forced path resolves live.
+    let resolve = if force {
+        resolve_command
+    } else {
+        resolve_command_cached
+    };
+
     // Phase 1: build all builtin entries (fast — no probes yet).
     let mut partials: Vec<PartialEntry> = KNOWN_ACP_RUNTIMES
         .iter()
-        .map(discover_acp_runtime_phase1)
+        .map(|runtime| discover_acp_runtime_phase1(runtime, force))
         .collect();
 
-    // Phase 2: run auth probes in parallel for entries that need them.
-    // Spawn one thread per probeable entry; total cost = max(probe latency).
-    let probe_handles: Vec<(usize, std::thread::JoinHandle<AuthStatus>)> = partials
-        .iter()
-        .enumerate()
-        .filter_map(|(idx, partial)| {
-            if partial.entry.availability != AcpAvailabilityStatus::Available {
-                return None;
-            }
-            let probe_args = partial.runtime.auth_probe_args?;
-            // Need the resolved binary path for the CLI (e.g. the actual `claude` binary).
-            let binary_path = resolve_command(probe_args[0])?;
-            let probe_args_owned: Vec<String> = probe_args.iter().map(|s| s.to_string()).collect();
-
-            let handle = std::thread::spawn(move || {
-                let refs: Vec<&str> = probe_args_owned.iter().map(String::as_str).collect();
-                probe_auth_status(&binary_path, &refs)
-            });
-            Some((idx, handle))
-        })
-        .collect();
-
-    // Collect probe results and patch entries.
-    for (idx, handle) in probe_handles {
-        let status = handle.join().unwrap_or(AuthStatus::Unknown);
-        let partial = &mut partials[idx];
-        partial.entry.login_hint =
-            if matches!(status, AuthStatus::LoggedIn | AuthStatus::NotApplicable) {
-                None
-            } else {
-                partial.runtime.login_hint.map(str::to_string)
-            };
-        partial.entry.auth_status = status;
-    }
+    // Phase 2: resolve each available runtime's auth status (forced discovery
+    // spawns parallel CLI probes and warms the cache; the cheap path reuses it).
+    auth_status_cache::resolve_auth_statuses(&mut partials, force);
 
     // Fill NotApplicable / Unknown for non-probed entries.
     for partial in &mut partials {
@@ -1508,7 +1319,7 @@ pub fn discover_acp_runtimes_from(
         }
         seen_ids.insert(def.id.to_string());
 
-        entries.push(preset_catalog_entry(def, find_command));
+        entries.push(preset_catalog_entry(def, resolve));
     }
 
     // Phase 3: load and append custom harness definitions.
@@ -1523,8 +1334,8 @@ pub fn discover_acp_runtimes_from(
                 continue;
             }
 
-            // Availability: command on PATH → Available, else NotInstalled.
-            let (availability, command, binary_path) = match find_command(&def.command) {
+            // Availability: command resolves → Available, else NotInstalled.
+            let (availability, command, binary_path) = match resolve(&def.command) {
                 Some(path) => (
                     AcpAvailabilityStatus::Available,
                     Some(def.command.clone()),

@@ -12,6 +12,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/shared/ui/dialog";
+import { Input } from "@/shared/ui/input";
+import { Button } from "@/shared/ui/button";
+import { createLocalWorkspace } from "@/shared/api/tauriLocalWorkspaces";
 
 type AddCommunityDialogProps = {
   prefill?: AddCommunityPrefillRequest | null;
@@ -29,12 +32,18 @@ const OPTION_CLASS =
 
 export function AddCommunityDialog({
   prefill,
+  onSubmit,
   open,
   onOpenChange,
 }: AddCommunityDialogProps) {
   const communityOnboarding = useCommunityOnboarding();
   const [mode, setMode] = React.useState<AddCommunityMode>("choose");
   const [joinError, setJoinError] = React.useState<string | null>(null);
+  const [localWorkspaceName, setLocalWorkspaceName] = React.useState("");
+  const [localCreateError, setLocalCreateError] = React.useState<string | null>(
+    null,
+  );
+  const [isCreatingLocal, setIsCreatingLocal] = React.useState(false);
   const appliedPrefillId = React.useRef<string | null>(null);
 
   React.useEffect(() => {
@@ -48,7 +57,35 @@ export function AddCommunityDialog({
     onOpenChange(false);
     setMode("choose");
     setJoinError(null);
+    setLocalCreateError(null);
+    setLocalWorkspaceName("");
   }, [onOpenChange]);
+
+  const createWorkspace = React.useCallback(
+    async (event: React.FormEvent) => {
+      event.preventDefault();
+      setLocalCreateError(null);
+      setIsCreatingLocal(true);
+      try {
+        const workspace = await createLocalWorkspace(localWorkspaceName);
+        onSubmit?.({
+          addedAt: new Date(workspace.createdAt * 1000).toISOString(),
+          id: workspace.id,
+          name: workspace.name,
+          pubkey: workspace.ownerPubkey,
+          relayUrl: workspace.relayUrl,
+        });
+        handleClose();
+      } catch (error) {
+        setLocalCreateError(
+          error instanceof Error ? error.message : String(error),
+        );
+      } finally {
+        setIsCreatingLocal(false);
+      }
+    },
+    [handleClose, localWorkspaceName, onSubmit],
+  );
 
   const startConnection = React.useCallback(
     ({
@@ -78,16 +115,21 @@ export function AddCommunityDialog({
     [communityOnboarding, handleClose, prefill?.name],
   );
 
+  const localDistribution = import.meta.env.VITE_PUNKS_LOCAL === "1";
   const title =
     mode === "create"
-      ? "Create a new community"
+      ? localDistribution
+        ? "Create a local Workspace"
+        : "Create a new community"
       : mode === "join"
         ? "Join an existing community"
         : "Add community";
 
   const description =
     mode === "create"
-      ? "Opens Builderlab in your browser."
+      ? localDistribution
+        ? "Creates a persistent, isolated Workspace on this Mac."
+        : "Opens Builderlab in your browser."
       : mode === "join"
         ? "Use the community URL or invite link you received."
         : "Create a new community or join one you already have.";
@@ -143,10 +185,14 @@ export function AddCommunityDialog({
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm font-medium text-foreground">
-                    Create a new community
+                    {localDistribution
+                      ? "Create a local Workspace"
+                      : "Create a new community"}
                   </span>
                   <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">
-                    Claim a Buzz address for your team.
+                    {localDistribution
+                      ? "Separate messages, media, Git and automation locally."
+                      : "Claim a Punks address for your team."}
                   </span>
                 </span>
                 <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/60" />
@@ -188,6 +234,48 @@ export function AddCommunityDialog({
               }
               variant="add-community"
             />
+          ) : localDistribution ? (
+            <form className="space-y-4" onSubmit={createWorkspace}>
+              <div className="space-y-2">
+                <label
+                  className="text-sm font-medium text-foreground"
+                  htmlFor="local-workspace-name"
+                >
+                  Workspace name
+                </label>
+                <Input
+                  autoFocus
+                  disabled={isCreatingLocal}
+                  id="local-workspace-name"
+                  maxLength={80}
+                  onChange={(event) =>
+                    setLocalWorkspaceName(event.target.value)
+                  }
+                  placeholder="Design Studio"
+                  value={localWorkspaceName}
+                />
+              </div>
+              {localCreateError ? (
+                <p className="text-sm text-destructive" role="alert">
+                  {localCreateError}
+                </p>
+              ) : null}
+              <div className="flex justify-end gap-2">
+                <Button
+                  onClick={() => setMode("choose")}
+                  type="button"
+                  variant="ghost"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  disabled={!localWorkspaceName.trim() || isCreatingLocal}
+                  type="submit"
+                >
+                  {isCreatingLocal ? "Creating…" : "Create Workspace"}
+                </Button>
+              </div>
+            </form>
           ) : (
             <HostedCommunityCreateFlow onComplete={handleClose} />
           )}

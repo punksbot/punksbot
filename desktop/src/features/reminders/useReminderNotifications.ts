@@ -22,8 +22,9 @@ import {
   playNotificationSound,
   resolveSlotSound,
 } from "@/features/notifications/lib/sound";
+import { setLocalNotificationPreferences } from "@/shared/api/tauriLocalAuthority";
 
-const WATERMARK_STORAGE_PREFIX = "buzz:lastReminderCheck:";
+const WATERMARK_STORAGE_PREFIX = "punks:lastReminderCheck:";
 
 function watermarkStorageKey(pubkey: string): string {
   return `${WATERMARK_STORAGE_PREFIX}${pubkey.trim().toLowerCase()}`;
@@ -76,7 +77,26 @@ export function useReminderNotifications(
   const queryResolvedRef = React.useRef(false);
   if (reminders !== undefined) queryResolvedRef.current = true;
 
+  React.useEffect(() => {
+    if (!pubkey || import.meta.env.VITE_PUNKS_LOCAL !== "1") return;
+    void setLocalNotificationPreferences({
+      accountPubkey: pubkey,
+      desktopEnabled: settings.desktopEnabled,
+      remindersEnabled: settings.slotAlertsEnabled.needs_action,
+    }).catch((error) => {
+      console.error(
+        "Punks local reminder preferences could not be synchronized",
+        error,
+      );
+    });
+  }, [
+    pubkey,
+    settings.desktopEnabled,
+    settings.slotAlertsEnabled.needs_action,
+  ]);
+
   const fire = React.useEffectEvent((due: Reminder[]) => {
+    if (import.meta.env.VITE_PUNKS_LOCAL === "1") return;
     const current = settingsRef.current;
     if (
       !current.desktopEnabled ||

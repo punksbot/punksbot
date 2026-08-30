@@ -1,4 +1,4 @@
-use crate::client::BuzzClient;
+use crate::client::PunksClient;
 use crate::commands::with_git_provenance;
 use crate::error::CliError;
 use crate::validate::{
@@ -19,7 +19,7 @@ fn read_optional_body(body: Option<&str>, body_file: Option<&str>) -> Result<Str
 
 #[allow(clippy::too_many_arguments)]
 pub async fn cmd_open_pr(
-    client: &BuzzClient,
+    client: &PunksClient,
     repo_owner: &str,
     repo_id: &str,
     subject: &str,
@@ -62,7 +62,7 @@ pub async fn cmd_open_pr(
     let event = client.sign_event(builder)?;
     let event_id = event.id.to_hex();
     let resp = client.submit_event(event).await?;
-    // `link` renders as a rich preview card in Buzz Desktop when included in
+    // `link` renders as a rich preview card in Punks Desktop when included in
     // a chat message — agents announce PRs with it (see base_prompt.md).
     let link = crate::links::pull_request_link(&event_id, repo_owner, repo_id);
     crate::client::print_create_response(&resp, "link", &link);
@@ -71,7 +71,7 @@ pub async fn cmd_open_pr(
 
 #[allow(clippy::too_many_arguments)]
 pub async fn cmd_update_pr(
-    client: &BuzzClient,
+    client: &PunksClient,
     repo_owner: &str,
     repo_id: &str,
     pr: &str,
@@ -113,7 +113,7 @@ pub async fn cmd_update_pr(
     Ok(())
 }
 
-pub async fn cmd_get_pr(client: &BuzzClient, event: &str) -> Result<(), CliError> {
+pub async fn cmd_get_pr(client: &PunksClient, event: &str) -> Result<(), CliError> {
     validate_hex64(event)?;
     let filter = serde_json::json!({
         "kinds": [1618],
@@ -125,7 +125,7 @@ pub async fn cmd_get_pr(client: &BuzzClient, event: &str) -> Result<(), CliError
 }
 
 pub async fn cmd_list_prs(
-    client: &BuzzClient,
+    client: &PunksClient,
     repo_owner: &str,
     repo_id: &str,
     author: Option<&str>,
@@ -159,7 +159,7 @@ pub async fn cmd_list_prs(
 
 #[allow(clippy::too_many_arguments)]
 pub async fn cmd_pr_status(
-    client: &BuzzClient,
+    client: &PunksClient,
     pr: &str,
     status: &str,
     body: Option<&str>,
@@ -223,7 +223,7 @@ pub async fn cmd_pr_status(
     Ok(())
 }
 
-pub async fn dispatch(cmd: crate::PrCmd, client: &BuzzClient) -> Result<(), CliError> {
+pub async fn dispatch(cmd: crate::PrCmd, client: &PunksClient) -> Result<(), CliError> {
     use crate::PrCmd;
     match cmd {
         PrCmd::Open {

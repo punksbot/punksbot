@@ -589,7 +589,7 @@ pub async fn merge_project_pull_request(
             let merge_result = run_git(
                 &[
                     "-c",
-                    "user.name=Buzz User",
+                    "user.name=Punks User",
                     "-c",
                     format!("user.email={merge_email}").as_str(),
                     "merge",
@@ -731,7 +731,7 @@ mod tests {
             kind: 30_617,
             content: String::new(),
             created_at: None,
-            tags: vec![vec!["name".to_string(), "buzz".to_string()]],
+            tags: vec![vec!["name".to_string(), "punks".to_string()]],
         };
         assert_eq!(
             validate_project_owner_announcement(&input),

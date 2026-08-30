@@ -166,10 +166,13 @@ Content-Type: application/json
 }
 ```
 
-The endpoint is deliberately absent from staging and production. The imported
-Buzz `web/`, `desktop/` and `mobile/` clients have not yet been migrated to the
-Punks API, so this command launches the backend test surface rather than a
-Punks graphical client.
+The endpoint is deliberately absent from staging and production. The Punks
+desktop distribution in `desktop/` uses its rich React entry and the native
+Rust semantic client. Local compatibility additionally exposes the implemented
+Message lifecycle, identity governance, Presence and Conversation search
+authorities; start it together with this complete local graph through
+`pnpm punks:dev`. The imported web and mobile clients remain migration sources
+and are not part of that local product runtime.
 
 ## Prepare staging
 

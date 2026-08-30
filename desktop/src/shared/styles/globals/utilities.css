@@ -37,17 +37,19 @@
     contain-intrinsic-size: auto 2rem;
   }
 
-  .buzz-huddle-tooltip {
-    --primary: var(
-      --huddle-tooltip-surface,
-      var(--huddle-control-surface, 0 0% 20%)
-    );
-    --primary-foreground: var(
-      --huddle-tooltip-foreground,
-      var(--huddle-control-foreground, 0 0% 98%)
-    );
+  /*
+   * Member cards rendered eagerly can skip offscreen layout and paint.
+   * Virtualized member rows must not use this utility.
+   */
+  .content-visibility-auto-member-row {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 3.75rem;
+  }
 
-    background: hsl(var(--primary));
+  .punks-huddle-tooltip {
+    background: hsl(
+      var(--huddle-tooltip-surface, var(--huddle-control-surface, 0 0% 20%))
+    );
     border: 1px solid
       hsl(
         var(
@@ -57,16 +59,21 @@
         0.72
       );
     box-shadow: 0 10px 22px rgb(0 0 0 / 35%);
-    color: hsl(var(--primary-foreground));
+    color: hsl(
+      var(
+        --huddle-tooltip-foreground,
+        var(--huddle-control-foreground, 0 0% 98%)
+      )
+    );
   }
 
-  .buzz-huddle-drawer .buzz-huddle-control-button,
-  .buzz-huddle-drawer .buzz-huddle-split-main {
+  .punks-huddle-drawer .punks-huddle-control-button,
+  .punks-huddle-drawer .punks-huddle-split-main {
     background: hsl(var(--huddle-control-surface, var(--secondary)));
   }
 
-  .buzz-huddle-drawer .buzz-huddle-control-button:hover,
-  .buzz-huddle-drawer .buzz-huddle-split-main:hover {
+  .punks-huddle-drawer .punks-huddle-control-button:hover,
+  .punks-huddle-drawer .punks-huddle-split-main:hover {
     background: hsl(
       var(
         --huddle-control-hover-surface,
@@ -75,20 +82,20 @@
     );
   }
 
-  .buzz-huddle-drawer .buzz-huddle-control-button[aria-pressed="true"] {
+  .punks-huddle-drawer .punks-huddle-control-button[aria-pressed="true"] {
     background: hsl(var(--primary));
     color: hsl(var(--primary-foreground));
   }
 
-  .buzz-huddle-drawer .buzz-huddle-control-button[aria-pressed="true"]:hover {
+  .punks-huddle-drawer .punks-huddle-control-button[aria-pressed="true"]:hover {
     background: hsl(var(--primary) / 90%);
   }
 
-  .buzz-huddle-drawer .buzz-huddle-split-chevron {
+  .punks-huddle-drawer .punks-huddle-split-chevron {
     background: hsl(var(--huddle-control-chevron-surface, var(--secondary)));
   }
 
-  .buzz-huddle-drawer .buzz-huddle-split-chevron:hover {
+  .punks-huddle-drawer .punks-huddle-split-chevron:hover {
     background: hsl(
       var(
         --huddle-control-chevron-hover-surface,

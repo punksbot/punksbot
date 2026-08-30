@@ -19,12 +19,12 @@ impl Harness {
     async fn spawn(extra: &[(&str, &str)]) -> Self {
         let bin = env!("CARGO_BIN_EXE_buzz-agent");
         let mut cmd = tokio::process::Command::new(bin);
-        cmd.env("BUZZ_AGENT_PROVIDER", "openai")
+        cmd.env("PUNKS_AGENT_PROVIDER", "openai")
             .env("OPENAI_COMPAT_API_KEY", "test")
             .env("OPENAI_COMPAT_MODEL", "fake-model")
-            .env("BUZZ_AGENT_LLM_TIMEOUT_SECS", "5")
-            .env("BUZZ_AGENT_TOOL_TIMEOUT_SECS", "5")
-            .env("BUZZ_AGENT_MAX_ROUNDS", "4")
+            .env("PUNKS_AGENT_LLM_TIMEOUT_SECS", "5")
+            .env("PUNKS_AGENT_TOOL_TIMEOUT_SECS", "5")
+            .env("PUNKS_AGENT_MAX_ROUNDS", "4")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -186,7 +186,7 @@ async fn handshake(h: &mut Harness) -> String {
         .await;
     let init = h.recv_for_id(init_id).await;
     assert_eq!(init["result"]["protocolVersion"], 2);
-    assert_eq!(init["result"]["agentInfo"]["name"], "buzz-agent");
+    assert_eq!(init["result"]["agentInfo"]["name"], "punks-agent");
     assert_eq!(
         init["result"]["agentCapabilities"]["promptCapabilities"]["image"],
         false
@@ -472,11 +472,11 @@ async fn test_oversized_line_kills_agent() {
     let url = spawn_fake_llm(vec![]).await;
     let bin = env!("CARGO_BIN_EXE_buzz-agent");
     let mut cmd = tokio::process::Command::new(bin);
-    cmd.env("BUZZ_AGENT_PROVIDER", "openai")
+    cmd.env("PUNKS_AGENT_PROVIDER", "openai")
         .env("OPENAI_COMPAT_API_KEY", "test")
         .env("OPENAI_COMPAT_MODEL", "fake-model")
         .env("OPENAI_COMPAT_BASE_URL", &url)
-        .env("BUZZ_AGENT_MAX_LINE_BYTES", "256")
+        .env("PUNKS_AGENT_MAX_LINE_BYTES", "256")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -584,7 +584,7 @@ async fn test_thought_chunk_emitted_before_message_chunk_anthropic() {
     )])
     .await;
     let mut h = Harness::spawn(&[
-        ("BUZZ_AGENT_PROVIDER", "anthropic"),
+        ("PUNKS_AGENT_PROVIDER", "anthropic"),
         ("ANTHROPIC_API_KEY", "test"),
         ("ANTHROPIC_MODEL", "claude-fake"),
         ("ANTHROPIC_BASE_URL", &url),
@@ -634,7 +634,7 @@ async fn test_thought_chunk_emitted_before_message_chunk_responses_api() {
     )])
     .await;
     let mut h = Harness::spawn(&[
-        ("BUZZ_AGENT_PROVIDER", "openai"),
+        ("PUNKS_AGENT_PROVIDER", "openai"),
         ("OPENAI_COMPAT_API_KEY", "test"),
         ("OPENAI_COMPAT_MODEL", "fake-model"),
         ("OPENAI_COMPAT_API", "responses"),
@@ -809,7 +809,7 @@ where
 async fn test_anthropic_input_overflow_omits_accumulated_input_tokens() {
     let url = spawn_fake_llm(vec![anthropic_input_overflow_response()]).await;
     let mut h = Harness::spawn(&[
-        ("BUZZ_AGENT_PROVIDER", "anthropic"),
+        ("PUNKS_AGENT_PROVIDER", "anthropic"),
         ("ANTHROPIC_API_KEY", "test"),
         ("ANTHROPIC_MODEL", "claude-fake"),
         ("ANTHROPIC_BASE_URL", &url),
@@ -940,7 +940,7 @@ async fn test_acp_v2_chunks_carry_message_id() {
     ])
     .await;
     let mut h = Harness::spawn(&[
-        ("BUZZ_AGENT_PROVIDER", "openai"),
+        ("PUNKS_AGENT_PROVIDER", "openai"),
         ("OPENAI_COMPAT_API_KEY", "test"),
         ("OPENAI_COMPAT_MODEL", "fake-model"),
         ("OPENAI_COMPAT_API", "responses"),

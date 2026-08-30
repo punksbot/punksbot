@@ -34,26 +34,26 @@ test("content changes miss the cache", () => {
 
 test("customEmoji is keyed by value, not identity", () => {
   clearMarkdownNodeCache();
-  const emoji = [{ shortcode: "buzz", url: "https://relay/buzz.png" }];
+  const emoji = [{ shortcode: "punks", url: "https://relay/punks.png" }];
   const first = renderCachedMarkdown({
     ...BASE,
-    content: "hi :buzz:",
+    content: "hi :punks:",
     customEmoji: emoji,
   });
   // Fresh array, same values — the exact remount scenario (useMessageEmoji
   // rebuilds the array): must HIT.
   const second = renderCachedMarkdown({
     ...BASE,
-    content: "hi :buzz:",
-    customEmoji: [{ shortcode: "buzz", url: "https://relay/buzz.png" }],
+    content: "hi :punks:",
+    customEmoji: [{ shortcode: "punks", url: "https://relay/punks.png" }],
   });
   assert.equal(first, second);
   // Same content, different emoji set (e.g. emoji added while editing —
   // custom-emoji.spec.ts Bug 2): must MISS so the new emoji renders.
   const third = renderCachedMarkdown({
     ...BASE,
-    content: "hi :buzz:",
-    customEmoji: [{ shortcode: "buzz", url: "https://relay/other.png" }],
+    content: "hi :punks:",
+    customEmoji: [{ shortcode: "punks", url: "https://relay/other.png" }],
   });
   assert.notEqual(first, third);
 });
@@ -227,9 +227,27 @@ test("hardLineBreaks changes the parse and the cache key", () => {
   assert.equal(withoutBreaks, withoutBreaksAgain);
 });
 
-test("active search queries bypass the cache", () => {
+test("single-character scoped search stays on lexeme boundaries", () => {
+  const html = renderToStaticMarkup(
+    renderCachedMarkdown({ ...BASE, content: "A plan", searchQuery: "a" }),
+  );
+
+  assert.equal((html.match(/data-search-match="true"/g) ?? []).length, 1);
+});
+
+test("active search queries bypass the cache and highlight every match", () => {
   clearMarkdownNodeCache();
-  const first = renderCachedMarkdown({ ...BASE, searchQuery: "bold" });
-  const second = renderCachedMarkdown({ ...BASE, searchQuery: "bold" });
+  const input = {
+    ...BASE,
+    content: "Bold and bold, but not code `bold`.",
+    searchQuery: "bold",
+  };
+  const first = renderCachedMarkdown(input);
+  const second = renderCachedMarkdown(input);
+  const html = renderToStaticMarkup(first);
+
   assert.notEqual(first, second);
+  assert.equal((html.match(/data-search-match="true"/g) ?? []).length, 2);
+  assert.match(html, /bg-yellow-300/);
+  assert.match(html, /<code>bold<\/code>/);
 });

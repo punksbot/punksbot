@@ -62,7 +62,7 @@ pub(in crate::commands) fn propagate_membership_best_effort(
         Ok(())
     })();
     if let Err(e) = result {
-        eprintln!("buzz-desktop: team-membership-propagate: {e}");
+        eprintln!("punks-full-local: team-membership-propagate: {e}");
     }
 }
 
@@ -212,8 +212,8 @@ pub(super) fn retain_team_pending(app: &AppHandle, state: &AppState, team: &Team
         retention::{get_retained_event, open_retention_db, retain_event, RetainedEvent},
         team_events::build_team_event,
     };
-    use buzz_core_pkg::kind::KIND_TEAM;
     use nostr::JsonUtil;
+    use punks_core_pkg::kind::KIND_TEAM;
 
     let result = (|| -> Result<(), String> {
         let scope = crate::managed_agents::retention::active_retention_scope(app, state)?;
@@ -240,7 +240,7 @@ pub(super) fn retain_team_pending(app: &AppHandle, state: &AppState, team: &Team
         )
     })();
     if let Err(e) = result {
-        eprintln!("buzz-desktop: team-retain: {e}");
+        eprintln!("punks-full-local: team-retain: {e}");
     }
 }
 
@@ -261,8 +261,8 @@ fn tombstone_team_pending(app: &AppHandle, state: &AppState, d_tag: &str) {
         },
         team_events::build_team_delete,
     };
-    use buzz_core_pkg::kind::KIND_TEAM;
     use nostr::JsonUtil;
+    use punks_core_pkg::kind::KIND_TEAM;
 
     const KIND_DELETE: u32 = 5;
 
@@ -290,7 +290,7 @@ fn tombstone_team_pending(app: &AppHandle, state: &AppState, d_tag: &str) {
         )
     })();
     if let Err(e) = result {
-        eprintln!("buzz-desktop: team-tombstone: {e}");
+        eprintln!("punks-full-local: team-tombstone: {e}");
     }
 }
 
@@ -406,7 +406,7 @@ mod tests {
             "name": persona_id,
             "persona_id": persona_id,
             "relay_url": "ws://localhost:3000",
-            "acp_command": "buzz-acp",
+            "acp_command": "punks-acp",
             "agent_command": "goose",
             "agent_args": [],
             "mcp_command": "",

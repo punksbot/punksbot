@@ -1,4 +1,4 @@
-//! Import-side helpers for `buzz-agent-snapshot v1`.
+//! Import-side helpers for `punks-agent-snapshot v1`.
 //!
 //! Extracted from `snapshot.rs` to keep that file under the 1000-line gate.
 //! The Tauri commands here (`preview_agent_snapshot_import`,
@@ -212,7 +212,7 @@ pub(crate) fn resolve_snapshot_import_behavior(
 
 const PNG_MAGIC: [u8; 4] = [0x89, 0x50, 0x4e, 0x47];
 
-/// Decode a `buzz-agent-snapshot v1` manifest from raw bytes.
+/// Decode a `punks-agent-snapshot v1` manifest from raw bytes.
 ///
 /// Sniffs by magic bytes (PNG signature) first, then falls back to JSON.
 /// Fails closed on malformed content, wrong format, or unsupported version.
@@ -435,7 +435,7 @@ pub(crate) fn build_agent_snapshot_import_preview(
 
 // ── `confirm_agent_snapshot_import` ──────────────────────────────────────────
 
-/// Import a `buzz-agent-snapshot v1` file as a brand-new agent.
+/// Import a `punks-agent-snapshot v1` file as a brand-new agent.
 ///
 /// Phase sequence:
 ///   1. Validate — decode the manifest and reject early on any error.
@@ -527,7 +527,7 @@ pub async fn confirm_agent_snapshot_import(
         let compat_agent = nostr::PublicKey::from_hex(&pubkey)
             .map_err(|e| format!("failed to bridge agent pubkey: {e}"))?;
         let auth_tag = Some(
-            buzz_sdk_pkg::nip_oa::compute_auth_tag(&compat_owner, &compat_agent, "")
+            punks_sdk_pkg::nip_oa::compute_auth_tag(&compat_owner, &compat_agent, "")
                 .map_err(|e| format!("failed to compute NIP-OA auth tag: {e}"))?,
         );
         let owner_pubkey_hex = owner_keys.public_key().to_hex();
@@ -703,19 +703,19 @@ pub async fn confirm_agent_snapshot_import(
         let base_ts = nostr::Timestamp::now().as_secs();
 
         for (idx, entry) in snapshot.memory.entries.iter().enumerate() {
-            let body = if entry.slug == buzz_core_pkg::engram::CORE_SLUG {
-                buzz_core_pkg::engram::Body::Core {
+            let body = if entry.slug == punks_core_pkg::engram::CORE_SLUG {
+                punks_core_pkg::engram::Body::Core {
                     profile: entry.body.clone(),
                 }
             } else {
-                buzz_core_pkg::engram::Body::Memory {
+                punks_core_pkg::engram::Body::Memory {
                     slug: entry.slug.clone(),
                     value: Some(entry.body.clone()),
                 }
             };
 
             let created_at = base_ts + idx as u64;
-            match buzz_core_pkg::engram::build_event(&agent_keys, &owner_pubkey, &body, created_at)
+            match punks_core_pkg::engram::build_event(&agent_keys, &owner_pubkey, &body, created_at)
             {
                 Ok(event) => {
                     let event_json = nostr::JsonUtil::as_json(&event).into_bytes();
@@ -760,8 +760,8 @@ fn retain_agent_pending(app: &AppHandle, state: &AppState, record: &ManagedAgent
         persona_events::monotonic_created_at,
         retention::{get_retained_event, open_retention_db, retain_event, RetainedEvent},
     };
-    use buzz_core_pkg::kind::KIND_MANAGED_AGENT;
     use nostr::JsonUtil;
+    use punks_core_pkg::kind::KIND_MANAGED_AGENT;
 
     let result = (|| -> Result<(), String> {
         let scope = crate::managed_agents::retention::active_retention_scope(app, state)?;
@@ -796,7 +796,7 @@ fn retain_agent_pending(app: &AppHandle, state: &AppState, record: &ManagedAgent
         )
     })();
     if let Err(e) = result {
-        eprintln!("buzz-desktop: snapshot-import retain-agent: {e}");
+        eprintln!("punks-full-local: snapshot-import retain-agent: {e}");
     }
 }
 

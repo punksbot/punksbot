@@ -1,5 +1,7 @@
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import {
+  constants as fsConstants,
+  copyFileSync,
   lstatSync,
   mkdirSync,
   openSync,
@@ -25,6 +27,26 @@ import {
   exerciseIndependentFaultMatrix,
   promotionAuthorityTargets,
 } from "./independent-fault-controller.mjs";
+
+const XCTEST_ENVIRONMENT_KEYS = Object.freeze([
+  "PUNKS_XCTEST_APPLICATION",
+  "PUNKS_XCTEST_RESULT",
+  "PUNKS_XCTEST_SCREENSHOTS",
+  "PUNKS_XCTEST_PLATFORM",
+  "PUNKS_XCTEST_FIXTURE",
+  "PUNKS_XCTEST_NATIVE_BINARY",
+  "PUNKS_PROMOTION_ASSET_MANIFEST",
+  "PUNKS_PROMOTION_IPC_LOG",
+  "PUNKS_PROMOTION_NETWORK_LOG",
+  "PUNKS_XCTEST_ACCESSIBILITY_REVIEW_RESULT",
+  "PUNKS_XCTEST_ARTIFACT_SHA256",
+]);
+const XCTEST_IDENTIFIERS = Object.freeze({
+  installed:
+    "PunksPromotionUITests/PunksPromotionUITests/testInstalledSocialLoop",
+  accessibility:
+    "PunksPromotionUITests/PunksPromotionUITests/testIndependentAccessibilityReview",
+});
 
 function fail(message) {
   throw new Error(`macOS XCTest installed driver rejected: ${message}`);
@@ -66,10 +88,66 @@ function exactXctestrun(buildRoot) {
   return files[0];
 }
 
-export function configureMacosXctestSchemeContent(content) {
+function xmlAttribute(value) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
+function containsInvalidXmlControl(value) {
+  for (const character of value) {
+    const codePoint = character.codePointAt(0);
+    if (
+      codePoint !== undefined &&
+      codePoint < 0x20 &&
+      ![0x09, 0x0a, 0x0d].includes(codePoint)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function closedXctestEnvironmentEntries(environmentVariables) {
+  const expectedEnvironmentKeys = [...XCTEST_ENVIRONMENT_KEYS].sort();
+  const environmentKeys =
+    environmentVariables !== null &&
+    typeof environmentVariables === "object" &&
+    !Array.isArray(environmentVariables)
+      ? Object.keys(environmentVariables).sort()
+      : [];
+  if (
+    environmentKeys.length !== expectedEnvironmentKeys.length ||
+    environmentKeys.some(
+      (key, index) => key !== expectedEnvironmentKeys[index],
+    ) ||
+    environmentKeys.some((key) => {
+      const value = environmentVariables[key];
+      return (
+        typeof value !== "string" ||
+        value.length === 0 ||
+        value.trim() !== value ||
+        containsInvalidXmlControl(value)
+      );
+    })
+  ) {
+    fail("generated scheme requires the closed XCTest environment");
+  }
+  return environmentKeys.map((key) => [key, environmentVariables[key]]);
+}
+
+export function configureMacosXctestSchemeContent(
+  content,
+  environmentVariables,
+) {
   if (typeof content !== "string") {
     fail("generated XCTest scheme is not text");
   }
+  const environmentEntries =
+    closedXctestEnvironmentEntries(environmentVariables);
   const buildActions = [
     ...content.matchAll(/<BuildAction\b[\s\S]*?<\/BuildAction>/gu),
   ];
@@ -90,18 +168,36 @@ export function configureMacosXctestSchemeContent(content) {
       'BlueprintName="PunksPromotionUITests"',
     ) ||
     !testAction.includes('buildConfiguration="Release"') ||
-    !testAction.includes("<Testables/>")
+    !testAction.includes('shouldUseLaunchSchemeArgsEnv="YES"') ||
+    !testAction.includes("<Testables/>") ||
+    !testAction.includes("<AdditionalOptions/>") ||
+    testAction.includes("<EnvironmentVariables>")
   ) {
     fail("generated XCTest scheme does not match the closed UI-test target");
   }
-  const configuredTestAction = testAction.replace(
-    "<Testables/>",
-    `<Testables>\n         <TestableReference skipped="NO">\n${buildableReferences[0][0]}\n         </TestableReference>\n      </Testables>`,
-  );
+  const environmentXml = environmentEntries
+    .map(
+      ([key, value]) =>
+        `         <EnvironmentVariable key="${key}" value="${xmlAttribute(value)}" isEnabled="YES"/>`,
+    )
+    .join("\n");
+  const configuredTestAction = testAction
+    .replace(
+      'shouldUseLaunchSchemeArgsEnv="YES"',
+      'shouldUseLaunchSchemeArgsEnv="NO"',
+    )
+    .replace(
+      "<Testables/>",
+      `<Testables>\n         <TestableReference skipped="NO">\n${buildableReferences[0][0]}\n         </TestableReference>\n      </Testables>`,
+    )
+    .replace(
+      "<AdditionalOptions/>",
+      `<EnvironmentVariables>\n${environmentXml}\n      </EnvironmentVariables>\n      <AdditionalOptions/>`,
+    );
   return content.replace(testAction, configuredTestAction);
 }
 
-function configureGeneratedXctestScheme(buildRoot) {
+function configureGeneratedXctestScheme(buildRoot, environmentVariables) {
   const path = join(
     buildRoot,
     "PunksPromotionDriver.xcodeproj",
@@ -115,6 +211,7 @@ function configureGeneratedXctestScheme(buildRoot) {
   }
   const configured = configureMacosXctestSchemeContent(
     readFileSync(path, "utf8"),
+    environmentVariables,
   );
   writeFileSync(path, configured, { encoding: "utf8" });
   if (readFileSync(path, "utf8") !== configured) {
@@ -145,10 +242,75 @@ async function runCommand(command, args, options) {
   });
 }
 
+export function macosXctestrunEnvironmentCommands(
+  xctestrun,
+  environmentVariables,
+) {
+  if (typeof xctestrun !== "string" || xctestrun.length === 0) {
+    fail("rebound .xctestrun path is missing");
+  }
+  return closedXctestEnvironmentEntries(environmentVariables).map(
+    ([key, value]) => ({
+      command: "/usr/bin/plutil",
+      args: [
+        "-replace",
+        `PunksPromotionUITests.EnvironmentVariables.${key}`,
+        "-string",
+        value,
+        xctestrun,
+      ],
+      key,
+      value,
+    }),
+  );
+}
+
+async function rebindXctestrunEnvironment({
+  source,
+  destination,
+  environmentVariables,
+  log,
+}) {
+  copyFileSync(source, destination, fsConstants.COPYFILE_EXCL);
+  const status = lstatSync(destination);
+  if (!status.isFile() || status.isSymbolicLink()) {
+    fail("rebound .xctestrun must be one regular create-only file");
+  }
+  const commands = macosXctestrunEnvironmentCommands(
+    destination,
+    environmentVariables,
+  );
+  for (const command of commands) {
+    await runCommand(command.command, command.args, {
+      stdio: ["ignore", log, log],
+    });
+    const observed = execFileSync(
+      command.command,
+      [
+        "-extract",
+        `PunksPromotionUITests.EnvironmentVariables.${command.key}`,
+        "raw",
+        "-o",
+        "-",
+        destination,
+      ],
+      { encoding: "utf8", stdio: ["ignore", "pipe", log] },
+    ).trimEnd();
+    if (observed !== command.value) {
+      fail(`rebound .xctestrun did not persist ${command.key}`);
+    }
+  }
+}
+
 export function macosXctestCommands(
   buildRoot,
   xctestrun = join(buildRoot, "PunksPromotionUITests.xctestrun"),
+  testKind = "installed",
 ) {
+  const testIdentifier = XCTEST_IDENTIFIERS[testKind];
+  if (testIdentifier === undefined) {
+    fail("XCTest invocation requires one closed reviewed test kind");
+  }
   const build = [
     "-project",
     join(buildRoot, "PunksPromotionDriver.xcodeproj"),
@@ -173,6 +335,7 @@ export function macosXctestCommands(
         "platform=macOS",
         "CODE_SIGNING_ALLOWED=NO",
         "test-without-building",
+        `-only-testing:${testIdentifier}`,
       ],
     },
   ];
@@ -201,8 +364,7 @@ async function runReviewedXctest({
     { flag: "wx", mode: 0o600 },
   );
   const log = openSync(input.outputs.platformLog, "a");
-  const environment = {
-    ...process.env,
+  const xctestEnvironment = {
     PUNKS_XCTEST_APPLICATION: application,
     PUNKS_XCTEST_RESULT: resultPath,
     PUNKS_XCTEST_SCREENSHOTS: screenshots,
@@ -212,13 +374,19 @@ async function runReviewedXctest({
     PUNKS_PROMOTION_ASSET_MANIFEST: input.outputs.embeddedAssets,
     PUNKS_PROMOTION_IPC_LOG: input.outputs.ipc,
     PUNKS_PROMOTION_NETWORK_LOG: input.outputs.network,
+    PUNKS_XCTEST_ACCESSIBILITY_REVIEW_RESULT: join(
+      dirname(input.outputs.platformLog),
+      "macos-independent-accessibility-review.json",
+    ),
+    PUNKS_XCTEST_ARTIFACT_SHA256: input.artifactSha256,
   };
+  const environment = { ...process.env, ...xctestEnvironment };
   await runCommand(
     "cmake",
     ["-S", projectRoot, "-B", buildRoot, "-G", "Xcode"],
     { env: environment, stdio: ["ignore", log, log] },
   );
-  configureGeneratedXctestScheme(buildRoot);
+  configureGeneratedXctestScheme(buildRoot, xctestEnvironment);
   const buildInvocation = macosXctestCommands(buildRoot)[0];
   await runCommand(buildInvocation.command, buildInvocation.args, {
     env: environment,
@@ -256,28 +424,42 @@ async function runIndependentAccessibilityXctest({
     { flag: "wx", mode: 0o600 },
   );
   const log = openSync(input.outputs.platformLog, "a");
-  const environment = {
-    ...process.env,
+  const xctestEnvironment = {
     PUNKS_XCTEST_APPLICATION: application,
+    PUNKS_XCTEST_RESULT: resultPath,
+    PUNKS_XCTEST_SCREENSHOTS: join(
+      dirname(input.outputs.platformLog),
+      "macos-independent-accessibility-screenshots",
+    ),
     PUNKS_XCTEST_ACCESSIBILITY_REVIEW_RESULT: resultPath,
     PUNKS_XCTEST_PLATFORM: input.platform,
+    PUNKS_XCTEST_FIXTURE: JSON.stringify(input.fixture),
+    PUNKS_XCTEST_NATIVE_BINARY: input.nativeBinary,
     PUNKS_XCTEST_ARTIFACT_SHA256: input.artifactSha256,
     PUNKS_PROMOTION_ASSET_MANIFEST: input.outputs.embeddedAssets,
     PUNKS_PROMOTION_IPC_LOG: input.outputs.ipc,
     PUNKS_PROMOTION_NETWORK_LOG: input.outputs.network,
   };
+  const environment = { ...process.env, ...xctestEnvironment };
+  const independentXctestrun = join(
+    buildRoot,
+    `PunksPromotionUITests-${input.platform}-accessibility.xctestrun`,
+  );
+  await rebindXctestrunEnvironment({
+    source: exactXctestrun(buildRoot),
+    destination: independentXctestrun,
+    environmentVariables: xctestEnvironment,
+    log,
+  });
   const invocation = macosXctestCommands(
     buildRoot,
-    exactXctestrun(buildRoot),
+    independentXctestrun,
+    "accessibility",
   )[1];
-  await runCommand(
-    invocation.command,
-    [
-      ...invocation.args,
-      "-only-testing:PunksPromotionUITests/PunksPromotionUITests/testIndependentAccessibilityReview",
-    ],
-    { env: environment, stdio: ["ignore", log, log] },
-  );
+  await runCommand(invocation.command, invocation.args, {
+    env: environment,
+    stdio: ["ignore", log, log],
+  });
 }
 
 /** Runs a second XCTest process against the same extracted application. */

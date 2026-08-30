@@ -1,10 +1,15 @@
+import { toast } from "sonner";
+
+import { useApprovalMutation } from "@/features/workflows/hooks";
 import type { WorkflowApproval } from "@/shared/api/types";
+import { Button } from "@/shared/ui/button";
 
 type WorkflowApprovalCardProps = {
   approval: WorkflowApproval;
 };
 
 export function WorkflowApprovalCard({ approval }: WorkflowApprovalCardProps) {
+  const approvalMutation = useApprovalMutation();
   const isExpired = new Date(approval.expiresAt) < new Date();
 
   if (approval.status !== "pending" || isExpired) {
@@ -23,9 +28,49 @@ export function WorkflowApprovalCard({ approval }: WorkflowApprovalCardProps) {
       <p className="mb-2 text-xs text-muted-foreground">
         Expires: {new Date(approval.expiresAt).toLocaleString()}
       </p>
-      <p className="text-xs text-muted-foreground" role="status">
-        Approval actions are not yet available in Desktop.
-      </p>
+      <div className="flex items-center gap-2">
+        <Button
+          disabled={approvalMutation.isPending}
+          onClick={() =>
+            approvalMutation.mutate(
+              { token: approval.approvalRef, action: "grant" },
+              {
+                onSuccess: () => toast.success("Workflow approved"),
+                onError: (error) =>
+                  toast.error(
+                    error instanceof Error
+                      ? error.message
+                      : "Couldn’t approve the workflow",
+                  ),
+              },
+            )
+          }
+          size="sm"
+        >
+          Approve
+        </Button>
+        <Button
+          disabled={approvalMutation.isPending}
+          onClick={() =>
+            approvalMutation.mutate(
+              { token: approval.approvalRef, action: "deny" },
+              {
+                onSuccess: () => toast.success("Workflow denied"),
+                onError: (error) =>
+                  toast.error(
+                    error instanceof Error
+                      ? error.message
+                      : "Couldn’t deny the workflow",
+                  ),
+              },
+            )
+          }
+          size="sm"
+          variant="outline"
+        >
+          Deny
+        </Button>
+      </div>
     </div>
   );
 }

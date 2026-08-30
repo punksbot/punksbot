@@ -73,6 +73,17 @@ export class SessionDO extends PromotionFaultableDurableObject<AuthEnv> {
           CHECK (status IN ('active', 'consumed'))
       ) STRICT
     `);
+    const initialSessionColumns = this.ctx.storage.sql
+      .exec<{ name: string }>("PRAGMA table_info(auth_session)")
+      .toArray();
+    if (
+      !initialSessionColumns.some((column) => column.name === "client_kind")
+    ) {
+      this.ctx.storage.sql.exec(
+        `ALTER TABLE auth_session ADD COLUMN client_kind TEXT NOT NULL
+         DEFAULT 'browser' CHECK (client_kind IN ('browser', 'desktop', 'mobile', 'api'))`,
+      );
+    }
     const sessionTableSql = this.ctx.storage.sql
       .exec<{ sql: string }>(
         "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'auth_session'",
@@ -104,15 +115,6 @@ export class SessionDO extends PromotionFaultableDurableObject<AuthEnv> {
         FROM auth_session_before_prepared;
         DROP TABLE auth_session_before_prepared
       `);
-    }
-    const sessionColumns = this.ctx.storage.sql
-      .exec<{ name: string }>("PRAGMA table_info(auth_session)")
-      .toArray();
-    if (!sessionColumns.some((column) => column.name === "client_kind")) {
-      this.ctx.storage.sql.exec(
-        `ALTER TABLE auth_session ADD COLUMN client_kind TEXT NOT NULL
-         DEFAULT 'browser' CHECK (client_kind IN ('browser', 'desktop', 'mobile', 'api'))`,
-      );
     }
     const claimColumns = this.ctx.storage.sql
       .exec<{ name: string }>("PRAGMA table_info(account_merge_reauth_claim)")

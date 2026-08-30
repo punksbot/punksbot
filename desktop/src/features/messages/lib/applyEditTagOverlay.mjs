@@ -9,15 +9,18 @@
  * TypeScript-facing callers get typed access via the sibling `.d.mts`.
  */
 
+import { isAgentAddressMentionTag } from "./agentAddressMention.mjs";
+
 /**
  * Merge the original event's tags with an edit's tags so that:
  *   - `imeta` tags come exclusively from the edit (full new attachment set);
  *   - `p` tags from the edit join the original set because only newly added
  *     mentions notify. Reference-only `mention` tags, by contrast, are a full
- *     snapshot from the edited composer (marked by `buzz:mention-snapshot`)
+ *     snapshot from the edited composer (marked by `punks:mention-snapshot`)
  *     and therefore replace the original set; this preserves the edited body's
  *     stable recipient identities even before profiles load or after an alias
- *     changes;
+ *     changes. Agent-address mention metadata describes immutable send-time
+ *     state, so it survives that authored-mention snapshot;
  *   - `emoji` (NIP-30 custom-emoji) tags come from the edit *when the edit
  *     supplies any* — the edited body may add or remove custom emoji, so a
  *     supplied set rebuilds the shortcode→url map. But when the edit supplies
@@ -37,9 +40,11 @@ export function applyEditTagOverlay(originalTags, editTags) {
   if (!editTags) return originalTags;
   const editEmoji = editTags.filter((t) => t[0] === "emoji");
   const hasMentionSnapshot = editTags.some(
-    (t) => t[0] === "buzz:mention-snapshot",
+    (t) => t[0] === "punks:mention-snapshot",
   );
-  const editMentions = editTags.filter((t) => t[0] === "mention");
+  const editMentions = editTags.filter(
+    (t) => t[0] === "mention" && !isAgentAddressMentionTag(t),
+  );
   // imeta is always fully replaced by the edit. emoji is replaced only when
   // the edit actually supplies emoji tags; otherwise the original's are kept.
   // An edit carrying the private snapshot marker is authoritative, including
@@ -48,12 +53,18 @@ export function applyEditTagOverlay(originalTags, editTags) {
   const droppedFromOriginal = (tag) => {
     if (tag[0] === "imeta") return false;
     if (editEmoji.length > 0 && tag[0] === "emoji") return false;
-    if (hasMentionSnapshot && tag[0] === "mention") return false;
+    if (
+      hasMentionSnapshot &&
+      tag[0] === "mention" &&
+      !isAgentAddressMentionTag(tag)
+    )
+      return false;
     return true;
   };
   const baseFromOriginal = originalTags.filter(droppedFromOriginal);
   const overlaidFromEdit = editTags.filter(
-    (t) => t[0] === "imeta" || t[0] === "p" || t[0] === "buzz:mention-snapshot",
+    (t) =>
+      t[0] === "imeta" || t[0] === "p" || t[0] === "punks:mention-snapshot",
   );
   return [
     ...baseFromOriginal,

@@ -1,9 +1,0 @@
-{
-  "extends": "./tsconfig.json",
-  "files": [
-    "punks-product/main.tsx",
-    "src/punks-main.tsx",
-    "src/vite-env.d.ts"
-  ],
-  "include": []
-}

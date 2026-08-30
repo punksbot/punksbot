@@ -1,4 +1,4 @@
-use crate::client::BuzzClient;
+use crate::client::PunksClient;
 use crate::commands::with_git_provenance;
 use crate::error::CliError;
 use crate::validate::{
@@ -8,7 +8,7 @@ use buzz_sdk::{GitAppliedPatchRef, GitPatchMeta, GitRepoCoord, GitStatus, GitSta
 
 #[allow(clippy::too_many_arguments)]
 pub async fn cmd_send_patch(
-    client: &BuzzClient,
+    client: &PunksClient,
     repo_owner: &str,
     repo_id: &str,
     patch: &str,
@@ -72,7 +72,7 @@ fn parse_committer(spec: &str) -> Result<(String, String, String, String), CliEr
     }
 }
 
-pub async fn cmd_get_patch(client: &BuzzClient, event: &str) -> Result<(), CliError> {
+pub async fn cmd_get_patch(client: &PunksClient, event: &str) -> Result<(), CliError> {
     validate_hex64(event)?;
     let filter = serde_json::json!({
         "kinds": [1617],
@@ -84,7 +84,7 @@ pub async fn cmd_get_patch(client: &BuzzClient, event: &str) -> Result<(), CliEr
 }
 
 pub async fn cmd_list_patches(
-    client: &BuzzClient,
+    client: &PunksClient,
     repo_owner: &str,
     repo_id: &str,
     author: Option<&str>,
@@ -114,7 +114,7 @@ pub async fn cmd_list_patches(
 
 #[allow(clippy::too_many_arguments)]
 pub async fn cmd_patch_status(
-    client: &BuzzClient,
+    client: &PunksClient,
     root: &str,
     status: &str,
     content: Option<&str>,
@@ -193,7 +193,7 @@ pub async fn cmd_patch_status(
 /// Parse the CLI's status word into a `GitStatus`. `merged` and `resolved`
 /// are accepted as synonyms for the same underlying kind (1631) — NIP-34
 /// uses "applied/merged" for patches and "resolved" for issues, but it's one
-/// status kind either way. Shared by `buzz issues status`.
+/// status kind either way. Shared by `punks issues status`.
 pub(crate) fn parse_status(s: &str) -> Result<GitStatus, CliError> {
     match s {
         "open" => Ok(GitStatus::Open),
@@ -206,7 +206,7 @@ pub(crate) fn parse_status(s: &str) -> Result<GitStatus, CliError> {
     }
 }
 
-pub async fn dispatch(cmd: crate::PatchesCmd, client: &BuzzClient) -> Result<(), CliError> {
+pub async fn dispatch(cmd: crate::PatchesCmd, client: &PunksClient) -> Result<(), CliError> {
     use crate::PatchesCmd;
     match cmd {
         PatchesCmd::Send {

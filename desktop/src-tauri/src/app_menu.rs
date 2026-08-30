@@ -1,27 +1,23 @@
 //! The macOS application menu.
 //!
-//! Buzz never called `Builder::menu()`, so Tauri installed `Menu::default()`
+//! Punks never called `Builder::menu()`, so Tauri installed `Menu::default()`
 //! for us (`tauri::app::Builder::build`, macOS arm). That default puts a
 //! `close_window` item in both the File and Window submenus, and muda gives
 //! that item a Cmd+W key equivalent bound to `performClose:`.
 //!
-//! Two consequences, both wrong for Buzz:
+//! That default cannot express Punks's context-dependent behavior:
 //!
 //! 1. `CloseRequested` on the main window is intercepted in `lib.rs` and turned
-//!    into hide-to-tray, so Cmd+W never closed a window -- it hid the whole
-//!    app. That is already redundant with Cmd+H (Hide), which stays.
+//!    into hide-to-tray. Cmd+W should take that path in normal Punks mode.
 //! 2. macOS resolves a menu key equivalent before the webview receives any key
-//!    event, so Buzz Term could never bind Cmd+W to "close this terminal tab"
+//!    event, so Punks Term could never bind Cmd+W to "close this terminal tab"
 //!    while the accelerator was claimed here.
 //!
 //! So this module builds the standard menu minus both `close_window` items.
-//! Everything else matches `Menu::default()` deliberately: the goal is to drop
-//! one item, not to design a menu.
-//!
-//! If hide-on-Cmd+W is ever wanted back in Buzz mode, the revisit path is to
-//! restore the item and disable it while the terminal owns input (a disabled
-//! item does not consume its key equivalent) -- at the cost of an owner->Rust
-//! IPC hop this approach does not need.
+//! Everything else matches `Menu::default()` deliberately. The webview routes
+//! Cmd+W conditionally instead: Punks Term consumes it in capture phase while
+//! it owns input, and `useCloseWindowShortcut` closes the current window in
+//! normal Punks mode.
 
 #[cfg(target_os = "macos")]
 use tauri::menu::{
@@ -31,7 +27,7 @@ use tauri::menu::{
 use tauri::AppHandle;
 use tauri::{Builder, Runtime};
 
-/// Installs Buzz's menu, replacing the `Menu::default()` Tauri would otherwise
+/// Installs Punks's menu, replacing the `Menu::default()` Tauri would otherwise
 /// auto-install. A no-op off macOS, where that default is never created and
 /// the Cmd+W accelerator does not exist.
 pub fn install<R: Runtime>(builder: Builder<R>) -> Builder<R> {
@@ -50,8 +46,13 @@ pub fn install<R: Runtime>(builder: Builder<R>) -> Builder<R> {
 pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let pkg_info = app.package_info();
     let config = app.config();
+    let product_name = if cfg!(feature = "punks-local") {
+        "Punks Full Local".to_string()
+    } else {
+        pkg_info.name.clone()
+    };
     let about_metadata = AboutMetadata {
-        name: Some(pkg_info.name.clone()),
+        name: Some(product_name.clone()),
         version: Some(pkg_info.version.to_string()),
         copyright: config.bundle.copyright.clone(),
         authors: config.bundle.publisher.clone().map(|p| vec![p]),
@@ -63,7 +64,7 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         &[
             &Submenu::with_items(
                 app,
-                pkg_info.name.clone(),
+                product_name,
                 true,
                 &[
                     &PredefinedMenuItem::about(app, None, Some(about_metadata))?,

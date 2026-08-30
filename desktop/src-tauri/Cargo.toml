@@ -3,17 +3,13 @@
 # With a bare `[workspace]` and no `members`, `cargo test/check --workspace`
 # expands to a set that excludes this crate, and its gates pass green-and-empty
 # over a real defect. Verified: Sami Arm A/D, Dawn `.scratch/armA`.
-members = [
-  "crates/buzz-terminal",
-  "crates/punks-account-client",
-  "crates/punks-promotion-session",
-]
+members = ["crates/buzz-terminal"]
 
 [package]
-name = "desktop-shell"
-version = "0.6.0"
-description = "Desktop application shell"
-authors = ["Desktop Contributors"]
+name = "punks-full-local"
+version = "0.5.20"
+description = "Punks Full Local desktop app"
+authors = ["you"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -22,88 +18,16 @@ edition = "2021"
 # The `_lib` suffix may seem redundant but it is necessary
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
-name = "desktop_lib"
+name = "punks_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [features]
-default = ["buzz-desktop", "system-keyring"]
-buzz-desktop = [
-  "dep:arboard",
-  "dep:anyhow",
-  "dep:atomic-write-file",
-  "dep:audioadapter-buffers",
-  "dep:axum",
-  "dep:base64",
-  "dep:block2",
-  "dep:buzz_agent_pkg",
-  "dep:buzz_core_pkg",
-  "dep:buzz_persona_pkg",
-  "dep:buzz_sdk_pkg",
-  "dep:buzz_terminal",
-  "dep:buzz_voice_pkg",
-  "dep:buzz_ws_client_pkg",
-  "dep:bytes",
-  "dep:bzip2",
-  "dep:chrono",
-  "dep:ctrlc",
-  "dep:dirs",
-  "dep:earshot",
-  "dep:ed25519-dalek",
-  "dep:flate2",
-  "dep:futures-util",
-  "dep:getrandom",
-  "dep:hex",
-  "dep:image",
-  "dep:infer",
-  "dep:libc",
-  "dep:neteq",
-  "dep:nostr",
-  "dep:notify-rust",
-  "dep:objc2",
-  "dep:objc2-app-kit",
-  "dep:objc2-foundation",
-  "dep:objc2-user-notifications",
-  "dep:opus",
-  "dep:percent-encoding",
-  "dep:plist",
-  "dep:png",
-  "dep:portable-pty",
-  "dep:regex",
-  "dep:reqwest",
-  "dep:rodio",
-  "dep:rubato",
-  "dep:rusqlite",
-  "dep:rustls",
-  "dep:security-framework",
-  "dep:serde_yaml",
-  "dep:sha2",
-  "dep:sherpa-onnx",
-  "dep:strip-ansi-escapes",
-  "dep:tauri-plugin-dialog",
-  "dep:tauri-plugin-global-shortcut",
-  "dep:tauri-plugin-notification",
-  "dep:tauri-plugin-window-state",
-  "dep:tar",
-  "dep:tempfile",
-  "dep:tokio-tungstenite",
-  "dep:tokio-util",
-  "dep:toml",
-  "dep:tracing",
-  "dep:url",
-  "dep:user-idle",
-  "dep:webkit2gtk",
-  "dep:window-vibrancy",
-  "dep:windows-sys",
-  "dep:zeroize",
-  "dep:zip",
-  "tauri/macos-private-api",
-  "tauri/tray-icon",
-]
-mesh-llm = ["buzz-desktop", "dep:iroh", "dep:mesh-llm-sdk", "dep:mesh-llm-host-runtime", "dep:mesh-llm-client", "dep:mesh-llm-node", "dep:mesh-llm-system", "dep:mesh-llm-events"]
+default = ["system-keyring"]
+punks-local = []
+mesh-llm = ["dep:iroh", "dep:mesh-llm-sdk", "dep:mesh-llm-host-runtime", "dep:mesh-llm-client", "dep:mesh-llm-node", "dep:mesh-llm-system", "dep:mesh-llm-events"]
 # OS keyring backing for desktop secret storage (nsec private keys). When
 # disabled, secrets fall back to 0o600 files. On by default for real builds.
 system-keyring = ["dep:keyring"]
-punks-desktop-social-loop = ["dep:keyring", "dep:punks-account-client", "dep:sha2"]
 
 [build-dependencies]
 base64 = "0.22"
@@ -112,8 +36,8 @@ serde_json = "1"
 tauri-build = { version = "2", features = [] }
 
 [target.'cfg(unix)'.dependencies]
-libc = { version = "0.2", optional = true }
-ctrlc = { version = "3", features = ["termination"], optional = true }
+libc = "0.2"
+ctrlc = { version = "3", features = ["termination"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 keyring = { version = "3.6.3", default-features = false, features = ["sync-secret-service", "vendored"], optional = true }
@@ -121,72 +45,75 @@ keyring = { version = "3.6.3", default-features = false, features = ["sync-secre
 # D-Bus connection open. GNOME 46+ dismisses a notification the moment that
 # connection is dropped, which the plugin does immediately. Default features
 # keep the pure-Rust zbus backend, matching the plugin (no libdbus needed).
-notify-rust = { version = "4", optional = true }
+notify-rust = "4"
 # Enable getUserMedia in the WebKitGTK webview (see src/linux_media.rs). Pinned
 # to the exact version wry links so both resolve to one webkit2gtk-sys and we
 # don't get duplicate symbols; bump in lockstep with wry.
-webkit2gtk = { version = "=2.0.2", features = ["v2_22"], optional = true }
+webkit2gtk = { version = "=2.0.2", features = ["v2_22"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-block2 = { version = "0.6", default-features = false, features = ["std"], optional = true }
-objc2 = { version = "0.6.4", default-features = false, optional = true }
-objc2-app-kit = { version = "0.3.2", default-features = false, features = ["NSEvent", "NSHapticFeedback", "NSMenu", "NSMenuItem", "NSStatusItem", "block2"], optional = true }
-objc2-foundation = { version = "0.3.2", default-features = false, features = ["NSDictionary", "NSError", "NSBundle", "NSObject", "NSProcessInfo", "NSString"], optional = true }
-objc2-user-notifications = { version = "0.3.2", default-features = false, features = ["block2", "UNNotification", "UNNotificationContent", "UNNotificationRequest", "UNNotificationResponse", "UNNotificationSettings", "UNNotificationTrigger", "UNUserNotificationCenter"], optional = true }
+block2 = { version = "0.6", default-features = false, features = ["std"] }
+objc2 = { version = "0.6.4", default-features = false }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["NSEvent", "NSHapticFeedback", "NSMenu", "NSMenuItem", "NSStatusItem", "block2"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["NSDictionary", "NSError", "NSBundle", "NSObject", "NSProcessInfo", "NSString"] }
+objc2-user-notifications = { version = "0.3.2", default-features = false, features = ["block2", "UNNotification", "UNNotificationContent", "UNNotificationRequest", "UNNotificationResponse", "UNNotificationSettings", "UNNotificationTrigger", "UNUserNotificationCenter"] }
 keyring = { version = "3.6.3", default-features = false, features = ["apple-native", "vendored"], optional = true }
-security-framework = { version = "3.7.0", features = ["OSX_10_15"], optional = true }
-window-vibrancy = { version = "0.6", optional = true }
-user-idle = { version = "0.6", default-features = false, optional = true }
-plist = { version = "1", optional = true }
+security-framework = { version = "3.7.0", features = ["OSX_10_15"] }
+window-vibrancy = "0.6"
+user-idle = { version = "0.6", default-features = false }
+plist = "1"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_Security", "Win32_Storage_FileSystem", "Win32_System_JobObjects", "Win32_System_Registry", "Win32_System_Threading", "Win32_Foundation"], optional = true }
+windows-sys = { version = "0.61", features = ["Win32_Security", "Win32_Storage_FileSystem", "Win32_System_JobObjects", "Win32_System_Registry", "Win32_System_Threading", "Win32_Foundation"] }
 keyring = { version = "3.6.3", default-features = false, features = ["windows-native", "vendored"], optional = true }
-user-idle = { version = "0.6", default-features = false, optional = true }
+user-idle = { version = "0.6", default-features = false }
 
 [dependencies]
-atomic-write-file = { version = "0.3", optional = true }
-anyhow = { version = "1", optional = true }
-dirs = { version = "6", optional = true }
+atomic-write-file = "0.3"
+anyhow = "1"
+dirs = "6"
 tauri = { version = "2", features = ["macos-private-api", "tray-icon"] }
 tauri-plugin-deep-link = "2"
 tauri-plugin-opener = "2"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
-tauri-plugin-window-state = { version = "2", optional = true }
-tauri-plugin-dialog = { version = "2", optional = true }
+tauri-plugin-window-state = "2"
+tauri-plugin-dialog = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
-infer = { version = "0.19", optional = true }
-hex = { version = "0.4", optional = true }
-ed25519-dalek = { version = "=3.0.0-rc.0", optional = true }
+infer = "0.19"
+evalexpr = "11"
+hmac = "0.13"
+cron = "0.16"
+hex = "0.4"
+ed25519-dalek = "=3.0.0-rc.0"
 tokio = { version = "1", features = ["fs", "sync", "rt", "macros", "time", "net", "io-util"] }
-tokio-tungstenite = { version = "0.29", features = ["rustls-tls-webpki-roots"], optional = true }
-tokio-util = { version = "0.7", features = ["rt"], optional = true }
-bytes = { version = "1", optional = true }
-futures-util = { version = "0.3", optional = true }
-opus = { version = "0.3", optional = true }
-neteq = { version = "0.8", default-features = false, optional = true }
+tokio-tungstenite = { version = "0.29", features = ["rustls-tls-webpki-roots"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+bytes = "1"
+futures-util = "0.3"
+opus = "0.3"
+neteq = { version = "0.8", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-serde_yaml = { version = "0.9", optional = true }
-toml = { version = "0.8", optional = true }
-nostr = { version = "0.44", features = ["nip44", "nip49"], optional = true }
+serde_yaml = "0.9"
+toml = "0.8"
+nostr = { version = "0.44", features = ["nip44", "nip49"] }
 # OS-entropy source for backup passphrase generation (already in the tree as a
 # transitive dependency; pinned here for direct use).
-getrandom = { version = "0.2", optional = true }
-zeroize = { version = "1", optional = true }
-percent-encoding = { version = "2", optional = true }
-reqwest = { version = "0.13", features = ["json", "query", "stream", "blocking"], optional = true }
-rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std"], optional = true }
-url = { version = "2", optional = true }
-buzz_core_pkg = { package = "buzz-core", path = "../../crates/buzz-core", optional = true }
-buzz_persona_pkg = { package = "buzz-persona", path = "../../crates/buzz-persona", optional = true }
-buzz_sdk_pkg = { package = "buzz-sdk", path = "../../crates/buzz-sdk", optional = true }
-buzz_agent_pkg = { package = "buzz-agent", path = "../../crates/buzz-agent", optional = true }
-buzz_voice_pkg = { package = "buzz-voice", path = "../../crates/buzz-voice", optional = true }
-buzz_terminal = { package = "buzz-terminal", path = "crates/buzz-terminal", optional = true }
-buzz_ws_client_pkg = { package = "buzz-ws-client", path = "../../crates/buzz-ws-client", optional = true }
-portable-pty = { version = "0.9", optional = true }
+getrandom = "0.2"
+zeroize = "1"
+percent-encoding = "2"
+reqwest = { version = "0.13", features = ["json", "query", "stream", "blocking"] }
+rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std"] }
+url = "2"
+punks_core_pkg = { package = "buzz-core", path = "../../crates/buzz-core" }
+punks_persona_pkg = { package = "buzz-persona", path = "../../crates/buzz-persona" }
+punks_sdk_pkg = { package = "buzz-sdk", path = "../../crates/buzz-sdk" }
+punks_agent_pkg = { package = "buzz-agent", path = "../../crates/buzz-agent" }
+punks_voice_pkg = { package = "buzz-voice", path = "../../crates/buzz-voice" }
+punks_terminal = { package = "punks-terminal", path = "crates/buzz-terminal" }
+punks_ws_client_pkg = { package = "buzz-ws-client", path = "../../crates/buzz-ws-client" }
+portable-pty = "0.9"
 iroh = { version = "1.0.2", optional = true }
 mesh-llm-sdk = { git = "https://github.com/Mesh-LLM/mesh-llm.git", tag = "v0.75.1", package = "mesh-llm-sdk", default-features = false, features = ["client", "serving"], optional = true }
 mesh-llm-host-runtime = { git = "https://github.com/Mesh-LLM/mesh-llm.git", tag = "v0.75.1", package = "mesh-llm-host-runtime", default-features = false, features = ["dynamic-native-runtime"], optional = true }
@@ -196,41 +123,41 @@ mesh-llm-client = { git = "https://github.com/Mesh-LLM/mesh-llm.git", tag = "v0.
 mesh-llm-node = { git = "https://github.com/Mesh-LLM/mesh-llm.git", tag = "v0.75.1", package = "mesh-llm-node", optional = true }
 mesh-llm-system = { git = "https://github.com/Mesh-LLM/mesh-llm.git", tag = "v0.75.1", package = "mesh-llm-system", optional = true }
 mesh-llm-events = { git = "https://github.com/Mesh-LLM/mesh-llm.git", tag = "v0.75.1", package = "mesh-llm-events", optional = true }
-base64 = { version = "0.22", optional = true }
-sha2 = { version = "0.11", optional = true }
-tar = { version = "0.4", optional = true }
-bzip2 = { version = "0.6", optional = true }
-chrono = { version = "0.4", features = ["serde"], optional = true }
-tauri-plugin-global-shortcut = { version = "2", optional = true }
-tauri-plugin-notification = { version = "2.3.3", optional = true }
+base64 = "0.22"
+sha2 = "0.11"
+tar = "0.4"
+bzip2 = "0.6"
+chrono = { version = "0.4", features = ["serde"] }
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-notification = "2.3.3"
 uuid = { version = "1", features = ["v4", "v5"] }
-png = { version = "0.18", optional = true }
+png = "0.18"
 # wayland-data-control: without it arboard is X11-only on Linux, so copies made
 # in a Wayland session land in XWayland's clipboard where Wayland-native apps
 # never see them (set_text still returns Ok). The backing wl-clipboard-rs dep is
 # target-gated inside arboard; at runtime X11 sessions still fall back to X11.
-arboard = { version = "3", features = ["wayland-data-control"], optional = true }
-image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "gif"], optional = true }
-zip = { version = "8", optional = true }
-flate2 = { version = "1", optional = true }
-sherpa-onnx = { version = "1.12", optional = true }
-regex = { version = "1", optional = true }
-rusqlite = { version = "0.37", features = ["bundled"], optional = true }
-axum = { version = "0.8", optional = true }
-rodio = { version = "0.22", optional = true }
-earshot = { version = "1.0", optional = true }
-rubato = { version = "3.0", optional = true }
-audioadapter-buffers = { version = "3.0", optional = true }
-tempfile = { version = "3", optional = true }
-strip-ansi-escapes = { version = "0.2", optional = true }
-tracing = { version = "0.1", optional = true }
-punks-account-client = { path = "crates/punks-account-client", optional = true }
+arboard = { version = "3", features = ["wayland-data-control"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "gif"] }
+zip = "8"
+flate2 = "1"
+sherpa-onnx = "1.12"
+regex = "1"
+rusqlite = { version = "0.37", features = ["bundled"] }
+axum = { version = "0.8", features = ["ws"] }
+rodio = "0.22"
+earshot = "1.0"
+rubato = "3.0"
+audioadapter-buffers = "3.0"
+tempfile = "3"
+strip-ansi-escapes = "0.2"
+tracing = "0.1"
 
 [dev-dependencies]
 tauri-utils = "2"
+tower = { version = "0.5", features = ["util"] }
 # `test-util` enables tokio's paused-clock (`start_paused`) so the relay
 # admission gate tests can assert exact wait durations without real sleeps.
 tokio = { version = "1", features = ["test-util"] }
 # The relay's media validation, so the snapshot-sharing tests can prove the
 # full export → sanitize → relay-accept → import contract end to end.
-buzz_media_pkg = { package = "buzz-media", path = "../../crates/buzz-media" }
+punks_media_pkg = { package = "buzz-media", path = "../../crates/buzz-media" }

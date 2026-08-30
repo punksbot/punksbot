@@ -93,6 +93,17 @@ test("keeps local Auth and the Punks UI proxy on one strict origin", async () =>
 
   assert.equal(gateway.vars.PUNKS_UI_ORIGIN, "http://localhost:1420");
   assert.equal(auth.vars.AUTH_BASE_URL, gateway.vars.PUNKS_UI_ORIGIN);
+  for (const name of [
+    "GOOGLE_AUTHORIZATION_ENDPOINT",
+    "GOOGLE_TOKEN_ENDPOINT",
+    "GOOGLE_USERINFO_ENDPOINT",
+    "GITHUB_AUTHORIZATION_ENDPOINT",
+    "GITHUB_TOKEN_ENDPOINT",
+    "GITHUB_API_BASE_URL",
+  ]) {
+    assert.match(auth.vars[name], /^http:\/\/127\.0\.0\.1(?::\d+)?\//u);
+    assert.match(auth.env.staging.vars[name], /^https:\/\//u);
+  }
   assert.equal(
     auth.env.staging.vars.AUTH_BASE_URL,
     "https://staging.punks.bot",

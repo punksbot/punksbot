@@ -24,7 +24,7 @@ const props = {
 };
 
 describe("local development API bootstrap", () => {
-  it("creates and replays one private Workspace with a Conversation and seed Messages", async () => {
+  it("creates and replays one private Workspace with an empty Conversation", async () => {
     const service = bootstrapService(props);
     const input = { punkId: OWNER_PUNK_ID, sessionCookie: SESSION_COOKIE };
 
@@ -91,14 +91,8 @@ describe("local development API bootstrap", () => {
       ),
     );
     expect(history.status).toBe(200);
-    const historyBody = (await history.json()) as {
-      items: Array<{ content: string }>;
-    };
-    expect(historyBody.items.map(({ content }) => content)).toEqual([
-      "Bienvenue dans Punks Bot.",
-      "Ce Workspace local est prêt pour développer la Punks UI.",
-      "Publiez un Message ici pour vérifier la persistance et le temps réel.",
-    ]);
+    const historyBody = (await history.json()) as { items: unknown[] };
+    expect(historyBody.items).toEqual([]);
   });
 
   it("fails closed for malformed input or non-local capability props", async () => {

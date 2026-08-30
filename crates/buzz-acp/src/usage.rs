@@ -2,7 +2,7 @@
 //!
 //! Agents that support usage reporting emit a `_goose/unstable/session/update`
 //! notification (with `sessionUpdate: "usage_update"`) at the end of every
-//! turn.  Both goose and buzz-agent use this same wire format.  The payload
+//! turn.  Both goose and punks-agent use this same wire format.  The payload
 //! carries session-cumulative token counts from which we derive per-turn
 //! deltas.
 //!
@@ -51,7 +51,7 @@ use std::collections::HashMap;
 /// }
 /// ```
 ///
-/// `used` and `contextLimit` are optional because buzz-agent does not track a
+/// `used` and `contextLimit` are optional because punks-agent does not track a
 /// context window limit; the fields are present when goose emits them.
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -74,18 +74,18 @@ pub(crate) enum GooseSessionUpdateVariant {
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct UsageUpdatePayload {
-    /// Total tokens used (context-usage proxy). Optional — buzz-agent omits
+    /// Total tokens used (context-usage proxy). Optional — punks-agent omits
     /// this field or sends 0 because it does not track a context window limit.
     #[serde(default)]
     #[allow(dead_code)]
     pub used: u64,
-    /// Context window size. Optional — buzz-agent omits this field.
+    /// Context window size. Optional — punks-agent omits this field.
     #[serde(default)]
     #[allow(dead_code)]
     pub context_limit: u64,
     /// Session-cumulative inclusive input tokens.
     ///
-    /// `None` when buzz-agent omitted the field — this happens when the
+    /// `None` when punks-agent omitted the field — this happens when the
     /// session-cumulative sum overflowed `u64::MAX`.  Goose always emits this
     /// field, so `None` from goose is not expected; `#[serde(default)]` keeps
     /// backward compatibility with any producer that omits it.
@@ -117,7 +117,7 @@ pub(crate) struct UsageUpdatePayload {
     pub accumulated_cache_write_tokens: Option<u64>,
     pub accumulated_cost: Option<f64>,
     /// Session-cumulative genuine provider total tokens. Optional — only
-    /// emitted by buzz-agent when every turn in the session so far supplied a
+    /// emitted by punks-agent when every turn in the session so far supplied a
     /// provider-reported total. Absent for goose (field ignore-if-absent for
     /// backward compat), for Anthropic-backed turns, and for sessions where any
     /// turn lacked a provider total. NIP-AM forbids deriving this by summing
@@ -221,17 +221,17 @@ pub struct TurnUsage {
     /// Session-cumulative output tokens as reported by goose at end of turn.
     /// `None` when the publisher omitted the field (overflow-poisoned session).
     pub cumulative_output_tokens: Option<u64>,
-    /// Session-cumulative genuine provider total tokens as reported by buzz-agent;
+    /// Session-cumulative genuine provider total tokens as reported by punks-agent;
     /// `None` when the session has never emitted one or any turn lacked one.
     pub cumulative_total_tokens: Option<u64>,
     /// Session-cumulative estimated cost in USD; `None` if goose did not report it.
     pub cumulative_cost_usd: Option<f64>,
-    /// Session-cumulative cache-read input tokens as reported by buzz-agent.
+    /// Session-cumulative cache-read input tokens as reported by punks-agent.
     /// `None` when the harness has never reported this field (e.g. goose or
     /// any harness that omits `accumulatedCachedInputTokens`).
     /// `Some(0)` when the harness reported zero cache hits.
     pub cumulative_cache_read_tokens: Option<u64>,
-    /// Session-cumulative cache-write tokens as reported by buzz-agent.
+    /// Session-cumulative cache-write tokens as reported by punks-agent.
     /// `None` when the harness has never reported this field.
     /// `Some(0)` when the harness reported zero cache writes.
     pub cumulative_cache_write_tokens: Option<u64>,
@@ -825,9 +825,9 @@ impl UsageTracker {
         }
     }
 
-    /// Seed a zero baseline for a session that buzz-acp just spawned.
+    /// Seed a zero baseline for a session that punks-acp just spawned.
     ///
-    /// When buzz-acp creates a session itself via `session/new`, the session's
+    /// When punks-acp creates a session itself via `session/new`, the session's
     /// prior token usage is zero by definition — no provider calls have been
     /// made yet.  Seeding a zero baseline here means the first usage
     /// notification for this session will see `current − 0 == cumulative` and
@@ -926,7 +926,7 @@ impl UsageTracker {
 mod tests {
     use super::*;
 
-    /// The camelCase key buzz-agent actually puts on the wire must land on the
+    /// The camelCase key punks-agent actually puts on the wire must land on the
     /// field. A rename mismatch here would deserialize to None, and every trial
     /// would be treated as "not reported" — the exact silent failure this field
     /// was added to remove.
@@ -1354,7 +1354,7 @@ mod tests {
 
     #[test]
     fn notification_deserializes_without_used_and_context_limit() {
-        // buzz-agent emits usage_update without used/contextLimit.
+        // punks-agent emits usage_update without used/contextLimit.
         let raw = serde_json::json!({
             "sessionId": "buzz-sess",
             "update": {
@@ -1415,7 +1415,7 @@ mod tests {
 
     #[test]
     fn buzz_agent_notification_flows_through_tracker() {
-        // End-to-end: a buzz-agent-shaped usage_update (no used/contextLimit)
+        // End-to-end: a punks-agent-shaped usage_update (no used/contextLimit)
         // deserializes and flows through UsageTracker to produce correct TurnUsage.
         let raw1 = serde_json::json!({
             "sessionId": "buzz-s1",
@@ -1962,7 +1962,7 @@ mod tests {
 
     #[test]
     fn pool_omitted_cache_field_publishes_no_cache_read_tokens_in_kind44200() {
-        // End-to-end: a buzz-agent or goose payload that omits the cache field
+        // End-to-end: a punks-agent or goose payload that omits the cache field
         // must NOT publish cacheReadTokens in the kind:44200 event — neither
         // in turn nor cumulative counts.
         //
@@ -2008,7 +2008,7 @@ mod tests {
 
     #[test]
     fn pool_reported_cache_field_publishes_nonzero_cache_read_tokens_in_kind44200() {
-        // End-to-end: a buzz-agent payload with a nonzero cache count must
+        // End-to-end: a punks-agent payload with a nonzero cache count must
         // publish cacheReadTokens in both turn and cumulative counts.
         use crate::pool::build_turn_metric_counts;
 
@@ -2277,7 +2277,7 @@ mod tests {
         assert_eq!(usage.turn_input_tokens, Some(1000));
     }
 
-    /// Old harnesses (goose, older buzz-agent) that do not emit `pricingIdentity`
+    /// Old harnesses (goose, older punks-agent) that do not emit `pricingIdentity`
     /// must produce `TurnUsage.pricing_identity = None` — no default injection.
     #[test]
     fn old_harness_no_pricing_identity_field_yields_none() {
@@ -2444,7 +2444,7 @@ mod tests {
     //
     // The publisher fold (agent.rs `fold_pricing_identity`) covers the case where
     // a single cumulative snapshot has no provable identity within the agent loop.
-    // The ACP tracker has a DISTINCT multi-notification path: buzz-agent sends
+    // The ACP tracker has a DISTINCT multi-notification path: punks-agent sends
     // multiple `usage_update` notifications per turn (one per round), and the ACP
     // tracker must fold identity across those notifications — not last-update-wins.
     //

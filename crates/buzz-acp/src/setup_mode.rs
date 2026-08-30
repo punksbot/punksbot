@@ -1,7 +1,7 @@
 //! Setup-mode listener for not-ready agents.
 //!
 //! When the desktop determines an agent is `NotReady` (missing provider,
-//! model, or credentials), it spawns `buzz-acp` with a setup-mode payload
+//! model, or credentials), it spawns `punks-acp` with a setup-mode payload
 //! instead of starting the normal agent pool. This module implements that
 //! early-branch path:
 //!
@@ -14,10 +14,10 @@
 //!
 //! # Contract (NON-NEGOTIABLE)
 //!
-//! * **Desktop is the ONLY readiness source.** `buzz-acp` trusts the payload
+//! * **Desktop is the ONLY readiness source.** `punks-acp` trusts the payload
 //!   passed by the desktop and does NOT re-derive readiness.
 //! * **Normal startup gains no second readiness path.** The early branch is
-//!   entered only when `BUZZ_ACP_SETUP_PAYLOAD` is set.
+//!   entered only when `PUNKS_ACP_SETUP_PAYLOAD` is set.
 //! * `spawn_key_refusal`-class identity failures are outside this path: no
 //!   valid key → no safe process to post as the agent.
 //!
@@ -52,7 +52,7 @@ use uuid::Uuid;
 /// `RequirementPayload::CliLogin` so the sentinel JSON the desktop parses
 /// contains the exact wire literals the FE expects.
 ///
-/// buzz-acp is a separate crate and must NOT depend on desktop types —
+/// punks-acp is a separate crate and must NOT depend on desktop types —
 /// this explicit mirror is the correct pattern (same as the rest of
 /// `RequirementPayload` as "the Rust counterpart to desktop's `Requirement`").
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -80,13 +80,13 @@ use crate::{
 // ── Payload ───────────────────────────────────────────────────────────────────
 
 /// Env var carrying the JSON-encoded setup payload.
-pub(crate) const SETUP_PAYLOAD_ENV_VAR: &str = "BUZZ_ACP_SETUP_PAYLOAD";
+pub(crate) const SETUP_PAYLOAD_ENV_VAR: &str = "PUNKS_ACP_SETUP_PAYLOAD";
 
 /// A single missing requirement, surface-discriminated so the nudge copy
 /// names exactly what to set and where.
 ///
 /// This is the Rust counterpart to the desktop's `Requirement` type
-/// (`managed_agents/readiness.rs`). Desktop serializes it; `buzz-acp`
+/// (`managed_agents/readiness.rs`). Desktop serializes it; `punks-acp`
 /// deserializes and renders copy from it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "surface", rename_all = "snake_case")]
@@ -237,7 +237,7 @@ impl SetupPayload {
     ///
     /// The body contains two parts separated by a blank line:
     /// 1. Human-readable markdown (unchanged; used by CLI and non-card clients).
-    /// 2. A fenced `buzz:config-nudge` sentinel block containing the structured
+    /// 2. A fenced `punks:config-nudge` sentinel block containing the structured
     ///    payload as JSON. The desktop client parses this block to render a
     ///    `ConfigNudgeCard`; clients that don't understand it see a code block.
     fn nudge_body(&self) -> String {
@@ -273,11 +273,11 @@ impl SetupPayload {
                 // help. Don't send the user there.
                 "Fix the config file(s) and restart the agent.".to_string()
             } else if any_external {
-                // Mixed: some Buzz-managed fields, some external config.
-                "Open Edit Agent in the Buzz app for the Buzz-managed fields; fix the external CLI config files manually and restart the agent.".to_string()
+                // Mixed: some Punks-managed fields, some external config.
+                "Open Edit Agent in the Punks app for the Punks-managed fields; fix the external CLI config files manually and restart the agent.".to_string()
             } else {
-                // All Buzz-managed — original footer unchanged.
-                "Open Edit Agent in the Buzz app to set these.".to_string()
+                // All Punks-managed — original footer unchanged.
+                "Open Edit Agent in the Punks app to set these.".to_string()
             };
 
             format!(
@@ -293,7 +293,7 @@ impl SetupPayload {
         let sentinel_json =
             serde_json::to_string(self).expect("SetupPayload must be serializable to JSON");
 
-        format!("{}\n\n```buzz:config-nudge\n{}\n```", prose, sentinel_json)
+        format!("{}\n\n```punks:config-nudge\n{}\n```", prose, sentinel_json)
     }
 }
 
@@ -310,13 +310,13 @@ pub(crate) async fn run_setup_listener(config: Config, payload: SetupPayload) ->
     tracing::info!(
         agent = %payload.agent_name,
         requirements = payload.requirements.len(),
-        "buzz-acp entering setup mode"
+        "punks-acp entering setup mode"
     );
 
     let pubkey_hex = config.keys.public_key().to_hex();
 
-    // Parse BUZZ_AUTH_TAG for relay membership / NIP-OA.
-    let relay_auth_tag: Option<nostr::Tag> = std::env::var("BUZZ_AUTH_TAG")
+    // Parse PUNKS_AUTH_TAG for relay membership / NIP-OA.
+    let relay_auth_tag: Option<nostr::Tag> = std::env::var("PUNKS_AUTH_TAG")
         .ok()
         .filter(|s| !s.is_empty())
         .and_then(|s| buzz_sdk::nip_oa::parse_auth_tag(&s).ok());
@@ -562,7 +562,7 @@ fn mentions_rule(kinds: Vec<u32>) -> filter::SubscriptionRule {
 /// teardown — there is no pool.
 async fn handle_setup_membership(
     relay: &mut HarnessRelay,
-    buzz_event: &crate::relay::BuzzEvent,
+    buzz_event: &crate::relay::PunksEvent,
     config: &Config,
     rules: &[filter::SubscriptionRule],
     _initial_channel_ids: &[Uuid],
@@ -690,7 +690,7 @@ mod tests {
     #[test]
     fn setup_payload_deserializes_git_bash_requirement() {
         let payload: SetupPayload = serde_json::from_str(
-            r#"{"agent_name":"Buzz Agent","agent_pubkey":"test","requirements":[{"surface":"git_bash"}]}"#,
+            r#"{"agent_name":"Punks Agent","agent_pubkey":"test","requirements":[{"surface":"git_bash"}]}"#,
         )
         .unwrap();
         assert!(matches!(
@@ -783,7 +783,7 @@ mod tests {
     #[test]
     fn nudge_body_git_bash_copy_points_to_agent_runtimes() {
         let payload = SetupPayload {
-            agent_name: "Buzz Agent".to_string(),
+            agent_name: "Punks Agent".to_string(),
             agent_pubkey: "test".to_string(),
             requirements: vec![RequirementPayload::GitBash],
         };
@@ -849,7 +849,7 @@ mod tests {
 
     #[test]
     fn nudge_body_mixed_requirements_uses_split_footer() {
-        // Mixed list: one Buzz-managed env key + one external config invalid.
+        // Mixed list: one Punks-managed env key + one external config invalid.
         // Footer must address both sides.
         let payload = SetupPayload {
             agent_name: "Codex".to_string(),
@@ -874,7 +874,7 @@ mod tests {
 
     #[test]
     fn nudge_body_all_buzz_managed_retains_original_footer() {
-        // Pure Buzz-managed requirements → original "Open Edit Agent" footer unchanged.
+        // Pure Punks-managed requirements → original "Open Edit Agent" footer unchanged.
         let payload = SetupPayload {
             agent_name: "Fizz".to_string(),
             agent_pubkey: "test".to_string(),
@@ -884,7 +884,7 @@ mod tests {
         };
         let body = payload.nudge_body();
         assert!(
-            body.contains("Open Edit Agent in the Buzz app to set these."),
+            body.contains("Open Edit Agent in the Punks app to set these."),
             "all-managed nudge must use the original Edit Agent footer; got: {body:?}"
         );
     }
@@ -893,7 +893,7 @@ mod tests {
 
     #[test]
     fn nudge_body_contains_sentinel_block() {
-        // The body must end with a ```buzz:config-nudge fence so the desktop
+        // The body must end with a ```punks:config-nudge fence so the desktop
         // can detect and strip it before rendering the ConfigNudgeCard.
         let payload = SetupPayload {
             agent_name: "Fizz".to_string(),
@@ -904,7 +904,7 @@ mod tests {
         };
         let body = payload.nudge_body();
         assert!(
-            body.contains("```buzz:config-nudge\n"),
+            body.contains("```punks:config-nudge\n"),
             "body must open the sentinel fence; got: {body:?}"
         );
         assert!(
@@ -937,7 +937,7 @@ mod tests {
         let body = payload.nudge_body();
 
         // Extract the JSON between the fence markers.
-        let fence_open = "```buzz:config-nudge\n";
+        let fence_open = "```punks:config-nudge\n";
         let fence_close = "\n```";
         let start = body
             .rfind(fence_open)
@@ -981,7 +981,7 @@ mod tests {
         assert!(body.contains("Fizz"), "prose must name the agent");
         // Sentinel is also present.
         assert!(
-            body.contains("```buzz:config-nudge"),
+            body.contains("```punks:config-nudge"),
             "sentinel must follow"
         );
     }
@@ -1045,9 +1045,9 @@ mod tests {
 
     // ── availability round-trip tests ─────────────────────────────────────────
     //
-    // These tests prove the desktop→buzz-acp→sentinel path preserves the
+    // These tests prove the desktop→punks-acp→sentinel path preserves the
     // `availability` field. They simulate what actually happens at runtime:
-    // desktop serializes a `cli_login` JSON blob → buzz-acp parses it via
+    // desktop serializes a `cli_login` JSON blob → punks-acp parses it via
     // `from_raw_env_value` → `nudge_body()` re-serializes into the sentinel →
     // the sentinel JSON is extracted and checked for the `availability` field.
     //
@@ -1056,7 +1056,7 @@ mod tests {
     // deserialization and the desktop card never rendered.
 
     fn extract_sentinel_json(body: &str) -> String {
-        let fence_open = "```buzz:config-nudge\n";
+        let fence_open = "```punks:config-nudge\n";
         let fence_close = "\n```";
         let start = body
             .rfind(fence_open)

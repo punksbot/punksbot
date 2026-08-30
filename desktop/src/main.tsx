@@ -22,17 +22,63 @@ import { recoverLocalStorageQuotaOnStartup } from "@/shared/lib/localStorageQuot
 import { startLocalStorageSweep } from "@/shared/lib/localStorageSweep";
 import { initializeConversationDensityPreference } from "@/shared/lib/conversationDensityPreference";
 import { initializeFontSizePreference } from "@/shared/lib/fontSizePreference";
-import { CapabilityProvider } from "@/shared/capabilities";
-import { useCapabilityAvailability } from "@/shared/capabilities";
+import { invoke } from "@tauri-apps/api/core";
+import { migratePunksStorage } from "@/shared/lib/punksStorageMigration";
+import { listLocalWorkspaces } from "@/shared/api/tauriLocalWorkspaces";
 
 type E2eWindow = Window & {
-  __BUZZ_E2E__?: unknown;
+  __PUNKS_E2E__?: unknown;
 };
 
 const E2E_DEFAULT_PUBKEY = "deadbeef".repeat(8);
 const E2E_COMMUNITY_ID = "e2e-default-community";
-const ONBOARDING_COMPLETION_STORAGE_KEY_PREFIX = "buzz-onboarding-complete.v1:";
+const ONBOARDING_COMPLETION_STORAGE_KEY_PREFIX =
+  "punks-onboarding-complete.v1:";
 const DEV_STATE_RESET_PARAM = "resetDevState";
+const PUNKS_LOCAL_COMMUNITY_ID = "punks-full-local";
+const MACHINE_ONBOARDING_COMPLETION_STORAGE_KEY =
+  "punks-machine-onboarding-complete.v2";
+
+type LocalIdentity = { pubkey: string };
+
+async function configurePunksFullLocal() {
+  if (import.meta.env.VITE_PUNKS_LOCAL !== "1") return;
+
+  const identity = await invoke<LocalIdentity>("get_identity");
+  const workspaces = (await listLocalWorkspaces()).filter(
+    (workspace) => !workspace.archived,
+  );
+  const communities = workspaces.map((workspace) => ({
+    addedAt: new Date(workspace.createdAt * 1000).toISOString(),
+    id: workspace.id,
+    name: workspace.name,
+    pubkey: identity.pubkey,
+    relayUrl: workspace.relayUrl,
+  }));
+  if (communities.length === 0) {
+    throw new Error("Punks Full Local has no active Workspace");
+  }
+  window.localStorage.setItem("punks-communities", JSON.stringify(communities));
+  const savedActiveId = window.localStorage.getItem(
+    "punks-active-community-id",
+  );
+  const activeId =
+    savedActiveId &&
+    communities.some((community) => community.id === savedActiveId)
+      ? savedActiveId
+      : (communities.find(
+          (community) => community.id === PUNKS_LOCAL_COMMUNITY_ID,
+        )?.id ?? communities[0].id);
+  window.localStorage.setItem("punks-active-community-id", activeId);
+  window.localStorage.setItem(
+    `${ONBOARDING_COMPLETION_STORAGE_KEY_PREFIX}${identity.pubkey}`,
+    "true",
+  );
+  window.localStorage.setItem(
+    `${MACHINE_ONBOARDING_COMPLETION_STORAGE_KEY}:${identity.pubkey}`,
+    "true",
+  );
+}
 
 function resetDevWebviewStateFromUrl() {
   if (!import.meta.env.DEV) {
@@ -44,7 +90,7 @@ function resetDevWebviewStateFromUrl() {
     return;
   }
 
-  // WebKit groups every Buzz binary under one disk directory, but storage is
+  // WebKit groups every Punks binary under one disk directory, but storage is
   // isolated by origin. Clearing here resets only this dev server's origin;
   // deleting the shared WebKit directory would also destroy installed-app state.
   window.localStorage.clear();
@@ -54,7 +100,7 @@ function resetDevWebviewStateFromUrl() {
 }
 
 function configureDevE2eBridgeFromUrl() {
-  if (!import.meta.env.DEV) {
+  if (import.meta.env.MODE !== "e2e") {
     return;
   }
 
@@ -64,7 +110,7 @@ function configureDevE2eBridgeFromUrl() {
   }
 
   const e2eWindow = window as E2eWindow;
-  e2eWindow.__BUZZ_E2E__ ??= { mode: "mock" };
+  e2eWindow.__PUNKS_E2E__ ??= { mode: "mock" };
 
   const community = {
     addedAt: new Date().toISOString(),
@@ -72,8 +118,8 @@ function configureDevE2eBridgeFromUrl() {
     name: "E2E Test",
     relayUrl: "ws://localhost:3000",
   };
-  window.localStorage.setItem("buzz-communities", JSON.stringify([community]));
-  window.localStorage.setItem("buzz-active-community-id", E2E_COMMUNITY_ID);
+  window.localStorage.setItem("punks-communities", JSON.stringify([community]));
+  window.localStorage.setItem("punks-active-community-id", E2E_COMMUNITY_ID);
   window.localStorage.setItem(
     `${ONBOARDING_COMPLETION_STORAGE_KEY_PREFIX}${E2E_DEFAULT_PUBKEY}`,
     "true",
@@ -83,58 +129,37 @@ function configureDevE2eBridgeFromUrl() {
 function renderApp() {
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>
-      {/* block/buzz#5078 — catch any uncaught render error so a WebKit
+      {/* block/punks#5078 — catch any uncaught render error so a WebKit
           SecurityError from localStorage can't blank the whole window. */}
       <RootErrorBoundary>
-        <CapabilityProvider>
-          <ProductSurface />
-        </CapabilityProvider>
+        <CommunitiesProvider>
+          <CommunityOnboardingProvider
+            enabled={huddleWindowChannelId() === null}
+          >
+            <ThemeProvider defaultTheme="punks">
+              <TooltipProvider>
+                <EmojiBurstProvider>
+                  <PoofBurstProvider>
+                    <UpdaterProvider>
+                      <App />
+                      <NostrBindConsentDialog />
+                    </UpdaterProvider>
+                    <Toaster />
+                  </PoofBurstProvider>
+                </EmojiBurstProvider>
+              </TooltipProvider>
+            </ThemeProvider>
+          </CommunityOnboardingProvider>
+        </CommunitiesProvider>
       </RootErrorBoundary>
     </React.StrictMode>,
-  );
-}
-
-function ProductSurface() {
-  const availability = useCapabilityAvailability();
-  if (availability.distribution === "punks") {
-    return (
-      <ThemeProvider defaultTheme="buzz">
-        <TooltipProvider>
-          <App />
-          <Toaster />
-        </TooltipProvider>
-      </ThemeProvider>
-    );
-  }
-
-  return (
-    <CommunitiesProvider>
-      <CommunityOnboardingProvider enabled={huddleWindowChannelId() === null}>
-        <ThemeProvider defaultTheme="buzz">
-          <TooltipProvider>
-            <EmojiBurstProvider>
-              <PoofBurstProvider>
-                <UpdaterProvider>
-                  <App />
-                  <NostrBindConsentDialog />
-                </UpdaterProvider>
-                <Toaster />
-              </PoofBurstProvider>
-            </EmojiBurstProvider>
-          </TooltipProvider>
-        </ThemeProvider>
-      </CommunityOnboardingProvider>
-    </CommunitiesProvider>
   );
 }
 
 async function installE2eBridgeIfConfigured() {
   // The mock bridge is compiled only into dev and explicit E2E builds. A
   // pre-bootstrap global alone must never activate mock IPC in production.
-  if (
-    !(import.meta.env.DEV || import.meta.env.MODE === "e2e") ||
-    !(window as E2eWindow).__BUZZ_E2E__
-  ) {
+  if (import.meta.env.MODE !== "e2e" || !(window as E2eWindow).__PUNKS_E2E__) {
     return;
   }
 
@@ -145,12 +170,16 @@ async function installE2eBridgeIfConfigured() {
 async function bootstrap() {
   resetDevWebviewStateFromUrl();
   configureDevE2eBridgeFromUrl();
+  if (import.meta.env.VITE_PUNKS_LOCAL === "1") {
+    migratePunksStorage(window.localStorage);
+  }
   recoverLocalStorageQuotaOnStartup();
   initializeConversationDensityPreference();
   initializeFontSizePreference();
   startLocalStorageSweep();
   await installE2eBridgeIfConfigured();
   await migrateLegacyCommunityStorageBeforeRender();
+  await configurePunksFullLocal();
   renderApp();
 }
 

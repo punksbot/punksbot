@@ -55,7 +55,7 @@ pub async fn check_pipeline_hotstart(state: State<'_, AppState>) -> Result<(), S
         let mut hs = state.huddle()?;
         if let Some(ref p) = hs.stt_pipeline {
             if p.is_finished() {
-                hs.stt_pipeline = None;
+                hs.take_stt_pipeline();
             }
         }
         if let Some(ref p) = hs.tts_pipeline {
@@ -85,13 +85,13 @@ pub async fn check_pipeline_hotstart(state: State<'_, AppState>) -> Result<(), S
     // Start TTS first so STT can observe its active-playback gate.
     if !has_tts && (tts_ready || models::is_tts_ready()) {
         if let Err(e) = maybe_start_tts_pipeline(&state).await {
-            eprintln!("buzz-desktop: TTS hotstart failed: {e}");
+            eprintln!("punks-full-local: TTS hotstart failed: {e}");
         }
     }
     if transcription_enabled && !has_stt && (stt_ready || models::is_stt_ready()) {
         if let Some(eph_id) = &ephemeral_channel_id {
             if let Err(e) = maybe_start_stt_pipeline(&state, eph_id).await {
-                eprintln!("buzz-desktop: STT hotstart failed: {e}");
+                eprintln!("punks-full-local: STT hotstart failed: {e}");
             }
         }
     }
@@ -264,10 +264,10 @@ pub(crate) async fn post_connect_setup(
         return Ok(PostConnectOutcome::Stale);
     }
     if let Err(e) = maybe_start_tts_pipeline(state).await {
-        eprintln!("buzz-desktop: TTS pipeline failed to start: {e}");
+        eprintln!("punks-full-local: TTS pipeline failed to start: {e}");
     }
     if let Err(e) = maybe_start_stt_pipeline(state, ephemeral_channel_id).await {
-        eprintln!("buzz-desktop: STT pipeline failed to start: {e}");
+        eprintln!("punks-full-local: STT pipeline failed to start: {e}");
     }
 
     Ok(PostConnectOutcome::Ready)
@@ -311,6 +311,8 @@ pub(crate) async fn maybe_start_stt_pipeline(
         stt_starting,
         ptt_active_for_stt,
         manual_mic_unmuted_for_stt,
+        human_floor,
+        output_device,
         old_stt,
     ) = {
         let mut hs = state.huddle()?;
@@ -325,7 +327,7 @@ pub(crate) async fn maybe_start_stt_pipeline(
         if hs.stt_pipeline.is_some() {
             hs.session_generation.fetch_add(1, Ordering::Release);
         }
-        let old = hs.stt_pipeline.take();
+        let old = hs.take_stt_pipeline();
         if let Some(ref p) = old {
             p.shutdown();
         }
@@ -346,6 +348,13 @@ pub(crate) async fn maybe_start_stt_pipeline(
             stt_starting,
             ptt,
             manual_mic_unmuted,
+            hs.human_floor.clone(),
+            state
+                .huddle_audio
+                .output_device
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clone(),
             old,
         )
     };
@@ -353,7 +362,13 @@ pub(crate) async fn maybe_start_stt_pipeline(
     drop(old_stt);
 
     let constructed = tokio::task::spawn_blocking(move || {
-        stt::SttPipeline::new(model_dir, ptt_active_for_stt, manual_mic_unmuted_for_stt)
+        stt::SttPipeline::new(
+            model_dir,
+            ptt_active_for_stt,
+            manual_mic_unmuted_for_stt,
+            human_floor,
+            output_device,
+        )
     })
     .await;
     let (pipeline, text_rx) = match constructed {
@@ -382,7 +397,7 @@ pub(crate) async fn maybe_start_stt_pipeline(
         {
             return Ok(false);
         }
-        hs.stt_pipeline = Some(Arc::clone(&pipeline));
+        hs.set_stt_pipeline(Arc::clone(&pipeline));
     }
 
     spawn_transcription_task(text_rx, channel_uuid, agent_pubkeys_arc, session_gen, state);
@@ -395,7 +410,7 @@ pub(crate) async fn start_auto_enabled_transcription(state: &AppState, ephemeral
         manager.start_stt_download(state.http_client.clone());
     }
     if let Err(error) = maybe_start_stt_pipeline(state, ephemeral_channel_id).await {
-        eprintln!("buzz-desktop: auto-enabled STT failed to start: {error}");
+        eprintln!("punks-full-local: auto-enabled STT failed to start: {error}");
     }
     state.emit_huddle_state_changed();
 }
@@ -457,7 +472,7 @@ pub(crate) async fn maybe_start_tts_pipeline(state: &AppState) -> Result<bool, S
     // Atomically check preconditions and claim the construction slot.
     // The sentinel prevents a second caller from starting construction
     // while we're building outside the lock.
-    let (tts_active, tts_cancel, tts_starting) = {
+    let (tts_active, tts_cancel, human_floor, tts_starting) = {
         let hs = state.huddle()?;
         if hs.tts_pipeline.is_some() {
             return Ok(false);
@@ -471,6 +486,7 @@ pub(crate) async fn maybe_start_tts_pipeline(state: &AppState) -> Result<bool, S
         (
             Arc::clone(&hs.tts_active),
             Arc::clone(&hs.tts_cancel),
+            hs.human_floor.clone(),
             Arc::clone(&hs.tts_starting),
         )
     };
@@ -484,6 +500,7 @@ pub(crate) async fn maybe_start_tts_pipeline(state: &AppState) -> Result<bool, S
             model_dir,
             tts_active,
             tts_cancel,
+            human_floor,
             &initial_voice,
             output_device,
             app,
@@ -662,7 +679,7 @@ pub(crate) fn spawn_transcription_task(
             ) {
                 Ok(b) => b,
                 Err(e) => {
-                    eprintln!("buzz-desktop: STT build_message: {e}");
+                    eprintln!("punks-full-local: STT build_message: {e}");
                     continue;
                 }
             };
@@ -674,7 +691,7 @@ pub(crate) fn spawn_transcription_task(
             let body_bytes = match sign_and_guard_stt_body(builder, &keys) {
                 Ok(b) => b,
                 Err(e) => {
-                    eprintln!("buzz-desktop: STT publish: {e}");
+                    eprintln!("punks-full-local: STT publish: {e}");
                     continue;
                 }
             };
@@ -687,7 +704,7 @@ pub(crate) fn spawn_transcription_task(
             ) {
                 Ok(h) => h,
                 Err(e) => {
-                    eprintln!("buzz-desktop: STT NIP-98 auth: {e}");
+                    eprintln!("punks-full-local: STT NIP-98 auth: {e}");
                     continue;
                 }
             };
@@ -708,10 +725,10 @@ pub(crate) fn spawn_transcription_task(
                     // Route through relay_error_message so a 429 arms the
                     // admission gate for subsequent relay sends.
                     let msg = crate::relay::relay_error_message(resp).await;
-                    eprintln!("buzz-desktop: STT kind:9 post failed: {msg}");
+                    eprintln!("punks-full-local: STT kind:9 post failed: {msg}");
                 }
                 Err(e) => {
-                    eprintln!("buzz-desktop: STT kind:9 post failed: {e}");
+                    eprintln!("punks-full-local: STT kind:9 post failed: {e}");
                 }
             }
         }

@@ -215,7 +215,7 @@ fn saved_agent_model_discovery_uses_record_snapshot_for_definition_less_agent() 
             "name": "test-agent",
             "private_key_nsec": "nsec1fake",
             "relay_url": "wss://localhost:3000",
-            "acp_command": "buzz-acp",
+            "acp_command": "punks-acp",
             "agent_command": "goose",
             "agent_command_override": "goose",
             "agent_args": [],
@@ -226,7 +226,7 @@ fn saved_agent_model_discovery_uses_record_snapshot_for_definition_less_agent() 
             "provider": "databricks",
             "env_vars": {
                 "OPENAI_API_KEY": "record-key",
-                "BUZZ_PRIVATE_KEY": "must-not-leak"
+                "PUNKS_PRIVATE_KEY": "must-not-leak"
             },
             "created_at": "2026-01-01T00:00:00Z",
             "updated_at": "2026-01-01T00:00:00Z",
@@ -261,7 +261,7 @@ fn saved_agent_model_discovery_uses_record_snapshot_for_definition_less_agent() 
         Some("record-key")
     );
     // Reserved keys are stripped from the descriptor env.
-    assert!(!discovery.env.contains_key("BUZZ_PRIVATE_KEY"));
+    assert!(!discovery.env.contains_key("PUNKS_PRIVATE_KEY"));
     // The provider env var is recovered from the runtime metadata for the
     // effective command (the old SavedAgentModelDiscoveryConfig.provider_env_var).
     assert_eq!(discovery.provider_env_var, Some("GOOSE_PROVIDER"));
@@ -274,14 +274,14 @@ fn saved_agent_model_discovery_uses_record_snapshot_for_definition_less_agent() 
 #[test]
 fn effective_discovery_provider_prefers_the_explicit_provider() {
     let env = BTreeMap::from([(
-        "BUZZ_AGENT_PROVIDER".to_string(),
+        "PUNKS_AGENT_PROVIDER".to_string(),
         "databricks_v2".to_string(),
     )]);
 
     // A saved/selected provider is a deliberate choice and must win over the
     // build-provided default, so discovery matches what spawn will use.
     assert_eq!(
-        effective_discovery_provider(Some("anthropic"), Some("BUZZ_AGENT_PROVIDER"), &env)
+        effective_discovery_provider(Some("anthropic"), Some("PUNKS_AGENT_PROVIDER"), &env)
             .as_deref(),
         Some("anthropic")
     );
@@ -290,7 +290,7 @@ fn effective_discovery_provider_prefers_the_explicit_provider() {
 #[test]
 fn effective_discovery_provider_recovers_baked_provider_when_record_has_none() {
     let env = BTreeMap::from([(
-        "BUZZ_AGENT_PROVIDER".to_string(),
+        "PUNKS_AGENT_PROVIDER".to_string(),
         "databricks_v2".to_string(),
     )]);
 
@@ -299,18 +299,22 @@ fn effective_discovery_provider_recovers_baked_provider_when_record_has_none() {
     // catalog was ever fetched on builds that bake the provider in.
     for provider in [None, Some(""), Some("   ")] {
         assert_eq!(
-            effective_discovery_provider(provider, Some("BUZZ_AGENT_PROVIDER"), &env).as_deref(),
+            effective_discovery_provider(provider, Some("PUNKS_AGENT_PROVIDER"), &env).as_deref(),
             Some("databricks_v2"),
             "provider input {provider:?} must fall back to the env value"
         );
     }
 }
 
+/// A provider env-var name no environment sets, so this test does not depend on
+/// what the developer happens to have exported (e.g. `PUNKS_AGENT_PROVIDER`).
+const UNSET_PROVIDER_VAR: &str = "PUNKS_TEST_UNSET_DISCOVERY_PROVIDER";
+
 #[test]
 fn effective_discovery_provider_is_none_without_an_explicit_or_env_provider() {
     let env = BTreeMap::new();
     assert_eq!(
-        effective_discovery_provider(None, Some("BUZZ_AGENT_PROVIDER"), &env).as_deref(),
+        effective_discovery_provider(None, Some(UNSET_PROVIDER_VAR), &env).as_deref(),
         None
     );
     // A runtime that takes no provider env var has nothing to recover from.
@@ -318,10 +322,7 @@ fn effective_discovery_provider_is_none_without_an_explicit_or_env_provider() {
         effective_discovery_provider(
             None,
             None,
-            &BTreeMap::from([(
-                "BUZZ_AGENT_PROVIDER".to_string(),
-                "databricks_v2".to_string()
-            )])
+            &BTreeMap::from([(UNSET_PROVIDER_VAR.to_string(), "databricks_v2".to_string())])
         )
         .as_deref(),
         None
@@ -330,7 +331,7 @@ fn effective_discovery_provider_is_none_without_an_explicit_or_env_provider() {
 
 /// A credential name no environment sets, so `required_env` is exercised without
 /// depending on what the developer happens to have exported.
-const UNSET_CREDENTIAL: &str = "BUZZ_TEST_UNSET_DISCOVERY_CREDENTIAL";
+const UNSET_CREDENTIAL: &str = "PUNKS_TEST_UNSET_DISCOVERY_CREDENTIAL";
 
 #[test]
 fn env_derived_provider_falls_through_when_its_credential_is_missing() {
@@ -340,7 +341,7 @@ fn env_derived_provider_falls_through_when_its_credential_is_missing() {
 
     // `export GOOSE_PROVIDER=anthropic` is goose's documented way to pick a
     // provider, and it keeps the API key in its own config/keyring rather than in
-    // Buzz's env — so the provider is visible here and the credential is not.
+    // Punks's env — so the provider is visible here and the credential is not.
     // Erroring would swap the working subprocess catalog for a hard
     // "config: ... required" on exactly the null-provider records this fallback
     // exists to serve; the gate has to decline instead.
@@ -380,12 +381,12 @@ fn required_env_returns_a_configured_credential_however_the_provider_was_resolve
 
 #[test]
 fn effective_discovery_provider_reads_the_runtimes_own_env_var() {
-    // goose keys its provider off GOOSE_PROVIDER, so a BUZZ_AGENT_PROVIDER in
+    // goose keys its provider off GOOSE_PROVIDER, so a PUNKS_AGENT_PROVIDER in
     // the env must not be mistaken for this runtime's provider.
     let env = BTreeMap::from([
         ("GOOSE_PROVIDER".to_string(), "databricks".to_string()),
         (
-            "BUZZ_AGENT_PROVIDER".to_string(),
+            "PUNKS_AGENT_PROVIDER".to_string(),
             "databricks_v2".to_string(),
         ),
     ]);
@@ -408,7 +409,7 @@ fn model_discovery_ignores_stale_record_for_linked_agent() {
             "persona_id": "persona-1",
             "private_key_nsec": "nsec1fake",
             "relay_url": "wss://localhost:3000",
-            "acp_command": "buzz-acp",
+            "acp_command": "punks-acp",
             "agent_command": "goose",
             "agent_args": [],
             "mcp_command": "",
@@ -477,7 +478,7 @@ fn model_discovery_ignores_stale_record_for_linked_agent() {
 // Databricks provider detection
 // ---------------------------------------------------------------------------
 //
-// Parse/filter/pagination tests live in crates/buzz-agent/src/catalog.rs
+// Parse/filter/pagination tests live in crates/punks-agent/src/catalog.rs
 // (they moved there with the Option C refactor).
 
 // ---------------------------------------------------------------------------
@@ -504,7 +505,7 @@ fn update_request_turn_timeout_parses_for_wire_compat() {
     // backward-compatibility with frontends that still send it: the deprecated
     // field must keep parsing cleanly. Nothing consumes it — the patching loop
     // in update_managed_agent has no turn_timeout_seconds arm
-    // (BUZZ_ACP_TURN_TIMEOUT is deprecated and ignored by the harness). That
+    // (PUNKS_ACP_TURN_TIMEOUT is deprecated and ignored by the harness). That
     // absent-arm invariant lives in the code, not in this test: it only
     // guards the wire shape.
     let req: crate::managed_agents::UpdateManagedAgentRequest =
@@ -526,7 +527,7 @@ fn linked_instance_ignores_model_provider_prompt_writes() {
             "persona_id": "p1",
             "private_key_nsec": "nsec1fake",
             "relay_url": "wss://localhost:3000",
-            "acp_command": "buzz-acp",
+            "acp_command": "punks-acp",
             "agent_command": "goose",
             "agent_args": [],
             "mcp_command": "",
@@ -578,7 +579,7 @@ fn definition_less_instance_accepts_model_provider_prompt_writes() {
             "name": "standalone-agent",
             "private_key_nsec": "nsec1fake",
             "relay_url": "wss://localhost:3000",
-            "acp_command": "buzz-acp",
+            "acp_command": "punks-acp",
             "agent_command": "goose",
             "agent_args": [],
             "mcp_command": "",
@@ -635,7 +636,7 @@ fn databricks_interactive_auth_launches_only_without_a_static_token() {
 fn databricks_passive_auth_error_has_reachable_create_flow_guidance() {
     let error = databricks_sign_in_required_error();
     assert!(error.contains("save this agent, then open its model picker"));
-    assert!(error.contains("buzz-agent auth databricks"));
+    assert!(error.contains("punks-agent auth databricks"));
 }
 
 #[test]
@@ -798,9 +799,9 @@ fn openrouter_saved_agent_model_discovery_resolves_provider() {
             "name": "test-agent",
             "private_key_nsec": "nsec1fake",
             "relay_url": "wss://localhost:3000",
-            "acp_command": "buzz-acp",
-            "agent_command": "buzz-agent",
-            "agent_command_override": "buzz-agent",
+            "acp_command": "punks-acp",
+            "agent_command": "punks-agent",
+            "agent_command_override": "punks-agent",
             "agent_args": [],
             "mcp_command": "",
             "turn_timeout_seconds": 320,
@@ -809,7 +810,7 @@ fn openrouter_saved_agent_model_discovery_resolves_provider() {
             "provider": "openrouter",
             "env_vars": {
                 "OPENROUTER_API_KEY": "sk-or-test-key",
-                "BUZZ_PRIVATE_KEY": "must-not-leak"
+                "PUNKS_PRIVATE_KEY": "must-not-leak"
             },
             "created_at": "2026-01-01T00:00:00Z",
             "updated_at": "2026-01-01T00:00:00Z",
@@ -836,7 +837,7 @@ fn openrouter_saved_agent_model_discovery_resolves_provider() {
         discovery.env.get("OPENROUTER_API_KEY").map(String::as_str),
         Some("sk-or-test-key")
     );
-    assert!(!discovery.env.contains_key("BUZZ_PRIVATE_KEY"));
+    assert!(!discovery.env.contains_key("PUNKS_PRIVATE_KEY"));
 }
 
 /// B5/T4: unsaved-agent ("draft") discovery mirrors the saved-agent path —
@@ -852,14 +853,14 @@ fn openrouter_draft_agent_model_discovery_derives_provider_env() {
     )]);
 
     let merged = draft_agent_model_discovery_env(
-        "buzz-agent",
+        "punks-agent",
         Some("openrouter"),
         &BTreeMap::new(),
         &env_vars,
     );
 
     assert_eq!(
-        merged.get("BUZZ_AGENT_PROVIDER").map(String::as_str),
+        merged.get("PUNKS_AGENT_PROVIDER").map(String::as_str),
         Some("openrouter"),
         "provider env var must be derived from form input for a known ACP runtime"
     );
@@ -873,9 +874,9 @@ fn openrouter_draft_agent_model_discovery_derives_provider_env() {
 #[test]
 fn draft_agent_model_discovery_env_omits_provider_when_absent() {
     let merged =
-        draft_agent_model_discovery_env("buzz-agent", None, &BTreeMap::new(), &BTreeMap::new());
+        draft_agent_model_discovery_env("punks-agent", None, &BTreeMap::new(), &BTreeMap::new());
     assert!(
-        !merged.contains_key("BUZZ_AGENT_PROVIDER"),
+        !merged.contains_key("PUNKS_AGENT_PROVIDER"),
         "no provider must be derived when the caller supplies none"
     );
 }
@@ -888,7 +889,7 @@ fn draft_agent_model_discovery_env_omits_provider_when_absent() {
 /// `SHARED` collides across all three tiers, so the user value proves the
 /// full chain; the pairwise keys prove each adjacent boundary independently
 /// (a merge that dropped only the middle tier would still satisfy `SHARED`).
-/// `BUZZ_PRIVATE_KEY` proves a reserved key cannot ride in on a harness
+/// `PUNKS_PRIVATE_KEY` proves a reserved key cannot ride in on a harness
 /// definition, which is the tier a user never types.
 #[test]
 fn draft_agent_model_discovery_env_layers_all_three_tiers_in_order() {
@@ -896,13 +897,13 @@ fn draft_agent_model_discovery_env_layers_all_three_tiers_in_order() {
     // floor, loses to user env.
     let definition_env = BTreeMap::from([
         ("SHARED".to_string(), "from-definition".to_string()),
-        // Collides with tier 1: `buzz-agent`'s own provider env var, which the
+        // Collides with tier 1: `punks-agent`'s own provider env var, which the
         // `provider` argument derives below.
-        ("BUZZ_AGENT_PROVIDER".to_string(), "openai".to_string()),
+        ("PUNKS_AGENT_PROVIDER".to_string(), "openai".to_string()),
         ("USER_OVER_DEF".to_string(), "from-definition".to_string()),
         ("DEFINITION_ONLY".to_string(), "from-definition".to_string()),
         // Reserved: must never reach the child, even from a definition.
-        ("BUZZ_PRIVATE_KEY".to_string(), "must-not-leak".to_string()),
+        ("PUNKS_PRIVATE_KEY".to_string(), "must-not-leak".to_string()),
     ]);
     // Tier 3 (top): user-entered env — wins over everything.
     let env_vars = BTreeMap::from([
@@ -911,9 +912,9 @@ fn draft_agent_model_discovery_env_layers_all_three_tiers_in_order() {
         ("USER_ONLY".to_string(), "from-user".to_string()),
     ]);
 
-    // Tier 1 (floor): `Some("openrouter")` derives BUZZ_AGENT_PROVIDER.
+    // Tier 1 (floor): `Some("openrouter")` derives PUNKS_AGENT_PROVIDER.
     let merged = draft_agent_model_discovery_env(
-        "buzz-agent",
+        "punks-agent",
         Some("openrouter"),
         &definition_env,
         &env_vars,
@@ -924,7 +925,7 @@ fn draft_agent_model_discovery_env_layers_all_three_tiers_in_order() {
         ("SHARED", Some("from-user")),
         // Tier 2 over tier 1: the definition's value survives, proving the
         // derived provider is the floor and not layered on top.
-        ("BUZZ_AGENT_PROVIDER", Some("openai")),
+        ("PUNKS_AGENT_PROVIDER", Some("openai")),
         // Tier 3 over tier 2.
         ("USER_OVER_DEF", Some("from-user")),
         // Single-tier keys pass through untouched.
@@ -933,7 +934,7 @@ fn draft_agent_model_discovery_env_layers_all_three_tiers_in_order() {
         // Reserved keys never survive the definition tier. Doubly enforced —
         // the explicit `is_reserved_env_key` filter here and `merged_user_env`'s
         // own `retain` — so this pins the contract, not either mechanism.
-        ("BUZZ_PRIVATE_KEY", None),
+        ("PUNKS_PRIVATE_KEY", None),
     ];
     for (key, want) in expected {
         assert_eq!(

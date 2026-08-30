@@ -1,6 +1,6 @@
 import { isMacPlatform } from "@/shared/lib/platform";
 
-export const HUDDLE_SHORTCUT_EVENT = "buzz:huddle-shortcut";
+export const HUDDLE_SHORTCUT_EVENT = "punks:huddle-shortcut";
 
 export type HuddleShortcutDetail = {
   channelId: string;
@@ -161,6 +161,14 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     description: "Insert a line break in the composer",
     keys: "Shift+Enter",
     keysWindows: "Shift+Enter",
+    category: "Messages",
+  },
+  {
+    id: "always-address-agent",
+    label: "Always address agent",
+    description: "Address the default agent, or select the highlighted agent",
+    keys: "⇧⌘M",
+    keysWindows: "Ctrl+Shift+M",
     category: "Messages",
   },
   {

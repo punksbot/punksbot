@@ -1,7 +1,7 @@
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 
-import { RouteCapabilityBoundary } from "@/shared/capabilities";
+import { usePreviewFeatureWarning } from "@/shared/features";
 import { ViewLoadingFallback } from "@/shared/ui/ViewLoadingFallback";
 
 const ProjectsScreen = React.lazy(async () => {
@@ -14,11 +14,10 @@ export const Route = createFileRoute("/projects")({
 });
 
 function ProjectsRouteComponent() {
+  usePreviewFeatureWarning("projects");
   return (
-    <RouteCapabilityBoundary capability="repositories">
-      <React.Suspense fallback={<ViewLoadingFallback kind="projects" />}>
-        <ProjectsScreen />
-      </React.Suspense>
-    </RouteCapabilityBoundary>
+    <React.Suspense fallback={<ViewLoadingFallback kind="projects" />}>
+      <ProjectsScreen />
+    </React.Suspense>
   );
 }

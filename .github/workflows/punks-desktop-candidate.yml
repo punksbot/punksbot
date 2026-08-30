@@ -168,13 +168,13 @@ jobs:
           pnpm cloudflare:check 2>&1 | tee -a "$gate_log"
           mark_gate cloudflare-check pass
           mark_gate workspace-check start
-          pnpm --filter buzz check 2>&1 | tee -a "$gate_log"
+          pnpm --filter @punks/app check 2>&1 | tee -a "$gate_log"
           mark_gate workspace-check pass
           mark_gate candidate-config start
           pnpm --dir desktop check:punks-candidate 2>&1 | tee -a "$gate_log"
           mark_gate candidate-config pass
           mark_gate frontend-source start
-          pnpm --dir desktop check:punks-product 2>&1 | tee -a "$gate_log"
+          pnpm --dir desktop check:punks-full 2>&1 | tee -a "$gate_log"
           mark_gate frontend-source pass
           mark_gate playwright-capabilities start
           pnpm --dir desktop test:e2e:punks-capabilities 2>&1 | tee -a "$gate_log"
@@ -624,7 +624,7 @@ jobs:
         run: |
           set -euo pipefail
           pnpm --dir desktop check:punks-candidate
-          pnpm --dir desktop check:punks-product
+          pnpm --dir desktop check:punks-full
           node scripts/check-punks-rust.mjs
 
       - name: Prepare strict Cargo runner on Unix
@@ -1063,10 +1063,10 @@ jobs:
             }
           }
 
-      - name: Prove the exact isolated frontend distribution
+      - name: Prove the rich Punks frontend distribution
         id: verify_product_dist
         shell: bash
-        run: pnpm --dir desktop check:punks-product-dist
+        run: pnpm --dir desktop check:punks-full
 
       - name: Prove the exact isolated native executable
         id: verify_native_artifact

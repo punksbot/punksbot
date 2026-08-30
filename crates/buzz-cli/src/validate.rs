@@ -482,7 +482,7 @@ mod tests {
     fn read_file_or_stdin_reads_file_contents() {
         let mut path = std::env::temp_dir();
         path.push(format!(
-            "buzz-cli-test-{}-{}.patch",
+            "punks-test-{}-{}.patch",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)

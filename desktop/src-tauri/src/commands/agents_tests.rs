@@ -16,7 +16,7 @@ fn bare_agent_record(
         auth_tag: None,
         relay_url: "ws://localhost:3000".to_string(),
         avatar_url: None,
-        acp_command: "buzz-acp".to_string(),
+        acp_command: "punks-acp".to_string(),
         agent_command: "goose".to_string(),
         agent_command_override: None,
         agent_args: vec![],
@@ -236,7 +236,7 @@ fn normalize_relay_mesh_rejects_empty_model_ref() {
 
     assert_eq!(
         normalize_relay_mesh(Some(&config), &BackendKind::Local).unwrap_err(),
-        "Buzz shared compute model is required"
+        "Punks shared compute model is required"
     );
 }
 
@@ -252,7 +252,7 @@ fn normalize_relay_mesh_rejects_non_local_backend() {
 
     assert_eq!(
         normalize_relay_mesh(Some(&config), &backend).unwrap_err(),
-        "Buzz shared compute agents must use the local backend"
+        "Punks shared compute agents must use the local backend"
     );
 }
 
@@ -482,7 +482,7 @@ fn deploy_payload_matches_the_shared_full_launch_fixture() {
         "private_key_nsec": "nsec1vl029mgpspedva04g90vltkh6fvh240zqtv9k0t9af8935ke9laqsnlfe5",
         "relay_url": "wss://localhost:3000",
         "auth_tag": "tag-1",
-        "acp_command": "buzz-acp",
+        "acp_command": "punks-acp",
         "agent_command": "goose",
         "runtime": "goose",
         "model": "gpt-5",
@@ -567,10 +567,10 @@ fn tauri_platform_configs_bundle_kubernetes_only_on_supported_hosts() {
 fn current_build_deploy_payload_forwards_compiled_policy() {
     use crate::managed_agents::{BackendKind, RespondTo};
 
-    let expected_owner_only = match std::env::var("BUZZ_TEST_EXPECTED_AGENT_ACCESS_OWNER_ONLY") {
+    let expected_owner_only = match std::env::var("PUNKS_TEST_EXPECTED_AGENT_ACCESS_OWNER_ONLY") {
         Ok(value) => value
             .parse::<bool>()
-            .expect("BUZZ_TEST_EXPECTED_AGENT_ACCESS_OWNER_ONLY must be true or false"),
+            .expect("PUNKS_TEST_EXPECTED_AGENT_ACCESS_OWNER_ONLY must be true or false"),
         Err(std::env::VarError::NotPresent)
             if !crate::managed_agents::owner_only_access_build() =>
         {
@@ -578,11 +578,11 @@ fn current_build_deploy_payload_forwards_compiled_policy() {
         }
         Err(std::env::VarError::NotPresent) => {
             panic!(
-                "BUZZ_TEST_EXPECTED_AGENT_ACCESS_OWNER_ONLY must be set for owner-only-access-build tests"
+                "PUNKS_TEST_EXPECTED_AGENT_ACCESS_OWNER_ONLY must be set for owner-only-access-build tests"
             )
         }
         Err(std::env::VarError::NotUnicode(_)) => {
-            panic!("BUZZ_TEST_EXPECTED_AGENT_ACCESS_OWNER_ONLY must be valid UTF-8")
+            panic!("PUNKS_TEST_EXPECTED_AGENT_ACCESS_OWNER_ONLY must be valid UTF-8")
         }
     };
     let mut record = bare_agent_record(None, None, None);

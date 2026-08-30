@@ -1,119 +1,65 @@
 #![recursion_limit = "256"] // Deep Tauri command futures exceed the default layout query depth.
-#[cfg(all(feature = "buzz-desktop", feature = "punks-desktop-social-loop"))]
-compile_error!("`buzz-desktop` and `punks-desktop-social-loop` are mutually exclusive");
-#[cfg(not(any(feature = "buzz-desktop", feature = "punks-desktop-social-loop")))]
-compile_error!("enable exactly one desktop runtime feature");
-#[cfg(feature = "buzz-desktop")]
 mod app_menu;
-#[cfg(feature = "buzz-desktop")]
 mod app_state;
-#[cfg(feature = "buzz-desktop")]
 mod archive;
-#[cfg(feature = "buzz-desktop")]
 mod builderlab;
-#[cfg(feature = "buzz-desktop")]
+mod channel_head_cache;
 mod commands;
-#[cfg(feature = "buzz-desktop")]
 mod deep_link;
-#[cfg(feature = "buzz-desktop")]
 mod egress_guard;
-#[cfg(feature = "buzz-desktop")]
 mod event_sync;
-#[cfg(feature = "buzz-desktop")]
 mod events;
-#[cfg(feature = "buzz-desktop")]
 mod huddle;
-#[cfg(feature = "buzz-desktop")]
 mod identity_storage;
-#[cfg(feature = "buzz-desktop")]
 mod initial_window;
-#[cfg(feature = "buzz-desktop")]
 mod key_backup;
-#[cfg(feature = "buzz-desktop")]
 mod link_preview_tags;
-#[cfg(feature = "buzz-desktop")]
 mod linux_media;
-#[cfg(all(feature = "buzz-desktop", target_os = "macos"))]
+mod local_accounts;
+#[cfg(feature = "punks-local")]
+mod local_authority;
+mod local_workspaces;
+#[cfg(target_os = "macos")]
 mod macos_notifications;
-#[cfg(feature = "buzz-desktop")]
 mod managed_agents;
-#[cfg(feature = "buzz-desktop")]
 mod media_proxy;
-#[cfg(all(feature = "buzz-desktop", feature = "mesh-llm"))]
+#[cfg(feature = "mesh-llm")]
 mod mesh_llm;
-#[cfg(all(feature = "buzz-desktop", not(feature = "mesh-llm")))]
+#[cfg(not(feature = "mesh-llm"))]
 mod mesh_llm_stubs;
-#[cfg(feature = "buzz-desktop")]
 mod migration;
-#[cfg(all(feature = "buzz-desktop", test))]
+#[cfg(test)]
 mod model_tests;
-#[cfg(feature = "buzz-desktop")]
 mod models;
-#[cfg(feature = "buzz-desktop")]
 mod native_relay_client;
-#[cfg(feature = "buzz-desktop")]
 mod native_websocket;
-#[cfg(feature = "buzz-desktop")]
 mod native_websocket_batch;
-#[cfg(feature = "buzz-desktop")]
 mod nostr_bind;
-#[cfg(feature = "buzz-desktop")]
 pub mod nostr_convert;
-#[cfg(feature = "buzz-desktop")]
 mod observed_unread;
-#[cfg(feature = "buzz-desktop")]
 mod persona_catalog;
-#[cfg(feature = "buzz-desktop")]
 mod prevent_sleep;
-#[cfg(feature = "buzz-desktop")]
 mod ptt_shortcut;
-#[cfg(feature = "punks-desktop-social-loop")]
-mod punks_auth;
-#[cfg(feature = "punks-desktop-social-loop")]
-mod punks_auth_state;
-#[cfg(feature = "punks-desktop-social-loop")]
-mod punks_client;
-#[cfg(feature = "punks-desktop-social-loop")]
-mod punks_promotion_audit;
-#[cfg(feature = "punks-desktop-social-loop")]
-mod punks_runtime;
-#[cfg(feature = "punks-desktop-social-loop")]
-mod punks_session_store;
-#[cfg(feature = "buzz-desktop")]
 mod relay;
-#[cfg(feature = "buzz-desktop")]
 mod relay_admission;
-#[cfg(feature = "buzz-desktop")]
 mod reset;
-#[cfg(feature = "buzz-desktop")]
 mod secret_store;
-#[cfg(feature = "buzz-desktop")]
 mod shutdown;
-#[cfg(feature = "buzz-desktop")]
 mod templates;
-#[cfg(feature = "buzz-desktop")]
 mod terminal_runtime;
-#[cfg(feature = "buzz-desktop")]
 #[cfg_attr(not(test), allow(dead_code))]
 mod terminal_transport;
-#[cfg(all(feature = "buzz-desktop", target_os = "macos"))]
+#[cfg(target_os = "macos")]
 mod tray_menu;
-#[cfg(feature = "buzz-desktop")]
 mod unread_catch_up;
-#[cfg(feature = "buzz-desktop")]
 mod util;
-#[cfg(all(feature = "buzz-desktop", target_os = "linux"))]
+#[cfg(target_os = "linux")]
 pub mod webkit_rendering;
-#[cfg(feature = "buzz-desktop")]
 use app_state::{build_app_state, resolve_persisted_identity, AppState};
-#[cfg(feature = "buzz-desktop")]
 use builderlab::*;
-#[cfg(feature = "buzz-desktop")]
 #[doc(hidden)]
 pub use commands::print_agent_access_owner_only_probe_if_requested;
-#[cfg(feature = "buzz-desktop")]
 use commands::*;
-#[cfg(feature = "buzz-desktop")]
 use deep_link::{
     acknowledge_pending_community_deep_link, acknowledge_pending_entity_deep_link,
     acknowledge_pending_navigation_deep_link, clear_pending_navigation_deep_links,
@@ -121,7 +67,6 @@ use deep_link::{
     take_pending_navigation_deep_link, PendingCommunityDeepLinks, PendingEntityDeepLinks,
     PendingNavigationDeepLinks,
 };
-#[cfg(feature = "buzz-desktop")]
 use huddle::{
     add_agent_to_huddle,
     audio_output::{get_audio_output_device, list_audio_output_devices, set_audio_output_device},
@@ -133,36 +78,27 @@ use huddle::{
     set_tts_enabled, set_voice_input_mode, speak_agent_message, start_huddle, start_stt_pipeline,
     HuddlePhase,
 };
-#[cfg(feature = "buzz-desktop")]
 use initial_window::*;
-#[cfg(feature = "buzz-desktop")]
 use managed_agents::{
     backfill_persona_snapshots, ensure_nest, list_managed_agent_runtimes,
     put_managed_agent_runtime_lifecycle, reconcile_managed_agent_runtimes,
     restart_managed_agent_runtime, start_managed_agent_runtime, stop_managed_agent_runtime,
     try_regenerate_nest,
 };
-#[cfg(all(feature = "buzz-desktop", not(feature = "mesh-llm")))]
+#[cfg(not(feature = "mesh-llm"))]
 use mesh_llm_stubs::*;
-#[cfg(feature = "punks-desktop-social-loop")]
-pub use punks_runtime::run;
-#[cfg(all(feature = "buzz-desktop", feature = "mesh-llm", target_os = "macos"))]
+#[cfg(all(feature = "mesh-llm", target_os = "macos"))]
 use shutdown::{hard_exit_after_mesh_shutdown, relaunch_after_mesh_shutdown};
-#[cfg(feature = "buzz-desktop")]
 use shutdown::{is_restart_request, shut_down_app};
-#[cfg(feature = "buzz-desktop")]
 use std::sync::{atomic::AtomicBool, atomic::Ordering, Arc};
-#[cfg(all(feature = "buzz-desktop", target_os = "macos"))]
+#[cfg(target_os = "macos")]
 use tauri::Listener;
-#[cfg(feature = "buzz-desktop")]
 use tauri::{Emitter, Manager, RunEvent, WindowEvent};
-#[cfg(feature = "buzz-desktop")]
 use tauri_plugin_window_state::StateFlags;
-#[cfg(all(feature = "buzz-desktop", target_os = "macos"))]
+#[cfg(target_os = "macos")]
 use tray_menu::show_main_window;
-#[cfg(feature = "buzz-desktop")]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() -> Result<(), String> {
+pub fn run() {
     // mesh-llm's async chains (model download, node start/join) overflow
     // tokio's default 2 MiB worker stacks — a stack-guard SIGABRT, not a
     // panic. Upstream mesh-llm and mesh-console both run on 8 MiB worker
@@ -180,14 +116,16 @@ pub fn run() -> Result<(), String> {
             // would shut down the workers Tauri now depends on.
             std::mem::forget(runtime);
             eprintln!(
-                "buzz-mesh: installed tokio runtime with {} MiB worker stacks",
+                "punks-mesh: installed tokio runtime with {} MiB worker stacks",
                 crate::mesh_llm::MESH_WORKER_STACK_SIZE / (1024 * 1024)
             );
         }
         Err(error) => {
             // Fall back to Tauri's default runtime: the app still works,
             // only deep mesh-llm futures are at risk of stack overflow.
-            eprintln!("buzz-mesh: failed to build big-stack tokio runtime, using default: {error}");
+            eprintln!(
+                "punks-mesh: failed to build big-stack tokio runtime, using default: {error}"
+            );
         }
     }
     let builder = tauri::Builder::default()
@@ -198,7 +136,7 @@ pub fn run() -> Result<(), String> {
             }
             // Forward any deep link URLs from the duplicate launch.
             for arg in &argv {
-                if arg.starts_with("buzz://") {
+                if arg.starts_with("punks-local://") {
                     handle_deep_link_url(app, arg);
                 }
             }
@@ -251,7 +189,7 @@ pub fn run() -> Result<(), String> {
                             .is_err()
                             {
                                 eprintln!(
-                                    "buzz-desktop: initial render did not commit before reveal timeout"
+                                    "punks-full-local: initial render did not commit before reveal timeout"
                                 );
                             }
 
@@ -277,17 +215,17 @@ pub fn run() -> Result<(), String> {
     let builder = ptt_shortcut::install(builder);
 
     // Register the updater only in configured release builds; omit it locally.
-    #[cfg(buzz_updater_enabled)]
+    #[cfg(punks_updater_enabled)]
     let builder = if cfg!(debug_assertions) {
         builder
     } else {
         builder.plugin(tauri_plugin_updater::Builder::new().build())
     };
     let app = app_menu::install(builder)
-        .register_asynchronous_uri_scheme_protocol("buzz-media", |ctx, request, responder| {
+        .register_asynchronous_uri_scheme_protocol("punks-media", |ctx, request, responder| {
             let app = ctx.app_handle().clone();
             tauri::async_runtime::spawn(async move {
-                let response = media_proxy::handle_buzz_media(&app, &request).await;
+                let response = media_proxy::handle_punks_media(&app, &request).await;
                 responder.respond(response);
             });
         })
@@ -303,6 +241,7 @@ pub fn run() -> Result<(), String> {
         .manage(archive::sync::ArchiveSyncState::default())
         .manage(native_relay_client::NativeRelayClient::default())
         .manage(observed_unread::ObservedUnreadStore::default())
+        .manage(channel_head_cache::ChannelHeadCacheStore::default())
         .setup(move |app| {
             let app_handle = app.handle().clone();
             #[cfg(target_os = "macos")]
@@ -353,7 +292,13 @@ pub fn run() -> Result<(), String> {
             // memberships, DMs, and relay identity.
             let state = app_handle.state::<AppState>();
             if let Err(e) = resolve_persisted_identity(&app_handle, &state) {
-                eprintln!("buzz-desktop: fatal: identity resolution failed: {e}");
+                eprintln!("punks-full-local: fatal: identity resolution failed: {e}");
+                std::process::exit(1);
+            }
+
+            #[cfg(feature = "punks-local")]
+            if let Err(error) = local_authority::start(&app_handle, &state) {
+                eprintln!("punks-local: fatal: local authority failed to start: {error}");
                 std::process::exit(1);
             }
 
@@ -362,13 +307,12 @@ pub fn run() -> Result<(), String> {
             // present), all owner-keyed side effects (event sync, agent restore,
             // relay publish) are skipped. The frontend shows a recovery screen;
             // the user must relaunch after restoring the identity.
-            let identity_lost = state
+            let recovery_mode = state
                 .identity_lost
-                .load(std::sync::atomic::Ordering::Acquire);
-            let keyring_locked = state
-                .keyring_locked
-                .load(std::sync::atomic::Ordering::Acquire);
-            let recovery_mode = identity_lost || keyring_locked;
+                .load(std::sync::atomic::Ordering::Acquire)
+                || state
+                    .keyring_locked
+                    .load(std::sync::atomic::Ordering::Acquire);
 
             // Backfill the pinned persona snapshot for any pre-existing agent
             // that predates the record-authoritative-spawn cutover (persona_id
@@ -377,23 +321,21 @@ pub fn run() -> Result<(), String> {
             // snapshot. Synchronous and best-effort — a failure here must not
             // block launch, but a missing persona is logged loudly inside.
             if let Err(e) = backfill_persona_snapshots(&app_handle) {
-                eprintln!("buzz-desktop: persona-snapshot backfill failed: {e}");
+                eprintln!("punks-full-local: persona-snapshot backfill failed: {e}");
             }
 
             // Warm the loaded-harness registry BEFORE restore so cold-launch
             // agent spawns can resolve custom/preset runtime ids without
             // waiting for the frontend's discover_acp_providers call.  This is
             // a pure directory scan — no PATH probing, no async work.
-            {
-                let custom_dir = app_handle
-                    .path()
-                    .app_data_dir()
-                    .ok()
-                    .map(|d| d.join("custom_harnesses"));
-                managed_agents::custom_harnesses::warm_harness_registry_from_dir(
-                    custom_dir.as_deref(),
-                );
-            }
+            let custom_harness_dir = app_handle
+                .path()
+                .app_data_dir()
+                .ok()
+                .map(|d| d.join("custom_harnesses"));
+            managed_agents::custom_harnesses::warm_harness_registry_from_dir(
+                custom_harness_dir.as_deref(),
+            );
 
             // Store the AppHandle so huddle commands can emit `huddle-state-changed`
             // events via `huddle::emit_huddle_state` without threading the handle
@@ -423,10 +365,7 @@ pub fn run() -> Result<(), String> {
                 // Route mesh-llm's download progress (model weights, runtime)
                 // onto Tauri events so the UI can render real progress.
                 crate::mesh_llm::install_progress_sink(&app_handle);
-                let mesh_app = app_handle.clone();
-                tauri::async_runtime::spawn(async move {
-                    crate::mesh_llm::start_coordinator(mesh_app).await;
-                });
+                tauri::async_runtime::spawn(crate::mesh_llm::start_coordinator(app_handle.clone()));
             }
 
             // Start the localhost media streaming proxy. Uses the shared HTTP
@@ -442,13 +381,14 @@ pub fn run() -> Result<(), String> {
                     .store(port, std::sync::atomic::Ordering::Relaxed);
             });
 
-            // Create the Buzz nest (~/.buzz or ~/.buzz-dev for dev builds) before
+            // Create the Punks nest (~/.punks or ~/.punks-dev for dev builds) before
             // agents are restored, so default_agent_workdir() resolves to the
             // nest directory. Non-fatal: agents fall back to $HOME if nest
             // creation fails.
             if let Err(error) = ensure_nest() {
-                eprintln!("buzz-desktop: failed to create nest: {error}");
+                eprintln!("punks-full-local: failed to create nest: {error}");
             }
+            archive::spawn_warm_init(app_handle.clone());
 
             // Resolve the REPOS symlink from the persisted repos_dir BEFORE
             // agents are restored below, and decide whether restore is safe.
@@ -477,14 +417,14 @@ pub fn run() -> Result<(), String> {
             }
 
             // One-time migration for dev builds: copy accumulated knowledge
-            // from the shared ~/.buzz nest into the new dedicated ~/.buzz-dev
+            // from the shared ~/.punks nest into the dedicated ~/.punks-dev
             // nest so no work is lost when the nest is first namespaced.
-            // Runs only when nest_dir() resolved to ~/.buzz-dev (dev instance).
-            // Suppressed after a reset so re-importing ~/.buzz into ~/.buzz-dev
+            // Runs only when nest_dir() resolved to ~/.punks-dev (dev instance).
+            // Suppressed after a reset so re-importing ~/.punks into ~/.punks-dev
             // doesn't re-populate what was just wiped.
             let is_dev_nest = managed_agents::nest_dir()
                 .and_then(|p| p.file_name().map(|n| n.to_os_string()))
-                .is_some_and(|n| n == ".buzz-dev");
+                .is_some_and(|n| n == ".punks-dev");
             if !reset_outcome.completed && is_dev_nest {
                 migration::migrate_dev_nest();
             }
@@ -494,7 +434,7 @@ pub fn run() -> Result<(), String> {
             if let Ok(exe) = std::env::current_exe() {
                 if let Some(parent) = exe.parent() {
                     if let Err(error) = managed_agents::ensure_cli_symlink(parent, is_dev_nest) {
-                        eprintln!("buzz-desktop: failed to create CLI symlink: {error}");
+                        eprintln!("punks-full-local: failed to create CLI symlink: {error}");
                     }
                 }
             }
@@ -583,7 +523,7 @@ pub fn run() -> Result<(), String> {
                         )
                         .await
                         {
-                            eprintln!("buzz-desktop: event-flush: {e}");
+                            eprintln!("punks-full-local: event-flush: {e}");
                         }
                         tokio::time::sleep(Duration::from_secs(30)).await;
                     }
@@ -645,6 +585,7 @@ pub fn run() -> Result<(), String> {
             get_project_local_repo_file_content,
             get_project_repo_sync_status,
             list_project_local_repositories,
+            open_project_repository_folder,
             clone_project_repository,
             create_project_remote_branch,
             delete_project_remote_branch,
@@ -669,6 +610,20 @@ pub fn run() -> Result<(), String> {
             get_relay_ws_url,
             get_relay_http_url,
             get_media_proxy_port,
+            local_accounts::punks_local_list_accounts,
+            local_accounts::punks_local_create_account,
+            local_accounts::punks_local_switch_account,
+            local_accounts::punks_local_merge_accounts,
+            local_accounts::punks_local_rename_account,
+            local_accounts::punks_local_delete_account,
+            local_accounts::punks_local_import_account,
+            local_accounts::punks_local_export_account,
+            local_workspaces::punks_local_list_workspaces,
+            local_workspaces::punks_local_create_workspace,
+            local_workspaces::punks_local_rename_workspace,
+            local_workspaces::punks_local_set_workspace_archived,
+            #[cfg(feature = "punks-local")]
+            local_authority::reminders::punks_local_set_notification_preferences,
             fetch_link_preview_metadata,
             discover_acp_auth_methods,
             discover_acp_providers,
@@ -687,6 +642,7 @@ pub fn run() -> Result<(), String> {
             nip44_encrypt_to_self,
             nip44_decrypt_from_self,
             get_channels,
+            get_open_channel_directory,
             create_channel,
             ensure_starter_channels,
             open_dm,
@@ -706,6 +662,9 @@ pub fn run() -> Result<(), String> {
             leave_channel,
             get_canvas,
             set_canvas,
+            get_message_markers,
+            set_message_pin,
+            set_message_bookmark,
             get_feed,
             search_messages,
             send_channel_message,
@@ -714,13 +673,17 @@ pub fn run() -> Result<(), String> {
             get_forum_posts,
             get_forum_thread,
             get_thread_replies,
+            get_channel_reconnect_repair,
             get_channel_window,
             get_channel_messages_before,
             edit_message,
             delete_message,
+            restore_message,
+            erase_message,
             add_reaction,
             remove_reaction,
             get_event,
+            get_events,
             show_native_notification,
             #[cfg(target_os = "macos")]
             macos_notifications::take_pending_activations,
@@ -795,6 +758,9 @@ pub fn run() -> Result<(), String> {
             unread_catch_up::unread_catch_up,
             observed_unread::observed_unread_open_scope,
             observed_unread::observed_unread_ingest,
+            channel_head_cache::channel_head_cache_load,
+            channel_head_cache::channel_head_cache_store,
+            channel_head_cache::channel_head_cache_clear,
             list_personas,
             create_persona,
             update_persona,
@@ -909,6 +875,9 @@ pub fn run() -> Result<(), String> {
             archive::index_observer_channel_id,
             archive::read_unindexed_observer_rows,
             archive::get_agent_usage_series,
+            archive::get_observer_retention_days,
+            archive::set_observer_retention_days,
+            archive::archive_size_stats,
             archive::sync::announce_archive_sync_epoch,
             archive::sync::start_archive_sync,
             archive::sync::stop_archive_sync,
@@ -924,7 +893,7 @@ pub fn run() -> Result<(), String> {
             tray_menu::update_tray_agent_activity,
         ])
         .build(tauri::generate_context!())
-        .map_err(|error| format!("error while building tauri application: {error}"))?;
+        .expect("error while building tauri application");
     let shutdown_done = Arc::new(AtomicBool::new(false));
 
     #[cfg(unix)]
@@ -941,11 +910,11 @@ pub fn run() -> Result<(), String> {
             event: WindowEvent::CloseRequested { api, .. },
             ..
         } if label == "main" => {
-            // Keep the webview alive so Buzz can be reopened from its tray menu.
+            // Keep the webview alive so Punks can be reopened from its tray menu.
             api.prevent_close();
             if let Some(window) = app_handle.get_webview_window("main") {
                 if let Err(error) = window.hide() {
-                    eprintln!("buzz-desktop: failed to hide main window: {error}");
+                    eprintln!("punks-full-local: failed to hide main window: {error}");
                 }
             }
         }
@@ -968,7 +937,7 @@ pub fn run() -> Result<(), String> {
                     });
             if is_active_huddle_window {
                 if let Err(error) = app_handle.emit("huddle-companion-returned", ()) {
-                    eprintln!("buzz-desktop: failed to restore huddle drawer: {error}");
+                    eprintln!("punks-full-local: failed to restore huddle drawer: {error}");
                 }
             }
         }
@@ -981,7 +950,6 @@ pub fn run() -> Result<(), String> {
         RunEvent::Exit => {
             shut_down_app(app_handle, &run_shutdown_done);
             app_handle.state::<ClipboardState>().release();
-
             #[cfg(all(feature = "mesh-llm", target_os = "macos"))]
             if restart_requested.load(Ordering::SeqCst) {
                 relaunch_after_mesh_shutdown(app_handle);
@@ -990,12 +958,11 @@ pub fn run() -> Result<(), String> {
             // AppKit terminates through libc exit(), which runs C++ static
             // destructors. The embedded ggml/Metal runtime currently aborts in
             // that destructor phase even after its node has stopped cleanly.
-            // End the process only after Buzz and Mesh shutdown above, while
+            // End the process only after Punks and Mesh shutdown above, while
             // deliberately skipping those native global destructors.
             #[cfg(all(feature = "mesh-llm", target_os = "macos"))]
             hard_exit_after_mesh_shutdown();
         }
         _ => {}
     });
-    Ok(())
 }

@@ -23,8 +23,8 @@ pub mod workflows;
 use crate::{client::normalize_write_response, error::CliError};
 use nostr::{EventBuilder, Tag};
 
-const GIT_ORIGIN_CHANNEL_ENV: &str = "BUZZ_GIT_ORIGIN_CHANNEL_ID";
-const GIT_ORIGIN_AGENT_ENV: &str = "BUZZ_GIT_ORIGIN_AGENT_NAME";
+const GIT_ORIGIN_CHANNEL_ENV: &str = "PUNKS_GIT_ORIGIN_CHANNEL_ID";
+const GIT_ORIGIN_AGENT_ENV: &str = "PUNKS_GIT_ORIGIN_AGENT_NAME";
 
 /// Add trusted, session-scoped provenance supplied by the ACP harness.
 ///
@@ -63,7 +63,7 @@ fn apply_git_provenance(
                 "invalid private-conversation agent name".into(),
             ));
         }
-        let origin_tag = Tag::parse(["buzz-origin-agent", agent_name])
+        let origin_tag = Tag::parse(["punks-origin-agent", agent_name])
             .map_err(|error| CliError::Other(format!("invalid git origin tag: {error}")))?;
         return Ok(builder.tag(origin_tag));
     }
@@ -123,7 +123,7 @@ mod tests {
         assert!(!event
             .tags
             .iter()
-            .any(|tag| tag.as_slice().first().map(String::as_str) == Some("buzz-origin-agent")));
+            .any(|tag| tag.as_slice().first().map(String::as_str) == Some("punks-origin-agent")));
     }
 
     #[test]
@@ -132,7 +132,7 @@ mod tests {
         assert!(event
             .tags
             .iter()
-            .any(|tag| tag.as_slice() == ["buzz-origin-agent", "Builder"]));
+            .any(|tag| tag.as_slice() == ["punks-origin-agent", "Builder"]));
         assert!(!event
             .tags
             .iter()

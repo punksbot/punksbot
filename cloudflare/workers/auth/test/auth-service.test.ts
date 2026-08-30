@@ -1,5 +1,10 @@
 import { exports as workerExports } from "cloudflare:workers";
-import { env, listDurableObjectIds, runInDurableObject } from "cloudflare:test";
+import {
+  env,
+  evictDurableObject,
+  listDurableObjectIds,
+  runInDurableObject,
+} from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 
 import type { AuthEnv } from "../src/env";
@@ -54,6 +59,64 @@ async function createActiveSession(
 }
 
 describe("PunkSessionService session-id reauthentication", () => {
+  it("migrates a local Session schema that predates client_kind and prepared", async () => {
+    const legacySessionId = "a0000000-0000-8000-8000-000000000099";
+    const legacyPunkId = "b0000000-0000-8000-8000-000000000099";
+    const session = authEnv.SESSIONS.getByName(legacySessionId);
+    const authenticatedAt = new Date().toISOString();
+    const expiresAt = new Date(Date.now() + 60_000).toISOString();
+    await runInDurableObject(session, async (_instance, state) => {
+      state.storage.sql.exec("DROP TABLE auth_session");
+      state.storage.sql.exec(`
+        CREATE TABLE auth_session (
+          singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+          session_id TEXT NOT NULL,
+          punk_id TEXT NOT NULL,
+          authenticated_at TEXT NOT NULL,
+          expires_at TEXT NOT NULL,
+          recent_reauth_until TEXT,
+          status TEXT NOT NULL CHECK (status IN ('active', 'revoked')),
+          updated_at TEXT NOT NULL
+        ) STRICT
+      `);
+      state.storage.sql.exec(
+        `INSERT INTO auth_session
+          (singleton, session_id, punk_id, authenticated_at, expires_at,
+           recent_reauth_until, status, updated_at)
+         VALUES (1, ?, ?, ?, ?, NULL, 'active', ?)`,
+        legacySessionId,
+        legacyPunkId,
+        authenticatedAt,
+        expiresAt,
+        authenticatedAt,
+      );
+    });
+    await evictDurableObject(session);
+
+    await expect(
+      authEnv.SESSIONS.getByName(legacySessionId).get(),
+    ).resolves.toMatchObject({
+      sessionId: legacySessionId,
+      punkId: legacyPunkId,
+    });
+    await runInDurableObject(
+      authEnv.SESSIONS.getByName(legacySessionId),
+      async (_instance, state) => {
+        const columns = state.storage.sql
+          .exec<{ name: string }>("PRAGMA table_info(auth_session)")
+          .toArray()
+          .map((column) => column.name);
+        expect(columns).toContain("client_kind");
+        const schema = state.storage.sql
+          .exec<{ sql: string }>(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'auth_session'",
+          )
+          .toArray()[0]?.sql;
+        expect(schema).toContain("'prepared'");
+      },
+    );
+  });
+
   it("revokes rather than restores a Session after authority-loss recovery", async () => {
     const recoverySessionId = "a0000000-0000-8000-8000-000000000090";
     const recoveryPunkId = "b0000000-0000-8000-8000-000000000091";

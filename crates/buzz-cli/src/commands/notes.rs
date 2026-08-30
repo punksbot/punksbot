@@ -1,4 +1,4 @@
-//! `buzz notes` — NIP-23 long-form editable notes (kind:30023).
+//! `punks notes` — NIP-23 long-form editable notes (kind:30023).
 //!
 //! Skill-sharing knowledge base for the team. Notes are parameterized-replaceable
 //! events keyed by `(kind=30023, pubkey, d-tag)`; the `d` tag is the human slug.
@@ -30,7 +30,7 @@ use std::time::SystemTime;
 
 use nostr::{Event, EventBuilder, Kind, PublicKey, Tag, Timestamp, ToBech32};
 
-use crate::client::BuzzClient;
+use crate::client::PunksClient;
 use crate::error::CliError;
 use crate::validate::validate_hex64;
 
@@ -165,7 +165,7 @@ fn parse_events(json: &str) -> Result<Vec<Event>, CliError> {
 /// `NoteSnapshot::from_event` on the result for carry-forward, and `rm` only
 /// needs its presence to decide first-publish vs. update / deletable-or-not.
 /// (Quinn's option (b) — single tag-parser, isolated.)
-pub async fn fetch_own_note(client: &BuzzClient, slug: &str) -> Result<Option<Event>, CliError> {
+pub async fn fetch_own_note(client: &PunksClient, slug: &str) -> Result<Option<Event>, CliError> {
     let me = client.keys().public_key();
     let filter = serde_json::json!({
         "kinds": [KIND_LONG_FORM],
@@ -184,7 +184,7 @@ pub async fn fetch_own_note(client: &BuzzClient, slug: &str) -> Result<Option<Ev
 /// Cross-author `#d` lookup for `get --name`. The relay pushes the `#d`
 /// filter into SQL for NIP-33 kinds (`req.rs`), so this is a single
 /// indexed query, not a fan-out.
-pub async fn fetch_by_slug(client: &BuzzClient, slug: &str) -> Result<Vec<Event>, CliError> {
+pub async fn fetch_by_slug(client: &PunksClient, slug: &str) -> Result<Vec<Event>, CliError> {
     let filter = serde_json::json!({
         "kinds": [KIND_LONG_FORM],
         "#d": [slug],
@@ -201,7 +201,10 @@ pub async fn fetch_by_slug(client: &BuzzClient, slug: &str) -> Result<Vec<Event>
 /// - 64-hex pubkey → parsed directly.
 /// - anything else → treated as a petname / display name, searched against
 ///   kind:0 profiles. Exact-one match required; ambiguity is a hard error.
-pub async fn resolve_author(client: &BuzzClient, author_flag: &str) -> Result<PublicKey, CliError> {
+pub async fn resolve_author(
+    client: &PunksClient,
+    author_flag: &str,
+) -> Result<PublicKey, CliError> {
     if author_flag == "me" {
         return Ok(client.keys().public_key());
     }
@@ -347,7 +350,7 @@ fn snapshots_from_events(events: Vec<Event>) -> Result<Vec<NoteSnapshot>, CliErr
 }
 
 async fn fetch_by_coord(
-    client: &BuzzClient,
+    client: &PunksClient,
     coord: &nostr::nips::nip01::Coordinate,
 ) -> Result<Option<Event>, CliError> {
     let filter = serde_json::json!({
@@ -485,7 +488,7 @@ fn now_secs() -> u64 {
 pub const SET_STDIN_MAX_BYTES: usize = 1024 * 1024;
 
 pub async fn cmd_set(
-    client: &BuzzClient,
+    client: &PunksClient,
     slug: &str,
     title: Option<&str>,
     summary: Option<&str>,
@@ -610,7 +613,7 @@ fn validate_get_args(naddr: bool, name: bool, author: bool, latest: bool) -> Res
 }
 
 pub async fn cmd_get(
-    client: &BuzzClient,
+    client: &PunksClient,
     naddr: Option<&str>,
     name: Option<&str>,
     author: Option<&str>,
@@ -669,7 +672,7 @@ pub async fn cmd_get(
 }
 
 pub async fn cmd_ls(
-    client: &BuzzClient,
+    client: &PunksClient,
     author: Option<&str>,
     tag: Option<&str>,
     limit: Option<u32>,
@@ -714,7 +717,7 @@ pub fn build_rm_event(coord: &nostr::nips::nip01::Coordinate) -> Result<EventBui
     Ok(EventBuilder::new(Kind::EventDeletion, "").tags(vec![a_tag]))
 }
 
-pub async fn cmd_rm(client: &BuzzClient, slug: &str) -> Result<(), CliError> {
+pub async fn cmd_rm(client: &PunksClient, slug: &str) -> Result<(), CliError> {
     // Read-before-write: only the author can delete their own note, and we
     // want a clear "nothing to delete" signal rather than emitting a kind:5
     // for a coordinate that was never published.
@@ -749,7 +752,7 @@ pub async fn cmd_rm(client: &BuzzClient, slug: &str) -> Result<(), CliError> {
     Ok(())
 }
 
-pub async fn dispatch(cmd: crate::NotesCmd, client: &BuzzClient) -> Result<(), CliError> {
+pub async fn dispatch(cmd: crate::NotesCmd, client: &PunksClient) -> Result<(), CliError> {
     use crate::NotesCmd;
     match cmd {
         NotesCmd::Set {

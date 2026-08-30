@@ -2,7 +2,7 @@
   animation: sprout-arc-spinner-spin 500ms linear infinite;
 }
 
-@keyframes buzz-qr-cell-reveal {
+@keyframes punks-qr-cell-reveal {
   0% {
     opacity: 0;
     transform: scale(0);
@@ -49,16 +49,16 @@
   }
 }
 
-.buzz-qr-cell-reveal {
+.punks-qr-cell-reveal {
   opacity: 0;
   transform-box: fill-box;
   transform-origin: center;
-  animation: buzz-qr-cell-reveal 58ms linear var(--buzz-qr-reveal-delay, 0ms)
+  animation: punks-qr-cell-reveal 58ms linear var(--punks-qr-reveal-delay, 0ms)
     forwards;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .buzz-qr-cell-reveal {
+  .punks-qr-cell-reveal {
     opacity: 1;
     transform: none;
     animation: none;
@@ -71,25 +71,25 @@
   }
 }
 
-.buzz-wave-hand {
+.punks-wave-hand {
   display: inline-block;
   transform-origin: 70% 70%;
   will-change: transform;
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .buzz-wave-hover-trigger:hover .buzz-wave-hand {
-    animation: buzz-wave-hand 1200ms ease-in-out both;
+  .punks-wave-hover-trigger:hover .punks-wave-hand {
+    animation: punks-wave-hand 1200ms ease-in-out both;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .buzz-wave-hover-trigger:hover .buzz-wave-hand {
+  .punks-wave-hover-trigger:hover .punks-wave-hand {
     animation: none;
   }
 }
 
-@keyframes buzz-wave-hand {
+@keyframes punks-wave-hand {
   0%,
   100% {
     transform: rotate(0deg);
@@ -108,7 +108,7 @@
   }
 }
 
-.buzz-emoji-mart {
+.punks-emoji-mart {
   align-items: stretch;
   display: flex;
   justify-content: stretch;
@@ -116,7 +116,7 @@
   width: 100%;
 }
 
-.buzz-emoji-mart > div {
+.punks-emoji-mart > div {
   align-items: stretch;
   display: flex;
   height: 100%;
@@ -127,17 +127,17 @@
   width: 100%;
 }
 
-.buzz-emoji-mart em-emoji-picker {
+.punks-emoji-mart em-emoji-picker {
   --border-radius: 12px;
   --category-icon-size: 24px;
   --color-border: transparent;
   --color-border-over: rgb(255 255 255 / 0.1);
   --font-family: inherit;
   --font-size: 14px;
-  --rgb-accent: var(--buzz-emoji-picker-rgb-color, 245, 247, 255);
-  --rgb-background: var(--buzz-emoji-picker-rgb-background, 54, 58, 79);
-  --rgb-color: var(--buzz-emoji-picker-rgb-color, 245, 247, 255);
-  --rgb-input: var(--buzz-emoji-picker-rgb-input, 47, 51, 68);
+  --rgb-accent: var(--punks-emoji-picker-rgb-color, 245, 247, 255);
+  --rgb-background: var(--punks-emoji-picker-rgb-background, 54, 58, 79);
+  --rgb-color: var(--punks-emoji-picker-rgb-color, 245, 247, 255);
+  --rgb-input: var(--punks-emoji-picker-rgb-input, 47, 51, 68);
   --shadow: none;
   height: 100%;
   max-height: 100%;
@@ -146,60 +146,60 @@
   width: 100%;
 }
 
-@keyframes buzz-avatar-squish {
+@keyframes punks-avatar-squish {
   0% {
     transform: translate(
-        var(--buzz-avatar-emoji-offset-x, 0px),
-        var(--buzz-avatar-emoji-offset-y, 0px)
+        var(--punks-avatar-emoji-offset-x, 0px),
+        var(--punks-avatar-emoji-offset-y, 0px)
       )
       scale(1);
   }
 
   42% {
     transform: translate(
-        var(--buzz-avatar-emoji-offset-x, 0px),
-        var(--buzz-avatar-emoji-offset-y, 0px)
+        var(--punks-avatar-emoji-offset-x, 0px),
+        var(--punks-avatar-emoji-offset-y, 0px)
       )
       scaleX(0.96) scaleY(0.88);
   }
 
   100% {
     transform: translate(
-        var(--buzz-avatar-emoji-offset-x, 0px),
-        var(--buzz-avatar-emoji-offset-y, 0px)
+        var(--punks-avatar-emoji-offset-x, 0px),
+        var(--punks-avatar-emoji-offset-y, 0px)
       )
       scale(1);
   }
 }
 
-.buzz-avatar-emoji-glyph {
-  --buzz-avatar-emoji-offset-x: 1px;
-  --buzz-avatar-emoji-offset-y: 7px;
+.punks-avatar-emoji-glyph {
+  --punks-avatar-emoji-offset-x: 1px;
+  --punks-avatar-emoji-offset-y: 7px;
   transform: translate(
-    var(--buzz-avatar-emoji-offset-x),
-    var(--buzz-avatar-emoji-offset-y)
+    var(--punks-avatar-emoji-offset-x),
+    var(--punks-avatar-emoji-offset-y)
   );
 }
 
-.buzz-avatar-squish {
-  animation: buzz-avatar-squish 200ms ease-out;
+.punks-avatar-squish {
+  animation: punks-avatar-squish 200ms ease-out;
   transform-origin: center;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .buzz-avatar-squish {
+  .punks-avatar-squish {
     animation: none;
   }
 }
 
-.buzz-shimmer {
-  --buzz-shimmer-duration: 2600ms;
-  --buzz-shimmer-highlight: color-mix(
+.punks-shimmer {
+  --punks-shimmer-duration: 2600ms;
+  --punks-shimmer-highlight: color-mix(
     in srgb,
     hsl(var(--background)) 60%,
     hsl(var(--muted-foreground)) 40%
   );
-  --buzz-shimmer-spread: 2rem;
+  --punks-shimmer-spread: 2rem;
 
   color: hsl(var(--muted-foreground));
   display: inline-block;
@@ -218,14 +218,14 @@
  * content) is used so the duplicate text can be aria-hidden — pseudo-element
  * text is inconsistently exposed to screen readers and cannot be hidden.
  */
-.buzz-shimmer > .buzz-shimmer-overlay {
-  animation: buzz-shimmer var(--buzz-shimmer-duration) ease-in-out infinite;
+.punks-shimmer > .punks-shimmer-overlay {
+  animation: punks-shimmer var(--punks-shimmer-duration) ease-in-out infinite;
   background-clip: text;
   background-image: linear-gradient(
     90deg,
-    transparent calc(50% - var(--buzz-shimmer-spread)),
-    var(--buzz-shimmer-highlight) 50%,
-    transparent calc(50% + var(--buzz-shimmer-spread))
+    transparent calc(50% - var(--punks-shimmer-spread)),
+    var(--punks-shimmer-highlight) 50%,
+    transparent calc(50% + var(--punks-shimmer-spread))
   );
   color: transparent;
   inset: 0;
@@ -238,7 +238,7 @@
   -webkit-text-fill-color: transparent;
 }
 
-@keyframes buzz-shimmer {
+@keyframes punks-shimmer {
   0%,
   100% {
     opacity: 0;
@@ -250,13 +250,13 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .buzz-shimmer > .buzz-shimmer-overlay {
+  .punks-shimmer > .punks-shimmer-overlay {
     animation: none;
     display: none;
   }
 }
 
-.buzz-poof-layer {
+.punks-poof-layer {
   inset: 0;
   overflow: hidden;
   pointer-events: none;
@@ -264,22 +264,22 @@
   z-index: 2147483647;
 }
 
-.buzz-poof-burst {
+.punks-poof-burst {
   contain: layout paint style;
-  height: var(--buzz-poof-size);
+  height: var(--punks-poof-size);
   left: 0;
   position: absolute;
   top: 0;
   transform: translate3d(
-    calc(var(--buzz-poof-x) - 50%),
-    calc(var(--buzz-poof-y) - 50%),
+    calc(var(--punks-poof-x) - 50%),
+    calc(var(--punks-poof-y) - 50%),
     0
   );
-  width: var(--buzz-poof-size);
+  width: var(--punks-poof-size);
 }
 
-.buzz-poof-frame {
-  animation: buzz-poof-frame 400ms linear both;
+.punks-poof-frame {
+  animation: punks-poof-frame 400ms linear both;
   height: 100%;
   inset: 0;
   object-fit: contain;
@@ -290,27 +290,27 @@
   width: 100%;
 }
 
-.buzz-poof-frame-1 {
-  animation-name: buzz-poof-frame-1;
+.punks-poof-frame-1 {
+  animation-name: punks-poof-frame-1;
 }
 
-.buzz-poof-frame-2 {
-  animation-name: buzz-poof-frame-2;
+.punks-poof-frame-2 {
+  animation-name: punks-poof-frame-2;
 }
 
-.buzz-poof-frame-3 {
-  animation-name: buzz-poof-frame-3;
+.punks-poof-frame-3 {
+  animation-name: punks-poof-frame-3;
 }
 
-.buzz-poof-frame-4 {
-  animation-name: buzz-poof-frame-4;
+.punks-poof-frame-4 {
+  animation-name: punks-poof-frame-4;
 }
 
-.buzz-poof-frame-5 {
-  animation-name: buzz-poof-frame-5;
+.punks-poof-frame-5 {
+  animation-name: punks-poof-frame-5;
 }
 
-@keyframes buzz-poof-frame-1 {
+@keyframes punks-poof-frame-1 {
   0%,
   19.99% {
     opacity: 1;
@@ -324,7 +324,7 @@
   }
 }
 
-@keyframes buzz-poof-frame-2 {
+@keyframes punks-poof-frame-2 {
   0%,
   19.99% {
     opacity: 0;
@@ -343,7 +343,7 @@
   }
 }
 
-@keyframes buzz-poof-frame-3 {
+@keyframes punks-poof-frame-3 {
   0%,
   39.99% {
     opacity: 0;
@@ -362,7 +362,7 @@
   }
 }
 
-@keyframes buzz-poof-frame-4 {
+@keyframes punks-poof-frame-4 {
   0%,
   59.99% {
     opacity: 0;
@@ -381,7 +381,7 @@
   }
 }
 
-@keyframes buzz-poof-frame-5 {
+@keyframes punks-poof-frame-5 {
   0%,
   79.99% {
     opacity: 0;
@@ -400,16 +400,16 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .buzz-poof-frame {
-    animation: buzz-poof-frame-reduced 180ms ease-out both;
+  .punks-poof-frame {
+    animation: punks-poof-frame-reduced 180ms ease-out both;
   }
 
-  .buzz-poof-frame:not(.buzz-poof-frame-3) {
+  .punks-poof-frame:not(.punks-poof-frame-3) {
     display: none;
   }
 }
 
-@keyframes buzz-poof-frame-reduced {
+@keyframes punks-poof-frame-reduced {
   0% {
     opacity: 0.9;
   }
@@ -419,7 +419,7 @@
   }
 }
 
-.buzz-avatar-hue-scrubber {
+.punks-avatar-hue-scrubber {
   background: linear-gradient(
     90deg,
     #ff0000 0%,
@@ -436,7 +436,7 @@
   -webkit-user-select: none;
 }
 
-.buzz-animated-count {
+.punks-animated-count {
   display: inline-block;
   font-kerning: none;
   font-variant-numeric: tabular-nums;
@@ -444,16 +444,16 @@
   white-space: nowrap;
 }
 
-.buzz-animated-count__motion {
+.punks-animated-count__motion {
   display: inline-flex;
   line-height: 1;
 }
 
-.buzz-animated-count__static {
+.punks-animated-count__static {
   display: none;
 }
 
-.buzz-sidebar-action-card--success {
+.punks-sidebar-action-card--success {
   background-color: color-mix(
     in srgb,
     var(--status-added) 12%,
@@ -467,7 +467,7 @@
   color: hsl(var(--foreground));
 }
 
-.buzz-sidebar-action-card--success:hover {
+.punks-sidebar-action-card--success:hover {
   background-color: color-mix(
     in srgb,
     var(--status-added) 16%,
@@ -475,7 +475,7 @@
   );
 }
 
-.dark .buzz-sidebar-action-card--success {
+.dark .punks-sidebar-action-card--success {
   background-color: color-mix(
     in srgb,
     var(--status-added) 15%,
@@ -488,7 +488,7 @@
   );
 }
 
-.dark .buzz-sidebar-action-card--success:hover {
+.dark .punks-sidebar-action-card--success:hover {
   background-color: color-mix(
     in srgb,
     var(--status-added) 19%,
@@ -496,70 +496,70 @@
   );
 }
 
-.buzz-sidebar-action-card__success-icon {
+.punks-sidebar-action-card__success-icon {
   color: var(--status-added);
 }
 
-.buzz-sidebar-action-description {
-  --buzz-sidebar-action-description-line-height: 1.375em;
+.punks-sidebar-action-description {
+  --punks-sidebar-action-description-line-height: 1.375em;
   display: inline-block;
-  line-height: var(--buzz-sidebar-action-description-line-height);
+  line-height: var(--punks-sidebar-action-description-line-height);
   max-width: 100%;
   overflow-wrap: break-word;
 }
 
-.buzz-sidebar-action-description__motion {
+.punks-sidebar-action-description__motion {
   display: block;
-  height: var(--buzz-sidebar-action-description-line-height);
+  height: var(--punks-sidebar-action-description-line-height);
   overflow: hidden;
 }
 
-.buzz-sidebar-action-description__reel {
-  animation: buzz-sidebar-action-description-roll-up 260ms
+.punks-sidebar-action-description__reel {
+  animation: punks-sidebar-action-description-roll-up 260ms
     cubic-bezier(0.2, 0.8, 0.2, 1) both;
   display: flex;
   flex-direction: column;
-  line-height: var(--buzz-sidebar-action-description-line-height);
+  line-height: var(--punks-sidebar-action-description-line-height);
   will-change: transform;
 }
 
 /* The roll-up reel animates between two fixed one-line slots, so text is
    clipped to a single line only while the transition plays; the settled
    state above wraps freely. */
-.buzz-sidebar-action-description__reel > span {
+.punks-sidebar-action-description__reel > span {
   display: block;
-  height: var(--buzz-sidebar-action-description-line-height);
-  line-height: var(--buzz-sidebar-action-description-line-height);
+  height: var(--punks-sidebar-action-description-line-height);
+  line-height: var(--punks-sidebar-action-description-line-height);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-@keyframes buzz-sidebar-action-description-roll-up {
+@keyframes punks-sidebar-action-description-roll-up {
   from {
     transform: translateY(0);
   }
 
   to {
     transform: translateY(
-      calc(-1 * var(--buzz-sidebar-action-description-line-height))
+      calc(-1 * var(--punks-sidebar-action-description-line-height))
     );
   }
 }
 
-.buzz-animated-count__slot {
+.punks-animated-count__slot {
   display: inline-block;
   height: 1em;
   line-height: 1;
 }
 
-.buzz-animated-count__slot--digit {
+.punks-animated-count__slot--digit {
   overflow: hidden;
   text-align: center;
   width: 1ch;
 }
 
-.buzz-animated-count__reel {
+.punks-animated-count__reel {
   display: flex;
   flex-direction: column;
   height: 2em;
@@ -567,38 +567,38 @@
   will-change: transform;
 }
 
-.buzz-animated-count__reel > span {
+.punks-animated-count__reel > span {
   display: block;
   height: 1em;
   line-height: 1;
 }
 
-.buzz-animated-count__slot[data-direction="up"] .buzz-animated-count__reel {
-  animation: buzz-animated-count-roll-up 260ms cubic-bezier(0.2, 0.8, 0.2, 1)
+.punks-animated-count__slot[data-direction="up"] .punks-animated-count__reel {
+  animation: punks-animated-count-roll-up 260ms cubic-bezier(0.2, 0.8, 0.2, 1)
     both;
 }
 
-.buzz-animated-count__slot[data-direction="down"] .buzz-animated-count__reel {
-  animation: buzz-animated-count-roll-down 260ms cubic-bezier(0.2, 0.8, 0.2, 1)
+.punks-animated-count__slot[data-direction="down"] .punks-animated-count__reel {
+  animation: punks-animated-count-roll-down 260ms cubic-bezier(0.2, 0.8, 0.2, 1)
     both;
 }
 
-.buzz-animated-count__symbol {
+.punks-animated-count__symbol {
   display: inline-block;
   line-height: 1;
 }
 
-.buzz-animated-count__symbol[data-direction="up"] {
-  animation: buzz-animated-count-symbol-up 220ms cubic-bezier(0.2, 0.8, 0.2, 1)
+.punks-animated-count__symbol[data-direction="up"] {
+  animation: punks-animated-count-symbol-up 220ms cubic-bezier(0.2, 0.8, 0.2, 1)
     both;
 }
 
-.buzz-animated-count__symbol[data-direction="down"] {
-  animation: buzz-animated-count-symbol-down 220ms
+.punks-animated-count__symbol[data-direction="down"] {
+  animation: punks-animated-count-symbol-down 220ms
     cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
-@keyframes buzz-animated-count-roll-up {
+@keyframes punks-animated-count-roll-up {
   from {
     transform: translateY(0);
   }
@@ -608,7 +608,7 @@
   }
 }
 
-@keyframes buzz-animated-count-roll-down {
+@keyframes punks-animated-count-roll-down {
   from {
     transform: translateY(-1em);
   }
@@ -618,7 +618,7 @@
   }
 }
 
-@keyframes buzz-animated-count-symbol-up {
+@keyframes punks-animated-count-symbol-up {
   from {
     opacity: 0;
     transform: translateY(0.25em);
@@ -630,7 +630,7 @@
   }
 }
 
-@keyframes buzz-animated-count-symbol-down {
+@keyframes punks-animated-count-symbol-down {
   from {
     opacity: 0;
     transform: translateY(-0.25em);
@@ -643,11 +643,11 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .buzz-animated-count__motion {
+  .punks-animated-count__motion {
     display: none;
   }
 
-  .buzz-animated-count__static {
+  .punks-animated-count__static {
     display: inline;
   }
 }
@@ -656,76 +656,76 @@
 
 /* ── Setup / cold-boot loading screen ───────────────────────────────────
    Theme-adaptive grainient background for the "setting up your community"
-   gate. Restored from pre-#1570; the animated Buzz mark is the hero (see
+   gate. Restored from pre-#1570; the animated Punks mark is the hero (see
    AppLoadingGate in app/App.tsx). */
 
-@property --buzz-grainient-x-0 {
+@property --punks-grainient-x-0 {
   syntax: "<percentage>";
   inherits: false;
   initial-value: 85%;
 }
 
-@property --buzz-grainient-y-0 {
+@property --punks-grainient-y-0 {
   syntax: "<percentage>";
   inherits: false;
   initial-value: 80%;
 }
 
-@property --buzz-grainient-x-1 {
+@property --punks-grainient-x-1 {
   syntax: "<percentage>";
   inherits: false;
   initial-value: 60%;
 }
 
-@property --buzz-grainient-y-1 {
+@property --punks-grainient-y-1 {
   syntax: "<percentage>";
   inherits: false;
   initial-value: 24%;
 }
 
-@property --buzz-grainient-x-2 {
+@property --punks-grainient-x-2 {
   syntax: "<percentage>";
   inherits: false;
   initial-value: 13%;
 }
 
-@property --buzz-grainient-y-2 {
+@property --punks-grainient-y-2 {
   syntax: "<percentage>";
   inherits: false;
   initial-value: 82%;
 }
 
-@property --buzz-grainient-x-3 {
+@property --punks-grainient-x-3 {
   syntax: "<percentage>";
   inherits: false;
   initial-value: 24%;
 }
 
-@property --buzz-grainient-y-3 {
+@property --punks-grainient-y-3 {
   syntax: "<percentage>";
   inherits: false;
   initial-value: 7%;
 }
 
-.buzz-setup-loading-shell {
-  --buzz-grainient-alpha-strong: 0.46;
-  --buzz-grainient-alpha-medium: 0.34;
-  --buzz-grainient-alpha-soft: 0.24;
-  --buzz-grainient-color-0: hsl(
+.punks-setup-loading-shell {
+  --punks-grainient-alpha-strong: 0.46;
+  --punks-grainient-alpha-medium: 0.34;
+  --punks-grainient-alpha-soft: 0.24;
+  --punks-grainient-color-0: hsl(
     var(--chart-5) /
-    var(--buzz-grainient-alpha-strong)
+    var(--punks-grainient-alpha-strong)
   );
-  --buzz-grainient-color-1: hsl(
+  --punks-grainient-color-1: hsl(
     var(--chart-3) /
-    var(--buzz-grainient-alpha-strong)
+    var(--punks-grainient-alpha-strong)
   );
-  --buzz-grainient-color-2: hsl(
+  --punks-grainient-color-2: hsl(
     var(--primary) /
-    var(--buzz-grainient-alpha-medium)
+    var(--punks-grainient-alpha-medium)
   );
-  --buzz-grainient-color-3: hsl(
+  --punks-grainient-color-3: hsl(
     var(--chart-2) /
-    var(--buzz-grainient-alpha-strong)
+    var(--punks-grainient-alpha-strong)
   );
   background-color: hsl(var(--background));
   color: hsl(var(--foreground));
@@ -733,13 +733,13 @@
   position: relative;
 }
 
-.dark .buzz-setup-loading-shell {
-  --buzz-grainient-alpha-strong: 0.68;
-  --buzz-grainient-alpha-medium: 0.5;
-  --buzz-grainient-alpha-soft: 0.34;
+.dark .punks-setup-loading-shell {
+  --punks-grainient-alpha-strong: 0.68;
+  --punks-grainient-alpha-medium: 0.5;
+  --punks-grainient-alpha-soft: 0.34;
 }
 
-.buzz-setup-grainient {
+.punks-setup-grainient {
   inset: 0;
   overflow: hidden;
   pointer-events: none;
@@ -747,51 +747,51 @@
   z-index: 0;
 }
 
-.buzz-setup-grainient__wash,
-.buzz-setup-grainient__veil {
+.punks-setup-grainient__wash,
+.punks-setup-grainient__veil {
   inset: 0;
   position: absolute;
 }
 
-.buzz-setup-grainient__wash {
-  --buzz-grainient-s-start-0: 9%;
-  --buzz-grainient-s-end-0: 55%;
-  --buzz-grainient-s-start-1: 5%;
-  --buzz-grainient-s-end-1: 72%;
-  --buzz-grainient-s-start-2: 5%;
-  --buzz-grainient-s-end-2: 52%;
-  --buzz-grainient-s-start-3: 13%;
-  --buzz-grainient-s-end-3: 68%;
-  --buzz-grainient-x-0: 85%;
-  --buzz-grainient-y-0: 80%;
-  --buzz-grainient-x-1: 60%;
-  --buzz-grainient-y-1: 24%;
-  --buzz-grainient-x-2: 13%;
-  --buzz-grainient-y-2: 82%;
-  --buzz-grainient-x-3: 24%;
-  --buzz-grainient-y-3: 7%;
-  animation: buzz-grainient-orbit 10s linear infinite alternate;
+.punks-setup-grainient__wash {
+  --punks-grainient-s-start-0: 9%;
+  --punks-grainient-s-end-0: 55%;
+  --punks-grainient-s-start-1: 5%;
+  --punks-grainient-s-end-1: 72%;
+  --punks-grainient-s-start-2: 5%;
+  --punks-grainient-s-end-2: 52%;
+  --punks-grainient-s-start-3: 13%;
+  --punks-grainient-s-end-3: 68%;
+  --punks-grainient-x-0: 85%;
+  --punks-grainient-y-0: 80%;
+  --punks-grainient-x-1: 60%;
+  --punks-grainient-y-1: 24%;
+  --punks-grainient-x-2: 13%;
+  --punks-grainient-y-2: 82%;
+  --punks-grainient-x-3: 24%;
+  --punks-grainient-y-3: 7%;
+  animation: punks-grainient-orbit 10s linear infinite alternate;
   background-color: hsl(var(--background));
   background-image:
     radial-gradient(
-      circle at var(--buzz-grainient-x-0) var(--buzz-grainient-y-0),
-      var(--buzz-grainient-color-0) var(--buzz-grainient-s-start-0),
-      transparent var(--buzz-grainient-s-end-0)
+      circle at var(--punks-grainient-x-0) var(--punks-grainient-y-0),
+      var(--punks-grainient-color-0) var(--punks-grainient-s-start-0),
+      transparent var(--punks-grainient-s-end-0)
     ),
     radial-gradient(
-      circle at var(--buzz-grainient-x-1) var(--buzz-grainient-y-1),
-      var(--buzz-grainient-color-1) var(--buzz-grainient-s-start-1),
-      transparent var(--buzz-grainient-s-end-1)
+      circle at var(--punks-grainient-x-1) var(--punks-grainient-y-1),
+      var(--punks-grainient-color-1) var(--punks-grainient-s-start-1),
+      transparent var(--punks-grainient-s-end-1)
     ),
     radial-gradient(
-      circle at var(--buzz-grainient-x-2) var(--buzz-grainient-y-2),
-      var(--buzz-grainient-color-2) var(--buzz-grainient-s-start-2),
-      transparent var(--buzz-grainient-s-end-2)
+      circle at var(--punks-grainient-x-2) var(--punks-grainient-y-2),
+      var(--punks-grainient-color-2) var(--punks-grainient-s-start-2),
+      transparent var(--punks-grainient-s-end-2)
     ),
     radial-gradient(
-      circle at var(--buzz-grainient-x-3) var(--buzz-grainient-y-3),
-      var(--buzz-grainient-color-3) var(--buzz-grainient-s-start-3),
-      transparent var(--buzz-grainient-s-end-3)
+      circle at var(--punks-grainient-x-3) var(--punks-grainient-y-3),
+      var(--punks-grainient-color-3) var(--punks-grainient-s-start-3),
+      transparent var(--punks-grainient-s-end-3)
     );
   background-blend-mode: normal, normal, normal, normal;
   contain: paint;
@@ -800,7 +800,7 @@
   will-change: transform, opacity;
 }
 
-.buzz-setup-grainient__veil {
+.punks-setup-grainient__veil {
   background:
     radial-gradient(
       ellipse 74% 54% at 50% 52%,
@@ -815,37 +815,37 @@
     );
 }
 
-@keyframes buzz-grainient-orbit {
+@keyframes punks-grainient-orbit {
   0% {
-    --buzz-grainient-x-0: 85%;
-    --buzz-grainient-y-0: 80%;
-    --buzz-grainient-x-1: 60%;
-    --buzz-grainient-y-1: 24%;
-    --buzz-grainient-x-2: 13%;
-    --buzz-grainient-y-2: 82%;
-    --buzz-grainient-x-3: 24%;
-    --buzz-grainient-y-3: 7%;
+    --punks-grainient-x-0: 85%;
+    --punks-grainient-y-0: 80%;
+    --punks-grainient-x-1: 60%;
+    --punks-grainient-y-1: 24%;
+    --punks-grainient-x-2: 13%;
+    --punks-grainient-y-2: 82%;
+    --punks-grainient-x-3: 24%;
+    --punks-grainient-y-3: 7%;
   }
 
   100% {
-    --buzz-grainient-x-0: 31%;
-    --buzz-grainient-y-0: 94%;
-    --buzz-grainient-x-1: 2%;
-    --buzz-grainient-y-1: 25%;
-    --buzz-grainient-x-2: 98%;
-    --buzz-grainient-y-2: 20%;
-    --buzz-grainient-x-3: 95%;
-    --buzz-grainient-y-3: 92%;
+    --punks-grainient-x-0: 31%;
+    --punks-grainient-y-0: 94%;
+    --punks-grainient-x-1: 2%;
+    --punks-grainient-y-1: 25%;
+    --punks-grainient-x-2: 98%;
+    --punks-grainient-y-2: 20%;
+    --punks-grainient-x-3: 95%;
+    --punks-grainient-y-3: 92%;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .buzz-setup-grainient__wash {
+  .punks-setup-grainient__wash {
     animation: none;
   }
 }
 
-/* Buzz bee wing-flap (ported from the Buzz website's BeeField, tuned for a
+/* Punks bee wing-flap (ported from the Punks website's BeeField, tuned for a
    single hero bee). The two wing lobes beat continuously — a fast in/out scale
    so the bee reads as actively flapping on the loading gate rather than resting
    most of the cycle (the website staggers many bees, so it could afford long

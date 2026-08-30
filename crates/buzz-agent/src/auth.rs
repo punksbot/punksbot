@@ -93,7 +93,7 @@ impl TokenSource for StaticTokenSource {
 ///
 /// The `discovery_url` must return a JSON document with at least
 /// `authorization_endpoint` and `token_endpoint` (RFC 8414). The
-/// `cache_namespace` is the directory under `~/.config/buzz-agent/oauth/`
+/// `cache_namespace` is the directory under `~/.config/punks-agent/oauth/`
 /// the token JSON lives in — separates providers' caches cleanly.
 #[derive(Debug, Clone)]
 pub struct PkceOAuthConfig {
@@ -102,7 +102,7 @@ pub struct PkceOAuthConfig {
     pub scopes: Vec<String>,
     pub cache_namespace: String,
     /// When `Some`, the engine writes tokens here instead of
-    /// `~/.config/buzz-agent/oauth/<cache_namespace>/`. Production code
+    /// `~/.config/punks-agent/oauth/<cache_namespace>/`. Production code
     /// leaves this `None`. Integration tests use it to avoid stomping on
     /// a shared `$HOME` when running in parallel.
     pub cache_dir_override: Option<PathBuf>,
@@ -416,7 +416,7 @@ impl PkceOAuthTokenSource {
 
         // No usable token — return error instead of opening a browser.
         Err(AgentError::LlmAuth(
-            "no cached Databricks token; run `buzz-agent auth databricks` first".into(),
+            "no cached Databricks token; run `punks-agent auth databricks` first".into(),
         ))
     }
 }
@@ -458,7 +458,7 @@ fn cache_path_for(cfg: &PkceOAuthConfig) -> Result<PathBuf, AgentError> {
         None => dirs::home_dir()
             .ok_or_else(|| AgentError::Llm("oauth cache: home directory not found".into()))?
             .join(".config")
-            .join("buzz-agent")
+            .join("punks-agent")
             .join("oauth")
             .join(&cfg.cache_namespace),
     };
@@ -468,7 +468,7 @@ fn cache_path_for(cfg: &PkceOAuthConfig) -> Result<PathBuf, AgentError> {
 /// Load a cached token, enforcing the owner-only invariant on load.
 ///
 /// Owner-only permissions are a cache *lifecycle* invariant, not just a
-/// write-path property: a world-readable cache left by an older buzz-agent
+/// write-path property: a world-readable cache left by an older punks-agent
 /// (or any tampering) must be tightened the moment we touch it, before the
 /// tokens are used — otherwise a file that never expires stays exposed until
 /// some future refresh happens to rewrite it. Every load path (initial and
@@ -693,8 +693,8 @@ fn callback_outcome(
             .unwrap_or_else(|| "missing code".into())),
     };
     let page = match result {
-        Ok(_) => "<h2>Buzz: signed in</h2><p>You can close this window.</p>",
-        Err(_) => "<h2>Buzz auth failed</h2><p>You can close this window and try again.</p>",
+        Ok(_) => "<h2>Punks: signed in</h2><p>You can close this window.</p>",
+        Err(_) => "<h2>Punks auth failed</h2><p>You can close this window and try again.</p>",
     }
     .to_string();
     (result, page)
@@ -874,7 +874,7 @@ mod tests {
         let expected_dir = dirs::home_dir()
             .unwrap()
             .join(".config")
-            .join("buzz-agent")
+            .join("punks-agent")
             .join("oauth")
             .join("demo");
         assert_eq!(p.parent(), Some(expected_dir.as_path()));
@@ -1191,7 +1191,7 @@ mod tests {
         };
         let source = PkceOAuthTokenSource::new(cfg).unwrap();
 
-        // Simulate a world-readable cache written by an older buzz-agent.
+        // Simulate a world-readable cache written by an older punks-agent.
         fs::create_dir_all(source.cache_path.parent().unwrap()).unwrap();
         fs::write(&source.cache_path, b"{\"access_token\":\"old\"}").unwrap();
         fs::set_permissions(&source.cache_path, fs::Permissions::from_mode(0o644)).unwrap();
@@ -1274,7 +1274,7 @@ mod tests {
     async fn test_bearer_cache_hit_tightens_preexisting_loose_mode_file() {
         use std::os::unix::fs::{MetadataExt, PermissionsExt};
 
-        // A world-readable cache left by an older buzz-agent must be tightened
+        // A world-readable cache left by an older punks-agent must be tightened
         // the moment we load it — on the plain cache-hit path, with no refresh
         // or save. Otherwise the pre-bug population stays exposed indefinitely.
         let dir = tempfile::tempdir().unwrap();

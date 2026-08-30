@@ -34,7 +34,6 @@ import { ProjectBrowserDialog } from "@/features/projects/ui/ProjectBrowserDialo
 import { useCreateProjectMutation } from "@/features/projects/useCreateProject";
 import { useIdentityQuery } from "@/shared/api/hooks";
 import { FeatureGate } from "@/shared/features";
-import { CapabilityGate } from "@/shared/capabilities";
 import { copyTextToClipboard } from "@/shared/lib/clipboard";
 import { cn } from "@/shared/lib/cn";
 import { getCachedRelayOrigin } from "@/shared/lib/mediaUrl";
@@ -115,11 +114,9 @@ const SECTION_LABEL_CHEVRON_ICON_CLASS =
  */
 export function SidebarProjectsSection() {
   return (
-    <CapabilityGate capability="repositories">
-      <FeatureGate feature="projects">
-        <SidebarProjectsSectionContent />
-      </FeatureGate>
-    </CapabilityGate>
+    <FeatureGate feature="projects">
+      <SidebarProjectsSectionContent />
+    </FeatureGate>
   );
 }
 

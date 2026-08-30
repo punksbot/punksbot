@@ -150,6 +150,13 @@ const STAGING_RUNTIME_PROBES = [
   ["punks-bot-runtime-staging", "BOT_RUNTIME_IDENTITY"],
 ] as const;
 const DESKTOP_CAPABILITIES = DESKTOP_SOCIAL_LOOP_CAPABILITIES;
+const LOCAL_RICH_DESKTOP_CAPABILITIES = [
+  ...DESKTOP_SOCIAL_LOOP_CAPABILITIES,
+  "message-lifecycle",
+  "identity-governance",
+  "presence",
+  "search",
+] as const;
 const PUNK_SEARCH_CANDIDATE_SCAN_LIMIT = 101;
 
 function accountMergeFailureResponse(
@@ -442,7 +449,13 @@ async function desktopCompatibility(
           ? "production"
           : "local",
     origin: new URL(request.url).origin,
-    capabilities: compatible ? [...DESKTOP_CAPABILITIES] : [],
+    capabilities: compatible
+      ? [
+          ...(environment === "local"
+            ? LOCAL_RICH_DESKTOP_CAPABILITIES
+            : DESKTOP_CAPABILITIES),
+        ]
+      : [],
   };
   if (
     !backendContractAccepted(

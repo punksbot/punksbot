@@ -25,7 +25,7 @@ const AUTH_COMPLETE_HTML: &str = r#"<!doctype html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Buzz authentication complete</title>
+  <title>Punks authentication complete</title>
   <style>
     :root {
       color-scheme: light;
@@ -117,7 +117,7 @@ const AUTH_COMPLETE_HTML: &str = r#"<!doctype html>
 </head>
 <body>
   <main>
-    <svg class="bee" viewBox="0 0 466 309" role="img" aria-label="Buzz">
+    <svg class="bee" viewBox="0 0 466 309" role="img" aria-label="Punks">
       <defs>
         <mask id="bee-mask">
           <rect width="466" height="309" fill="black"/>
@@ -134,7 +134,7 @@ const AUTH_COMPLETE_HTML: &str = r#"<!doctype html>
     </svg>
     <div class="eyebrow">Authentication complete</div>
     <h1>You&rsquo;re signed in.</h1>
-    <p>You can close this window and return to Buzz.</p>
+    <p>You can close this window and return to Punks.</p>
   </main>
 </body>
 </html>"#;
@@ -219,7 +219,7 @@ fn login_url(return_to: &str) -> Result<Url, String> {
     login_url
         .query_pairs_mut()
         .append_pair("type", "cli")
-        .append_pair("product", "buzz")
+        .append_pair("product", "punks")
         .append_pair("returnTo", return_to);
     Ok(login_url)
 }
@@ -645,14 +645,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn auth_complete_page_uses_buzz_brand() {
+    fn auth_complete_page_uses_punks_brand() {
         for expected in [
-            "<title>Buzz authentication complete</title>",
+            "<title>Punks authentication complete</title>",
             "#d7d72e",
             "#231e1e",
             "#d7e7f6",
-            "aria-label=\"Buzz\"",
-            "return to Buzz",
+            "aria-label=\"Punks\"",
+            "return to Punks",
         ] {
             assert!(
                 AUTH_COMPLETE_HTML.contains(expected),
@@ -677,7 +677,7 @@ mod tests {
         let query: HashMap<_, _> = login.query_pairs().into_owned().collect();
 
         assert_eq!(query.get("type").map(String::as_str), Some("cli"));
-        assert_eq!(query.get("product").map(String::as_str), Some("buzz"));
+        assert_eq!(query.get("product").map(String::as_str), Some("punks"));
         assert_eq!(
             query.get("returnTo").map(String::as_str),
             Some("http://127.0.0.1:1234/callback/nonce")

@@ -3,8 +3,6 @@ import { emit } from "@tauri-apps/api/event";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import {
-  lazy,
-  Suspense,
   type ReactNode,
   useCallback,
   useEffect,
@@ -21,9 +19,9 @@ import {
 } from "@/app/communityViewTransition";
 import { deriveShellRoute } from "@/app/AppShell.helpers";
 import { ThemeGrainientBackground } from "@/app/ThemeGrainientBackground";
-import { useCapabilityAvailability } from "@/shared/capabilities";
 import { CommunityThemeController } from "@/shared/theme/CommunityThemeController";
 import { useReloadShortcut } from "@/app/useReloadShortcut";
+import { useCloseWindowShortcut } from "@/app/useCloseWindowShortcut";
 import { KnownAgentPubkeysProvider } from "@/features/agents/useKnownAgentPubkeys";
 import { huddleWindowChannelId } from "@/features/huddle/lib/huddleWindow";
 import { useAppOnboardingState } from "@/features/onboarding/hooks";
@@ -64,7 +62,8 @@ import { CommunityApplyErrorScreen } from "@/features/communities/ui/CommunityAp
 import { CommunityChangeOverlay } from "@/features/communities/ui/CommunityChangeOverlay";
 import { setAvatarProfileSyncQueryClient } from "@/features/profile/avatarProfileSync";
 import { EncryptedBackupProvider } from "@/features/settings/EncryptedBackupProvider";
-import { createBuzzQueryClient } from "@/shared/api/queryClient";
+import { createPunksQueryClient } from "@/shared/api/queryClient";
+import { hydrateChannelHeads } from "@/features/messages/lib/channelHeadCache";
 import { useIdentityQuery } from "@/shared/api/hooks";
 import { isSharedIdentity as isSharedIdentityCmd } from "@/shared/api/tauri";
 import { getProfile } from "@/shared/api/tauriProfiles";
@@ -73,14 +72,12 @@ import {
   listenForDeepLinks,
 } from "@/shared/deep-link";
 import { cn } from "@/shared/lib/cn";
-import { BuzzMark } from "@/shared/ui/buzz-logo/BuzzMark";
-import { FlappingBee } from "@/shared/ui/buzz-logo/FlappingBee";
-import { FuzzyLogo } from "@/shared/ui/buzz-logo/FuzzyLogo";
+import { PunksMark } from "@/shared/ui/punks-logo/PunksMark";
+import { FlappingBee } from "@/shared/ui/punks-logo/FlappingBee";
+import { FuzzyLogo } from "@/shared/ui/punks-logo/FuzzyLogo";
 import { StartupWindowDragRegion } from "@/shared/ui/StartupWindowDragRegion";
 
 const LOADING_TEXT = "Setting up your community...";
-
-const PunksApp = lazy(() => import("@/features/punks/PunksApp"));
 
 // Minimum time the cold-boot splash stays on screen. A real boot resolves the
 // community in well under 100ms, and the native window setup plus first paint
@@ -104,13 +101,16 @@ function useInitialRenderReady() {
 }
 
 // E2E runs skip the hold (it would slow every spec's boot and block pointer
-// actionability); a spec can opt back in via __BUZZ_E2E__.bootSplashHoldMs.
+// actionability); a spec can opt back in via __PUNKS_E2E__.bootSplashHoldMs.
 function bootSplashHoldMs(): number {
-  const e2e = (
-    window as Window & {
-      __BUZZ_E2E__?: { bootSplashHoldMs?: number };
-    }
-  ).__BUZZ_E2E__;
+  const e2e =
+    import.meta.env.MODE === "e2e"
+      ? (
+          window as Window & {
+            __PUNKS_E2E__?: { bootSplashHoldMs?: number };
+          }
+        ).__PUNKS_E2E__
+      : undefined;
   if (e2e) {
     return e2e.bootSplashHoldMs ?? 0;
   }
@@ -141,7 +141,7 @@ function useBootSplashHold(): BootSplashPhase {
   return phase;
 }
 
-// Animated Buzz mark for the loading gates. The static BuzzMark renders in
+// Animated Punks mark for the loading gates. The static PunksMark renders in
 // normal flow and sizes the box — it's plain SVG (no JS/SMIL), so it paints on
 // the very first frame even before scripting starts, avoiding a blank flash on
 // hard reload. The animated FuzzyLogo is layered on top and takes over once it
@@ -157,7 +157,7 @@ function BeeLoader({
 }) {
   return (
     <div className={cn("relative", tintClassName, className)}>
-      <BuzzMark className="block h-auto w-full" />
+      <PunksMark className="block h-auto w-full" />
       <FuzzyLogo
         ariaLabel={ariaLabel}
         className="absolute inset-0 h-full! w-full! [&>svg]:h-full [&>svg]:w-full [&>svg]:max-w-full"
@@ -170,13 +170,13 @@ function BeeLoader({
 }
 
 // Cold boot gate: the theme-adaptive grainient background with a single
-// centered Buzz bee flying over it — the same static mark as before, now with
-// its wings flapping (ported from the Buzz website's wing-flap). Replaces the
+// centered Punks bee flying over it — the same static mark as before, now with
+// its wings flapping (ported from the Punks website's wing-flap). Replaces the
 // old "Setting up your community" text, which stays as an sr-only caption.
 function AppLoadingGate() {
   return (
     <div
-      className="buzz-setup-loading-shell flex min-h-dvh flex-col items-center justify-center overflow-hidden px-6 py-10"
+      className="punks-setup-loading-shell flex min-h-dvh flex-col items-center justify-center overflow-hidden px-6 py-10"
       data-testid="app-loading-gate"
       role="status"
     >
@@ -217,24 +217,47 @@ function CommunitySwitchGate() {
   );
 }
 
-function CommunityQueryProvider({ children }: { children: ReactNode }) {
-  const [queryClient] = useState(createBuzzQueryClient);
+function CommunityQueryProvider({
+  children,
+  pubkey,
+  relayUrl,
+}: {
+  children: ReactNode;
+  pubkey: string | null;
+  relayUrl: string | null;
+}) {
+  // Seeding persisted channel heads is part of constructing the client, not a
+  // gate in front of the app: the splash, AppReady, and relay preconnect mount
+  // immediately, and only the channel query waits on the cache load (see
+  // channelHeadHydration). It must start here rather than in an effect —
+  // React Query fires a child's queryFn when it subscribes, before any parent
+  // effect runs — and StrictMode's dev-only double initializer just issues one
+  // redundant read on a discarded client. The provider is keyed on the
+  // community, so one client maps to one {pubkey, relayUrl} scope.
+  const [queryClient] = useState(() => {
+    const client = createPunksQueryClient();
+    if (pubkey && relayUrl) {
+      void hydrateChannelHeads(client, { pubkey, relayUrl });
+    }
+    return client;
+  });
 
   useEffect(() => setAvatarProfileSyncQueryClient(queryClient), [queryClient]);
 
   useEffect(() => {
+    if (import.meta.env.MODE !== "e2e") return;
     const e2eWindow = window as Window & {
-      __BUZZ_E2E__?: unknown;
-      __BUZZ_E2E_QUERY_CLIENT__?: typeof queryClient;
+      __PUNKS_E2E__?: unknown;
+      __PUNKS_E2E_QUERY_CLIENT__?: typeof queryClient;
     };
-    if (!e2eWindow.__BUZZ_E2E__) {
+    if (!e2eWindow.__PUNKS_E2E__) {
       return;
     }
 
-    e2eWindow.__BUZZ_E2E_QUERY_CLIENT__ = queryClient;
+    e2eWindow.__PUNKS_E2E_QUERY_CLIENT__ = queryClient;
     return () => {
-      if (e2eWindow.__BUZZ_E2E_QUERY_CLIENT__ === queryClient) {
-        delete e2eWindow.__BUZZ_E2E_QUERY_CLIENT__;
+      if (e2eWindow.__PUNKS_E2E_QUERY_CLIENT__ === queryClient) {
+        delete e2eWindow.__PUNKS_E2E_QUERY_CLIENT__;
       }
     };
   }, [queryClient]);
@@ -326,22 +349,6 @@ function AppReady({
         <RouterProvider router={router} />
       </KnownAgentPubkeysProvider>
     </EncryptedBackupProvider>
-  );
-}
-
-function ClientIncompatibleScreen() {
-  return (
-    <div
-      className="flex h-screen w-screen items-center justify-center bg-app text-muted-foreground"
-      data-testid="client-incompatible-gate"
-    >
-      <div className="max-w-md px-6 text-center">
-        <h1 className="text-message font-semibold">Nothing here</h1>
-        <p className="mt-2 text-sm">
-          Nothing is available at this address in this version of the app.
-        </p>
-      </div>
-    </div>
   );
 }
 
@@ -621,7 +628,11 @@ function CommunityApp({
   }, [communityApplied]);
   if (appContent === null && (!transaction || isEnteringCurtain)) {
     appContent = communityApplied ? (
-      <CommunityQueryProvider key={communityKey}>
+      <CommunityQueryProvider
+        key={communityKey}
+        pubkey={community.identityPubkey}
+        relayUrl={activeCommunity?.relayUrl ?? null}
+      >
         <CommunityIdentityReplacementSentinel
           onIdentityReplaced={bumpSignerEpoch}
         />
@@ -749,14 +760,6 @@ function MachineBootstrap({ sharedIdentity }: { sharedIdentity: boolean }) {
     };
   }, [acceptsCommunityDeepLinks, communityOnboarding.start, openAddCommunity]);
 
-  const capabilityAvailability = useCapabilityAvailability();
-  if (
-    capabilityAvailability.distribution === "punks" &&
-    capabilityAvailability.resolved &&
-    capabilityAvailability.clientBlocked
-  ) {
-    return <ClientIncompatibleScreen />;
-  }
   if (machine.stage === "reset-failed") return <ResetFailedScreen />;
   if (machine.stage === "keyring-locked") return <KeyringLockedScreen />;
   if (machine.stage === "relaunch-required") return <RelaunchRequiredScreen />;
@@ -796,64 +799,27 @@ function MachineBootstrap({ sharedIdentity }: { sharedIdentity: boolean }) {
   );
 }
 
-function DistributionBootstrap({
-  queryClient,
-  sharedIdentity,
-}: {
-  queryClient: ReturnType<typeof createBuzzQueryClient>;
-  sharedIdentity: boolean;
-}) {
-  const capabilityAvailability = useCapabilityAvailability();
-  if (capabilityAvailability.distribution === "punks") {
-    if (!capabilityAvailability.resolved) return <AppLoadingGate />;
-    if (
-      capabilityAvailability.clientBlocked ||
-      !capabilityAvailability.available.has("home")
-    ) {
-      return <ClientIncompatibleScreen />;
-    }
-    return (
-      <Suspense fallback={<AppLoadingGate />}>
-        <PunksApp />
-      </Suspense>
-    );
-  }
-
-  return (
-    <QueryClientProvider client={queryClient}>
-      <MachineBootstrap sharedIdentity={sharedIdentity} />
-    </QueryClientProvider>
-  );
-}
-
 export function App() {
   useReloadShortcut();
+  useCloseWindowShortcut();
   useInitialRenderReady();
-  const availability = useCapabilityAvailability();
-  const [sharedIdentity, setSharedIdentity] = useState<boolean | null>(() =>
-    availability.distribution === "punks" ? false : null,
-  );
-  const [queryClient] = useState(createBuzzQueryClient);
+  const [sharedIdentity, setSharedIdentity] = useState<boolean | null>(null);
+  const [queryClient] = useState(createPunksQueryClient);
 
   useEffect(() => {
-    if (availability.distribution === "punks") {
-      setSharedIdentity(false);
-      return;
-    }
     isSharedIdentityCmd()
       .then(setSharedIdentity)
       .catch((err) => {
         console.warn("is_shared_identity command failed:", err);
         setSharedIdentity(false);
       });
-  }, [availability.distribution]);
+  }, []);
 
   if (sharedIdentity === null) return <AppLoadingGate />;
 
   return (
-    <DistributionBootstrap
-      queryClient={queryClient}
-      sharedIdentity={sharedIdentity}
-    />
+    <QueryClientProvider client={queryClient}>
+      <MachineBootstrap sharedIdentity={sharedIdentity} />
+    </QueryClientProvider>
   );
 }

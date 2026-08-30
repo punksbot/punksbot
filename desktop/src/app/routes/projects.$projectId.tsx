@@ -1,7 +1,7 @@
 import * as React from "react";
 import { createFileRoute, useLocation } from "@tanstack/react-router";
 
-import { RouteCapabilityBoundary } from "@/shared/capabilities";
+import { usePreviewFeatureWarning } from "@/shared/features";
 import { isEntityLinkTab } from "@/shared/lib/entityLink";
 import { ViewLoadingFallback } from "@/shared/ui/ViewLoadingFallback";
 
@@ -27,6 +27,7 @@ export const Route = createFileRoute("/projects/$projectId")({
 });
 
 function ProjectDetailRouteComponent() {
+  usePreviewFeatureWarning("projects");
   const { projectId } = Route.useParams();
   const { commitHash, pullRequestId, issueId, repositoryId, tab } =
     Route.useSearch();
@@ -40,18 +41,16 @@ function ProjectDetailRouteComponent() {
   });
 
   return (
-    <RouteCapabilityBoundary capability="repositories">
-      <React.Suspense fallback={<ViewLoadingFallback kind="projects" />}>
-        <ProjectDetailScreen
-          commitHash={commitHash}
-          entityNavigationId={entityNavigationId}
-          issueId={issueId}
-          projectId={projectId}
-          pullRequestId={pullRequestId}
-          repositoryId={repositoryId}
-          tab={tab}
-        />
-      </React.Suspense>
-    </RouteCapabilityBoundary>
+    <React.Suspense fallback={<ViewLoadingFallback kind="projects" />}>
+      <ProjectDetailScreen
+        commitHash={commitHash}
+        entityNavigationId={entityNavigationId}
+        issueId={issueId}
+        projectId={projectId}
+        pullRequestId={pullRequestId}
+        repositoryId={repositoryId}
+        tab={tab}
+      />
+    </React.Suspense>
   );
 }

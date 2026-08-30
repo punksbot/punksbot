@@ -16,7 +16,7 @@ use crate::types::{
 
 /// Databricks OAuth client_id — the public Databricks-published CLI client.
 /// PKCE-only, no secret. Same identifier goose uses, so a user's browser
-/// consent for `databricks-cli` covers buzz-agent too.
+/// consent for `databricks-cli` covers punks-agent too.
 const DATABRICKS_CLIENT_ID: &str = "databricks-cli";
 const DATABRICKS_OAUTH_SCOPES: &[&str] = &["all-apis", "offline_access"];
 
@@ -226,6 +226,7 @@ impl Llm {
             tracing::info!(
                 model = effective_model,
                 provider = ?cfg.provider,
+                thinking_effort = ?cfg.thinking_effort,
                 duration_ms,
                 input_tokens = ?response.input_tokens,
                 cached_input_tokens = ?response.cached_input_tokens,
@@ -366,7 +367,7 @@ impl Llm {
     }
 
     /// OpenAI dispatch. The configured model is sent as given: callers that
-    /// route through a mesh (Buzz shared compute) resolve their own model name
+    /// route through a mesh (Punks shared compute) resolve their own model name
     /// before spawning the agent, so nothing here needs to know about meshes.
     async fn openai_request<F>(
         &self,
@@ -1719,13 +1720,13 @@ fn timeout_message(
         match phase {
             TimeoutPhase::Transport => format!(
                 "read timeout: no response bytes received within {per_request_timeout:?} \
-                 (consider raising BUZZ_AGENT_LLM_TIMEOUT_SECS)"
+                 (consider raising PUNKS_AGENT_LLM_TIMEOUT_SECS)"
             ),
             // Total-request timeout fired during body streaming: the response
             // started but did not complete within the window.
             TimeoutPhase::BodyRead => format!(
                 "request timed out: response did not complete within {per_request_timeout:?} \
-                 (consider raising BUZZ_AGENT_LLM_TIMEOUT_SECS)"
+                 (consider raising PUNKS_AGENT_LLM_TIMEOUT_SECS)"
             ),
         }
     }
@@ -2251,8 +2252,8 @@ async fn openrouter_post(
         let resp = match http
             .post(url)
             .header("content-type", "application/json")
-            .header("HTTP-Referer", "https://github.com/block/buzz")
-            .header("X-OpenRouter-Title", "Buzz")
+            .header("HTTP-Referer", "https://github.com/punksbot/punksbot")
+            .header("X-OpenRouter-Title", "Punks")
             .bearer_auth(bearer)
             .body(body_bytes.clone())
             .timeout(per_request_timeout)
@@ -2509,7 +2510,7 @@ fn apply_openrouter_mutations(
         }
 
         // A7: Anthropic cache_control injection for anthropic/* models. Gated on
-        // `prompt_caching` (`BUZZ_AGENT_PROMPT_CACHING`) for the same reason as
+        // `prompt_caching` (`PUNKS_AGENT_PROMPT_CACHING`) for the same reason as
         // the native Anthropic route: these are Anthropic-dialect breakpoints on
         // an Anthropic model, so the documented kill switch must reach them too.
         if prompt_caching && effective_model.starts_with("anthropic/") {
@@ -2608,6 +2609,8 @@ mod tests {
             max_context_tokens: 200_000,
             max_handoffs: 1,
             max_parallel_tools: 1,
+            max_pending_permissions: 32,
+            permission_timeout: Duration::from_secs(330),
             hook_timeout: Duration::from_secs(1),
             stop_max_rejections: 0,
             require_reply: false,
@@ -4935,7 +4938,7 @@ mod tests {
                 "connect timeout must not mention 'read timeout': {msg}"
             );
             assert!(
-                !msg.contains("BUZZ_AGENT_LLM_TIMEOUT_SECS"),
+                !msg.contains("PUNKS_AGENT_LLM_TIMEOUT_SECS"),
                 "connect timeout must not reference the read-timeout config knob: {msg}"
             );
         }
@@ -4956,7 +4959,7 @@ mod tests {
             "transport read-timeout must include the 240s configured value: {msg}"
         );
         assert!(
-            msg.contains("BUZZ_AGENT_LLM_TIMEOUT_SECS"),
+            msg.contains("PUNKS_AGENT_LLM_TIMEOUT_SECS"),
             "transport read-timeout must reference the config knob: {msg}"
         );
         assert!(
@@ -4988,7 +4991,7 @@ mod tests {
             "body-read timeout must include the 300s per-request value: {msg}"
         );
         assert!(
-            msg.contains("BUZZ_AGENT_LLM_TIMEOUT_SECS"),
+            msg.contains("PUNKS_AGENT_LLM_TIMEOUT_SECS"),
             "body-read timeout must reference the config knob: {msg}"
         );
         assert!(
@@ -5024,7 +5027,7 @@ mod tests {
     ///
     /// This is the one test that requires real network I/O (loopback only) to
     /// verify that reqwest actually sets is_timeout() for the scenario in which
-    /// Buzz agents stall (server connected but emitting no bytes).
+    /// Punks agents stall (server connected but emitting no bytes).
     #[tokio::test]
     async fn classify_transport_error_read_timeout_is_loopback_verified() {
         use tokio::net::TcpListener;
@@ -5066,7 +5069,7 @@ mod tests {
             "read timeout must include the configured 50ms value: {msg}"
         );
         assert!(
-            msg.contains("BUZZ_AGENT_LLM_TIMEOUT_SECS"),
+            msg.contains("PUNKS_AGENT_LLM_TIMEOUT_SECS"),
             "read timeout must name the config knob: {msg}"
         );
         assert!(
@@ -5192,7 +5195,7 @@ mod tests {
             "body-read timeout must include the per-request 100ms value: {msg}"
         );
         assert!(
-            msg.contains("BUZZ_AGENT_LLM_TIMEOUT_SECS"),
+            msg.contains("PUNKS_AGENT_LLM_TIMEOUT_SECS"),
             "body-read timeout must reference the config knob: {msg}"
         );
 
@@ -6110,7 +6113,7 @@ mod tests {
         );
     }
 
-    /// `BUZZ_AGENT_PROMPT_CACHING=0` must reach the OpenRouter `anthropic/*`
+    /// `PUNKS_AGENT_PROMPT_CACHING=0` must reach the OpenRouter `anthropic/*`
     /// route too, not just the native Anthropic Messages routes. The switch and
     /// this route landed in separate changes, so nothing but this test stops the
     /// gate from being dropped and the kill switch silently becoming a no-op on
@@ -6129,7 +6132,7 @@ mod tests {
         apply_openrouter_mutations(&mut body, None, "anthropic/claude-opus-4-7", false);
         assert!(
             !body.to_string().contains("cache_control"),
-            "BUZZ_AGENT_PROMPT_CACHING=0 must suppress every breakpoint: {body}"
+            "PUNKS_AGENT_PROMPT_CACHING=0 must suppress every breakpoint: {body}"
         );
         // The switch is scoped to caching — the routing-contract mutations that
         // make the request serveable at all must still be applied.
@@ -7670,11 +7673,11 @@ mod tests {
             .expect("one request captured")
             .to_lowercase();
         assert!(
-            header_str.contains("http-referer: https://github.com/block/buzz"),
+            header_str.contains("http-referer: https://github.com/punksbot/punksbot"),
             "got: {header_str}"
         );
         assert!(
-            header_str.contains("x-openrouter-title: buzz"),
+            header_str.contains("x-openrouter-title: punks"),
             "got: {header_str}"
         );
     }

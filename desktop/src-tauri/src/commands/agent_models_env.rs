@@ -45,7 +45,7 @@ pub(super) fn redaction_env_with_value(
 /// should see it. An inferred provider is only a guess read off the environment,
 /// and a wrong guess must not replace a working catalog with an error: a
 /// `GOOSE_PROVIDER=anthropic` export (goose's documented way to pick a provider,
-/// with the key in goose's own keyring rather than Buzz's env) would otherwise
+/// with the key in goose's own keyring rather than Punks's env) would otherwise
 /// turn the subprocess catalog into `config: ANTHROPIC_API_KEY required`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct DiscoveryProvider {
@@ -86,7 +86,7 @@ impl DiscoveryProvider {
 ///
 /// Without this fallback, every provider gate sees `None` for an agent whose
 /// record predates provider persistence, so no in-process discovery runs at all
-/// — even on an internal build that bakes `BUZZ_AGENT_PROVIDER=databricks_v2`
+/// — even on an internal build that bakes `PUNKS_AGENT_PROVIDER=databricks_v2`
 /// and a `DATABRICKS_HOST`. Discovery then degrades to the `buzz-acp models`
 /// subprocess, which on a Databricks failure path surfaces the small
 /// known-models fallback catalog instead of the live gateway list —

@@ -26,8 +26,8 @@ use super::{
     retention::{get_retained_event, open_retention_db, retain_event, RetainedEvent},
     ManagedAgentRecord,
 };
-use buzz_core_pkg::kind::KIND_MANAGED_AGENT;
 use nostr::JsonUtil;
+use punks_core_pkg::kind::KIND_MANAGED_AGENT;
 
 /// Reconcile `managed-agents.json` into kind:30177 events in the retention
 /// store. Boot-time entry point, called from `event_sync::run_event_sync`
@@ -45,11 +45,11 @@ pub(crate) fn reconcile_agents_to_events(
         Ok(0) => {}
         Ok(reconciled) => {
             eprintln!(
-                "buzz-desktop: agent-event-reconcile: {reconciled} agents reconciled to retention"
+                "punks-full-local: agent-event-reconcile: {reconciled} agents reconciled to retention"
             );
         }
         Err(e) => {
-            eprintln!("buzz-desktop: agent-event-reconcile: {e}");
+            eprintln!("punks-full-local: agent-event-reconcile: {e}");
         }
     }
 }

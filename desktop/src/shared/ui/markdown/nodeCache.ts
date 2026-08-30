@@ -16,7 +16,7 @@ import remarkCustomEmoji, {
 import remarkMentions from "@/shared/lib/remarkMentions";
 import remarkSpoilers from "@/shared/lib/remarkSpoilers";
 
-import { buzzDeepLinkUrlTransform } from "./utils";
+import { punksDeepLinkUrlTransform } from "./utils";
 
 /**
  * Parsed-markdown element cache.
@@ -94,7 +94,7 @@ function buildMarkdownElement(input: MarkdownParseInputs): React.ReactElement {
   if (input.leadingInlineContent) {
     rehypePlugins.push(rehypeLeadingInlineContent);
   }
-  if (input.searchQuery && input.searchQuery.trim().length >= 2) {
+  if (input.searchQuery && input.searchQuery.trim().length >= 1) {
     rehypePlugins.push([rehypeSearchHighlight, { query: input.searchQuery }]);
   }
   // Called as a plain function rather than rendered as <ReactMarkdown/>:
@@ -117,7 +117,7 @@ function buildMarkdownElement(input: MarkdownParseInputs): React.ReactElement {
       // biome-ignore lint/suspicious/noExplicitAny: PluggableList type not directly importable
     ] as any[],
     rehypePlugins,
-    urlTransform: buzzDeepLinkUrlTransform,
+    urlTransform: punksDeepLinkUrlTransform,
   });
 }
 
@@ -131,7 +131,7 @@ export function renderCachedMarkdown(
   // than churn the cache with per-query variants. Oversized content parses
   // fresh too — see MARKDOWN_NODE_CACHE_MAX_CONTENT_LENGTH.
   if (
-    (input.searchQuery && input.searchQuery.trim().length >= 2) ||
+    (input.searchQuery && input.searchQuery.trim().length >= 1) ||
     input.content.length > MARKDOWN_NODE_CACHE_MAX_CONTENT_LENGTH
   ) {
     return buildMarkdownElement(input);

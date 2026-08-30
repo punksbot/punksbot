@@ -128,7 +128,7 @@ fn build_initialize_params() -> serde_json::Value {
         "protocolVersion": 2,
         "clientCapabilities": build_client_capabilities(),
         "clientInfo": {
-            "name": "buzz-acp",
+            "name": "punks-acp",
             "version": env!("CARGO_PKG_VERSION")
         },
     })
@@ -177,7 +177,7 @@ pub struct AcpClient {
     /// Most recently observed `_meta.goose.activeRunId` from a
     /// `session/update` notification of kind `session_info_update`.
     ///
-    /// Both goose and buzz-agent emit `session_info_update` with this field;
+    /// Both goose and punks-agent emit `session_info_update` with this field;
     /// goose emits it whenever it starts or clears an active prompt run
     /// (`crates/goose/src/acp/server.rs:2277` `send_active_run_update`).
     /// Required as `expectedRunId` when calling the non-standard
@@ -185,7 +185,7 @@ pub struct AcpClient {
     /// in-flight turn without cancelling it.
     ///
     /// `None` until the first `session_info_update` arrives, or after the
-    /// run clears (goose/buzz-agent emit `activeRunId: null` at end of turn).
+    /// run clears (goose/punks-agent emit `activeRunId: null` at end of turn).
     /// Other agents may leave this unset — readers must treat `None` as
     /// "no active run to steer into" and fall back to cancel+merge.
     active_run_id: Option<String>,
@@ -208,7 +208,7 @@ pub struct AcpClient {
     /// outside of a goose-native turn — the read loop's steer arm is
     /// disabled in that case.
     steer_rx: Option<tokio::sync::mpsc::Receiver<crate::pool::SteerRequest>>,
-    /// Usage tracker for goose/buzz-agent's cumulative notification format.
+    /// Usage tracker for goose/punks-agent's cumulative notification format.
     goose_usage: UsageTracker,
     /// Per-turn prompt-response usage and Claude's optional cumulative cost.
     standard_usage: StandardUsageTracker,
@@ -243,7 +243,7 @@ fn deep_merge(
 
 /// Build the merged `CODEX_CONFIG` environment-variable value for a Codex agent spawn.
 ///
-/// Returns `Some(json_string)` when `has_generated_codex_config` is true (Buzz injected a
+/// Returns `Some(json_string)` when `has_generated_codex_config` is true (Punks injected a
 /// `CODEX_CONFIG` entry via `codex_network_env()`), `None` otherwise.
 ///
 /// # Merge contract (when `has_generated_codex_config` is true)
@@ -273,7 +273,7 @@ pub(crate) fn build_codex_config_env(
     parent_codex_config: Option<&str>,
     has_generated_codex_config: bool,
 ) -> Result<Option<String>, AcpError> {
-    // Without an explicit Buzz-generated overlay signal, skip the merge entirely.
+    // Without an explicit Punks-generated overlay signal, skip the merge entirely.
     // Any persona CODEX_CONFIG is handled by the caller with operator-wins semantics.
     if !has_generated_codex_config {
         return Ok(None);
@@ -360,7 +360,7 @@ pub(crate) fn build_codex_config_env(
 
 /// goose's non-standard mid-turn steer method. Requires `expectedRunId`, so it
 /// is only usable once a `session_info_update` has supplied
-/// `_meta.goose.activeRunId`. Emitted by goose and buzz-agent only.
+/// `_meta.goose.activeRunId`. Emitted by goose and punks-agent only.
 const GOOSE_STEER_METHOD: &str = "_goose/unstable/session/steer";
 
 /// The cross-adapter mid-turn steer method, shipped by claude-agent-acp
@@ -369,11 +369,11 @@ const GOOSE_STEER_METHOD: &str = "_goose/unstable/session/steer";
 /// `{outcome}`. Gated on [`AcpClient::steering_supported`].
 const ACP_STEER_METHOD: &str = "_session/steering";
 
-/// `outcome` value meaning the steer was applied to the turn Buzz is waiting
+/// `outcome` value meaning the steer was applied to the turn Punks is waiting
 /// on, which therefore keeps running.
 const STEER_OUTCOME_INJECTED: &str = "injected";
 
-/// `outcome` value meaning the turn Buzz was steering had already finished, so
+/// `outcome` value meaning the turn Punks was steering had already finished, so
 /// the adapter began a fresh turn carrying the message. Still a delivery
 /// success, but the awaited turn is over — see the steer-response arm for why
 /// this must not renew the hard deadline.
@@ -392,8 +392,8 @@ enum SteerTransport {
 
 fn build_client_capabilities() -> serde_json::Value {
     serde_json::json!({
-        // Signal to ACP adapters that Buzz can hand users to terminal-native
-        // auth flows. Adapters decide which auth methods to expose; Buzz does
+        // Signal to ACP adapters that Punks can hand users to terminal-native
+        // auth flows. Adapters decide which auth methods to expose; Punks does
         // not hardcode vendor login commands from this capability.
         "auth": {
             "terminal": true
@@ -469,7 +469,7 @@ impl AcpClient {
             // Callers MUST still call shutdown().await for guaranteed cleanup.
             .kill_on_drop(true);
 
-        // Per-persona env vars (e.g., GOOSE_PROVIDER, BUZZ_AGENT_PROVIDER).
+        // Per-persona env vars (e.g., GOOSE_PROVIDER, PUNKS_AGENT_PROVIDER).
         // For most keys, operator precedence wins: skip injection if already set
         // in the parent environment.
         //
@@ -637,7 +637,7 @@ impl AcpClient {
     ///
     /// - `None` — no system-prompt field in the request (legacy framing).
     /// - `Some(SystemPromptTransport::Field(text))` — bare `systemPrompt` field
-    ///   (ACP protocol v2, buzz-agent, goose unused).
+    ///   (ACP protocol v2, punks-agent, goose unused).
     /// - `Some(SystemPromptTransport::ClaudeMeta(text))` — `_meta.systemPrompt`
     ///   as `{"append": text}`, keeping claude-agent-acp's native preset intact.
     ///
@@ -713,7 +713,7 @@ impl AcpClient {
             serde_json::json!({
                 "sessionId": session_id,
                 "mode": "set",
-                "key": "buzz",
+                "key": "punks",
                 "text": text,
             }),
         )
@@ -773,7 +773,7 @@ impl AcpClient {
     ///
     /// Used for slash-command pass-through: ACP connectors detect commands via
     /// the **first** block's text starting with `/`, so the harness sends
-    /// `["/cmd args", "<buzz context>"]` instead of one wrapped block.
+    /// `["/cmd args", "<punks context>"]` instead of one wrapped block.
     pub async fn session_prompt_blocks_with_idle_timeout(
         &mut self,
         session_id: &str,
@@ -861,7 +861,7 @@ impl AcpClient {
     /// Most recently observed goose `_meta.goose.activeRunId` from a
     /// `session_info_update`, if any.
     ///
-    /// Both goose and buzz-agent emit `session_info_update`; other agents
+    /// Both goose and punks-agent emit `session_info_update`; other agents
     /// leave this `None` for the lifetime of the client. Read directly by
     /// `read_until_response_with_idle_timeout`'s
     /// steer arm at write time (see [`crate::pool::SteerRequest`] for
@@ -881,7 +881,7 @@ impl AcpClient {
         self.steering_supported
     }
 
-    /// Consume per-turn usage for NIP-AM publishing. Goose/buzz-agent is an
+    /// Consume per-turn usage for NIP-AM publishing. Goose/punks-agent is an
     /// exclusive cumulative path; standard ACP prompt usage is used only when
     /// goose emitted nothing for this turn.
     pub fn take_turn_usage(&mut self) -> Option<TurnUsage> {
@@ -890,11 +890,11 @@ impl AcpClient {
         goose_usage.or(standard_usage)
     }
 
-    /// Notify the usage tracker that buzz-acp just spawned a new session.
+    /// Notify the usage tracker that punks-acp just spawned a new session.
     ///
     /// Seeds a zero baseline so the first usage notification for `session_id`
     /// produces `delta_reliable: true` (turn delta == cumulative from zero).
-    /// Must be called only when buzz-acp created the session via `session/new`;
+    /// Must be called only when punks-acp created the session via `session/new`;
     /// never when attaching to a pre-existing session.
     pub(crate) fn notify_session_spawned(&mut self, session_id: &str) {
         self.goose_usage.seed_zero_baseline(session_id);
@@ -1590,7 +1590,7 @@ impl AcpClient {
                                     } else {
                                         // Success result. Whether it counts as
                                         // a delivered steer — and whether the
-                                        // turn Buzz awaits is still running —
+                                        // turn Punks awaits is still running —
                                         // depends on the transport.
                                         let outcome = match transport {
                                             // goose returns no outcome field;
@@ -1806,7 +1806,7 @@ impl AcpClient {
                 false
             }
             "session_info_update" => {
-                // Both goose and buzz-agent emit `session_info_update` with
+                // Both goose and punks-agent emit `session_info_update` with
                 // `_meta.goose.activeRunId`: the id of the currently-active
                 // prompt run, or `null` when the run has cleared. Other agents
                 // don't emit this field; for them `active_run_id` stays `None`
@@ -1814,7 +1814,7 @@ impl AcpClient {
                 //
                 // Per the ACP `SessionInfoUpdate` schema, `_meta` is a field
                 // on the update object itself — nested inside `update`, not
-                // alongside it at the params level. Goose and buzz-agent both
+                // alongside it at the params level. Goose and punks-agent both
                 // emit it at `params.update._meta.goose.activeRunId`.
                 let meta = msg["params"]["update"]
                     .get("_meta")
@@ -2133,7 +2133,7 @@ pub struct SessionNewResponse {
 ///
 /// The two variants match the two mechanisms supported by current adapters:
 ///
-/// - **`Field`** — bare `systemPrompt` field (ACP protocol v2, buzz-agent).
+/// - **`Field`** — bare `systemPrompt` field (ACP protocol v2, punks-agent).
 /// - **`ClaudeMeta`** — `_meta.systemPrompt: {"append": text}`, used by
 ///   `claude-agent-acp` to append to the adapter's own native system prompt
 ///   while keeping its tool-use preset intact.
@@ -2498,7 +2498,7 @@ mod tests {
                 "protocolVersion": 2,
                 "clientCapabilities": build_client_capabilities(),
                 "clientInfo": {
-                    "name": "buzz-acp",
+                    "name": "punks-acp",
                     "version": "0.1.0"
                 }
             }
@@ -2506,7 +2506,7 @@ mod tests {
         assert_eq!(msg["params"]["protocolVersion"].as_u64(), Some(2));
         assert_eq!(
             msg["params"]["clientInfo"]["name"].as_str(),
-            Some("buzz-acp")
+            Some("punks-acp")
         );
         assert!(msg["params"]["clientCapabilities"].is_object());
         assert_eq!(
@@ -2530,11 +2530,11 @@ mod tests {
             args: vec![],
             env: vec![
                 EnvVar {
-                    name: "BUZZ_RELAY_URL".into(),
+                    name: "PUNKS_RELAY_URL".into(),
                     value: "ws://localhost:3000".into(),
                 },
                 EnvVar {
-                    name: "BUZZ_PRIVATE_KEY".into(),
+                    name: "PUNKS_PRIVATE_KEY".into(),
                     value: "nsec1abc".into(),
                 },
             ],
@@ -2551,13 +2551,13 @@ mod tests {
         assert_eq!(serialized["env"].as_array().unwrap().len(), 2);
         assert_eq!(
             serialized["env"][0]["name"].as_str(),
-            Some("BUZZ_RELAY_URL")
+            Some("PUNKS_RELAY_URL")
         );
     }
 
     #[test]
     fn session_prompt_request_format() {
-        let prompt_text = "[Buzz @mention]\nChannel: test\nFrom: npub1...\nMessage: hello";
+        let prompt_text = "[Punks @mention]\nChannel: test\nFrom: npub1...\nMessage: hello";
         let msg = serde_json::json!({
             "jsonrpc": "2.0",
             "id": 2u64,
@@ -2583,7 +2583,7 @@ mod tests {
             "sess_abc123",
             &[
                 "/goal ship it",
-                "[Buzz event: @mention]\nContent: @Eva /goal ship it",
+                "[Punks event: @mention]\nContent: @Eva /goal ship it",
             ],
         );
         let prompt = params["prompt"].as_array().unwrap();
@@ -3034,7 +3034,7 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
 
         let dir = std::env::temp_dir().join(format!(
-            "buzz-acp-{name}-{}-{}",
+            "punks-acp-{name}-{}-{}",
             std::process::id(),
             uuid::Uuid::new_v4()
         ));
@@ -3064,7 +3064,8 @@ mod tests {
     ) -> String {
         use std::os::unix::fs::PermissionsExt;
 
-        let dir = std::env::temp_dir().join(format!("buzz-acp-env-probe-{}", uuid::Uuid::new_v4()));
+        let dir =
+            std::env::temp_dir().join(format!("punks-acp-env-probe-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).expect("create env probe dir");
         let path = dir.join(file_name);
         std::fs::write(
@@ -3095,7 +3096,7 @@ mod tests {
         observed
     }
 
-    /// Buzz-owned Hermes processes get the configured-MCP isolation default,
+    /// Punks-owned Hermes processes get the configured-MCP isolation default,
     /// and an explicit persona entry still overrides it (defaults are applied
     /// before `extra_env`, so the later `Command::env` write wins).
     #[cfg(unix)]
@@ -3509,7 +3510,7 @@ mod tests {
         );
         assert_eq!(received["params"]["sessionId"], "ses_goose");
         assert_eq!(received["params"]["mode"], "set");
-        assert_eq!(received["params"]["key"], "buzz");
+        assert_eq!(received["params"]["key"], "punks");
         assert_eq!(received["params"]["text"], "Be terse");
     }
 
@@ -3727,7 +3728,7 @@ mod tests {
     /// Pass `None` to omit the `activeRunId` field entirely.
     ///
     /// `_meta` is nested inside the `update` object (per the ACP
-    /// `SessionInfoUpdate` schema), matching what goose and buzz-agent
+    /// `SessionInfoUpdate` schema), matching what goose and punks-agent
     /// emit on the wire.
     fn session_info_update_msg(active_run_id: Option<serde_json::Value>) -> serde_json::Value {
         let mut goose = serde_json::Map::new();
@@ -4090,7 +4091,7 @@ mod tests {
 
     /// Unique temp path for one test's captured request bytes.
     fn capture_path(name: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join("buzz-acp-steer-capture");
+        let dir = std::env::temp_dir().join("punks-acp-steer-capture");
         std::fs::create_dir_all(&dir).expect("create capture dir");
         let path = dir.join(format!("{name}.json"));
         let _ = std::fs::remove_file(&path);
@@ -4135,7 +4136,7 @@ mod tests {
         );
     }
 
-    /// Test 1b: no `_meta` at all (goose, buzz-agent, any older adapter) must
+    /// Test 1b: no `_meta` at all (goose, punks-agent, any older adapter) must
     /// leave the capability off — this is what keeps a steer off the wire for
     /// agents that never implemented it.
     #[tokio::test]
@@ -4268,7 +4269,7 @@ mod tests {
     /// Test 8: **codex `extMethod` silent-loss regression guard.** codex-acp's
     /// ext dispatcher answers unrecognized methods with a bare `{}` — a
     /// JSON-RPC *success*, not `-32601` (`src/CodexAcpServer.ts:255-258`).
-    /// Buzz maps `SteerAck::Success` to `queue.remove_event`, so decoding
+    /// Punks maps `SteerAck::Success` to `queue.remove_event`, so decoding
     /// `{}` as success would delete the user's message with no error, no
     /// fallback, and no log. An absent `outcome` must therefore be a
     /// rejection, which releases the event and fires cancel+merge.
@@ -4345,7 +4346,7 @@ mod tests {
     }
 
     /// Test 6: **red/green for the no-renewal rule.** `startedNewTurn` means
-    /// the turn Buzz was steering had already ended and the adapter began a
+    /// the turn Punks was steering had already ended and the adapter began a
     /// fresh, detached one. It acks `Success` (the message WAS delivered, so
     /// the event must not be redelivered) but must NOT renew the hard
     /// deadline — that clock belongs to a turn which is already settled.
@@ -4820,7 +4821,7 @@ mod tests {
 
     #[test]
     fn build_codex_config_env_generated_only_single_entry_with_signal_true_merges_with_parent() {
-        // No persona: Buzz injects one CODEX_CONFIG; signal=true.
+        // No persona: Punks injects one CODEX_CONFIG; signal=true.
         // Parent may have its own CODEX_CONFIG — deep_merge applies, network_access forced.
         let extra = env(&[("CODEX_CONFIG", GENERATED)]);
         let parent =
@@ -4847,7 +4848,7 @@ mod tests {
 
     #[test]
     fn build_codex_config_env_persona_only_signal_false_returns_none() {
-        // Persona set CODEX_CONFIG; Buzz did not inject a generated overlay (signal=false).
+        // Persona set CODEX_CONFIG; Punks did not inject a generated overlay (signal=false).
         // Must return None — no merging, no sandbox widening.
         let persona = r#"{"some_feature":"on"}"#;
         let extra = env(&[("CODEX_CONFIG", persona)]);

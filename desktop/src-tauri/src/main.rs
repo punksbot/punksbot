@@ -2,8 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    #[cfg(feature = "buzz-desktop")]
-    if desktop_lib::print_agent_access_owner_only_probe_if_requested() {
+    if punks_lib::print_agent_access_owner_only_probe_if_requested() {
         return;
     }
 
@@ -11,14 +10,11 @@ fn main() {
     // process start, and this is the only point where the process is still
     // single threaded and no GTK object exists yet, which is what makes
     // `std::env::set_var` sound.
-    #[cfg(all(feature = "buzz-desktop", target_os = "linux"))]
-    if let Err(diagnostic) = desktop_lib::webkit_rendering::apply() {
-        eprintln!("buzz-desktop: {diagnostic}");
+    #[cfg(target_os = "linux")]
+    if let Err(diagnostic) = punks_lib::webkit_rendering::apply() {
+        eprintln!("punks-full-local: {diagnostic}");
         std::process::exit(1);
     }
 
-    if let Err(error) = desktop_lib::run() {
-        eprintln!("desktop: fatal: {error}");
-        std::process::exit(1);
-    }
+    punks_lib::run()
 }

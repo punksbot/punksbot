@@ -10,7 +10,7 @@ const BACKEND_READY_TIMEOUT_MS = 120_000;
 export function localDevelopmentCommands() {
   return {
     backend: ["cloudflare:dev"],
-    desktop: ["--filter", "@punks/desktop", "tauri:dev"],
+    desktop: ["--dir", "desktop", "punks:dev"],
   };
 }
 

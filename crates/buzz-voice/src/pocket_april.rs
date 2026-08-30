@@ -398,8 +398,8 @@ impl AprilPocketTts {
         prepared: &AprilPreparedPrompt,
         style: &VoiceStyle,
     ) -> Result<Vec<f32>, String> {
-        // EXPERIMENTAL (latency bench): phase timing, enabled by BUZZ_TTS_PHASE_LOG=1.
-        let phase_log = std::env::var("BUZZ_TTS_PHASE_LOG").is_ok_and(|v| v == "1");
+        // EXPERIMENTAL (latency bench): phase timing, enabled by PUNKS_TTS_PHASE_LOG=1.
+        let phase_log = std::env::var("PUNKS_TTS_PHASE_LOG").is_ok_and(|v| v == "1");
         let t0 = std::time::Instant::now();
         let mut flow_state = self.conditioned_flow_state(style)?;
         let t_condition = t0.elapsed();

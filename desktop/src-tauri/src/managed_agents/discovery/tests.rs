@@ -4,11 +4,10 @@ use super::overrides::{divergent_agent_command_override, update_time_agent_comma
 use super::{
     apply_agent_command_update, classify_runtime, codex_adapter_availability,
     codex_adapter_is_outdated, create_time_agent_command_override, default_agent_command,
-    effective_agent_command, find_nvm_default_bin, find_via_login_shell,
-    is_login_shell_path_uninit, is_safe_nvm_tag, managed_agent_avatar_url, normalize_agent_args,
-    parse_semver_tag, probe_codex_acp_version, record_agent_command, refresh_login_shell_path,
-    try_record_agent_command, BUZZ_AGENT_AVATAR_URL, CLAUDE_CODE_AVATAR_URL, CODEX_AVATAR_URL,
-    GOOSE_AVATAR_URL,
+    effective_agent_command, find_nvm_default_bin, is_login_shell_path_uninit, is_safe_nvm_tag,
+    managed_agent_avatar_url, normalize_agent_args, parse_semver_tag, probe_codex_acp_version,
+    record_agent_command, refresh_login_shell_path, try_record_agent_command,
+    CLAUDE_CODE_AVATAR_URL, CODEX_AVATAR_URL, GOOSE_AVATAR_URL, PUNKS_AGENT_AVATAR_URL,
 };
 use crate::managed_agents::AcpAvailabilityStatus;
 
@@ -45,9 +44,9 @@ fn returns_none_for_unknown_commands() {
 }
 
 #[test]
-fn default_agent_command_resolves_bundled_buzz_agent() {
+fn default_agent_command_resolves_bundled_punks_agent() {
     // The default must be bundled buzz-agent, never bare `goose` on a stock Windows install.
-    assert_eq!(default_agent_command(), "buzz-agent");
+    assert_eq!(default_agent_command(), "punks-agent");
     assert_eq!(
         normalize_agent_args(&default_agent_command(), vec!["acp".into()]),
         Vec::<String>::new()
@@ -71,44 +70,26 @@ fn normalizes_claude_and_codex_args_to_empty() {
 }
 
 #[test]
-fn resolves_buzz_agent_avatar() {
+fn resolves_punks_agent_avatar() {
     assert_eq!(
-        managed_agent_avatar_url("buzz-agent"),
-        Some(BUZZ_AGENT_AVATAR_URL.to_string())
+        managed_agent_avatar_url("punks-agent"),
+        Some(PUNKS_AGENT_AVATAR_URL.to_string())
     );
     assert_eq!(
-        managed_agent_avatar_url("/usr/local/bin/buzz-agent"),
-        Some(BUZZ_AGENT_AVATAR_URL.to_string())
+        managed_agent_avatar_url("/usr/local/bin/punks-agent"),
+        Some(PUNKS_AGENT_AVATAR_URL.to_string())
     );
 }
 
 #[test]
-fn normalizes_buzz_agent_args_to_empty() {
+fn normalizes_punks_agent_args_to_empty() {
     assert_eq!(
-        normalize_agent_args("buzz-agent", Vec::new()),
+        normalize_agent_args("punks-agent", Vec::new()),
         Vec::<String>::new()
     );
     assert_eq!(
-        normalize_agent_args("buzz-agent", vec!["acp".into()]),
+        normalize_agent_args("punks-agent", vec!["acp".into()]),
         Vec::<String>::new()
-    );
-}
-
-#[test]
-fn login_shell_lookup_treats_command_as_data() {
-    let marker =
-        std::env::temp_dir().join(format!("buzz-discovery-marker-{}", uuid::Uuid::new_v4()));
-    let payload = format!("doesnotexist; touch {} #", marker.display());
-
-    let resolved = find_via_login_shell(&payload);
-
-    assert!(
-        resolved.is_none(),
-        "payload should not resolve to a command"
-    );
-    assert!(
-        !marker.exists(),
-        "shell lookup must not execute injected commands"
     );
 }
 
@@ -119,7 +100,7 @@ fn explicit_path_resolution_ignores_non_executable_files() {
 
     let dir = std::env::temp_dir().join(format!("buzz-discovery-path-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&dir).expect("create temp dir");
-    let bin = dir.join("buzz-acp");
+    let bin = dir.join("punks-acp");
     std::fs::write(&bin, "").expect("write placeholder");
     std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o644))
         .expect("chmod placeholder");
@@ -351,7 +332,7 @@ fn try_record_agent_command_dangling_persona_runtime_returns_err() {
 /// When neither the record nor persona has any runtime id, `try_record_agent_command`
 /// falls back to `default_agent_command()` — this is the legacy-agent path.
 #[test]
-fn try_record_agent_command_no_runtime_id_defaults_to_buzz_agent() {
+fn try_record_agent_command_no_runtime_id_defaults_to_punks_agent() {
     let record = record_with(None, None, None);
     let result = try_record_agent_command(&record, &[]);
     assert_eq!(
@@ -469,11 +450,11 @@ fn create_time_override_none_when_persona_runtime_not_installed() {
     // `harness_override` false (the user did not pick it). At create this
     // is a fallback, not a deliberate pin — it must store `None` so the
     // agent inherits the persona's runtime once it's installed and the
-    // persona is re-edited. Baking `Some("buzz-agent")` here is the exact
+    // persona is re-edited. Baking `Some("punks-agent")` here is the exact
     // bug this resolver chain exists to kill.
     let personas = vec![persona_with_runtime("p1", Some("claude"))];
     assert_eq!(
-        create_time_agent_command_override(Some("p1"), &personas, Some("buzz-agent"), false),
+        create_time_agent_command_override(Some("p1"), &personas, Some("punks-agent"), false),
         None
     );
 }
@@ -668,8 +649,8 @@ fn apply_agent_command_update_concrete_pin_keeps_materialized_runtime() {
 
 // ── probe_codex_acp_version ───────────────────────────────────────────────────
 
+mod forced_discovery;
 mod managed_path_resolution;
-
 #[cfg(unix)]
 #[test]
 fn probe_codex_acp_version_parses_full_semver_output() {
@@ -800,7 +781,7 @@ fn codex_adapter_availability_outdated_for_older_1x_binary() {
     );
 }
 
-/// The strict three-component parse fails closed: a version Buzz cannot compare
+/// The strict three-component parse fails closed: a version Punks cannot compare
 /// against the floor is treated as outdated rather than assumed current.
 #[cfg(unix)]
 #[test]
@@ -1685,7 +1666,7 @@ fn custom_catalog_entry_carries_definition_env_for_edit_roundtrip() {
     )
     .unwrap();
 
-    let entries = discover_acp_runtimes_from(Some(dir.path()));
+    let entries = discover_acp_runtimes_from(Some(dir.path()), true);
     let entry = entries
         .iter()
         .find(|e| e.id == "env-harness")
@@ -1715,7 +1696,7 @@ fn builtin_catalog_entry_has_empty_definition_env() {
     // publishes to the global registry.
     let _path_guard = crate::managed_agents::lock_path_mutex();
     let _lock = registry_test_lock();
-    let entries = discover_acp_runtimes_from(None);
+    let entries = discover_acp_runtimes_from(None, true);
     // Find any builtin entry (e.g. "goose" or "claude").
     let builtin = entries
         .iter()
@@ -1796,7 +1777,7 @@ fn discovery_publish_path_survives_mid_flight_save() {
         assert!(lookup_loaded_harness_by_id("mid-flight-save").is_some());
     }));
 
-    let _entries = discover_acp_runtimes_from(Some(dir.path()));
+    let _entries = discover_acp_runtimes_from(Some(dir.path()), true);
 
     assert!(
         lookup_loaded_harness_by_id("mid-flight-save").is_some(),
@@ -1829,7 +1810,7 @@ fn discovery_publish_path_drops_mid_flight_delete() {
         assert!(lookup_loaded_harness_by_id("mid-flight-delete").is_none());
     }));
 
-    let _entries = discover_acp_runtimes_from(Some(dir.path()));
+    let _entries = discover_acp_runtimes_from(Some(dir.path()), true);
 
     assert!(
         lookup_loaded_harness_by_id("mid-flight-delete").is_none(),

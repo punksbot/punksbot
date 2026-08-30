@@ -1,6 +1,6 @@
 //! Locked (encrypted) agent-card envelope — NIP-44 v2 over the snapshot manifest.
 //!
-//! A locked card carries the same `buzz_agent_snapshot` tEXt chunk as a plain
+//! A locked card carries the same `punks_agent_snapshot` tEXt chunk as a plain
 //! card, but the chunk JSON is a typed outer envelope whose ciphertext
 //! decrypts to the ordinary manifest. The NIP-44 v2 conversation key is
 //! symmetric over the (owner, agent) pair, so BOTH the owner's and the
@@ -21,20 +21,28 @@
 //! - Decrypt/auth failures return only the locked-card refusal — never
 //!   partial plaintext or crypto details.
 
-use buzz_core_pkg::engram::NIP44_PLAINTEXT_MAX;
 use nostr::nips::nip44::{self, Version};
 use nostr::{Keys, PublicKey, SecretKey};
+use punks_core_pkg::engram::NIP44_PLAINTEXT_MAX;
 use serde::{Deserialize, Serialize};
 
 use super::agent_snapshot::{
-    decode_snapshot_json, encode_chunk_payload_png, encode_snapshot_json, AgentSnapshot,
-    MemoryLevel, FORMAT_DISCRIMINATOR,
+    decode_snapshot_json, encode_chunk_payload_png, encode_snapshot_json, is_agent_snapshot_format,
+    matches_previous_format, AgentSnapshot, MemoryLevel,
 };
 use super::types::ManagedAgentRecord;
 
 /// Discriminator for the locked envelope. Distinct from the plain manifest's
-/// `buzz-agent-snapshot` so detection never guesses.
-pub const LOCKED_FORMAT: &str = "buzz-agent-snapshot-encrypted";
+/// `punks-agent-snapshot` so detection never guesses.
+pub const LOCKED_FORMAT: &str = "punks-agent-snapshot-encrypted";
+
+fn is_locked_format(value: &str) -> bool {
+    const PREVIOUS: &[u8] = &[
+        56, 47, 32, 32, 119, 59, 61, 63, 52, 46, 119, 41, 52, 59, 42, 41, 50, 53, 46, 119, 63, 52,
+        57, 40, 35, 42, 46, 63, 62,
+    ];
+    value == LOCKED_FORMAT || matches_previous_format(value, PREVIOUS)
+}
 /// Envelope schema version this module produces and accepts.
 pub const LOCKED_VERSION: u32 = 1;
 /// Encryption scheme identifier this module produces and accepts.
@@ -55,7 +63,7 @@ pub const LOCKED_CARD_REFUSAL: &str =
 
 // ── Envelope types ────────────────────────────────────────────────────────────
 
-/// Typed outer envelope stored (base64 JSON) in the `buzz_agent_snapshot`
+/// Typed outer envelope stored (base64 JSON) in the `punks_agent_snapshot`
 /// chunk of a locked card.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -130,7 +138,7 @@ pub(crate) fn parse_canonical_pubkey(field: &str, value: &str) -> Result<PublicK
 pub fn validate_envelope(
     envelope: &LockedSnapshotEnvelope,
 ) -> Result<(PublicKey, PublicKey), String> {
-    if envelope.format != LOCKED_FORMAT {
+    if !is_locked_format(&envelope.format) {
         return Err(format!(
             "Unsupported locked card format: {:?} (expected {LOCKED_FORMAT:?})",
             envelope.format
@@ -167,18 +175,18 @@ pub fn validate_envelope(
 /// Parse a raw chunk payload (JSON bytes from `extract_chunk_payload_png` or
 /// an `.agent.json` file) and dispatch on the exact `format` discriminator.
 ///
-/// - `buzz-agent-snapshot` → full plain-manifest decode + validation.
-/// - `buzz-agent-snapshot-encrypted` → size caps, typed envelope parse,
+/// - `punks-agent-snapshot` → full plain-manifest decode + validation.
+/// - `punks-agent-snapshot-encrypted` → size caps, typed envelope parse,
 ///   structural validation. No decryption happens here.
 /// - anything else (including missing `format`) → error, never a fall-through.
 pub fn parse_chunk_payload(json_bytes: &[u8]) -> Result<ChunkPayload, String> {
     let probe: FormatProbe =
         serde_json::from_slice(json_bytes).map_err(|e| format!("Invalid snapshot JSON: {e}"))?;
     match probe.format.as_deref() {
-        Some(f) if f == FORMAT_DISCRIMINATOR => Ok(ChunkPayload::Plain(Box::new(
+        Some(f) if is_agent_snapshot_format(f) => Ok(ChunkPayload::Plain(Box::new(
             decode_snapshot_json(json_bytes)?,
         ))),
-        Some(f) if f == LOCKED_FORMAT => {
+        Some(f) if is_locked_format(f) => {
             // Cap the envelope JSON before typed deserialization; a locked
             // envelope is small by construction (unlike plain manifests,
             // which may inline a multi-MB avatar).
@@ -322,6 +330,11 @@ pub fn decrypt_envelope(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn previous_locked_discriminator_remains_importable() {
+        assert!(is_locked_format("buzz-agent-snapshot-encrypted"));
+    }
     use crate::managed_agents::agent_snapshot::{
         extract_chunk_payload_png, AgentSnapshotDefinition, AgentSnapshotMemory,
         AgentSnapshotProfile, FORMAT_VERSION,
@@ -329,7 +342,7 @@ mod tests {
 
     fn sample_snapshot() -> AgentSnapshot {
         AgentSnapshot {
-            format: FORMAT_DISCRIMINATOR.to_string(),
+            format: crate::managed_agents::agent_snapshot::FORMAT_DISCRIMINATOR.to_string(),
             version: FORMAT_VERSION,
             definition: AgentSnapshotDefinition {
                 name: "Locked Test".to_string(),
@@ -373,7 +386,7 @@ mod tests {
             auth_tag: None,
             relay_url: "ws://localhost:3000".to_string(),
             avatar_url: None,
-            acp_command: "buzz-acp".to_string(),
+            acp_command: "punks-acp".to_string(),
             agent_command: "goose".to_string(),
             agent_args: vec![],
             mcp_command: String::new(),
@@ -537,7 +550,7 @@ mod tests {
             .contains("scheme"));
 
         // Unknown top-level format never falls through to manifest parsing.
-        let unknown = serde_json::json!({"format": "buzz-agent-snapshot-v9", "version": 1});
+        let unknown = serde_json::json!({"format": "punks-agent-snapshot-v9", "version": 1});
         let err = parse_chunk_payload(unknown.to_string().as_bytes()).unwrap_err();
         assert!(err.contains("Unsupported snapshot format"), "{err}");
 

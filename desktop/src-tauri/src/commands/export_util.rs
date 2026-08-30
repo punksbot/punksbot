@@ -1,6 +1,31 @@
 use tauri::AppHandle;
 use tauri_plugin_dialog::DialogExt;
 
+/// Show a native single-file picker and return the selected local path.
+/// Selection and reading stay in Rust so file contents never cross the webview.
+pub async fn pick_open_path(
+    app: &AppHandle,
+    filter_name: &str,
+    extensions: &[&str],
+) -> Result<Option<std::path::PathBuf>, String> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog()
+        .file()
+        .add_filter(filter_name, extensions)
+        .pick_file(move |path| {
+            let _ = tx.send(path);
+        });
+    let selected = rx.await.map_err(|_| "dialog cancelled".to_string())?;
+    let Some(file_path) = selected else {
+        return Ok(None);
+    };
+    file_path
+        .as_path()
+        .map(std::path::Path::to_path_buf)
+        .ok_or_else(|| "Open dialog returned an invalid path".to_string())
+        .map(Some)
+}
+
 /// Show a save-file dialog with a custom filter and return the chosen path,
 /// or `None` when the user cancelled. Selection only — no write.
 pub async fn pick_save_path(

@@ -30,9 +30,10 @@ export function DeleteMessageConfirmDialog({
     <AlertDialog onOpenChange={onOpenChange} open={open}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Delete message?</AlertDialogTitle>
+          <AlertDialogTitle>Remove message?</AlertDialogTitle>
           <AlertDialogDescription>
-            This will permanently delete this message and cannot be undone.
+            The message will be removed from the Conversation, but you can
+            restore it from its tombstone.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -43,7 +44,7 @@ export function DeleteMessageConfirmDialog({
           </AlertDialogCancel>
           <AlertDialogAction asChild>
             <Button onClick={onConfirm} type="button" variant="destructive">
-              Delete
+              Remove
             </Button>
           </AlertDialogAction>
         </AlertDialogFooter>

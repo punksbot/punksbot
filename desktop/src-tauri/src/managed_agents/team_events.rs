@@ -6,8 +6,8 @@
 //! flush loop publish them — this module only owns the kind-specific
 //! projection, build, and tombstone.
 
-use buzz_core_pkg::kind::KIND_TEAM;
 use nostr::{EventBuilder, Kind, Tag};
+use punks_core_pkg::kind::KIND_TEAM;
 use serde::{Deserialize, Serialize};
 
 use super::TeamRecord;

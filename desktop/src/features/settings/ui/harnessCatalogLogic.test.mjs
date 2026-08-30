@@ -197,14 +197,14 @@ describe("stableRowOrder", () => {
       }),
       entry({ id: "off", label: "Aardvark", canAutoInstall: true }),
       entry({
-        id: "buzz-agent",
-        label: "Buzz",
+        id: "punks-agent",
+        label: "Punks",
         availability: "available",
         source: "builtin",
       }),
     ];
     assert.deepEqual(stableRowOrder([], entries), [
-      "buzz-agent",
+      "punks-agent",
       "goose",
       "zeta",
       "off",
@@ -212,33 +212,33 @@ describe("stableRowOrder", () => {
   });
 
   it("keeps previous relative order when availability changes (no reorder on install)", () => {
-    const before = ["buzz-agent", "zeta", "off"];
+    const before = ["punks-agent", "zeta", "off"];
     const entries = [
       entry({ id: "off", label: "Aardvark", availability: "available" }), // just installed
       entry({ id: "zeta", label: "Zeta", availability: "available" }),
       entry({
-        id: "buzz-agent",
-        label: "Buzz",
+        id: "punks-agent",
+        label: "Punks",
         availability: "available",
         source: "builtin",
       }),
     ];
     assert.deepEqual(stableRowOrder(before, entries), [
-      "buzz-agent",
+      "punks-agent",
       "zeta",
       "off",
     ]);
   });
 
   it("drops removed ids and appends newcomers at the end", () => {
-    const before = ["buzz-agent", "deleted", "zeta"];
+    const before = ["punks-agent", "deleted", "zeta"];
     const entries = [
       entry({ id: "zeta", label: "Zeta", availability: "available" }),
-      entry({ id: "buzz-agent", label: "Buzz", availability: "available" }),
+      entry({ id: "punks-agent", label: "Punks", availability: "available" }),
       entry({ id: "new-one", label: "New One", availability: "available" }),
     ];
     assert.deepEqual(stableRowOrder(before, entries), [
-      "buzz-agent",
+      "punks-agent",
       "zeta",
       "new-one",
     ]);

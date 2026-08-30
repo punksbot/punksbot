@@ -7,7 +7,7 @@ import type {
 } from "./agentSessionTypes";
 import {
   formatToolTitle,
-  getBuzzToolInfo,
+  getPunksToolInfo,
   normalizeToolNameText,
 } from "./agentSessionToolCatalog";
 import {
@@ -21,7 +21,7 @@ type ToolItem = Extract<TranscriptItem, { type: "tool" }>;
 export type ToolClassificationInput = {
   title: string;
   toolName: string;
-  buzzToolName: string | null;
+  punksToolName: string | null;
   args: Record<string, unknown>;
   result: string;
   isError: boolean;
@@ -41,7 +41,7 @@ const DEVELOPER_TOOL_BASES = new Set([
   "postcompact",
 ]);
 
-const BUZZ_CLI_GROUPS = new Set([
+const PUNKS_CLI_GROUPS = new Set([
   "messages",
   "channels",
   "dms",
@@ -62,7 +62,7 @@ const BUZZ_CLI_GROUPS = new Set([
   "pack",
 ]);
 
-const BUZZ_CLI_ADMIN_VERBS = new Set([
+const PUNKS_CLI_ADMIN_VERBS = new Set([
   "archive",
   "unarchive",
   "create",
@@ -73,7 +73,7 @@ const BUZZ_CLI_ADMIN_VERBS = new Set([
   "set-channel-add-policy",
 ]);
 
-const BUZZ_CLI_READ_VERBS = new Set([
+const PUNKS_CLI_READ_VERBS = new Set([
   "get",
   "list",
   "thread",
@@ -85,7 +85,7 @@ const BUZZ_CLI_READ_VERBS = new Set([
 
 const TOOL_CLASS_LABELS: Record<AgentActivityRenderClass, string> = {
   message: "Message",
-  "relay-op": "Buzz relay op",
+  "relay-op": "Punks relay op",
   "file-edit": "File edit",
   "file-read": "File read",
   "skill-read": "Skill read",
@@ -104,7 +104,7 @@ const TOOL_CLASS_LABELS: Record<AgentActivityRenderClass, string> = {
 const providers: ToolClassifierProvider[] = [
   classifyLoadSkillTool,
   classifyDeveloperHarnessTool,
-  classifyBuzzTool,
+  classifyPunksTool,
 ];
 
 export function classifyTool(
@@ -132,7 +132,7 @@ export function classifyToolItem(item: ToolItem): AgentActivityDescriptor {
   return classifyTool({
     title: item.title,
     toolName: item.toolName,
-    buzzToolName: item.buzzToolName,
+    punksToolName: item.punksToolName,
     args: item.args,
     result: item.result,
     isError: item.isError,
@@ -146,7 +146,7 @@ export function renderClassLabel(renderClass: AgentActivityRenderClass) {
 function classifyLoadSkillTool(
   input: ToolClassificationInput,
 ): AgentActivityDescriptor | null {
-  const isLoadSkill = [input.toolName, input.title, input.buzzToolName].some(
+  const isLoadSkill = [input.toolName, input.title, input.punksToolName].some(
     (value) => value && normalizeToolNameText(value) === "load_skill",
   );
   if (!isLoadSkill) return null;
@@ -173,9 +173,9 @@ function classifyDeveloperHarnessTool(
 
   if (kind === "shell") {
     const command = getToolString(input.args, ["command"]);
-    const buzzCli = command ? parseBuzzCliCommand(command) : null;
-    if (buzzCli) {
-      return buzzCli;
+    const punksCli = command ? parsePunksCliCommand(command) : null;
+    if (punksCli) {
+      return punksCli;
     }
     return {
       renderClass: "shell",
@@ -271,30 +271,30 @@ function classifyDeveloperHarnessTool(
   };
 }
 
-function classifyBuzzTool(
+function classifyPunksTool(
   input: ToolClassificationInput,
 ): AgentActivityDescriptor | null {
-  const name = [input.buzzToolName, input.toolName, input.title].find(
-    (value) => value && getBuzzToolInfo(value),
+  const name = [input.punksToolName, input.toolName, input.title].find(
+    (value) => value && getPunksToolInfo(value),
   );
   if (!name) return null;
 
-  const info = getBuzzToolInfo(name);
+  const info = getPunksToolInfo(name);
   if (!info) return null;
 
   const operation = normalizeToolNameText(name);
   const label = formatToolTitle(name, input.title);
-  const preview = extractBuzzToolPreview(input.args);
+  const preview = extractPunksToolPreview(input.args);
   return {
-    renderClass: isBuzzMessageSend(operation) ? "message" : "relay-op",
+    renderClass: isPunksMessageSend(operation) ? "message" : "relay-op",
     label,
     preview,
-    action: actionForBuzzOperation(operation, preview, info.tone),
+    action: actionForPunksOperation(operation, preview, info.tone),
     tone: info.tone,
     operation,
     object: preview,
     source: "mcp",
-    groupKey: `buzz:${operation}`,
+    groupKey: `punks:${operation}`,
   };
 }
 
@@ -324,7 +324,7 @@ function resolveDeveloperToolKind(
   | "post_compact_hook"
   | "dev_mcp"
   | null {
-  for (const value of [input.toolName, input.title, input.buzzToolName]) {
+  for (const value of [input.toolName, input.title, input.punksToolName]) {
     const kind = classifyDeveloperToolName(value);
     if (kind) return kind;
   }
@@ -335,7 +335,7 @@ function classifyDeveloperToolName(value: string | null | undefined) {
   if (!value) return null;
 
   const normalized = normalizeToolNameText(value);
-  const base = normalized.replace(/^buzz_dev_mcp_/, "");
+  const base = normalized.replace(/^punks_dev_mcp_/, "");
 
   if (base === "shell" || normalized.endsWith("_shell")) return "shell";
   if (base === "read_file" || normalized.endsWith("_read_file"))
@@ -347,17 +347,17 @@ function classifyDeveloperToolName(value: string | null | undefined) {
   if (base === "todo") return "todo";
   if (base === "stop") return "stop_hook";
   if (base === "postcompact") return "post_compact_hook";
-  if (DEVELOPER_TOOL_BASES.has(base) || normalized.includes("buzz_dev_mcp")) {
+  if (DEVELOPER_TOOL_BASES.has(base) || normalized.includes("punks_dev_mcp")) {
     return "dev_mcp";
   }
   return null;
 }
 
-export function parseBuzzCliCommand(
+export function parsePunksCliCommand(
   command: string,
 ): AgentActivityDescriptor | null {
   const tokens = tokenizeShellCommand(command);
-  const range = findBuzzCommand(tokens);
+  const range = findPunksCommand(tokens);
   if (!range) return null;
 
   const group = tokens[range.groupIndex];
@@ -365,23 +365,23 @@ export function parseBuzzCliCommand(
   const operation = `${group}.${verb}`;
   const isSend = group === "messages" && verb === "send";
   const preview = isSend
-    ? extractBuzzCliInlineContent(tokens, range)
-    : extractBuzzCliObjectPreview(tokens, range);
-  const tone = buzzCliTone(group, verb);
+    ? extractPunksCliInlineContent(tokens, range)
+    : extractPunksCliObjectPreview(tokens, range);
+  const tone = punksCliTone(group, verb);
   return {
     renderClass: isSend ? "message" : "relay-op",
-    label: titleForBuzzCli(group, verb),
+    label: titleForPunksCli(group, verb),
     preview,
-    action: actionForBuzzOperation(operation, preview, tone),
+    action: actionForPunksOperation(operation, preview, tone),
     tone,
     operation,
     object: preview,
     source: "shell",
-    groupKey: `buzz-cli:${operation}`,
+    groupKey: `punks-cli:${operation}`,
   };
 }
 
-function titleForBuzzCli(group: string, verb: string) {
+function titleForPunksCli(group: string, verb: string) {
   if (group === "messages" && verb === "send") return "Send Message";
   return [group, verb]
     .map((part) =>
@@ -395,26 +395,26 @@ function titleForBuzzCli(group: string, verb: string) {
     .join(" ");
 }
 
-function actionForBuzzOperation(
+function actionForPunksOperation(
   operation: string,
   object: string | null,
   tone: AgentActivityTone,
 ): AgentActivityAction {
-  const verb = buzzOperationVerbToken(operation);
+  const verb = punksOperationVerbToken(operation);
   return {
-    verb: buzzOperationVerb(verb, tone),
-    object: object ?? buzzOperationObject(operation),
+    verb: punksOperationVerb(verb, tone),
+    object: object ?? punksOperationObject(operation),
   };
 }
 
-function buzzOperationVerbToken(operation: string) {
+function punksOperationVerbToken(operation: string) {
   if (operation.includes(".")) {
     return operation.split(".")[1] ?? "run";
   }
   return operation.split("_")[0] ?? "run";
 }
 
-function buzzOperationVerb(verb: string, tone: AgentActivityTone) {
+function punksOperationVerb(verb: string, tone: AgentActivityTone) {
   if (verb === "add") return "Added";
   if (verb === "archive") return "Archived";
   if (verb === "create") return "Created";
@@ -430,29 +430,29 @@ function buzzOperationVerb(verb: string, tone: AgentActivityTone) {
   return "Updated";
 }
 
-function buzzOperationObject(operation: string) {
-  if (isBuzzMessageSend(operation)) return "message";
+function punksOperationObject(operation: string) {
+  if (isPunksMessageSend(operation)) return "message";
   if (operation.includes(".")) {
     const [group] = operation.split(".");
-    return group ? group.replace(/[-_]+/g, " ") : "Buzz";
+    return group ? group.replace(/[-_]+/g, " ") : "Punks";
   }
   const object = operation.replace(
     /^(add|approve|archive|create|delete|edit|get|hide|join|leave|list|open|publish|remove|search|send|set|trigger|unarchive|update|vote)_/,
     "",
   );
-  return object ? object.replace(/[-_]+/g, " ") : "Buzz";
+  return object ? object.replace(/[-_]+/g, " ") : "Punks";
 }
 
-function buzzCliTone(group: string, verb: string): AgentActivityTone {
-  if (BUZZ_CLI_ADMIN_VERBS.has(verb)) return "admin";
-  if (BUZZ_CLI_READ_VERBS.has(verb)) return "read";
+function punksCliTone(group: string, verb: string): AgentActivityTone {
+  if (PUNKS_CLI_ADMIN_VERBS.has(verb)) return "admin";
+  if (PUNKS_CLI_READ_VERBS.has(verb)) return "read";
   if (group === "feed" && verb === "get") return "read";
   return "write";
 }
 
-function extractBuzzCliInlineContent(
+function extractPunksCliInlineContent(
   tokens: string[],
-  range: BuzzCommandRange,
+  range: PunksCommandRange,
 ): string | null {
   const content = getFlagValue(tokens, range.verbIndex + 1, "--content");
   if (!content || content === "-") return null;
@@ -460,9 +460,9 @@ function extractBuzzCliInlineContent(
   return content;
 }
 
-function extractBuzzCliObjectPreview(
+function extractPunksCliObjectPreview(
   tokens: string[],
-  range: BuzzCommandRange,
+  range: PunksCommandRange,
 ): string | null {
   const flagPreview =
     getFlagValue(tokens, range.verbIndex + 1, "--channel") ??
@@ -478,15 +478,15 @@ function extractBuzzCliObjectPreview(
     : null;
 }
 
-type BuzzCommandRange = {
-  buzzIndex: number;
+type PunksCommandRange = {
+  punksIndex: number;
   groupIndex: number;
   verbIndex: number;
 };
 
-function findBuzzCommand(tokens: string[]): BuzzCommandRange | null {
+function findPunksCommand(tokens: string[]): PunksCommandRange | null {
   for (let i = 0; i < tokens.length; i++) {
-    if (!isBuzzExecutable(tokens[i])) continue;
+    if (!isPunksExecutable(tokens[i])) continue;
 
     for (let j = i + 1; j < tokens.length; j++) {
       if (isCommandSeparator(tokens[j])) break;
@@ -499,12 +499,12 @@ function findBuzzCommand(tokens: string[]): BuzzCommandRange | null {
         }
         continue;
       }
-      if (!BUZZ_CLI_GROUPS.has(tokens[j])) continue;
+      if (!PUNKS_CLI_GROUPS.has(tokens[j])) continue;
       const verbIndex = j + 1;
       if (!tokens[verbIndex] || isCommandSeparator(tokens[verbIndex])) {
         return null;
       }
-      return { buzzIndex: i, groupIndex: j, verbIndex };
+      return { punksIndex: i, groupIndex: j, verbIndex };
     }
   }
   return null;
@@ -559,8 +559,8 @@ export function tokenizeShellCommand(command: string): string[] {
   return tokens;
 }
 
-function isBuzzExecutable(token: string) {
-  return token === "buzz" || token.split(/[\\/]/).pop() === "buzz";
+function isPunksExecutable(token: string) {
+  return token === "punks" || token.split(/[\\/]/).pop() === "punks";
 }
 
 function isCommandSeparator(token: string) {
@@ -581,7 +581,7 @@ function getFlagValue(tokens: string[], start: number, flag: string) {
   return null;
 }
 
-function extractBuzzToolPreview(args: Record<string, unknown>): string | null {
+function extractPunksToolPreview(args: Record<string, unknown>): string | null {
   const content = getToolString(args, ["content", "message", "text", "body"]);
   if (content) return content;
   const query = getToolString(args, ["query", "search"]);
@@ -610,7 +610,7 @@ function genericPreview(input: ToolClassificationInput): string | null {
   );
 }
 
-function isBuzzMessageSend(operation: string) {
+function isPunksMessageSend(operation: string) {
   return operation === "send_message" || operation === "messages_send";
 }
 

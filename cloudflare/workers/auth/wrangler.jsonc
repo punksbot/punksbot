@@ -13,12 +13,12 @@
     "BOT_INVOCATION_CURRENT_KID": "local-v1",
     "AUTH_BASE_URL": "http://localhost:1420",
     "SESSION_TTL_SECONDS": "2592000",
-    "GOOGLE_AUTHORIZATION_ENDPOINT": "https://accounts.google.com/o/oauth2/v2/auth",
-    "GOOGLE_TOKEN_ENDPOINT": "https://oauth2.googleapis.com/token",
-    "GOOGLE_USERINFO_ENDPOINT": "https://openidconnect.googleapis.com/v1/userinfo",
-    "GITHUB_AUTHORIZATION_ENDPOINT": "https://github.com/login/oauth/authorize",
-    "GITHUB_TOKEN_ENDPOINT": "https://github.com/login/oauth/access_token",
-    "GITHUB_API_BASE_URL": "https://api.github.com"
+    "GOOGLE_AUTHORIZATION_ENDPOINT": "http://127.0.0.1:9/external-auth-disabled/google/authorize",
+    "GOOGLE_TOKEN_ENDPOINT": "http://127.0.0.1:9/external-auth-disabled/google/token",
+    "GOOGLE_USERINFO_ENDPOINT": "http://127.0.0.1:9/external-auth-disabled/google/userinfo",
+    "GITHUB_AUTHORIZATION_ENDPOINT": "http://127.0.0.1:9/external-auth-disabled/github/authorize",
+    "GITHUB_TOKEN_ENDPOINT": "http://127.0.0.1:9/external-auth-disabled/github/token",
+    "GITHUB_API_BASE_URL": "http://127.0.0.1:9/external-auth-disabled/github/api"
   },
   "secrets": {
     "required": [

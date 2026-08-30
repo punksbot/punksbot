@@ -63,7 +63,7 @@ function eventId(index) {
 
 /**
  * Relay model matching production semantics (`filter_to_query_params` +
- * `filter_fully_pushable` in `crates/buzz-relay/src/handlers/req.rs`):
+ * `filter_fully_pushable` in `crates/punks-relay/src/handlers/req.rs`):
  *
  * 1. SQL applies kinds / `#e` / `since` / `until` (inclusive), orders
  *    `(created_at DESC, id ASC)`, and cuts to `LIMIT` — clamped to 1,000.
@@ -284,4 +284,39 @@ test("a failed assignment query surfaces as a failed section instead of silent l
   );
 
   assert.ok(result.issues.failedSections.includes("assignments"));
+});
+
+test("fetchAssignmentOperationEvents stops paginating once its signal aborts", async () => {
+  // A permanently-full page would paginate forever without the cursor; abort
+  // after the first page and require the loop to stop with AbortError.
+  const controller = new AbortController();
+  let fetches = 0;
+  const fullPage = (until) =>
+    Array.from({ length: 500 }, (_, index) => ({
+      id: `${until ?? "head"}-${index}`.padEnd(64, "0"),
+      kind: 1,
+      pubkey: "a".repeat(64),
+      created_at: 1_000_000 - fetches * 1_000 - index,
+      content: JSON.stringify({ type: "assign" }),
+      tags: [],
+    }));
+  const fetchEvents = async (filter) => {
+    fetches += 1;
+    // Bound the fake: without the abort support the loop would paginate
+    // forever (each page has a fresh cursor) and OOM the test run.
+    if (fetches > 3) throw new Error("kept paginating after abort");
+    const page = fullPage(filter.until);
+    controller.abort();
+    return page;
+  };
+
+  await assert.rejects(
+    fetchAssignmentOperationEvents(
+      ["issue".padEnd(64, "1")],
+      fetchEvents,
+      controller.signal,
+    ),
+    (error) => error.name === "AbortError",
+  );
+  assert.equal(fetches, 1);
 });

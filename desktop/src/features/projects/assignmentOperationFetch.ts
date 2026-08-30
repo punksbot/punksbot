@@ -12,7 +12,7 @@ const ASSIGNMENT_PAGE_LIMIT = 500;
 
 /**
  * The relay clamps every REQ page to this many rows regardless of the
- * requested `limit` (`DEFAULT_MAX_PAGE_LIMIT` in `crates/buzz-db/src/event.rs`).
+ * requested `limit` (`DEFAULT_MAX_PAGE_LIMIT` in `crates/punks-db/src/event.rs`).
  * A single second denser than this is unreachable through NIP-01 pagination,
  * so the loop below reports it as an error instead of silently dropping
  * operations.
@@ -46,7 +46,7 @@ function isAssignmentOperation(event: RelayEvent): boolean {
  *
  * The filter deliberately carries ONLY constraints the relay pushes into SQL
  * before applying `LIMIT`: kinds, `#e`, `until`, `limit` (see
- * `filter_fully_pushable` in `crates/buzz-relay/src/handlers/req.rs`). Tag
+ * `filter_fully_pushable` in `crates/punks-relay/src/handlers/req.rs`). Tag
  * filters like `#t`/`#a` are post-filtered in Rust AFTER the SQL `LIMIT`, so
  * including them would make a short page meaningless — the newest N candidate
  * rows could all be post-filtered away while older matches remain, and the
@@ -68,6 +68,7 @@ export async function fetchAssignmentOperationEvents(
   fetchEvents: (
     filter: FetchEventsInput,
   ) => Promise<RelayEvent[]> = relayClient.fetchEvents.bind(relayClient),
+  signal?: AbortSignal,
 ): Promise<RelayEvent[]> {
   if (issueIds.length === 0) return [];
   const chunks: string[][] = [];
@@ -75,7 +76,9 @@ export async function fetchAssignmentOperationEvents(
     chunks.push(issueIds.slice(i, i + ISSUE_ID_CHUNK_SIZE));
   }
   const pages = await Promise.all(
-    chunks.map((chunk) => fetchIssueCommentsExhaustively(chunk, fetchEvents)),
+    chunks.map((chunk) =>
+      fetchIssueCommentsExhaustively(chunk, fetchEvents, signal),
+    ),
   );
   const seen = new Map<string, RelayEvent>();
   for (const page of pages) {
@@ -91,11 +94,15 @@ export async function fetchAssignmentOperationEvents(
 async function fetchIssueCommentsExhaustively(
   issueIds: string[],
   fetchEvents: (filter: FetchEventsInput) => Promise<RelayEvent[]>,
+  signal?: AbortSignal,
 ): Promise<RelayEvent[]> {
   const seen = new Map<string, RelayEvent>();
   let limit = ASSIGNMENT_PAGE_LIMIT;
   let until: number | undefined;
   for (;;) {
+    // Leaving the Projects surface cancels its queries; stop queuing pages
+    // behind the next surface's fetches.
+    signal?.throwIfAborted();
     const page = await fetchEvents({
       kinds: [KIND_TEXT_NOTE],
       "#e": issueIds,

@@ -3,7 +3,7 @@
 > Vue dérivée de [`withdrawal-inventory.yaml`](./withdrawal-inventory.yaml), qui est canonique.
 > Régénérée par `scripts/render-withdrawal-inventory.mjs` (`pnpm migration:render`) — ne pas éditer.
 > Décisions : issues [#13](https://github.com/punksbot/punksbot/issues/13), [#14](https://github.com/punksbot/punksbot/issues/14) et [#17](https://github.com/punksbot/punksbot/issues/17).
-> Checkpoint de récupération : `50e16de180dda4365f8001a8a73503f16977a175` — baseline Buzz gelée : `da818eddc2f470c006a1073c8c5452f8a989f272` — version 1 — sha256 canonique `e3b3090f03d55daac3a0043b75782cc5b7a5f4738a28a4c21e38eb20cd2a5db3`.
+> Checkpoint de récupération : `50e16de180dda4365f8001a8a73503f16977a175` — baseline Buzz gelée : `da818eddc2f470c006a1073c8c5452f8a989f272` — version 1 — sha256 canonique `1c81c5047632332ea0d761ae83f3568ce9762d4e0814dc751e6111850e84cffb`.
 
 Chaque actif reçoit exactement un verdict. Un module partagé appartient à la tranche de
 son **dernier** consommateur ; ses parties antérieures disparaissent plus tôt (champ
@@ -55,8 +55,6 @@ une dépendance active.
 - `desktop/src/app/routes/root.tsx` — séparation : la route racine reste le point de montage du shell ; AppShell Buzz est remplacé avant conservation de l'enveloppe neutre
 - `desktop/src/app/` — séparation : reste de l'orchestration de shell partagé ; les routes et capacités dont le dernier consommateur est connu ont une entrée plus spécifique ci-dessus
 
-- `desktop/src/main.tsx` — séparation : bootstrap, providers, onboarding, communautés, profil Nostr et Huddle Buzz meurent avec leurs derniers consommateurs ; l’entrée produit Punks est déjà extraite dans desktop/punks-product/main.tsx et desktop/src/punks-main.tsx
- — dernière entrée React Buzz, retirée au gate terminal après extraction des mécanismes neutres
 - `desktop/src/testing/` — séparation : harnais Buzz (signature nostr-tools, émission RelayEvent) retirés par tranche ; façade Punks extraite et conservée dans le harnais du candidat
 - `desktop/tests/` — séparation : scénarios Buzz retirés avec leur dernière capacité et enregistrés dans retraits-par-tranche ; mécanismes Playwright neutres extraits
 - `desktop/src-tauri/src/{native_websocket.rs,native_websocket_batch.rs,native_relay_client.rs,native_relay_client_tests.rs}`
@@ -143,7 +141,10 @@ L’entrée « Retrait global du serveur historique » s’ouvre uniquement lors
 
 - `desktop/src/shared/api/punks*` — façade, erreurs, Réactions et adaptateur Tauri sémantiques Punks
 - `desktop/src/shared/capabilities/` — disponibilité Punks fermée et garde commune des surfaces desktop
-- `desktop/src/{punks-main.tsx,punks.css}` — entrée et styles du produit desktop Punks vérifié
+- `desktop/src/app/PunksFullApp.tsx` — façade unique du produit desktop riche vers le client sémantique Punks
+- `desktop/src/main.tsx` — séparation : l'ancien bootstrap Buzz est retiré ; cette entrée monte uniquement la façade riche Punks et son client sémantique natif
+ — entrée React unique du produit desktop Punks
+- `desktop/src/punks.css` — styles du produit desktop Punks vérifié
 - `desktop/src/features/punks/` — produit Punks, runtime Workspace et boucle sociale du candidat desktop
 - `desktop/tests/e2e/capability-masking.spec.ts` — garde structurelle Punks commune aux routes et surfaces indisponibles
 - `desktop/playwright.punks-capabilities.config.ts` — harnais Playwright isolé du bundle produit pour les capacités indisponibles
@@ -155,7 +156,6 @@ L’entrée « Retrait global du serveur historique » s’ouvre uniquement lors
 - `desktop/src-tauri/crates/punks-promotion-session/` — processus natif borné utilisé par la preuve de promotion Punks
 - `desktop/src-tauri/{capabilities/punks.json,Info.punks.plist,signing/punks-linux-release.asc}` — capacité Tauri et identité de signature native du candidat Punks
 - `desktop/src-tauri/tauri.punks*.json` — configurations Tauri fermées du produit et de la signature Windows Punks
-- `desktop/punks-product/` — entrée HTML/TypeScript isolée du produit desktop Punks
 - `desktop/{tailwind.punks.config.js,tsconfig.punks.json}` — configurations de build fermées de la surface Punks
 - `scripts/{check-migration-manifests.mjs,check-migration-manifests.test.mjs,migration-manifest-lib.mjs,render-withdrawal-inventory.mjs}` — gate et générateur des manifestes de migration (issue #49)
 - `scripts/{release-graph-lib.mjs,check-release-graph.mjs,check-release-graph.test.mjs,release-graph-live-state.test.mjs}` — gate du graphe de release et du modèle d'attestation (issue #51)

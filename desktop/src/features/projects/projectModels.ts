@@ -112,15 +112,15 @@ export function isValidProjectChannelId(value: string): boolean {
 const SINGLETON_METADATA_TAGS = [
   "name",
   "description",
-  "buzz-channel",
-  "buzz-visibility",
+  "h",
+  "visibility",
 ] as const;
 
 const MAX_METADATA_TAG_BYTES: Record<string, number> = {
   name: 256,
   description: 2_048,
-  "buzz-channel": 256,
-  "buzz-visibility": 256,
+  h: 256,
+  visibility: 256,
 };
 
 /**
@@ -258,7 +258,7 @@ export function eventToRepository(
 
   const owner = event.pubkey.toLowerCase();
   const setupUsers = getAllTags(event, "auth");
-  const channel = getTag(event, "buzz-channel");
+  const channel = getTag(event, "h");
   return {
     id: `${owner}:${dtag}`,
     dtag,
@@ -335,10 +335,10 @@ export function eventToExplicitProject(
   const owner = event.pubkey.toLowerCase();
   const projectAddress = `${KIND_PROJECT_ANNOUNCEMENT}:${owner}:${dtag}`;
 
-  const rawVisibility = getTag(event, "buzz-visibility");
+  const rawVisibility = getTag(event, "visibility");
   const visibility =
     rawVisibility === "unlisted" ? ("unlisted" as const) : ("listed" as const);
-  const channel = getTag(event, "buzz-channel");
+  const channel = getTag(event, "h");
   return {
     id: projectAddress,
     dtag,

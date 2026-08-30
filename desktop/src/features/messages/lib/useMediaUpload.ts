@@ -160,11 +160,14 @@ type UseMediaUploadOptions = {
 export function useMediaUpload({
   deferUploadsUntilSend = false,
 }: UseMediaUploadOptions = {}) {
-  const e2eConfig = (
-    window as Window & {
-      __BUZZ_E2E__?: { mock?: { deferredComposerUploads?: boolean } };
-    }
-  ).__BUZZ_E2E__;
+  const e2eConfig =
+    import.meta.env.MODE === "e2e"
+      ? (
+          window as Window & {
+            __PUNKS_E2E__?: { mock?: { deferredComposerUploads?: boolean } };
+          }
+        ).__PUNKS_E2E__
+      : undefined;
   const queueUntilSend =
     deferUploadsUntilSend &&
     (!e2eConfig || e2eConfig.mock?.deferredComposerUploads === true);
