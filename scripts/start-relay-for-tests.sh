@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# start-relay-for-tests.sh — Start the Buzz relay and its backing services
+# start-relay-for-tests.sh — Start the Punks relay and its backing services
 # =============================================================================
 # Shared script for CI jobs that need a running relay. Starts docker compose
 # services, waits for health, applies the schema, builds the relay, starts it,
@@ -82,29 +82,29 @@ wait_healthy() {
   return 1
 }
 
-wait_healthy "Postgres" "buzz-postgres"
-wait_healthy "Redis" "buzz-redis"
-wait_healthy "MinIO" "buzz-minio"
+wait_healthy "Postgres" "punks-postgres"
+wait_healthy "Redis" "punks-redis"
+wait_healthy "MinIO" "punks-minio"
 
 # ── Apply database schema ────────────────────────────────────────────────────
 
 log "Applying database schema..."
 export PGHOST=localhost
 export PGPORT=5432
-export PGUSER=buzz
-export PGPASSWORD=buzz_dev
-export PGDATABASE=buzz
+export PGUSER=punks
+export PGPASSWORD=punks_dev
+export PGDATABASE=punks
 
 # Use the already-running docker postgres for desired-state planning instead of
 # downloading an embedded Postgres from Maven Central (transient-fetch flake source).
 export PGSCHEMA_PLAN_HOST=localhost
 export PGSCHEMA_PLAN_PORT=5432
-export PGSCHEMA_PLAN_DB=buzz
-export PGSCHEMA_PLAN_USER=buzz
-export PGSCHEMA_PLAN_PASSWORD=buzz_dev
+export PGSCHEMA_PLAN_DB=punks
+export PGSCHEMA_PLAN_USER=punks
+export PGSCHEMA_PLAN_PASSWORD=punks_dev
 
 ./bin/pgschema apply --file schema/schema.sql --auto-approve
-docker exec -i -e PGPASSWORD="${PGPASSWORD}" buzz-postgres \
+docker exec -i -e PGPASSWORD="${PGPASSWORD}" punks-postgres \
   psql -U "${PGUSER}" -d "${PGDATABASE}" -v ON_ERROR_STOP=1 < scripts/attach-schema-partitions.sql
 ok "Schema applied"
 
@@ -116,13 +116,13 @@ ok "Schema applied"
 # (ensure_configured_community has no callers) and fails closed on an unmapped
 # host, so without this row every e2e connection would 404 at host-binding.
 # The unique index is on lower(host), so ON CONFLICT must target that expression.
-# psql is not on PATH in the hermit env; postgres runs as the buzz-postgres
+# psql is not on PATH in the hermit env; postgres runs as the punks-postgres
 # docker container, so exec into it (same fallback as setup-desktop-test-data.sh).
 log "Seeding deployment community (host=localhost:3000)..."
 if command -v psql >/dev/null 2>&1; then
   seed_psql() { PGPASSWORD="${PGPASSWORD}" psql -h "${PGHOST}" -p "${PGPORT}" -U "${PGUSER}" -d "${PGDATABASE}" -qtA "$@"; }
 else
-  seed_psql() { docker exec -e PGPASSWORD="${PGPASSWORD}" buzz-postgres psql -U "${PGUSER}" -d "${PGDATABASE}" -qtA "$@"; }
+  seed_psql() { docker exec -e PGPASSWORD="${PGPASSWORD}" punks-postgres psql -U "${PGUSER}" -d "${PGDATABASE}" -qtA "$@"; }
 fi
 seed_psql -c "
 INSERT INTO communities (id, host)
@@ -135,7 +135,7 @@ ok "Community seeded"
 # ── Build relay ──────────────────────────────────────────────────────────────
 
 if [[ "${SKIP_BUILD}" == "true" ]]; then
-  for bin in buzz-relay git-credential-nostr; do
+  for bin in punks-relay git-credential-nostr; do
     if [[ ! -x "./target/${CARGO_PROFILE}/${bin}" ]]; then
       err "--no-build: ./target/${CARGO_PROFILE}/${bin} missing or not executable"
       exit 1
@@ -144,7 +144,7 @@ if [[ "${SKIP_BUILD}" == "true" ]]; then
   log "Skipping relay build (--no-build); using existing target/${CARGO_PROFILE}/ binaries"
 else
   log "Building relay (profile: ${CARGO_PROFILE})..."
-  cargo build --profile "${CARGO_PROFILE}" -p buzz-relay -p git-credential-nostr
+  cargo build --profile "${CARGO_PROFILE}" -p punks-relay -p git-credential-nostr
   ok "Relay built"
 fi
 
@@ -156,34 +156,34 @@ log "Starting relay..."
 # membership-gated relay (e.g. the mesh lifecycle smoke). All three must be
 # set together — the relay fails fast otherwise.
 MEMBERSHIP_ENV=()
-if [[ "${BUZZ_REQUIRE_RELAY_MEMBERSHIP:-}" == "true" ]]; then
+if [[ "${PUNKS_REQUIRE_RELAY_MEMBERSHIP:-}" == "true" ]]; then
   MEMBERSHIP_ENV+=(
-    BUZZ_REQUIRE_RELAY_MEMBERSHIP=true
-    RELAY_OWNER_PUBKEY="${RELAY_OWNER_PUBKEY:?RELAY_OWNER_PUBKEY required with BUZZ_REQUIRE_RELAY_MEMBERSHIP=true}"
-    BUZZ_RELAY_PRIVATE_KEY="${BUZZ_RELAY_PRIVATE_KEY:?BUZZ_RELAY_PRIVATE_KEY required with BUZZ_REQUIRE_RELAY_MEMBERSHIP=true}"
+    PUNKS_REQUIRE_RELAY_MEMBERSHIP=true
+    RELAY_OWNER_PUBKEY="${RELAY_OWNER_PUBKEY:?RELAY_OWNER_PUBKEY required with PUNKS_REQUIRE_RELAY_MEMBERSHIP=true}"
+    PUNKS_RELAY_PRIVATE_KEY="${PUNKS_RELAY_PRIVATE_KEY:?PUNKS_RELAY_PRIVATE_KEY required with PUNKS_REQUIRE_RELAY_MEMBERSHIP=true}"
   )
   log "Membership gating enabled (NIP-43)"
 fi
 
 nohup env \
-  DATABASE_URL=postgres://buzz:buzz_dev@localhost:5432/buzz \
+  DATABASE_URL=postgres://punks:punks_dev@localhost:5432/punks \
   REDIS_URL=redis://localhost:6379 \
   RELAY_URL=ws://localhost:3000 \
-  BUZZ_BIND_ADDR=0.0.0.0:3000 \
-  BUZZ_REQUIRE_AUTH_TOKEN=false \
-  BUZZ_RECONCILE_CHANNELS=true \
-  BUZZ_GIT_PROBE_WRITERS=8 \
+  PUNKS_BIND_ADDR=0.0.0.0:3000 \
+  PUNKS_REQUIRE_AUTH_TOKEN=false \
+  PUNKS_RECONCILE_CHANNELS=true \
+  PUNKS_GIT_PROBE_WRITERS=8 \
   ${MEMBERSHIP_ENV[@]+"${MEMBERSHIP_ENV[@]}"} \
-  "./target/${CARGO_PROFILE}/buzz-relay" > /tmp/buzz-relay.log 2>&1 &
-echo $! > /tmp/buzz-relay.pid
+  "./target/${CARGO_PROFILE}/punks-relay" > /tmp/punks-relay.log 2>&1 &
+echo $! > /tmp/punks-relay.pid
 
 # ── Poll readiness ───────────────────────────────────────────────────────────
 
 log "Waiting for relay readiness..."
 for attempt in $(seq 1 60); do
-  if ! kill -0 "$(cat /tmp/buzz-relay.pid)" 2>/dev/null; then
+  if ! kill -0 "$(cat /tmp/punks-relay.pid)" 2>/dev/null; then
     err "Relay process died"
-    cat /tmp/buzz-relay.log
+    cat /tmp/punks-relay.log
     exit 1
   fi
   status_code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3000/_readiness || true)
@@ -196,5 +196,5 @@ for attempt in $(seq 1 60); do
 done
 
 err "Relay did not become ready within 60s"
-cat /tmp/buzz-relay.log
+cat /tmp/punks-relay.log
 exit 1

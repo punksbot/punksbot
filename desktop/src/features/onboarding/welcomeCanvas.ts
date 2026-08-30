@@ -16,7 +16,7 @@ Bring the team something you are building, or give them a quick challenge to see
 
 ## Get help
 
-Ask the team a question here, or read the [Punks user guide](https://github.com/block/punks#readme).
+Ask the team a question here, or read the [Punks user guide](https://github.com/punksbot/punksbot#readme).
 `;
 
 type WelcomeCanvasClient = {

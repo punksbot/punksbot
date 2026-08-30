@@ -7,16 +7,16 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
-val uploadKeystorePath = providers.environmentVariable("BUZZ_ANDROID_UPLOAD_KEYSTORE_PATH").orNull
-val uploadKeystorePassword = providers.environmentVariable("BUZZ_ANDROID_UPLOAD_KEYSTORE_PASSWORD").orNull
-val uploadKeyAlias = providers.environmentVariable("BUZZ_ANDROID_UPLOAD_KEY_ALIAS").orNull
-val uploadKeyPassword = providers.environmentVariable("BUZZ_ANDROID_UPLOAD_KEY_PASSWORD").orNull
+val uploadKeystorePath = providers.environmentVariable("PUNKS_ANDROID_UPLOAD_KEYSTORE_PATH").orNull
+val uploadKeystorePassword = providers.environmentVariable("PUNKS_ANDROID_UPLOAD_KEYSTORE_PASSWORD").orNull
+val uploadKeyAlias = providers.environmentVariable("PUNKS_ANDROID_UPLOAD_KEY_ALIAS").orNull
+val uploadKeyPassword = providers.environmentVariable("PUNKS_ANDROID_UPLOAD_KEY_PASSWORD").orNull
 val uploadSigningValues =
     mapOf(
-        "BUZZ_ANDROID_UPLOAD_KEYSTORE_PATH" to uploadKeystorePath,
-        "BUZZ_ANDROID_UPLOAD_KEYSTORE_PASSWORD" to uploadKeystorePassword,
-        "BUZZ_ANDROID_UPLOAD_KEY_ALIAS" to uploadKeyAlias,
-        "BUZZ_ANDROID_UPLOAD_KEY_PASSWORD" to uploadKeyPassword,
+        "PUNKS_ANDROID_UPLOAD_KEYSTORE_PATH" to uploadKeystorePath,
+        "PUNKS_ANDROID_UPLOAD_KEYSTORE_PASSWORD" to uploadKeystorePassword,
+        "PUNKS_ANDROID_UPLOAD_KEY_ALIAS" to uploadKeyAlias,
+        "PUNKS_ANDROID_UPLOAD_KEY_PASSWORD" to uploadKeyPassword,
     )
 val missingUploadSigningValues = uploadSigningValues.filterValues { it.isNullOrBlank() }.keys
 val hasUploadSigning = missingUploadSigningValues.isEmpty()
@@ -74,23 +74,23 @@ if (
 //     pipeline that signs through the central APK Signer service (Cashkite,
 //     BOT-1234). No keystore material may be present in this mode.
 val releaseSigningMode =
-    providers.environmentVariable("BUZZ_ANDROID_RELEASE_SIGNING").orNull ?: "upload-keystore"
+    providers.environmentVariable("PUNKS_ANDROID_RELEASE_SIGNING").orNull ?: "upload-keystore"
 val externalReleaseSigning = releaseSigningMode == "external"
 if (releaseSigningMode !in setOf("upload-keystore", "external")) {
     throw GradleException(
-        "BUZZ_ANDROID_RELEASE_SIGNING must be \"upload-keystore\" or \"external\", got: " +
+        "PUNKS_ANDROID_RELEASE_SIGNING must be \"upload-keystore\" or \"external\", got: " +
             releaseSigningMode,
     )
 }
 if (externalReleaseSigning && uploadSigningValues.values.any { !it.isNullOrBlank() }) {
     throw GradleException(
-        "BUZZ_ANDROID_RELEASE_SIGNING=external must not be combined with " +
-            "BUZZ_ANDROID_UPLOAD_* credentials; unset one of them.",
+        "PUNKS_ANDROID_RELEASE_SIGNING=external must not be combined with " +
+            "PUNKS_ANDROID_UPLOAD_* credentials; unset one of them.",
     )
 }
 
 android {
-    namespace = "xyz.block.buzz.mobile"
+    namespace = "xyz.block.punks.mobile"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -104,7 +104,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "xyz.block.buzz.mobile"
+        applicationId = "xyz.block.punks.mobile"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
@@ -112,7 +112,7 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        resValue("string", "app_name", "Buzz")
+        resValue("string", "app_name", "Punks")
     }
 
     signingConfigs {
@@ -136,7 +136,7 @@ android {
             if (debugAppName != null) {
                 resValue("string", "app_name", debugAppName)
             } else if (worktreeLabel != null) {
-                resValue("string", "app_name", "Buzz ($worktreeLabel)")
+                resValue("string", "app_name", "Punks ($worktreeLabel)")
             }
         }
         release {
@@ -164,33 +164,33 @@ gradle.taskGraph.whenReady {
     if (buildsRelease && externalReleaseSigning) {
         // External signing: the unsigned bundle goes to the central APK
         // Signer. All keystore checks are intentionally skipped; the
-        // guard above already rejected any BUZZ_ANDROID_UPLOAD_* values.
+        // guard above already rejected any PUNKS_ANDROID_UPLOAD_* values.
         return@whenReady
     }
     if (buildsRelease && !hasUploadSigning) {
         throw GradleException(
             "Release builds require Android upload signing credentials. Missing: " +
                 missingUploadSigningValues.sorted().joinToString(", ") +
-                ". For central APK Signer pipelines set BUZZ_ANDROID_RELEASE_SIGNING=external.",
+                ". For central APK Signer pipelines set PUNKS_ANDROID_RELEASE_SIGNING=external.",
         )
     }
     if (buildsRelease) {
         val configuredKeystore = File(requireNotNull(uploadKeystorePath))
         if (!configuredKeystore.isAbsolute) {
             throw GradleException(
-                "BUZZ_ANDROID_UPLOAD_KEYSTORE_PATH must be absolute: $configuredKeystore",
+                "PUNKS_ANDROID_UPLOAD_KEYSTORE_PATH must be absolute: $configuredKeystore",
             )
         }
         val keystore = file(configuredKeystore)
         val repositoryRoot = rootProject.projectDir.parentFile.parentFile.canonicalFile
         if (keystore.canonicalFile.toPath().startsWith(repositoryRoot.toPath())) {
             throw GradleException(
-                "BUZZ_ANDROID_UPLOAD_KEYSTORE_PATH must be outside the repository: $keystore",
+                "PUNKS_ANDROID_UPLOAD_KEYSTORE_PATH must be outside the repository: $keystore",
             )
         }
         if (!keystore.isFile || !keystore.canRead()) {
             throw GradleException(
-                "BUZZ_ANDROID_UPLOAD_KEYSTORE_PATH is not a readable file: $keystore",
+                "PUNKS_ANDROID_UPLOAD_KEYSTORE_PATH is not a readable file: $keystore",
             )
         }
     }

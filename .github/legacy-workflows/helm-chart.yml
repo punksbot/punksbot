@@ -36,8 +36,8 @@ on:
     tags: ["chart-v[0-9]*"]
   pull_request:
     paths:
-      - "deploy/charts/buzz/**"
-      - "deploy/charts/buzz-push-gateway/**"
+      - "deploy/charts/punks/**"
+      - "deploy/charts/punks-push-gateway/**"
       - ".github/workflows/helm-chart.yml"
       - "ct.yaml"
 
@@ -46,11 +46,11 @@ permissions: {}
 
 env:
   # Single source of truth for the OCI chart repository (helm appends the chart
-  # name `buzz`, yielding oci://ghcr.io/block/buzz/charts/buzz, which is exactly
-  # the install ref documented in deploy/charts/buzz/README.md). Set
+  # name `punks`, yielding oci://ghcr.io/punksbot/punksbot/charts/punks, which is exactly
+  # the install ref documented in deploy/charts/punks/README.md). Set
   # GHCR_CHART_REPO as a repo variable to override (e.g., forks pushing to their
   # own namespace without editing this file) — mirrors docker.yml's GHCR_IMAGE.
-  CHART_REPO: ${{ vars.GHCR_CHART_REPO != '' && vars.GHCR_CHART_REPO || 'oci://ghcr.io/block/buzz/charts' }}
+  CHART_REPO: ${{ vars.GHCR_CHART_REPO != '' && vars.GHCR_CHART_REPO || 'oci://ghcr.io/punksbot/punksbot/charts' }}
 
 jobs:
   lint-and-unittest:
@@ -84,28 +84,28 @@ jobs:
         uses: helm/chart-testing-action@0d28d3144d3a25ea2cc349d6e59901c4ff469b3b  # v2.7.0
 
       - name: Build chart dependencies
-        run: helm dependency build deploy/charts/buzz
+        run: helm dependency build deploy/charts/punks
 
       - name: Push gateway chart lint + render guard
-        run: deploy/charts/buzz-push-gateway/tests/render.sh
+        run: deploy/charts/punks-push-gateway/tests/render.sh
 
       - name: ct lint
         run: ct lint --config ct.yaml --all
 
       - name: helm-unittest
-        run: helm unittest deploy/charts/buzz
+        run: helm unittest deploy/charts/punks
 
       - name: helm template (render every fixture)
         run: |
           set -euo pipefail
-          for f in deploy/charts/buzz/ci/*-values.yaml deploy/charts/buzz/tests/fixtures/*-values.yaml; do
+          for f in deploy/charts/punks/ci/*-values.yaml deploy/charts/punks/tests/fixtures/*-values.yaml; do
             echo "::group::render $f"
-            helm template buzz deploy/charts/buzz -f "$f"
+            helm template punks deploy/charts/punks -f "$f"
             echo "::endgroup::"
           done
 
   install-on-kind:
-    # Full end-to-end install requires the public ghcr.io/block/buzz image to
+    # Full end-to-end install requires the public ghcr.io/punksbot/punksbot image to
     # exist and to embed Max's startup migrations. Runs only after Sami's
     # image PR merges (`workflow_dispatch`) or on a schedule once main carries
     # both prerequisites. Render/lint above is the per-PR signal.
@@ -143,10 +143,10 @@ jobs:
           node_image: kindest/node:v1.31.0
 
       - name: Build chart dependencies
-        run: helm dependency build deploy/charts/buzz
+        run: helm dependency build deploy/charts/punks
 
       - name: ct install (quickstart profile)
-        run: ct install --config ct.yaml --charts deploy/charts/buzz --helm-extra-args "--timeout 600s"
+        run: ct install --config ct.yaml --charts deploy/charts/punks --helm-extra-args "--timeout 600s"
 
   publish:
     # Packages the chart and pushes it to GHCR as an OCI artifact. Fires only on
@@ -207,7 +207,7 @@ jobs:
           # The tag is the source of truth, but the published artifact's version
           # comes from Chart.yaml — they must agree or we'd publish a mislabeled
           # chart. Fail loudly on drift rather than silently shipping a mismatch.
-          chart_version="$(helm show chart deploy/charts/buzz | awk '/^version:/ {print $2}')"
+          chart_version="$(helm show chart deploy/charts/punks | awk '/^version:/ {print $2}')"
           if [ "$chart_version" != "$version" ]; then
             echo "::error::Tag version '$version' != Chart.yaml version '$chart_version'. Bump Chart.yaml to match the tag."
             exit 1
@@ -223,10 +223,10 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build chart dependencies
-        run: helm dependency build deploy/charts/buzz
+        run: helm dependency build deploy/charts/punks
 
       - name: Package chart
-        run: helm package deploy/charts/buzz --destination dist
+        run: helm package deploy/charts/punks --destination dist
 
       - name: Push chart to GHCR
         env:
@@ -234,23 +234,23 @@ jobs:
           VERSION: ${{ steps.ver.outputs.version }}
         run: |
           set -euo pipefail
-          helm push "dist/buzz-${VERSION}.tgz" "$CHART_REPO"
+          helm push "dist/punks-${VERSION}.tgz" "$CHART_REPO"
 
       - name: Summary
         env:
           CHART_REPO: ${{ env.CHART_REPO }}
           VERSION: ${{ steps.ver.outputs.version }}
         run: |
-          # CHART_REPO is oci://ghcr.io/block/buzz/charts; helm push appends the
-          # chart name, so the install ref is .../charts/buzz.
-          INSTALL_REF="${CHART_REPO}/buzz"
+          # CHART_REPO is oci://ghcr.io/punksbot/punksbot/charts; helm push appends the
+          # chart name, so the install ref is .../charts/punks.
+          INSTALL_REF="${CHART_REPO}/punks"
           {
-            echo "### Published chart \`buzz\` \`${VERSION}\`"
+            echo "### Published chart \`punks\` \`${VERSION}\`"
             echo
             echo "**OCI ref:** \`${INSTALL_REF}:${VERSION}\`"
             echo
             echo "Install:"
             echo '```'
-            echo "helm install buzz ${INSTALL_REF} --version ${VERSION}"
+            echo "helm install punks ${INSTALL_REF} --version ${VERSION}"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"

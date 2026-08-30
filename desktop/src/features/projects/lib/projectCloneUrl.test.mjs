@@ -74,7 +74,7 @@ test("projectRepoHost recognizes a canonical repository on the relay", () => {
 
 test("projectRepoHost identifies an external repository by host", () => {
   assert.deepEqual(
-    projectRepoHost("https://github.com/block/punks.git", ORIGIN),
+    projectRepoHost("https://github.com/punksbot/punksbot.git", ORIGIN),
     { kind: "external", host: "github.com" },
   );
 });
@@ -110,13 +110,13 @@ test("repositoryDisplayPath renders an external repo as host/path without .git",
   assert.equal(
     repositoryDisplayPath(
       {
-        cloneUrls: ["https://github.com/block/punks.git"],
+        cloneUrls: ["https://github.com/punksbot/punksbot.git"],
         dtag: "punks",
         owner: OWNER,
       },
       ORIGIN,
     ),
-    "github.com/block/punks",
+    "github.com/punksbot/punksbot",
   );
 });
 

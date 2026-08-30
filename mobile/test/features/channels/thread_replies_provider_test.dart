@@ -1,8 +1,8 @@
 import 'dart:async';
 
-import 'package:buzz/features/channels/pending_local_messages_provider.dart';
-import 'package:buzz/features/channels/thread_replies_provider.dart';
-import 'package:buzz/shared/relay/relay.dart';
+import 'package:punks/features/channels/pending_local_messages_provider.dart';
+import 'package:punks/features/channels/thread_replies_provider.dart';
+import 'package:punks/shared/relay/relay.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 

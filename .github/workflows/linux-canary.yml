@@ -19,7 +19,7 @@ permissions:
 jobs:
   build:
     name: Build Linux canary
-    if: github.repository == 'block/buzz'
+    if: github.repository == 'punksbot/punksbot'
     runs-on: ubuntu-latest
     container: ubuntu:24.04@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea
     timeout-minutes: 60
@@ -147,7 +147,7 @@ jobs:
         run: echo "id=$(scripts/desktop-native-toolchain-id.sh linux)" >> "$GITHUB_OUTPUT"
 
       # Compute this after cargo update so the key describes the graph that is
-      # actually compiled. The helper normalizes only Buzz Desktop's release
+      # actually compiled. The helper normalizes only Punks Desktop's release
       # version, allowing a canary to warm an otherwise identical tag build.
       - name: Compute exact release cache key
         id: rust_cache_key
@@ -186,7 +186,7 @@ jobs:
 
       - name: Build sidecars
         run: |
-          cargo build --release -p buzz-acp -p buzz-agent -p buzz-backend-kubernetes -p buzz-dev-mcp -p git-credential-nostr -p buzz-cli
+          cargo build --release -p punks-acp -p punks-agent -p punks-backend-kubernetes -p punks-dev-mcp -p git-credential-nostr -p punks-cli
           ./scripts/bundle-sidecars.sh
 
       - name: Build Linux Tauri app
@@ -257,7 +257,7 @@ jobs:
       - name: Upload Linux canary packages
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: buzz-linux-canary-${{ github.sha }}
+          name: punks-linux-canary-${{ github.sha }}
           path: |
             ${{ steps.artifacts.outputs.deb }}
             ${{ steps.artifacts.outputs.appimage }}

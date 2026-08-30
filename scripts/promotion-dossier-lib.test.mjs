@@ -5,7 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
-  BASELINE_BUZZ,
+  BASELINE_PUNKS,
   CHECKPOINT_RECUPERATION,
   canonicalSha256,
 } from "./migration-manifest-lib.mjs";
@@ -50,7 +50,7 @@ test("un dossier complet et autorisé produit l'attestation au format du graphe"
   const emission = construireAttestation(dossier, contexteValide());
   assert.equal(emission.erreur, undefined);
   assert.equal(emission.attestation.sha, SHA_CANDIDAT);
-  assert.equal(emission.attestation["checkpoint-baseline"], BASELINE_BUZZ);
+  assert.equal(emission.attestation["checkpoint-baseline"], BASELINE_PUNKS);
   assert.equal(emission.attestation.staging.deploiement, STAGING.deploiement);
   assert.deepEqual(
     emission.attestation["digests-production"],
@@ -242,19 +242,19 @@ test("l'en-tête du dossier est figé", () => {
     "version non supportée",
   );
   attendu(
-    validerDossier(dossierValide({ "baseline-buzz": "ff" })),
-    "baseline Buzz invalide",
+    validerDossier(dossierValide({ "baseline-punks": "ff" })),
+    "baseline Punks invalide",
   );
   attendu(
     validerDossier({ ...dossierValide(), candidat: { sha: "zz", tranche: 1 } }),
     "SHA exact",
   );
-  for (const shaInterdit of [BASELINE_BUZZ, CHECKPOINT_RECUPERATION]) {
+  for (const shaInterdit of [BASELINE_PUNKS, CHECKPOINT_RECUPERATION]) {
     const dossier = dossierValide();
     dossier.candidat.sha = shaInterdit;
     attendu(
       validerDossier(dossier, contexteValide()),
-      "distinct des checkpoints Buzz interdits",
+      "distinct des checkpoints Punks interdits",
     );
   }
 });
@@ -409,7 +409,7 @@ test("les fautes injectées couvrent coupures, révocations et pertes d'autorit�
   const dossier2 = dossierValide();
   dossier2.fautes = [
     {
-      type: "retour-buzz",
+      type: "retour-punks",
       plateforme: "macos-arm64",
       autorite: "x",
       resultat: "vert",

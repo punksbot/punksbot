@@ -1,0 +1,20 @@
+[package]
+name = "punks-search"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Postgres full-text search for Punks, scoped by community"
+
+[dependencies]
+punks-core   = { workspace = true }
+punks-datastore-tracing = { workspace = true }
+sqlx        = { workspace = true }
+uuid        = { workspace = true }
+thiserror   = { workspace = true }
+tracing     = { workspace = true }
+metrics     = { workspace = true }
+
+[dev-dependencies]
+tokio       = { workspace = true }

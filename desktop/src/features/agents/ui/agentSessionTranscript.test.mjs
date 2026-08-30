@@ -575,7 +575,7 @@ test("buildTranscript surfaces session/request_permission as a permission lifecy
         method: "session/request_permission",
         params: {
           toolCallId: "tool-1",
-          title: "Confirm force-with-lease push to block/punks.",
+          title: "Confirm force-with-lease push to punksbot/punksbot.",
           options: [
             { optionId: "allow_once", kind: "allow_once", name: "Allow" },
             { optionId: "reject_once", kind: "reject_once", name: "Reject" },

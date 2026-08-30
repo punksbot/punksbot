@@ -122,7 +122,7 @@ Future<void> _showProfileTextEditor({
   }
 
   if (!context.mounted) return;
-  await showBuzzModalBottomSheet<void>(
+  await showPunksModalBottomSheet<void>(
     context: context,
     title: title,
     isScrollControlled: true,

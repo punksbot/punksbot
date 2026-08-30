@@ -1,4 +1,4 @@
-import 'package:buzz/shared/animated_avatar.dart';
+import 'package:punks/shared/animated_avatar.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -6,7 +6,7 @@ void main() {
   const animationUrl = 'https://relay.example/media/animation.png?loop=1';
 
   test('parses the selected poster and animated PNG URLs', () {
-    final url = '$posterUrl#buzz-anim=${Uri.encodeComponent(animationUrl)}';
+    final url = '$posterUrl#punks-anim=${Uri.encodeComponent(animationUrl)}';
 
     final parsed = parseAnimatedAvatarUrl(url);
 
@@ -16,18 +16,18 @@ void main() {
 
   test('rejects malformed and non-http animated avatar URLs', () {
     expect(parseAnimatedAvatarUrl(posterUrl), isNull);
-    expect(parseAnimatedAvatarUrl('$posterUrl#buzz-anim='), isNull);
-    expect(parseAnimatedAvatarUrl('$posterUrl#buzz-anim=%E0%A4%A'), isNull);
-    expect(parseAnimatedAvatarUrl('$posterUrl#buzz-anim=%'), isNull);
+    expect(parseAnimatedAvatarUrl('$posterUrl#punks-anim='), isNull);
+    expect(parseAnimatedAvatarUrl('$posterUrl#punks-anim=%E0%A4%A'), isNull);
+    expect(parseAnimatedAvatarUrl('$posterUrl#punks-anim=%'), isNull);
     expect(
       parseAnimatedAvatarUrl(
-        '$posterUrl#buzz-anim=${Uri.encodeComponent('javascript:alert(1)')}',
+        '$posterUrl#punks-anim=${Uri.encodeComponent('javascript:alert(1)')}',
       ),
       isNull,
     );
     expect(
       parseAnimatedAvatarUrl(
-        'data:image/png;base64,xx#buzz-anim='
+        'data:image/png;base64,xx#punks-anim='
         '${Uri.encodeComponent(animationUrl)}',
       ),
       isNull,

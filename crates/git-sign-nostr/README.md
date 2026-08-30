@@ -29,7 +29,7 @@ git verify-commit HEAD
 ## Key Loading Priority
 
 1. `NOSTR_PRIVATE_KEY` environment variable
-2. `BUZZ_PRIVATE_KEY` environment variable
+2. `PUNKS_PRIVATE_KEY` environment variable
 3. Keyfile at path from `git config nostr.keyfile`
 
 Keys may be hex (64 chars) or NIP-19 bech32 (`nsec1...`).

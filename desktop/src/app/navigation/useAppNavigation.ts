@@ -272,7 +272,7 @@ export function useAppNavigation() {
         autoSend?: string;
         /** Navigate even when the destination matches the current href.
          * Used by desktop-notification activation so a click is never
-         * silently swallowed (block/punks#3509). */
+         * silently swallowed (punksbot/punksbot#3509). */
         force?: boolean;
         messageId?: string;
         /** Preserve an active search highlight; ordinary navigation clears it. */
@@ -434,7 +434,7 @@ export function useAppNavigation() {
       behavior?: {
         /** Navigate even when the destination matches the current href.
          * Used by desktop-notification activation so a click is never
-         * silently swallowed (block/punks#3509). */
+         * silently swallowed (punksbot/punksbot#3509). */
         force?: boolean;
         /** Search text to highlight after opening this result. */
         query?: string;

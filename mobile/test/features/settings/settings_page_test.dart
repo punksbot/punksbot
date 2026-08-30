@@ -1,7 +1,7 @@
-import 'package:buzz/features/settings/settings_page.dart';
-import 'package:buzz/shared/community/community_membership_provider.dart';
-import 'package:buzz/shared/theme/theme.dart';
-import 'package:buzz/shared/widgets/app_list_card.dart';
+import 'package:punks/features/settings/settings_page.dart';
+import 'package:punks/shared/community/community_membership_provider.dart';
+import 'package:punks/shared/theme/theme.dart';
+import 'package:punks/shared/widgets/app_list_card.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';

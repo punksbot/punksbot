@@ -13,18 +13,18 @@ import 'package:http/testing.dart' as http_testing;
 import 'package:image_picker/image_picker.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:nostr/nostr.dart' as nostr;
-import 'package:buzz/features/channels/channel.dart';
-import 'package:buzz/features/channels/channel_management_provider.dart';
-import 'package:buzz/features/channels/compose_bar.dart';
-import 'package:buzz/features/channels/channels_provider.dart';
-import 'package:buzz/features/channels/photo_library.dart';
-import 'package:buzz/shared/custom_emoji/custom_emoji.dart';
-import 'package:buzz/shared/custom_emoji/custom_emoji_provider.dart';
-import 'package:buzz/shared/mentions/agent_identity_provider.dart';
-import 'package:buzz/shared/relay/relay.dart';
-import 'package:buzz/shared/theme/theme.dart';
-import 'package:buzz/shared/widgets/anchored_popover_menu.dart';
-import 'package:buzz/shared/widgets/mobile_tab_footer_backdrop.dart';
+import 'package:punks/features/channels/channel.dart';
+import 'package:punks/features/channels/channel_management_provider.dart';
+import 'package:punks/features/channels/compose_bar.dart';
+import 'package:punks/features/channels/channels_provider.dart';
+import 'package:punks/features/channels/photo_library.dart';
+import 'package:punks/shared/custom_emoji/custom_emoji.dart';
+import 'package:punks/shared/custom_emoji/custom_emoji_provider.dart';
+import 'package:punks/shared/mentions/agent_identity_provider.dart';
+import 'package:punks/shared/relay/relay.dart';
+import 'package:punks/shared/theme/theme.dart';
+import 'package:punks/shared/widgets/anchored_popover_menu.dart';
+import 'package:punks/shared/widgets/mobile_tab_footer_backdrop.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 final _pngBytes = Uint8List.fromList([
@@ -129,9 +129,9 @@ List<int> _testPngChunk(String type, List<int> payload) {
   ];
 }
 
-const _mediaUploadPlatformChannel = MethodChannel('buzz/media_upload');
+const _mediaUploadPlatformChannel = MethodChannel('punks/media_upload');
 const _nativeAttachmentPopoverChannel = MethodChannel(
-  'buzz/native_attachment_popover',
+  'punks/native_attachment_popover',
 );
 
 void _setMockMediaUploadPlatformHandler(
@@ -2930,11 +2930,11 @@ void main() {
       final id = 'cd' * 32;
       const channelId = '580ca78b-9dae-46f3-8854-bd671853ba32';
       final urls = [
-        'buzz://message?channel=$channelId&id=$id',
-        'buzz://channel/$channelId',
-        'buzz://repo?owner=$owner&d=buzz',
-        'buzz://pr?id=$id&owner=$owner&d=buzz',
-        'buzz://issue?id=$id&owner=$owner&d=buzz',
+        'punks://message?channel=$channelId&id=$id',
+        'punks://channel/$channelId',
+        'punks://repo?owner=$owner&d=punks',
+        'punks://pr?id=$id&owner=$owner&d=punks',
+        'punks://issue?id=$id&owner=$owner&d=punks',
       ];
       await tester.pumpWidget(
         _buildComposeBar(
@@ -2965,27 +2965,27 @@ void main() {
           (widget) =>
               widget.key is ValueKey<String> &&
               (widget.key! as ValueKey<String>).value.startsWith(
-                'composer-buzz-link-chip:',
+                'composer-punks-link-chip:',
               ),
         ),
         findsNWidgets(5),
       );
       expect(
         find.byKey(
-          const ValueKey('composer-buzz-link-chip:engineering · cdcdcdcd'),
+          const ValueKey('composer-punks-link-chip:engineering · cdcdcdcd'),
         ),
         findsOneWidget,
       );
       expect(
-        find.byKey(const ValueKey('composer-buzz-link-chip:engineering')),
+        find.byKey(const ValueKey('composer-punks-link-chip:engineering')),
         findsOneWidget,
       );
       expect(
-        find.byKey(const ValueKey('composer-buzz-link-chip:buzz')),
+        find.byKey(const ValueKey('composer-punks-link-chip:punks')),
         findsOneWidget,
       );
       expect(
-        find.byKey(const ValueKey('composer-buzz-link-chip:buzz · cdcdcdcd')),
+        find.byKey(const ValueKey('composer-punks-link-chip:punks · cdcdcdcd')),
         findsNWidgets(2),
       );
       expect(
@@ -2998,7 +2998,7 @@ void main() {
       tester,
     ) async {
       final owner = 'ab' * 32;
-      final url = 'buzz://repo?owner=$owner&d=my_repo';
+      final url = 'punks://repo?owner=$owner&d=my_repo';
       final source = '**$url**';
       await tester.pumpWidget(
         _buildComposeBar(
@@ -3012,11 +3012,11 @@ void main() {
       await tester.pump();
 
       expect(
-        find.byKey(const ValueKey('composer-buzz-link-chip:my_repo')),
+        find.byKey(const ValueKey('composer-punks-link-chip:my_repo')),
         findsOneWidget,
       );
       expect(
-        find.byKey(const ValueKey('composer-buzz-link-chip:my')),
+        find.byKey(const ValueKey('composer-punks-link-chip:my')),
         findsNothing,
       );
       expect(

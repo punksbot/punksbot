@@ -34,7 +34,8 @@
       "binaries/punks"
     ],
     "macOS": {
-      "infoPlist": "Info.punks.local.plist"
+      "infoPlist": "Info.punks.local.plist",
+      "signingIdentity": "-"
     }
   }
 }

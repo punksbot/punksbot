@@ -9,7 +9,7 @@ const AGENT_A = "a".repeat(64);
 const AGENT_B = "b".repeat(64);
 const THREAD_ROOT_ID = "mock-general-welcome";
 const KEEP_MENTIONED_AGENTS_PINNED_STORAGE_KEY =
-  "buzz.messages.keepMentionedAgentsPinned";
+  "punks.messages.keepMentionedAgentsPinned";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript((storageKey) => {
@@ -26,8 +26,8 @@ async function keepMentionedAgentsPinned(page: Page) {
 async function seedTheme(page: Page, theme: string, accent = "#c0a2f1") {
   await page.addInitScript(
     ({ selectedTheme, selectedAccent }) => {
-      window.localStorage.setItem("buzz-theme", selectedTheme);
-      window.localStorage.setItem("buzz-accent-color", selectedAccent);
+      window.localStorage.setItem("punks-theme", selectedTheme);
+      window.localStorage.setItem("punks-accent-color", selectedAccent);
     },
     { selectedTheme: theme, selectedAccent: accent },
   );
@@ -93,7 +93,7 @@ async function pressPrimaryShift(page: Page, key: "M") {
 
 async function readOutgoingMentionPubkeys(page: Page, content: string) {
   return page.evaluate((expectedContent) => {
-    const signedEvent = window.__BUZZ_E2E_SIGNED_EVENTS__?.find(
+    const signedEvent = window.__PUNKS_E2E_SIGNED_EVENTS__?.find(
       (event) => event.content === expectedContent,
     );
     if (signedEvent) {
@@ -102,7 +102,7 @@ async function readOutgoingMentionPubkeys(page: Page, content: string) {
         .map((tag) => tag[1]);
     }
 
-    for (const entry of window.__BUZZ_E2E_COMMAND_LOG__ ?? []) {
+    for (const entry of window.__PUNKS_E2E_COMMAND_LOG__ ?? []) {
       if (entry.command === "send_channel_message") {
         const payload = entry.payload as
           | { content?: string; mentionPubkeys?: string[] }
@@ -143,7 +143,7 @@ async function emitMockMessage(
 ) {
   await page.evaluate(
     ({ body, mentions }) => {
-      window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
+      window.__PUNKS_E2E_EMIT_MOCK_MESSAGE__?.({
         channelName: "general",
         content: body,
         mentionPubkeys: mentions,
@@ -228,7 +228,7 @@ test("keeps a queued-attachment send locked through upload and send settlement",
   const sendAttempts = () =>
     page.evaluate(
       () =>
-        window.__BUZZ_E2E_COMMAND_LOG__?.filter(
+        window.__PUNKS_E2E_COMMAND_LOG__?.filter(
           (entry) => entry.command === "send_channel_message",
         ).length ?? 0,
     );
@@ -518,8 +518,8 @@ test("always-mentioned agents remain in the mention button while Enter-send reso
       snapshots.push(element.textContent ?? ""),
     ).observe(element, { childList: true, characterData: true, subtree: true });
     (
-      window as typeof window & { __BUZZ_COMPOSER_TEXT_SNAPSHOTS__?: string[] }
-    ).__BUZZ_COMPOSER_TEXT_SNAPSHOTS__ = snapshots;
+      window as typeof window & { __PUNKS_COMPOSER_TEXT_SNAPSHOTS__?: string[] }
+    ).__PUNKS_COMPOSER_TEXT_SNAPSHOTS__ = snapshots;
   });
   const avatar = composer.getByTestId(`composer-address-lock-${AGENT_A}`);
   const initialPulseVersion = Number(
@@ -528,8 +528,8 @@ test("always-mentioned agents remain in the mention button while Enter-send reso
   await input.type("hello");
   await input.evaluate((element) => {
     const snapshots = (
-      window as typeof window & { __BUZZ_COMPOSER_TEXT_SNAPSHOTS__?: string[] }
-    ).__BUZZ_COMPOSER_TEXT_SNAPSHOTS__;
+      window as typeof window & { __PUNKS_COMPOSER_TEXT_SNAPSHOTS__?: string[] }
+    ).__PUNKS_COMPOSER_TEXT_SNAPSHOTS__;
     snapshots?.splice(0, snapshots.length, element.textContent ?? "");
   });
   await input.press("Enter");
@@ -541,9 +541,9 @@ test("always-mentioned agents remain in the mention button while Enter-send reso
         () =>
           (
             window as typeof window & {
-              __BUZZ_COMPOSER_TEXT_SNAPSHOTS__?: string[];
+              __PUNKS_COMPOSER_TEXT_SNAPSHOTS__?: string[];
             }
-          ).__BUZZ_COMPOSER_TEXT_SNAPSHOTS__ ?? [],
+          ).__PUNKS_COMPOSER_TEXT_SNAPSHOTS__ ?? [],
       ),
     )
     .not.toContain("");
@@ -789,7 +789,7 @@ test("reduced motion removes addressed agents without spatial animation", async 
   await expect(removeButton).toHaveCount(0);
 });
 
-for (const theme of ["buzz", "buzz-dark"]) {
+for (const theme of ["punks", "punks-dark"]) {
   test(`captures the mention-button placement in ${theme}`, async ({
     page,
   }) => {
@@ -825,7 +825,7 @@ test("the mention-button placement fits the narrow composer", async ({
 });
 
 test("captures the lightweight auto-pin popover", async ({ page }) => {
-  await seedTheme(page, "buzz-dark");
+  await seedTheme(page, "punks-dark");
   await installAudienceFixtures(page);
   await openGeneral(page);
 

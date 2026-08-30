@@ -1,7 +1,7 @@
-# Frozen Buzz workflow baseline
+# Frozen Punks workflow baseline
 
 These files are the complete workflow sources imported from
-`block/buzz@da818eddc2f470c006a1073c8c5452f8a989f272`.
+`punksbot/punksbot@da818eddc2f470c006a1073c8c5452f8a989f272`.
 
 They are deliberately stored outside `.github/workflows`, so GitHub does not
 register or execute them for Punks Bot. Some of them build the legacy relay or

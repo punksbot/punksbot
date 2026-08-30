@@ -53,7 +53,7 @@ function details(entry) {
 /** Rendu déterministe de la vue complète (chaîne Markdown). */
 export function renderMarkdown(manifest) {
   const lignes = [];
-  lignes.push("# Inventaire de retrait Buzz → Punks — vue lisible");
+  lignes.push("# Inventaire de retrait Punks → Punks — vue lisible");
   lignes.push("");
   lignes.push(
     "> Vue dérivée de [`withdrawal-inventory.yaml`](./withdrawal-inventory.yaml), qui est canonique.",
@@ -65,7 +65,7 @@ export function renderMarkdown(manifest) {
     `> Décisions : issues [#13](https://github.com/punksbot/punksbot/issues/13), [#14](https://github.com/punksbot/punksbot/issues/14) et [#17](https://github.com/punksbot/punksbot/issues/17).`,
   );
   lignes.push(
-    `> Checkpoint de récupération : \`${manifest["checkpoint-recuperation"]}\` — baseline Buzz gelée : \`${manifest["baseline-buzz"]}\` — version ${manifest.version} — sha256 canonique \`${canonicalSha256(manifest)}\`.`,
+    `> Checkpoint de récupération : \`${manifest["checkpoint-recuperation"]}\` — baseline Punks gelée : \`${manifest["baseline-punks"]}\` — version ${manifest.version} — sha256 canonique \`${canonicalSha256(manifest)}\`.`,
   );
   lignes.push("");
   lignes.push(
@@ -137,7 +137,7 @@ export function renderMarkdown(manifest) {
   lignes.push("");
   if (manifest.goldens) {
     lignes.push(
-      `- Foyer : \`${manifest.goldens.foyer}\` — Registre : \`${manifest.goldens.registre}\` — Univers indépendant : \`${manifest.goldens.univers}\` — Tests Buzz figés : \`${manifest.goldens["univers-tests"]}\``,
+      `- Foyer : \`${manifest.goldens.foyer}\` — Registre : \`${manifest.goldens.registre}\` — Univers indépendant : \`${manifest.goldens.univers}\` — Tests Punks figés : \`${manifest.goldens["univers-tests"]}\``,
     );
     lignes.push(
       `- Politique : ${String(manifest.goldens.politique).replace(/\s+/g, " ").trim()}`,

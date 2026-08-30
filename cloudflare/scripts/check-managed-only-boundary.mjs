@@ -13,7 +13,7 @@ const forbidden = [
   ["external SQL server", /\bpostgres(?:ql)?\b/i],
   ["external cache", /\bredis\b/i],
   ["legacy object server", /\bminio\b/i],
-  ["legacy relay", /\bbuzz-relay\b/i],
+  ["legacy relay", /\bpunks-relay\b/i],
   ["Kubernetes packaging", /\bhelm\b|\bkubectl\b/i],
   ["upstream container registry", /\bghcr\.io\/block\b/i],
 ];

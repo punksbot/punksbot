@@ -204,7 +204,7 @@ describe("Message and thread decisions", () => {
     expect(nested.event?.tags).toContainEqual(["root", rootMessageId]);
   });
 
-  it("rejects replies across Conversation boundaries and depth beyond Buzz's limit", () => {
+  it("rejects replies across Conversation boundaries and depth beyond Punks's limit", () => {
     const root = postRoot();
     const wrongConversation = {
       ...root,

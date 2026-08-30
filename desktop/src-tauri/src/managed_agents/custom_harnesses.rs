@@ -175,7 +175,7 @@ fn validate_harness_definition(def: &HarnessDefinition) -> Result<(), String> {
     }
     // Args travel to the harness through the comma-delimited
     // `PUNKS_ACP_AGENT_ARGS` env transport (clap `value_delimiter = ','` on the
-    // buzz-acp side), so a literal comma inside one argument would silently
+    // punks-acp side), so a literal comma inside one argument would silently
     // split into two arguments at runtime. Reject at the validation boundary —
     // shared by save (UI/Tauri) and load (hand-authored files) — so the
     // invariant holds regardless of how the definition arrives.
@@ -240,13 +240,13 @@ pub(crate) fn check_id_collision(id: &str) -> Result<(), String> {
 //
 // `known_acp_runtime` / `known_acp_runtime_exact` only search the static
 // `KNOWN_ACP_RUNTIMES` table, so custom and preset harnesses were invisible at
-// spawn time, causing silent fallback to buzz-agent.
+// spawn time, causing silent fallback to punks-agent.
 //
 // The fix: `discover_acp_runtimes_from` populates this registry with every
 // non-builtin definition after each discovery run. Spawn, readiness, and
 // summary paths query `lookup_loaded_harness` to get the live definition for a
 // given id or command. If a harness id that an agent references is gone from the
-// registry, the caller gets a typed error — never a silent buzz-agent fallback.
+// registry, the caller gets a typed error — never a silent punks-agent fallback.
 
 use std::sync::{Arc, RwLock};
 

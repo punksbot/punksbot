@@ -18,7 +18,7 @@ function runChecker(...args) {
   });
 }
 
-test("the Punks candidate flavor removes every Buzz distribution edge", () => {
+test("the Punks candidate flavor removes every Punks distribution edge", () => {
   const output = runChecker("--base", base, "--config", flavor);
   assert.match(
     output,
@@ -33,7 +33,7 @@ test("the base Tauri shell is Punks-owned", () => {
   assert.equal(shell.identifier, "bot.punks.desktop");
   assert.deepEqual(shell.plugins?.["deep-link"]?.desktop?.schemes, ["punks"]);
   assert.deepEqual(shell.bundle?.externalBin, []);
-  assert.doesNotMatch(JSON.stringify(shell), /buzz/iu);
+  assert.doesNotMatch(JSON.stringify(shell), /punks/iu);
 });
 
 test("the conventional macOS bundle metadata is Punks-owned", () => {
@@ -42,7 +42,7 @@ test("the conventional macOS bundle metadata is Punks-owned", () => {
     "utf8",
   );
   assert.match(info, /<string>Punks Bot<\/string>/u);
-  assert.doesNotMatch(info, /buzz|nostr|relay/iu);
+  assert.doesNotMatch(info, /punks|nostr|relay/iu);
 });
 
 test("the signed staging candidate is accepted by its backend and official updater", () => {
@@ -58,7 +58,7 @@ test("the signed staging candidate is accepted by its backend and official updat
   assert.equal(candidate.bundle?.macOS?.infoPlist, "Info.punks.plist");
 });
 
-test("the public checker rejects the inherited Buzz Info.plist", () => {
+test("the public checker rejects the inherited Punks Info.plist", () => {
   const fixtureRoot = mkdtempSync(join(tmpdir(), "punks-candidate-config-"));
   const fixture = join(fixtureRoot, "invalid.json");
   const candidate = JSON.parse(readFileSync(flavor, "utf8"));
@@ -103,10 +103,10 @@ test("the local flavor disables updates with a complete updater configuration", 
   assert.equal(typeof csp, "string");
   assert.match(csp, /http:\/\/127\.0\.0\.1:8787/u);
   assert.match(csp, /ws:\/\/localhost:1420/u);
-  assert.doesNotMatch(csp, /https:|wss:|buzz/iu);
+  assert.doesNotMatch(csp, /https:|wss:|punks/iu);
 });
 
-test("the public checker rejects a flavor that leaves a Buzz sidecar", () => {
+test("the public checker rejects a flavor that leaves a Punks sidecar", () => {
   const fixtureRoot = mkdtempSync(join(tmpdir(), "punks-candidate-config-"));
   const fixture = join(fixtureRoot, "invalid.json");
   writeFileSync(
@@ -120,7 +120,7 @@ test("the public checker rejects a flavor that leaves a Buzz sidecar", () => {
         security: { capabilities: ["punks"] },
       },
       bundle: {
-        externalBin: ["binaries/buzz"],
+        externalBin: ["binaries/punks"],
       },
     }),
   );
@@ -134,7 +134,7 @@ test("the public checker rejects a flavor that leaves a Buzz sidecar", () => {
   }
 });
 
-test("the public checker rejects inherited Buzz capabilities", () => {
+test("the public checker rejects inherited Punks capabilities", () => {
   const fixtureRoot = mkdtempSync(join(tmpdir(), "punks-candidate-config-"));
   const fixture = join(fixtureRoot, "invalid.json");
   writeFileSync(
@@ -160,11 +160,11 @@ test("the public checker rejects inherited Buzz capabilities", () => {
   }
 });
 
-test("the public checker rejects a native binary that keeps the Buzz name", () => {
+test("the public checker rejects a native binary that keeps the Punks name", () => {
   const fixtureRoot = mkdtempSync(join(tmpdir(), "punks-candidate-config-"));
   const fixture = join(fixtureRoot, "invalid.json");
   const candidate = JSON.parse(readFileSync(flavor, "utf8"));
-  candidate.mainBinaryName = "buzz-desktop";
+  candidate.mainBinaryName = "punks-desktop";
   writeFileSync(fixture, JSON.stringify(candidate));
   try {
     assert.throws(
@@ -176,7 +176,7 @@ test("the public checker rejects a native binary that keeps the Buzz name", () =
   }
 });
 
-test("the public checker rejects the global Buzz TypeScript build", () => {
+test("the public checker rejects the global Punks TypeScript build", () => {
   const fixtureRoot = mkdtempSync(join(tmpdir(), "punks-candidate-config-"));
   const fixture = join(fixtureRoot, "invalid.json");
   const candidate = JSON.parse(readFileSync(flavor, "utf8"));

@@ -1033,138 +1033,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72f5acc6cb2ba439de613abc23857ec3d78374d8ed5ac84e9d11336e87da8649"
 
 [[package]]
-name = "buzz-agent"
-version = "0.1.0"
-dependencies = [
- "arc-swap",
- "async-trait",
- "axum",
- "base64 0.22.1",
- "dirs",
- "getrandom 0.4.3",
- "hex",
- "nix 0.31.3",
- "reqwest 0.13.4",
- "rmcp",
- "serde",
- "serde_json",
- "serde_yaml",
- "sha2 0.11.0",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "url",
- "urlencoding",
- "webbrowser",
-]
-
-[[package]]
-name = "buzz-core"
-version = "0.1.0"
-dependencies = [
- "base64 0.22.1",
- "chrono",
- "hex",
- "hmac 0.13.0",
- "nostr 0.44.7",
- "percent-encoding",
- "rand 0.10.2",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "subtle",
- "thiserror 2.0.18",
- "url",
- "uuid",
- "zeroize",
-]
-
-[[package]]
-name = "buzz-media"
-version = "0.1.0"
-dependencies = [
- "axum",
- "blurhash",
- "buzz-core",
- "bytes",
- "chrono",
- "futures-core",
- "futures-util",
- "hex",
- "image",
- "imagesize",
- "infer",
- "mp4",
- "nostr 0.44.7",
- "quick-xml 0.38.4",
- "rust-s3",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "tokio-util",
- "tracing",
- "ulid",
- "uuid",
-]
-
-[[package]]
-name = "buzz-persona"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "serde_yaml",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "buzz-sdk"
-version = "0.1.0"
-dependencies = [
- "buzz-core",
- "nostr 0.44.7",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "uuid",
-]
-
-[[package]]
-name = "buzz-voice"
-version = "0.1.0"
-dependencies = [
- "atomic-write-file",
- "hex",
- "ort",
- "ort-sys",
- "rand 0.10.2",
- "sentencepiece-model",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "sherpa-onnx",
- "symphonia",
- "tokenizers",
-]
-
-[[package]]
-name = "buzz-ws-client"
-version = "0.1.0"
-dependencies = [
- "futures-util",
- "nostr 0.44.7",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tokio-tungstenite 0.29.0",
- "tracing",
- "url",
-]
-
-[[package]]
 name = "by_address"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7973,6 +7841,53 @@ dependencies = [
 ]
 
 [[package]]
+name = "punks-agent"
+version = "0.1.0"
+dependencies = [
+ "arc-swap",
+ "async-trait",
+ "axum",
+ "base64 0.22.1",
+ "dirs",
+ "getrandom 0.4.3",
+ "hex",
+ "nix 0.31.3",
+ "reqwest 0.13.4",
+ "rmcp",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha2 0.11.0",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "urlencoding",
+ "webbrowser",
+]
+
+[[package]]
+name = "punks-core"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "hex",
+ "hmac 0.13.0",
+ "nostr 0.44.7",
+ "percent-encoding",
+ "rand 0.10.2",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "subtle",
+ "thiserror 2.0.18",
+ "url",
+ "uuid",
+ "zeroize",
+]
+
+[[package]]
 name = "punks-full-local"
 version = "0.5.20"
 dependencies = [
@@ -7983,13 +7898,6 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "block2",
- "buzz-agent",
- "buzz-core",
- "buzz-media",
- "buzz-persona",
- "buzz-sdk",
- "buzz-voice",
- "buzz-ws-client",
  "bytes",
  "bzip2 0.6.1",
  "chrono",
@@ -8027,7 +7935,14 @@ dependencies = [
  "plist",
  "png 0.18.1",
  "portable-pty",
+ "punks-agent",
+ "punks-core",
+ "punks-media",
+ "punks-persona",
+ "punks-sdk",
  "punks-terminal",
+ "punks-voice",
+ "punks-ws-client",
  "regex",
  "reqwest 0.13.4",
  "rodio",
@@ -8072,6 +7987,59 @@ dependencies = [
 ]
 
 [[package]]
+name = "punks-media"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "blurhash",
+ "bytes",
+ "chrono",
+ "futures-core",
+ "futures-util",
+ "hex",
+ "image",
+ "imagesize",
+ "infer",
+ "mp4",
+ "nostr 0.44.7",
+ "punks-core",
+ "quick-xml 0.38.4",
+ "rust-s3",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "ulid",
+ "uuid",
+]
+
+[[package]]
+name = "punks-persona"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "punks-sdk"
+version = "0.1.0"
+dependencies = [
+ "nostr 0.44.7",
+ "punks-core",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "uuid",
+]
+
+[[package]]
 name = "punks-terminal"
 version = "0.1.0"
 dependencies = [
@@ -8079,6 +8047,38 @@ dependencies = [
  "libc",
  "parking_lot",
  "portable-pty",
+]
+
+[[package]]
+name = "punks-voice"
+version = "0.1.0"
+dependencies = [
+ "atomic-write-file",
+ "hex",
+ "ort",
+ "ort-sys",
+ "rand 0.10.2",
+ "sentencepiece-model",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "sherpa-onnx",
+ "symphonia",
+ "tokenizers",
+]
+
+[[package]]
+name = "punks-ws-client"
+version = "0.1.0"
+dependencies = [
+ "futures-util",
+ "nostr 0.44.7",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-tungstenite 0.29.0",
+ "tracing",
+ "url",
 ]
 
 [[package]]

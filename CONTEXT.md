@@ -66,7 +66,7 @@ _À éviter_ : bascule de backend, migration de Workspace, mode Punks
 
 **Suppression de Workspace** :
 Transition terminale, confirmée par le Propriétaire, qui ferme immédiatement un Workspace puis orchestre son effacement irréversible sans jamais le réactiver.
-_À éviter_ : archivage, désactivation réversible, rollback vers Buzz
+_À éviter_ : archivage, désactivation réversible, rollback vers Punks
 
 **Reçu de suppression de Workspace** :
 Preuve terminale minimale qu’un Workspace a été supprimé, conservée pour empêcher sa résurrection sans conserver son contenu, ses membres, son nom ou ses règles.
@@ -180,7 +180,7 @@ _À éviter_ : channel, salon, room
 
 **Stream** :
 Spécialisation synchrone d’une Conversation, seule Conversation créable dans la tranche de gestion initiale ; Forum, DM, Canvas, Huddle et Workflow restent des spécialisations ultérieures soumises à leurs propres contrats.
-_À éviter_ : type générique anticipé, channel Buzz
+_À éviter_ : type générique anticipé, channel Punks
 
 **Responsable de Conversation** :
 Punk qui crée un Stream et en administre le cycle de vie conversationnel ; le Propriétaire et les Modérateurs du Workspace conservent une autorité de secours.
@@ -287,8 +287,8 @@ Destruction irréversible, après confirmation forte, de la clé permettant de d
 _À éviter_ : suppression ordinaire, purge du journal
 
 **Punks UI** :
-Expérience utilisateur propre à Punks Bot, distincte des interfaces héritées de Buzz et spécifiée après la migration Cloudflare Native.
-_À éviter_ : Buzz UI
+Expérience utilisateur propre à Punks Bot, distincte des interfaces héritées de Punks et spécifiée après la migration Cloudflare Native.
+_À éviter_ : Punks UI
 
 **Visibilité de Workspace** :
 Politique configurable à trois niveaux — privé, Punks ou public — déterminant qui peut lire un Workspace sans accorder implicitement le droit d’y écrire.

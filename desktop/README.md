@@ -1,4 +1,4 @@
-# Buzz
+# Punks
 
 Desktop chat shell with:
 

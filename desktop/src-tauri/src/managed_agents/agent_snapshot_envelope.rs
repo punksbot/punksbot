@@ -6,7 +6,7 @@
 //! symmetric over the (owner, agent) pair, so BOTH the owner's and the
 //! agent's nsec decrypt the card — nobody else's does (NIP-AE's scheme).
 //!
-//! Wire contract (agreed with Wren, buzz-agent-trading-cards thread):
+//! Wire contract (agreed with Wren, punks-agent-trading-cards thread):
 //! - Plain cards keep today's exact bytes; detection dispatches once on the
 //!   exact `format` discriminator and rejects unknown versions/schemes
 //!   rather than falling through to manifest parsing.
@@ -333,7 +333,7 @@ mod tests {
 
     #[test]
     fn previous_locked_discriminator_remains_importable() {
-        assert!(is_locked_format("buzz-agent-snapshot-encrypted"));
+        assert!(is_locked_format("punks-agent-snapshot-encrypted"));
     }
     use crate::managed_agents::agent_snapshot::{
         extract_chunk_payload_png, AgentSnapshotDefinition, AgentSnapshotMemory,

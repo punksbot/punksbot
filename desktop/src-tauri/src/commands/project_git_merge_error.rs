@@ -44,8 +44,8 @@ impl ProjectPullRequestMergeError {
 
 impl From<String> for ProjectPullRequestMergeError {
     fn from(message: String) -> Self {
-        // Relay push-policy denial for a repo with no `buzz-channel` binding.
-        // The stable token is declared in `buzz-core::git_perms`
+        // Relay push-policy denial for a repo with no `punks-channel` binding.
+        // The stable token is declared in `punks-core::git_perms`
         // (GIT_NO_CHANNEL_BINDING_TOKEN); the relay guarantees the denial body
         // starts with it. Push failures reach this conversion as raw
         // stderr/`remote:` text, so match the token anywhere in the message.

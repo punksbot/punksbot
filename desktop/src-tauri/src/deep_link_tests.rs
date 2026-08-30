@@ -56,26 +56,26 @@ fn parse_entity_deep_link_rejects_malformed_and_non_canonical_links() {
     for raw in [
         // Missing or malformed identifiers.
         format!("punks-local://repo?owner={owner}"),
-        "punks-local://repo?owner=nope&d=buzz-world".to_owned(),
+        "punks-local://repo?owner=nope&d=punks-world".to_owned(),
         format!("punks-local://repo?owner={owner}&d=.hidden"),
         format!("punks-local://repo?owner={owner}&d=has%20space"),
-        format!("punks-local://pr?owner={owner}&d=buzz-world"),
-        format!("punks-local://pr?id=short&owner={owner}&d=buzz-world"),
+        format!("punks-local://pr?owner={owner}&d=punks-world"),
+        format!("punks-local://pr?id=short&owner={owner}&d=punks-world"),
         // Coordinate links take no event id.
-        format!("punks-local://repo?id={event_id}&owner={owner}&d=buzz-world"),
+        format!("punks-local://repo?id={event_id}&owner={owner}&d=punks-world"),
         // Non-canonical: unknown param, duplicate param, path, fragment.
-        format!("punks-local://repo?owner={owner}&d=buzz-world&relay=wss%3A%2F%2Fx.example"),
-        format!("punks-local://repo?owner={owner}&owner={owner}&d=buzz-world"),
+        format!("punks-local://repo?owner={owner}&d=punks-world&relay=wss%3A%2F%2Fx.example"),
+        format!("punks-local://repo?owner={owner}&owner={owner}&d=punks-world"),
         // Unknown tab value, duplicate tab, and tab on an event link.
-        format!("punks-local://repo?owner={owner}&d=buzz-world&tab=overview"),
-        format!("punks-local://repo?owner={owner}&d=buzz-world&tab=prs&tab=prs"),
-        format!("punks-local://repo?owner={owner}&d=buzz-world&tab=files&commit={event_id}"),
-        format!("punks-local://repo?owner={owner}&d=buzz-world&tab=commits&commit=short"),
-        format!("punks-local://pr?id={event_id}&owner={owner}&d=buzz-world&tab=prs"),
-        format!("punks-local://repo/extra?owner={owner}&d=buzz-world"),
-        format!("punks-local://repo?owner={owner}&d=buzz-world#top"),
+        format!("punks-local://repo?owner={owner}&d=punks-world&tab=overview"),
+        format!("punks-local://repo?owner={owner}&d=punks-world&tab=prs&tab=prs"),
+        format!("punks-local://repo?owner={owner}&d=punks-world&tab=files&commit={event_id}"),
+        format!("punks-local://repo?owner={owner}&d=punks-world&tab=commits&commit=short"),
+        format!("punks-local://pr?id={event_id}&owner={owner}&d=punks-world&tab=prs"),
+        format!("punks-local://repo/extra?owner={owner}&d=punks-world"),
+        format!("punks-local://repo?owner={owner}&d=punks-world#top"),
         // Not an entity host.
-        format!("punks-local://message?owner={owner}&d=buzz-world"),
+        format!("punks-local://message?owner={owner}&d=punks-world"),
     ] {
         assert!(
             parse_entity_deep_link(&Url::parse(&raw).unwrap()).is_none(),
@@ -233,7 +233,7 @@ fn pending_entity_links_survive_until_acknowledged_in_order() {
 #[test]
 fn pending_entity_links_dedupe_launch_and_open_callbacks() {
     let queue = PendingEntityDeepLinks::default();
-    let href = "punks-local://project?owner=aa&d=buzz".to_owned();
+    let href = "punks-local://project?owner=aa&d=punks".to_owned();
     let first = queue.enqueue(href.clone());
     let duplicate = queue.enqueue(href);
 
@@ -252,11 +252,11 @@ fn valid_nostr_bind_url() -> Url {
 #[test]
 fn parse_add_community_deep_link_extracts_relay_and_name() {
     let url = Url::parse(
-        "punks-local://add-community?relay=wss%3A%2F%2Facme.communities.buzz.xyz&name=Acme%20Team&ignored=value",
+        "punks-local://add-community?relay=wss%3A%2F%2Facme.communities.punks.xyz&name=Acme%20Team&ignored=value",
     )
     .unwrap();
     let payload = parse_add_community_deep_link(&url).unwrap();
-    assert_eq!(payload.relay_url, "wss://acme.communities.buzz.xyz");
+    assert_eq!(payload.relay_url, "wss://acme.communities.punks.xyz");
     assert_eq!(payload.name.as_deref(), Some("Acme Team"));
 }
 
@@ -456,23 +456,23 @@ fn parse_nostr_bind_deep_link_accepts_valid_url() {
 
 #[test]
 fn parse_nostr_bind_deep_link_accepts_same_origin_callback_url() {
-    let url = Url::parse("punks-local://nostr-bind?challenge_id=550e8400-e29b-41d4-a716-446655440000&nonce=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi01234567&verification_code=123456&audience=punks%3Anostr-identity&action=bind_nostr_identity&protocol=punks-nostr-identity&version=1&origin=https%3A%2F%2Fexample.com&expires_at=2999-01-01T00%3A00%3A00Z&return=clipboard&callback_url=https%3A%2F%2Fexample.com%2Fbuzz%3FmockSession%3D1").unwrap();
+    let url = Url::parse("punks-local://nostr-bind?challenge_id=550e8400-e29b-41d4-a716-446655440000&nonce=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi01234567&verification_code=123456&audience=punks%3Anostr-identity&action=bind_nostr_identity&protocol=punks-nostr-identity&version=1&origin=https%3A%2F%2Fexample.com&expires_at=2999-01-01T00%3A00%3A00Z&return=clipboard&callback_url=https%3A%2F%2Fexample.com%2Fpunks%3FmockSession%3D1").unwrap();
     let payload = parse_nostr_bind_deep_link(&url).unwrap();
     assert_eq!(
         payload.callback_url.as_deref(),
-        Some("https://example.com/buzz?mockSession=1")
+        Some("https://example.com/punks?mockSession=1")
     );
 }
 
 #[test]
 fn parse_nostr_bind_deep_link_accepts_browser_fragment_return() {
-    let url = Url::parse("punks-local://nostr-bind?challenge_id=550e8400-e29b-41d4-a716-446655440000&nonce=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi01234567&verification_code=123456&audience=punks%3Anostr-identity&action=bind_nostr_identity&protocol=punks-nostr-identity&version=1&origin=https%3A%2F%2Fexample.com&expires_at=2999-01-01T00%3A00%3A00Z&return=browser_fragment_v1&callback_url=https%3A%2F%2Fexample.com%2Fbuzz").unwrap();
+    let url = Url::parse("punks-local://nostr-bind?challenge_id=550e8400-e29b-41d4-a716-446655440000&nonce=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi01234567&verification_code=123456&audience=punks%3Anostr-identity&action=bind_nostr_identity&protocol=punks-nostr-identity&version=1&origin=https%3A%2F%2Fexample.com&expires_at=2999-01-01T00%3A00%3A00Z&return=browser_fragment_v1&callback_url=https%3A%2F%2Fexample.com%2Fpunks").unwrap();
     let payload = parse_nostr_bind_deep_link(&url).unwrap();
 
     assert_eq!(payload.return_mode, "browser_fragment_v1");
     assert_eq!(
         payload.callback_url.as_deref(),
-        Some("https://example.com/buzz")
+        Some("https://example.com/punks")
     );
 }
 
@@ -488,13 +488,13 @@ fn parse_nostr_bind_deep_link_requires_callback_for_browser_fragment_return() {
 
 #[test]
 fn parse_nostr_bind_deep_link_rejects_cross_origin_callback_url() {
-    let url = Url::parse("punks-local://nostr-bind?challenge_id=550e8400-e29b-41d4-a716-446655440000&nonce=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi01234567&verification_code=123456&audience=punks%3Anostr-identity&action=bind_nostr_identity&protocol=punks-nostr-identity&version=1&origin=https%3A%2F%2Fexample.com&expires_at=2999-01-01T00%3A00%3A00Z&return=clipboard&callback_url=https%3A%2F%2Fevil.example%2Fbuzz").unwrap();
+    let url = Url::parse("punks-local://nostr-bind?challenge_id=550e8400-e29b-41d4-a716-446655440000&nonce=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi01234567&verification_code=123456&audience=punks%3Anostr-identity&action=bind_nostr_identity&protocol=punks-nostr-identity&version=1&origin=https%3A%2F%2Fexample.com&expires_at=2999-01-01T00%3A00%3A00Z&return=clipboard&callback_url=https%3A%2F%2Fevil.example%2Fpunks").unwrap();
     assert!(parse_nostr_bind_deep_link(&url).is_err());
 }
 
 #[test]
 fn parse_nostr_bind_deep_link_rejects_http_callback_url() {
-    let url = Url::parse("punks-local://nostr-bind?challenge_id=550e8400-e29b-41d4-a716-446655440000&nonce=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi01234567&verification_code=123456&audience=punks%3Anostr-identity&action=bind_nostr_identity&protocol=punks-nostr-identity&version=1&origin=https%3A%2F%2Fexample.com&expires_at=2999-01-01T00%3A00%3A00Z&return=clipboard&callback_url=http%3A%2F%2Fexample.com%2Fbuzz").unwrap();
+    let url = Url::parse("punks-local://nostr-bind?challenge_id=550e8400-e29b-41d4-a716-446655440000&nonce=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi01234567&verification_code=123456&audience=punks%3Anostr-identity&action=bind_nostr_identity&protocol=punks-nostr-identity&version=1&origin=https%3A%2F%2Fexample.com&expires_at=2999-01-01T00%3A00%3A00Z&return=clipboard&callback_url=http%3A%2F%2Fexample.com%2Fpunks").unwrap();
     assert!(parse_nostr_bind_deep_link(&url).is_err());
 }
 

@@ -266,7 +266,7 @@ fn resolve_effective_agent_env_with_def(
     );
     env.extend(user_env);
 
-    // Punks shared compute is a native Punks provider. Translate it to buzz-agent's
+    // Punks shared compute is a native Punks provider. Translate it to punks-agent's
     // OpenAI-compatible transport only in the effective runtime environment.
     #[cfg(feature = "mesh-llm")]
     super::apply_relay_mesh_env(
@@ -328,7 +328,7 @@ pub enum Requirement {
         /// Shown verbatim in the nudge so the user can identify the problem.
         diagnostic: String,
     },
-    /// Git for Windows is missing, so buzz-agent cannot launch buzz-dev-mcp's
+    /// Git for Windows is missing, so punks-agent cannot launch punks-dev-mcp's
     /// Bash-based shell tool. Doctor owns installation and re-checking.
     GitBash,
     /// A custom harness command that cannot be resolved in the current PATH.
@@ -380,7 +380,7 @@ impl AgentReadiness {
 /// Checks the `effective` env surface against the requirements for the
 /// resolved runtime:
 ///
-/// * **buzz-agent / goose**: provider + model are required (both must be
+/// * **punks-agent / goose**: provider + model are required (both must be
 ///   present in the effective env or as structured fields). Additionally,
 ///   provider-specific credentials are required:
 ///   - `anthropic` → `ANTHROPIC_API_KEY`
@@ -393,7 +393,7 @@ impl AgentReadiness {
 /// * **unknown / custom command**: always `Ready` (no requirements known).
 ///
 /// Databricks note: `DATABRICKS_TOKEN` is `.unwrap_or_default()` in
-/// `buzz-agent/src/config.rs:143` — it is an escape hatch for static tokens
+/// `punks-agent/src/config.rs:143` — it is an escape hatch for static tokens
 /// but the normal path is OAuth PKCE.  We intentionally do NOT mark the
 /// token as required to avoid a false NotReady for users on OAuth.
 pub(crate) fn agent_readiness(effective: &EffectiveAgentEnv) -> AgentReadiness {
@@ -442,7 +442,7 @@ fn collect_missing_requirements(
     }
 }
 
-/// Requirements for buzz-agent (provider + model + provider-specific creds).
+/// Requirements for punks-agent (provider + model + provider-specific creds).
 fn punks_agent_requirements(effective: &EffectiveAgentEnv) -> Vec<Requirement> {
     let mut missing = Vec::new();
 
@@ -467,10 +467,10 @@ fn punks_agent_requirements(effective: &EffectiveAgentEnv) -> Vec<Requirement> {
 
     // Model is required — maps to PUNKS_AGENT_MODEL in the effective env.
     // Same empty-string treatment as provider.
-    // Also accept provider-specific model fallback keys, matching buzz-agent's
+    // Also accept provider-specific model fallback keys, matching punks-agent's
     // own config.rs `from_env()` resolution order (e.g. DATABRICKS_MODEL for
     // databricks/databricks_v2, ANTHROPIC_MODEL for anthropic, etc.). The
-    // baked buzz-releases env sets DATABRICKS_MODEL but not PUNKS_AGENT_MODEL,
+    // baked punks-releases env sets DATABRICKS_MODEL but not PUNKS_AGENT_MODEL,
     // so without this fallback agents baked from releases appear "not ready".
     let provider_model_key = match provider {
         Some("databricks") | Some("databricks_v2") | Some("databricks-v2") => {
@@ -515,7 +515,7 @@ fn punks_agent_requirements(effective: &EffectiveAgentEnv) -> Vec<Requirement> {
             }
         Some("databricks") | Some("databricks_v2") | Some("databricks-v2")
             // DATABRICKS_HOST is hard-required; DATABRICKS_TOKEN is optional
-            // (OAuth PKCE is the normal path — see buzz-agent/src/config.rs:143).
+            // (OAuth PKCE is the normal path — see punks-agent/src/config.rs:143).
             if env_key_missing("DATABRICKS_HOST") => {
                 missing.push(Requirement::EnvKey {
                     key: "DATABRICKS_HOST".to_string(),
@@ -538,7 +538,7 @@ fn punks_agent_requirements(effective: &EffectiveAgentEnv) -> Vec<Requirement> {
 
 /// Requirements for goose (provider + model + provider-specific creds).
 ///
-/// Mirrors buzz-agent requirements but uses GOOSE_PROVIDER / GOOSE_MODEL.
+/// Mirrors punks-agent requirements but uses GOOSE_PROVIDER / GOOSE_MODEL.
 ///
 /// File-config tier: goose reads `~/.config/goose/config.yaml` at startup.
 /// Requirements already satisfied there are silenced — we don't need to
@@ -601,7 +601,7 @@ fn goose_requirements(
         }
     }
 
-    // Provider-specific credentials — same empty-string semantics as buzz-agent.
+    // Provider-specific credentials — same empty-string semantics as punks-agent.
     let env_key_missing = |key: &str| effective.env.get(key).is_none_or(|v| v.is_empty());
     // A credential key is also satisfied when the file config's `extra` map
     // contains it (e.g. DATABRICKS_HOST set in the goose config file).
@@ -673,7 +673,7 @@ mod tests {
             .collect()
     }
 
-    // ── buzz-agent tests ──────────────────────────────────────────────────
+    // ── punks-agent tests ──────────────────────────────────────────────────
 
     #[test]
     fn punks_agent_missing_provider_returns_not_ready_with_normalized_field() {
@@ -1184,7 +1184,7 @@ mod tests {
         let exe = present_binary_str();
         let rt = make_cli_runtime(static_commands(vec![exe]), Some(exe));
         let reqs =
-            cli_login::requirements(&[exe, "--buzz-probe-fail-xyz"], "run `tool login`", &rt);
+            cli_login::requirements(&[exe, "--punks-probe-fail-xyz"], "run `tool login`", &rt);
         assert!(
             !reqs.is_empty(),
             "non-zero probe must produce a CliLogin requirement (logged out)"
@@ -1298,7 +1298,7 @@ mod tests {
             Some(exe),
         );
         let reqs = cli_login::requirements(
-            &[exe, "--buzz-probe-must-not-run-xyz"],
+            &[exe, "--punks-probe-must-not-run-xyz"],
             "run `codex login`",
             &rt,
         );
@@ -1338,7 +1338,7 @@ mod tests {
             Some(exe),
         );
         let reqs = cli_login::requirements(
-            &[exe, "--buzz-probe-must-not-run-xyz"],
+            &[exe, "--punks-probe-must-not-run-xyz"],
             "run `codex login`",
             &rt,
         );
@@ -1549,7 +1549,7 @@ mod tests {
 
     #[test]
     fn punks_agent_databricks_v2_with_databricks_model_but_no_punks_agent_model_is_ready() {
-        // The baked buzz-releases env sets DATABRICKS_MODEL but not PUNKS_AGENT_MODEL.
+        // The baked punks-releases env sets DATABRICKS_MODEL but not PUNKS_AGENT_MODEL.
         // An agent with only DATABRICKS_MODEL must pass the readiness gate.
         let env = make_env(
             "punks-agent",
@@ -1567,7 +1567,7 @@ mod tests {
 
     #[test]
     fn punks_agent_databricks_v2_hyphen_alias_with_databricks_model_is_ready() {
-        // buzz-agent accepts both "databricks_v2" and "databricks-v2". The
+        // punks-agent accepts both "databricks_v2" and "databricks-v2". The
         // readiness gate must recognize the hyphen alias and accept DATABRICKS_MODEL.
         let env = make_env(
             "punks-agent",

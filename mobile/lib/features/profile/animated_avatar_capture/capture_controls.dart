@@ -82,7 +82,7 @@ class _AnimatedRecordButton extends StatelessWidget {
                         switchInCurve: Curves.easeOutCubic,
                         switchOutCurve: Curves.easeOutCubic,
                         child: busy
-                            ? BuzzLoadingIndicator(
+                            ? PunksLoadingIndicator(
                                 key: const ValueKey(
                                   'animated-avatar-capturing',
                                 ),

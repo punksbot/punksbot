@@ -5,7 +5,7 @@ import 'package:flutter/services.dart';
 
 import 'huddle_wire.dart';
 
-const huddleMediaMethodChannelName = 'buzz/huddle_media';
+const huddleMediaMethodChannelName = 'punks/huddle_media';
 
 enum HuddleMediaPhase {
   idle,

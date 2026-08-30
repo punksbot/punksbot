@@ -1,4 +1,4 @@
--- Buzz initial Postgres schema — multi-tenant.
+-- Punks initial Postgres schema — multi-tenant.
 --
 -- Source of truth for fresh database setup. This is a clean, from-scratch
 -- schema in which `community_id` is a first-class, server-resolved key on
@@ -47,7 +47,7 @@ CREATE TYPE channel_add_policy AS ENUM ('anyone', 'owner_only', 'nobody');
 -- ASCII-lowercased, trailing dot stripped, default port omitted. The UNIQUE is
 -- on `lower(host)` belt-and-suspenders so `Relay.Example` and `relay.example`
 -- can never become two tenants even if a writer forgets to normalize.
--- `resolve_host()` (buzz-core) applies the identical normalization before
+-- `resolve_host()` (punks-core) applies the identical normalization before
 -- lookup, so resolution and storage agree by construction.
 
 CREATE TABLE communities (
@@ -913,7 +913,7 @@ CREATE INDEX push_match_queue_recovery
 -- T1b push gate (keep in sync with migrations/0023). Enqueue only when the
 -- community has an active, endpoint-enabled, unexpired lease; the shared
 -- advisory lock pairs with the exclusive lock taken by lease activations
--- (crates/buzz-db/src/push.rs) to close the lost-wake race.
+-- (crates/punks-db/src/push.rs) to close the lost-wake race.
 CREATE FUNCTION enqueue_push_match_job() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
@@ -922,7 +922,7 @@ BEGIN
     -- including internal paths that bypass live dispatch.
     IF NEW.kind IN (7, 9, 1059, 40007, 46010) THEN
         PERFORM pg_advisory_xact_lock_shared(
-            hashtextextended('buzz_push_gate:' || NEW.community_id::text, 0));
+            hashtextextended('punks_push_gate:' || NEW.community_id::text, 0));
         IF EXISTS (
             SELECT 1 FROM push_leases
             WHERE community_id = NEW.community_id
@@ -948,7 +948,7 @@ FOR EACH ROW EXECUTE FUNCTION enqueue_push_match_job();
 -- transition committed while ingest was in flight is never missed. The
 -- per-channel advisory lock is SHARED here — permanent-channel commits admit
 -- each other — and taken EXCLUSIVE by TTL transitions (update_channel in
--- crates/buzz-db/src/channel.rs), which forces the same total order the
+-- crates/punks-db/src/channel.rs), which forces the same total order the
 -- 0022 row lock provided without serializing the hot path.
 CREATE FUNCTION refresh_channel_ttl_after_event_insert() RETURNS trigger
 LANGUAGE plpgsql AS $$
@@ -959,7 +959,7 @@ BEGIN
     IF NEW.channel_id IS NOT NULL AND NEW.kind <> 9007 THEN
         BEGIN
             PERFORM pg_advisory_xact_lock_shared(hashtextextended(
-                'buzz_channel_ttl:' || NEW.community_id::text || ':' || NEW.channel_id::text, 0));
+                'punks_channel_ttl:' || NEW.community_id::text || ':' || NEW.channel_id::text, 0));
 
             SELECT ttl_seconds INTO channel_ttl
             FROM channels
@@ -1011,7 +1011,7 @@ BEGIN
     END IF;
 
     PERFORM pg_advisory_xact_lock(hashtextextended(
-        'buzz_channel_membership:' || NEW.community_id::text || ':' || NEW.channel_id::text,
+        'punks_channel_membership:' || NEW.community_id::text || ':' || NEW.channel_id::text,
         0
     ));
 
@@ -1071,7 +1071,7 @@ CREATE TRIGGER trg_events_guard_channel_roster_snapshot
 
 -- Replica-fence floor guard (keep in sync with migrations/0021). A deferred
 -- constraint trigger re-checks, inside COMMIT processing, that channel-bearing
--- event rows are no older than `buzz.created_at_floor` seconds before commit
+-- event rows are no older than `punks.created_at_floor` seconds before commit
 -- time (clock_timestamp(), NOT the transaction-frozen now()). This turns the
 -- relay's ingest-time created_at envelope into a commit-time storage
 -- invariant, which is what lets keyset-cursor pages below the replica fence
@@ -1083,7 +1083,7 @@ CREATE TRIGGER trg_events_guard_channel_roster_snapshot
 CREATE FUNCTION events_created_at_floor_guard() RETURNS trigger
 LANGUAGE plpgsql AS $$
 DECLARE
-    floor_secs numeric := nullif(current_setting('buzz.created_at_floor', true), '')::numeric;
+    floor_secs numeric := nullif(current_setting('punks.created_at_floor', true), '')::numeric;
 BEGIN
     IF floor_secs IS NOT NULL
        AND floor_secs > 0
@@ -1127,7 +1127,7 @@ CREATE TABLE push_gateway_installations (
     app_attest_key_id BYTEA NOT NULL UNIQUE CHECK (octet_length(app_attest_key_id) BETWEEN 1 AND 128),
     app_attest_public_key BYTEA NOT NULL CHECK (octet_length(app_attest_public_key) BETWEEN 33 AND 256),
     assertion_counter BIGINT NOT NULL CHECK (assertion_counter BETWEEN 0 AND 4294967295),
-    app_profile TEXT NOT NULL CHECK (app_profile IN ('buzz-ios-production','buzz-ios-sandbox')),
+    app_profile TEXT NOT NULL CHECK (app_profile IN ('punks-ios-production','punks-ios-sandbox')),
     token_ciphertext BYTEA NOT NULL CHECK (octet_length(token_ciphertext) BETWEEN 1 AND 2048),
     token_fingerprint BYTEA NOT NULL CHECK (length(token_fingerprint) = 32),
     endpoint_epoch BIGINT NOT NULL CHECK (endpoint_epoch > 0),
@@ -1188,7 +1188,7 @@ INSERT INTO _operator_global_tables (table_name, reason) VALUES
 
 -- ── Replica heartbeat (read-replica freshness fence) ─────────────────────────
 -- Portable read-side freshness observation for the replica fence (see
--- crates/buzz-db/src/replica_fence.rs and migrations/0026). Exactly one row;
+-- crates/punks-db/src/replica_fence.rs and migrations/0026). Exactly one row;
 -- the single-row token UPDATE is the serialization point that makes tokens
 -- globally commit-ordered across relay pods. `epoch` detects token resets
 -- (restore/re-seed) so a stale retained token can never masquerade as fresh
@@ -1468,7 +1468,7 @@ INSERT INTO _operator_global_tables (table_name, reason) VALUES
 
 CREATE FUNCTION community_deletion_lock_key(target UUID) RETURNS BIGINT
 LANGUAGE SQL IMMUTABLE STRICT PARALLEL SAFE AS $$
-    SELECT hashtextextended('buzz-community-deletion:' || target::text, 0)
+    SELECT hashtextextended('punks-community-deletion:' || target::text, 0)
 $$;
 -- Keep the deletion control plane writable while its target tenant is fenced.
 -- This predicate is the single SQL source of truth used by attachment and live
@@ -1548,8 +1548,8 @@ BEGIN
     END IF;
 
     -- Authorization is evaluated independently for every community checked.
-    executor_community := current_setting('buzz.deletion_executor_community', true);
-    executor_generation := current_setting('buzz.deletion_fence_generation', true);
+    executor_community := current_setting('punks.deletion_executor_community', true);
+    executor_generation := current_setting('punks.deletion_fence_generation', true);
     IF executor_community = target::TEXT
        AND executor_generation ~ '^[0-9]+$'
        AND executor_generation::BIGINT = generation THEN
@@ -1558,11 +1558,11 @@ BEGIN
 
     -- A serving mutation admitted before quiescing may finish only while its
     -- exact durable lease remains current and bound to this fence generation.
-    serving_community := current_setting('buzz.serving_write_community', true);
-    serving_lease_id := current_setting('buzz.serving_write_lease_id', true);
-    serving_owner := current_setting('buzz.serving_write_owner', true);
-    serving_generation := current_setting('buzz.serving_write_generation', true);
-    serving_fence_generation := current_setting('buzz.serving_write_fence_generation', true);
+    serving_community := current_setting('punks.serving_write_community', true);
+    serving_lease_id := current_setting('punks.serving_write_lease_id', true);
+    serving_owner := current_setting('punks.serving_write_owner', true);
+    serving_generation := current_setting('punks.serving_write_generation', true);
+    serving_fence_generation := current_setting('punks.serving_write_fence_generation', true);
     IF lifecycle IN ('active', 'quiescing')
        AND serving_community = target::TEXT
        AND serving_lease_id ~ '^[0-9a-fA-F-]{36}$'
@@ -1618,8 +1618,8 @@ $$;
 CREATE FUNCTION enforce_community_tombstone() RETURNS TRIGGER
 LANGUAGE plpgsql AS $$
 DECLARE
-    executor_community TEXT := current_setting('buzz.deletion_executor_community', true);
-    executor_generation TEXT := current_setting('buzz.deletion_fence_generation', true);
+    executor_community TEXT := current_setting('punks.deletion_executor_community', true);
+    executor_generation TEXT := current_setting('punks.deletion_fence_generation', true);
     expected_generation BIGINT;
 BEGIN
     IF TG_OP = 'DELETE' THEN

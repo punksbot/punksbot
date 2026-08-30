@@ -1,8 +1,8 @@
-# Registre des goldens Buzz → Punks — source canonique
+# Registre des goldens Punks → Punks — source canonique
 # Parent : issue #47 (spec de programme) ; création exigée par l’issue #49.
 # Décisions : #13 (preuves/seuils), #14 (ordre des tranches), #17 (inventaire de retrait).
 # Checkpoint de récupération : 50e16de180dda4365f8001a8a73503f16977a175.
-# Baseline Buzz gelée : da818eddc2f470c006a1073c8c5452f8a989f272.
+# Baseline Punks gelée : da818eddc2f470c006a1073c8c5452f8a989f272.
 #
 # Règles :
 #   - Une ligne par invariant, jamais par fichier source. L'univers exhaustif
@@ -15,7 +15,7 @@
 #     * capacite-indisponible exige `echeance` (le verdict sera requalifié au
 #       scellement de cette tranche) ;
 #     * hors-perimetre exige `note`.
-#   - `retraits-par-tranche` reçoit exactement une ligne par test Buzz retiré,
+#   - `retraits-par-tranche` reçoit exactement une ligne par test Punks retiré,
 #     ajoutée au scellement de la tranche qui le retire. Le chemin du test
 #     n’existe alors plus dans les fichiers suivis : la validation refuse une
 #     ligne anticipée aussi bien qu’un chemin hors univers ou mal formé.
@@ -24,7 +24,7 @@
 
 version: 1
 checkpoint-recuperation: 50e16de180dda4365f8001a8a73503f16977a175
-baseline-buzz: da818eddc2f470c006a1073c8c5452f8a989f272
+baseline-punks: da818eddc2f470c006a1073c8c5452f8a989f272
 
 verdicts-fermes: [preuve-punks, difference-intentionnelle, capacite-indisponible, hors-perimetre]
 
@@ -35,16 +35,16 @@ entrees:
       hôte→communauté avant toute lecture/écriture, lignes étrangères absentes
       des résultats, canal et hôte toujours cohérents.
     sources:
-      - crates/buzz-conformance/tests/fixtures/good.jsonl
-      - crates/buzz-conformance/tests/fixtures/bad_foreign_row_leak.jsonl
-      - crates/buzz-conformance/tests/fixtures/bad_host_channel_mismatch.jsonl
+      - crates/punks-conformance/tests/fixtures/good.jsonl
+      - crates/punks-conformance/tests/fixtures/bad_foreign_row_leak.jsonl
+      - crates/punks-conformance/tests/fixtures/bad_host_channel_mismatch.jsonl
     verdict: difference-intentionnelle
     decision: "#47 — décisions 2 (Workspace toujours Punks, aucun fallback) et 4 (isolement {origin, punkId, workspaceId})"
     preuve:
       - cloudflare/workers/api/test/api.test.ts
       - cloudflare/workers/api/test/message-history.test.ts
     note: >
-      La sémantique Buzz (liaison par hôte, fil Nostr) n’est pas préservée :
+      La sémantique Punks (liaison par hôte, fil Nostr) n’est pas préservée :
       l’isolement est réexprimé au niveau Workspace — identités dérivées du
       Workspace et réautorisation systématique par les autorités Punks.
   - cle: relay.conformance.couverture-checker
@@ -53,8 +53,8 @@ entrees:
       manque à la trace (le retrait silencieux d’un site d’émission ne peut pas
       passer la conformité).
     sources:
-      - crates/buzz-conformance/tests/fixtures/bad_coverage_breach.jsonl
-      - crates/buzz-conformance/tests/replay_fixtures.rs
+      - crates/punks-conformance/tests/fixtures/bad_coverage_breach.jsonl
+      - crates/punks-conformance/tests/replay_fixtures.rs
     verdict: preuve-punks
     preuve:
       - cloudflare/packages/client/test/conformance.test.ts
@@ -69,12 +69,12 @@ entrees:
       appels d'outils, les mises à jour de transcript et les terminaux avec des
       entrées LLM déterministes.
     sources:
-      - crates/buzz-agent/tests/golden_transcripts.rs
+      - crates/punks-agent/tests/golden_transcripts.rs
     verdict: capacite-indisponible
     echeance: tranche:22
     note: >
       La tranche d'exécution locale des Installations de Bot doit transférer ces
-      invariants sans démarrer le relay Buzz.
+      invariants sans démarrer le relay Punks.
   - cle: agents.runtime.fixtures-locales
     invariant: >
       Le runtime local de Bot et son faux agent E2E conservent des résultats
@@ -86,25 +86,25 @@ entrees:
     echeance: tranche:22
     note: >
       Les données sont transférées vers le harnais Punks de la tranche 22 ; les
-      injections BUZZ_* et le transport relay ne sont pas conservés.
+      injections PUNKS_* et le transport relay ne sont pas conservés.
   - cle: provider.kubernetes.protocole-wire
     invariant: >
       Le provider historique accepte le payload desktop complet et émet une
       seule réponse JSON conforme, avec un code de sortie cohérent et une
       matrice respond-to déterministe.
     sources:
-      - crates/buzz-backend-kubernetes/tests/fixtures/provider-wire/README.md
-      - crates/buzz-backend-kubernetes/tests/fixtures/provider-wire/deploy-full-launch.request.json
-      - crates/buzz-backend-kubernetes/tests/fixtures/provider-wire/deploy-no-owner.request.json
-      - crates/buzz-backend-kubernetes/tests/fixtures/provider-wire/deploy-no-owner.response.json
-      - crates/buzz-backend-kubernetes/tests/fixtures/provider-wire/deploy-relay-mesh-padded.request.json
-      - crates/buzz-backend-kubernetes/tests/fixtures/provider-wire/deploy-relay-mesh-padded.response.json
-      - crates/buzz-backend-kubernetes/tests/fixtures/provider-wire/deploy-relay-mesh.request.json
-      - crates/buzz-backend-kubernetes/tests/fixtures/provider-wire/deploy-relay-mesh.response.json
-      - crates/buzz-backend-kubernetes/tests/fixtures/provider-wire/deploy-tag-image.request.json
-      - crates/buzz-backend-kubernetes/tests/fixtures/provider-wire/deploy-tag-image.response.json
-      - crates/buzz-backend-kubernetes/tests/fixtures/provider-wire/info.request.json
-      - crates/buzz-backend-kubernetes/tests/wire_fixtures.rs
+      - crates/punks-backend-kubernetes/tests/fixtures/provider-wire/README.md
+      - crates/punks-backend-kubernetes/tests/fixtures/provider-wire/deploy-full-launch.request.json
+      - crates/punks-backend-kubernetes/tests/fixtures/provider-wire/deploy-no-owner.request.json
+      - crates/punks-backend-kubernetes/tests/fixtures/provider-wire/deploy-no-owner.response.json
+      - crates/punks-backend-kubernetes/tests/fixtures/provider-wire/deploy-relay-mesh-padded.request.json
+      - crates/punks-backend-kubernetes/tests/fixtures/provider-wire/deploy-relay-mesh-padded.response.json
+      - crates/punks-backend-kubernetes/tests/fixtures/provider-wire/deploy-relay-mesh.request.json
+      - crates/punks-backend-kubernetes/tests/fixtures/provider-wire/deploy-relay-mesh.response.json
+      - crates/punks-backend-kubernetes/tests/fixtures/provider-wire/deploy-tag-image.request.json
+      - crates/punks-backend-kubernetes/tests/fixtures/provider-wire/deploy-tag-image.response.json
+      - crates/punks-backend-kubernetes/tests/fixtures/provider-wire/info.request.json
+      - crates/punks-backend-kubernetes/tests/wire_fixtures.rs
     verdict: difference-intentionnelle
     decision: "#47 — décisions 2 et 13 (Workers gérés uniquement, aucun Kubernetes ni provider historique)"
     note: >
@@ -117,20 +117,20 @@ entrees:
       et formats PNG/JPEG, traversent un scrubbing déterministe qui retire les
       métadonnées interdites sans perdre la fidélité d'affichage attendue.
     sources:
-      - crates/buzz-media/tests/fixtures/android/README.md
-      - crates/buzz-media/tests/fixtures/android/bitmap-display-p3.jpg
-      - crates/buzz-media/tests/fixtures/android/bitmap-display-p3.png
-      - crates/buzz-media/tests/fixtures/android/bitmap-srgb.jpg
-      - crates/buzz-media/tests/fixtures/android/bitmap-srgb.png
-      - crates/buzz-media/tests/fixtures/android/sanitized/bitmap-display-p3-sanitized.jpg
-      - crates/buzz-media/tests/fixtures/android/sanitized/bitmap-display-p3-sanitized.png
-      - crates/buzz-media/tests/fixtures/android/sanitized/bitmap-srgb-sanitized.jpg
-      - crates/buzz-media/tests/fixtures/android/sanitized/bitmap-srgb-sanitized.png
-      - crates/buzz-media/tests/fixtures/ios/README.md
-      - crates/buzz-media/tests/fixtures/ios/uikit-encoded.jpg
-      - crates/buzz-media/tests/fixtures/ios/uikit-encoded.png
-      - crates/buzz-media/tests/fixtures/ios/uikit-sanitized.jpg
-      - crates/buzz-media/tests/fixtures/ios/uikit-sanitized.png
+      - crates/punks-media/tests/fixtures/android/README.md
+      - crates/punks-media/tests/fixtures/android/bitmap-display-p3.jpg
+      - crates/punks-media/tests/fixtures/android/bitmap-display-p3.png
+      - crates/punks-media/tests/fixtures/android/bitmap-srgb.jpg
+      - crates/punks-media/tests/fixtures/android/bitmap-srgb.png
+      - crates/punks-media/tests/fixtures/android/sanitized/bitmap-display-p3-sanitized.jpg
+      - crates/punks-media/tests/fixtures/android/sanitized/bitmap-display-p3-sanitized.png
+      - crates/punks-media/tests/fixtures/android/sanitized/bitmap-srgb-sanitized.jpg
+      - crates/punks-media/tests/fixtures/android/sanitized/bitmap-srgb-sanitized.png
+      - crates/punks-media/tests/fixtures/ios/README.md
+      - crates/punks-media/tests/fixtures/ios/uikit-encoded.jpg
+      - crates/punks-media/tests/fixtures/ios/uikit-encoded.png
+      - crates/punks-media/tests/fixtures/ios/uikit-sanitized.jpg
+      - crates/punks-media/tests/fixtures/ios/uikit-sanitized.png
       - mobile/android/app/src/androidTest/resources/fixtures/android/bitmap-display-p3.png
       - mobile/android/app/src/androidTest/resources/fixtures/android/bitmap-srgb.png
       - mobile/android/app/src/test/resources/fixtures/android/bitmap-display-p3.jpg
@@ -149,8 +149,8 @@ entrees:
       Les valeurs Helm de haute disponibilité et de Secret existant décrivent
       les deux modes de déploiement du relay historique.
     sources:
-      - deploy/charts/buzz/tests/fixtures/ha-values.yaml
-      - deploy/charts/buzz/tests/fixtures/production-existing-secret-values.yaml
+      - deploy/charts/punks/tests/fixtures/ha-values.yaml
+      - deploy/charts/punks/tests/fixtures/production-existing-secret-values.yaml
     verdict: difference-intentionnelle
     decision: "#47 — décision 2 (backend Workers managed-only ; Helm et Kubernetes interdits)"
     note: >
@@ -190,15 +190,15 @@ entrees:
     echeance: tranche:26
     note: >
       Politiques fournisseur/modèle de la tranche 26 (Agents avancés) ;
-      consommateurs actuels : desktop/features/agents + crates/buzz-agent.
-  - cle: baseline.buzz.fige
+      consommateurs actuels : desktop/features/agents + crates/punks-agent.
+  - cle: baseline.punks.fige
     invariant: >
-      La baseline Buzz reste figée, identifiable et jamais restaurable ; elle
+      La baseline Punks reste figée, identifiable et jamais restaurable ; elle
       sert de point de parité pour les goldens, scans négatifs et attestations.
     sources:
       - cloudflare/BASELINE.json
     verdict: difference-intentionnelle
-    decision: "#47 — décision 13.7 (roll-forward seul, retour à Buzz impossible)"
+    decision: "#47 — décision 13.7 (roll-forward seul, retour à Punks impossible)"
   - cle: navigation.coordonnees-historiques
     invariant: >
       Les coordonnées profondes historiques résolvent messages, fils, canaux,
@@ -208,12 +208,12 @@ entrees:
     verdict: difference-intentionnelle
     decision: "#47 — décision 5 (remplacement atomique par punks://open à la tranche 1)"
     note: >
-      Les identifiants Buzz/Nostr ne sont pas importés ; seules les classes de
+      Les identifiants Punks/Nostr ne sont pas importés ; seules les classes de
       destination sont reprises dans les deep links Punks réautorisés.
 
 retraits-par-tranche:
   politique: >
-    Exactement une ligne par test Buzz retiré, ajoutée au scellement de la
+    Exactement une ligne par test Punks retiré, ajoutée au scellement de la
     tranche qui le retire dans son dossier de preuve. Verdict fermé parmi les
     quatre ci-dessus ; `preuve` obligatoire pour preuve-punks, `decision`
     obligatoire pour difference-intentionnelle, `echeance` bornée obligatoire
@@ -222,15 +222,15 @@ retraits-par-tranche:
     - test: desktop/src-tauri/src/deep_link_tests.rs
       tranche: tranche:1
       verdict: difference-intentionnelle
-      decision: "#47 — décisions 2.5 et 4.1–4.2 (aucune coordonnée Buzz/Nostr n'est importée par le desktop Punks)"
+      decision: "#47 — décisions 2.5 et 4.1–4.2 (aucune coordonnée Punks/Nostr n'est importée par le desktop Punks)"
     - test: desktop/src/features/onboarding/communityOnboarding.test.mjs
       tranche: tranche:1
       verdict: difference-intentionnelle
-      decision: "#47 — décisions 2.4 et 5 (Compte Punks neuf et cérémonie dans le navigateur système, sans onboarding Buzz)"
+      decision: "#47 — décisions 2.4 et 5 (Compte Punks neuf et cérémonie dans le navigateur système, sans onboarding Punks)"
     - test: desktop/src/features/onboarding/lib/encryptedBackup.test.mjs
       tranche: tranche:1
       verdict: difference-intentionnelle
-      decision: "#47 — décisions 2.4 et 5 (aucune clé ou sauvegarde d'identité Buzz n'est lue, importée ou supprimée)"
+      decision: "#47 — décisions 2.4 et 5 (aucune clé ou sauvegarde d'identité Punks n'est lue, importée ou supprimée)"
     - test: desktop/src/features/onboarding/lib/keyImportInput.test.mjs
       tranche: tranche:1
       verdict: difference-intentionnelle
@@ -238,7 +238,7 @@ retraits-par-tranche:
     - test: desktop/src/features/onboarding/machineOnboarding.test.mjs
       tranche: tranche:1
       verdict: difference-intentionnelle
-      decision: "#47 — décisions 2.4 et 5 (la distribution Punks ne reprend pas l'onboarding machine Buzz)"
+      decision: "#47 — décisions 2.4 et 5 (la distribution Punks ne reprend pas l'onboarding machine Punks)"
     - test: desktop/src/features/onboarding/ui/agentReadiness.test.mjs
       tranche: tranche:1
       verdict: difference-intentionnelle
@@ -246,7 +246,7 @@ retraits-par-tranche:
     - test: desktop/src/features/onboarding/ui/onboardingFlowSteps.test.mjs
       tranche: tranche:1
       verdict: difference-intentionnelle
-      decision: "#47 — décisions 2.4 et 5 (la cérémonie de Compte Punks remplace le flux d'onboarding Buzz)"
+      decision: "#47 — décisions 2.4 et 5 (la cérémonie de Compte Punks remplace le flux d'onboarding Punks)"
     - test: desktop/src/features/onboarding/ui/onboardingRuntimeSelection.test.mjs
       tranche: tranche:1
       verdict: difference-intentionnelle
@@ -254,27 +254,27 @@ retraits-par-tranche:
     - test: desktop/src/features/onboarding/ui/presetLogos.test.mjs
       tranche: tranche:1
       verdict: difference-intentionnelle
-      decision: "#47 — tranches 22 et 26 (les presets de runtime Buzz ne font pas partie de T1)"
+      decision: "#47 — tranches 22 et 26 (les presets de runtime Punks ne font pas partie de T1)"
     - test: desktop/src/features/onboarding/useWelcomeKickoffStage.test.mjs
       tranche: tranche:1
       verdict: difference-intentionnelle
-      decision: "#47 — décisions 2 et 7 (le Workspace Punks n'exécute aucun Welcome Team ou kickoff Buzz)"
+      decision: "#47 — décisions 2 et 7 (le Workspace Punks n'exécute aucun Welcome Team ou kickoff Punks)"
     - test: desktop/src/features/onboarding/welcome.test.mjs
       tranche: tranche:1
       verdict: difference-intentionnelle
-      decision: "#47 — décisions 2 et 7 (les Streams Punks n'importent aucun canal de bienvenue Buzz)"
+      decision: "#47 — décisions 2 et 7 (les Streams Punks n'importent aucun canal de bienvenue Punks)"
     - test: desktop/src/features/onboarding/welcomeCanvas.test.mjs
       tranche: tranche:1
       verdict: difference-intentionnelle
-      decision: "#47 — tranche 20 (Canvas reste indisponible et aucun Canvas Buzz n'est créé à T1)"
+      decision: "#47 — tranche 20 (Canvas reste indisponible et aucun Canvas Punks n'est créé à T1)"
     - test: desktop/src/features/onboarding/welcomeGuide.test.mjs
       tranche: tranche:1
       verdict: difference-intentionnelle
-      decision: "#47 — tranches 14 et 22 (aucun guide ni Installation de Bot Buzz n'est créé à T1)"
+      decision: "#47 — tranches 14 et 22 (aucun guide ni Installation de Bot Punks n'est créé à T1)"
     - test: desktop/src/features/onboarding/welcomeKickoff.test.mjs
       tranche: tranche:1
       verdict: difference-intentionnelle
-      decision: "#47 — décisions 2 et 7 (aucun kickoff social Buzz n'est rejoué dans le Workspace Punks)"
+      decision: "#47 — décisions 2 et 7 (aucun kickoff social Punks n'est rejoué dans le Workspace Punks)"
     - test: desktop/src/shared/deep-link.test.mjs
       tranche: tranche:1
       verdict: difference-intentionnelle
@@ -282,7 +282,7 @@ retraits-par-tranche:
     - test: desktop/tests/helpers/onboarding.ts
       tranche: tranche:1
       verdict: difference-intentionnelle
-      decision: "#47 — décisions 2.4 et 5 (les scénarios Punks utilisent la cérémonie publique, pas le seed d'onboarding Buzz)"
+      decision: "#47 — décisions 2.4 et 5 (les scénarios Punks utilisent la cérémonie publique, pas le seed d'onboarding Punks)"
     - test: desktop/tests/helpers/seed.ts
       tranche: tranche:1
       verdict: difference-intentionnelle
@@ -290,7 +290,7 @@ retraits-par-tranche:
     - test: desktop/tests/helpers/seedRelay.ts
       tranche: tranche:1
       verdict: difference-intentionnelle
-      decision: "#47 — règles de test 1 et 5 (staging Workers géré, sans seed du relay Buzz)"
+      decision: "#47 — règles de test 1 et 5 (staging Workers géré, sans seed du relay Punks)"
     - test: scripts/setup-desktop-test-data.sh
       tranche: tranche:1
       verdict: difference-intentionnelle
@@ -298,4 +298,4 @@ retraits-par-tranche:
     - test: test-fixtures/entity-links.json
       tranche: tranche:1
       verdict: difference-intentionnelle
-      decision: "#47 — décisions 2.5 et 4.1–4.2 (les identifiants Buzz/Nostr historiques ne sont pas importés)"
+      decision: "#47 — décisions 2.5 et 4.1–4.2 (les identifiants Punks/Nostr historiques ne sont pas importés)"

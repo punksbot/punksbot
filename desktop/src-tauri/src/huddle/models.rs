@@ -6,7 +6,7 @@
 //!   STT pipeline → is_stt_ready() → stt_model_dir() → run inference
 //!   TTS pipeline → is_tts_ready() → tts_model_dir() → run synthesis
 //!
-//! Models are downloaded once and cached. A version manifest (`.buzz-model-manifest`)
+//! Models are downloaded once and cached. A version manifest (`.punks-model-manifest`)
 //! is written alongside model files — if the on-disk version doesn't match the
 //! compiled-in version, the model is re-downloaded.
 //!

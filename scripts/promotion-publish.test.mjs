@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { parse as parseYaml } from "yaml";
 import {
-  BASELINE_BUZZ,
+  BASELINE_PUNKS,
   CHECKPOINT_RECUPERATION,
   canonicalJson,
   canonicalSha256,
@@ -327,8 +327,8 @@ test("la publication initiale refuse un graphe intégralement invalide avant sig
   const grapheInvalide = structuredClone(GRAPHE_PUBLICATION);
   grapheInvalide.recuperations = [
     {
-      type: "retour-buzz",
-      cible: "buzz",
+      type: "retour-punks",
+      cible: "punks",
     },
   ];
   await assert.rejects(
@@ -338,7 +338,7 @@ test("la publication initiale refuse un graphe intégralement invalide avant sig
       }),
       frontieres,
     ),
-    /graphe de release est invalide.*retour-buzz/s,
+    /graphe de release est invalide.*retour-punks/s,
   );
   assert.deepEqual(journal, []);
 });
@@ -411,7 +411,7 @@ test("la finalisation ordonne les signatures et reproduit exactement les mêmes 
 
 test("la première publication refuse tout champ local implicite avant signature", async () => {
   const recuImplicite = structuredClone(RECU);
-  recuImplicite.contenu["backend-implicite"] = "buzz";
+  recuImplicite.contenu["backend-implicite"] = "punks";
   recuImplicite.sha256 = canonicalSha256(recuImplicite.contenu);
   await assert.rejects(
     finaliserPromotion(
@@ -423,7 +423,7 @@ test("la première publication refuse tout champ local implicite avant signature
   );
 
   const attestationImplicite = structuredClone(ATTESTATION);
-  attestationImplicite["backend-implicite"] = "buzz";
+  attestationImplicite["backend-implicite"] = "punks";
   await assert.rejects(
     finaliserPromotion(
       {
@@ -446,7 +446,7 @@ test("la première publication refuse les champs implicites d'une signature", as
         ...APPROBATION,
         async signerRecu(argumentsSignature) {
           const signatures = await APPROBATION.signerRecu(argumentsSignature);
-          signatures[0]["autorite-implicite"] = "buzz";
+          signatures[0]["autorite-implicite"] = "punks";
           return signatures;
         },
       },
@@ -678,8 +678,8 @@ test("refuse un tag demandé qui ne dérive pas du SHA de l'attestation", async 
   );
 });
 
-test("refuse les checkpoints Buzz avant signature et publication", async () => {
-  for (const sha of [BASELINE_BUZZ, CHECKPOINT_RECUPERATION]) {
+test("refuse les checkpoints Punks avant signature et publication", async () => {
+  for (const sha of [BASELINE_PUNKS, CHECKPOINT_RECUPERATION]) {
     const attestation = { ...ATTESTATION, sha };
     const id = `recu-promotion-1-${sha}`;
     const contenu = {
@@ -691,7 +691,7 @@ test("refuse les checkpoints Buzz avant signature et publication", async () => {
     const recu = { id, contenu, sha256: canonicalSha256(contenu) };
     await assert.rejects(
       finaliserPromotion({ attestation, recu }, APPROBATION, CONFIANCE),
-      /distinct des checkpoints Buzz interdits/s,
+      /distinct des checkpoints Punks interdits/s,
     );
   }
 });

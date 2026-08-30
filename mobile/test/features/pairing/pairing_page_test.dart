@@ -5,13 +5,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:buzz/features/pairing/pairing_page.dart';
-import 'package:buzz/features/pairing/pairing_provider.dart';
-import 'package:buzz/shared/community/community.dart';
-import 'package:buzz/shared/security/sensitive_action_authorizer.dart';
-import 'package:buzz/shared/theme/theme.dart';
-import 'package:buzz/shared/widgets/buzz_loading_indicator.dart';
-import 'package:buzz/shared/widgets/tappable_flapping_bee.dart';
+import 'package:punks/features/pairing/pairing_page.dart';
+import 'package:punks/features/pairing/pairing_provider.dart';
+import 'package:punks/shared/community/community.dart';
+import 'package:punks/shared/security/sensitive_action_authorizer.dart';
+import 'package:punks/shared/theme/theme.dart';
+import 'package:punks/shared/widgets/punks_loading_indicator.dart';
+import 'package:punks/shared/widgets/tappable_flapping_bee.dart';
 
 import '../../helpers/widget_helpers.dart';
 
@@ -25,7 +25,7 @@ void main() {
       );
 
       expect(find.byType(TappableFlappingBee), findsOneWidget);
-      expect(find.text('Welcome to Buzz'), findsOneWidget);
+      expect(find.text('Welcome to Punks'), findsOneWidget);
       expect(find.text('Scan a QR code'), findsOneWidget);
       expect(find.text('Use pairing code'), findsOneWidget);
       expect(find.text('Connect'), findsNothing);
@@ -101,7 +101,7 @@ void main() {
       expect(find.text('Confirm desktop code'), findsOneWidget);
       expect(
         find.text(
-          'Make sure the six-digit code matches on both devices. Your Buzz identity will transfer to this device. Only continue if you started this pairing from your desktop.',
+          'Make sure the six-digit code matches on both devices. Your Punks identity will transfer to this device. Only continue if you started this pairing from your desktop.',
         ),
         findsOneWidget,
       );
@@ -212,7 +212,7 @@ void main() {
       );
       await tester.pump();
 
-      expect(find.byType(BuzzLoadingIndicator), findsOneWidget);
+      expect(find.byType(PunksLoadingIndicator), findsOneWidget);
       // Connect text should be replaced by spinner.
       expect(find.text('Connect'), findsNothing);
     });
@@ -393,7 +393,7 @@ void main() {
         ),
       );
 
-      expect(find.textContaining('full Buzz identity'), findsOneWidget);
+      expect(find.textContaining('full Punks identity'), findsOneWidget);
       expect(find.textContaining('permanent access'), findsOneWidget);
       expect(find.textContaining('started this recovery'), findsOneWidget);
       expect(find.text('Codes match'), findsOneWidget);
@@ -415,7 +415,7 @@ void main() {
       expect(find.text('Confirm desktop code'), findsOneWidget);
       expect(
         find.text(
-          'Make sure the six-digit code matches on both devices. Your Buzz identity will transfer to this device. Only continue if you started this pairing from your desktop.',
+          'Make sure the six-digit code matches on both devices. Your Punks identity will transfer to this device. Only continue if you started this pairing from your desktop.',
         ),
         findsOneWidget,
       );
@@ -589,7 +589,7 @@ void main() {
       expect(find.text('Confirm desktop code'), findsOneWidget);
       expect(find.textContaining('matches on both devices'), findsOneWidget);
       expect(
-        find.textContaining('Buzz identity will transfer'),
+        find.textContaining('Punks identity will transfer'),
         findsOneWidget,
       );
       expect(find.text('Codes match'), findsOneWidget);

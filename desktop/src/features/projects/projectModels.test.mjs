@@ -329,7 +329,7 @@ test("buildProjectReadModels conforms to the shared NIP-MP fold fixtures", () =>
 // which signed project heads are valid.
 
 test("buildProjectReadModels conforms to the shared NIP-MP ingest fixtures", () => {
-  const previousProduct = ["bu", "zz"].join("");
+  const product = "punks";
   const fixtures = JSON.parse(
     readFileSync(
       new URL("../../../../docs/nips/NIP-MP.fixtures.json", import.meta.url),
@@ -347,9 +347,9 @@ test("buildProjectReadModels conforms to the shared NIP-MP ingest fixtures", () 
       created_at: 1_000,
       content: fixtureCase.template.content,
       tags: fixtureCase.template.tags.map(([name, ...values]) => [
-        name === `${previousProduct}-channel`
+        name === `${product}-channel`
           ? "h"
-          : name === `${previousProduct}-visibility`
+          : name === `${product}-visibility`
             ? "visibility"
             : name,
         ...values,

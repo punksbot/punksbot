@@ -106,7 +106,7 @@ fn punks_mesh_name_is_stable_and_does_not_expose_the_relay() {
 
     assert_eq!(first, second);
     assert_ne!(first, other_relay);
-    assert!(first.starts_with("buzz-community-"));
+    assert!(first.starts_with("punks-community-"));
     assert!(!first.contains("example"));
 }
 
@@ -117,7 +117,7 @@ fn sharing_config_keeps_the_community_where_sharing_was_enabled() {
         model_id: Some("test-model".to_string()),
         max_vram_gb: Some(24),
         join_token: None,
-        mesh_name: Some("buzz-community-test".to_string()),
+        mesh_name: Some("punks-community-test".to_string()),
         relay_url: Some("wss://community.example".to_string()),
         trusted_owner_ids: Some(Vec::new()),
     };
@@ -344,7 +344,7 @@ async fn cold_client_preflight_requires_explicit_target() {
 /// frontend selected earlier.
 ///
 /// Hardware-gated (`#[ignore]`): loads a real model. Run with:
-///   cargo test -p buzz-desktop --features mesh-llm \
+///   cargo test -p punks-desktop --features mesh-llm \
 ///     ensure_serve_runtime_serves_other_model -- --ignored --nocapture
 #[test]
 #[ignore = "loads a real model; run manually with --ignored"]

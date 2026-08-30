@@ -16,7 +16,7 @@
 
 /// Maximum parallelism for the OpenClaw harness.
 ///
-/// Each buzz-acp worker spawned by the Desktop is a client of the single
+/// Each punks-acp worker spawned by the Desktop is a client of the single
 /// shared OpenClaw Gateway daemon — running more than this number of workers
 /// is both resource-expensive and architecturally wrong per the OpenClaw
 /// design. Tyler's ruling: "try 5 and lower if needed."

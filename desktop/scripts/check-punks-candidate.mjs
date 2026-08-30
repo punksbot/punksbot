@@ -124,9 +124,9 @@ function assertCandidate(config, platform) {
     throw new Error(`${platform}: the Punks-only Info.plist is required`);
   }
   const csp = config?.app?.security?.csp;
-  if (typeof csp !== "string" || /buzz/i.test(csp)) {
+  if (typeof csp !== "string" || /punks/i.test(csp)) {
     throw new Error(
-      `${platform}: the candidate CSP must not retain a Buzz scheme`,
+      `${platform}: the candidate CSP must not retain a Punks scheme`,
     );
   }
   if (config?.version !== EXPECTED_VERSION) {
@@ -217,7 +217,7 @@ export function validateCandidateFiles({ base, config }) {
   );
   if (
     !infoPlist.includes("<dict/>") ||
-    /buzz|nostr|relay|huddle|NS(?:Microphone|Camera|LocalNetwork)UsageDescription/iu.test(
+    /punks|nostr|relay|huddle|NS(?:Microphone|Camera|LocalNetwork)UsageDescription/iu.test(
       infoPlist,
     )
   ) {
@@ -227,7 +227,7 @@ export function validateCandidateFiles({ base, config }) {
     join(configRoot, "Info.plist"),
     "utf8",
   );
-  if (/buzz|nostr|relay/iu.test(conventionalInfoPlist)) {
+  if (/punks|nostr|relay/iu.test(conventionalInfoPlist)) {
     throw new Error(
       "the bundled macOS Info.plist retains a retired product marker",
     );

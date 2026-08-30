@@ -4,8 +4,8 @@
 // in the fragment so clients that do not understand the scheme render only
 // the poster:
 //
-//   posterUrl#buzz-anim=encodedAnimationUrl
-const _animatedAvatarSeparator = '#buzz-anim=';
+//   posterUrl#punks-anim=encodedAnimationUrl
+const _animatedAvatarSeparator = '#punks-anim=';
 
 /// The static poster and animated image URLs encoded in an avatar URL.
 class AnimatedAvatarDescriptor {
@@ -18,7 +18,7 @@ class AnimatedAvatarDescriptor {
   final String animationUrl;
 }
 
-/// Parses the Buzz animated-avatar fragment scheme from [url].
+/// Parses the Punks animated-avatar fragment scheme from [url].
 ///
 /// Returns `null` when the poster or animation URL is missing, malformed, or
 /// does not use HTTP(S).

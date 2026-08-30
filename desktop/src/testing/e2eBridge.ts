@@ -8158,7 +8158,7 @@ async function handleDiscoverAcpRuntimes(
       default_args: [],
       mcp_command: "punks-dev-mcp",
       install_hint: "Ships with the Punks desktop app.",
-      install_instructions_url: "https://github.com/block/punks",
+      install_instructions_url: "https://github.com/punksbot/punksbot",
       can_auto_install: false,
       requires_external_cli: false,
       underlying_cli_path: null,

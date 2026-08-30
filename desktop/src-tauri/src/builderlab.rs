@@ -472,7 +472,7 @@ pub(crate) async fn get_builderlab_nostr_identity(
         &app_state.http_client,
         &session,
         reqwest::Method::POST,
-        "/v1/buzz/nostr-identities/current",
+        "/v1/punks/nostr-identities/current",
         serde_json::json!({}),
     )
     .await
@@ -487,7 +487,7 @@ pub(crate) async fn bind_builderlab_nostr_identity(
         &app_state.http_client,
         &session,
         reqwest::Method::POST,
-        "/v1/buzz/nostr-identities/challenge",
+        "/v1/punks/nostr-identities/challenge",
         serde_json::json!({ "origin": BUILDERLAB_ORIGIN }),
     )
     .await?;
@@ -513,7 +513,7 @@ pub(crate) async fn bind_builderlab_nostr_identity(
         &app_state.http_client,
         &session,
         reqwest::Method::POST,
-        "/v1/buzz/nostr-identities/verify",
+        "/v1/punks/nostr-identities/verify",
         serde_json::json!({
             "challenge_id": challenge.challenge_id,
             "nonce": challenge.nonce,
@@ -532,7 +532,7 @@ pub(crate) async fn delete_builderlab_nostr_identity(
         &app_state.http_client,
         &session,
         reqwest::Method::POST,
-        "/v1/buzz/nostr-identities/delete",
+        "/v1/punks/nostr-identities/delete",
         serde_json::json!({}),
     )
     .await
@@ -547,7 +547,7 @@ pub(crate) async fn list_builderlab_communities(
         &app_state.http_client,
         &session,
         reqwest::Method::POST,
-        "/v1/buzz/communities/list",
+        "/v1/punks/communities/list",
         serde_json::json!({}),
     )
     .await
@@ -563,7 +563,7 @@ pub(crate) async fn check_builderlab_community_name(
         &app_state.http_client,
         &session,
         reqwest::Method::POST,
-        "/v1/buzz/communities/availability",
+        "/v1/punks/communities/availability",
         serde_json::json!({ "name": name }),
     )
     .await
@@ -579,7 +579,7 @@ pub(crate) async fn create_builderlab_community(
         &app_state.http_client,
         &session,
         reqwest::Method::POST,
-        "/v1/buzz/communities",
+        "/v1/punks/communities",
         serde_json::json!({ "name": name }),
     )
     .await
@@ -595,7 +595,7 @@ pub(crate) async fn archive_builderlab_community(
         &app_state.http_client,
         &session,
         reqwest::Method::POST,
-        "/v1/buzz/communities/archive",
+        "/v1/punks/communities/archive",
         serde_json::json!({ "community_id": community_id }),
     )
     .await
@@ -611,7 +611,7 @@ pub(crate) async fn unarchive_builderlab_community(
         &app_state.http_client,
         &session,
         reqwest::Method::POST,
-        "/v1/buzz/communities/unarchive",
+        "/v1/punks/communities/unarchive",
         serde_json::json!({ "community_id": community_id }),
     )
     .await
@@ -631,7 +631,7 @@ pub(crate) async fn transfer_builderlab_community(
         &app_state.http_client,
         &session,
         reqwest::Method::POST,
-        "/v1/buzz/communities/transfer",
+        "/v1/punks/communities/transfer",
         serde_json::json!({
             "communityId": community_id,
             "transfereeNpub": transferee_npub,

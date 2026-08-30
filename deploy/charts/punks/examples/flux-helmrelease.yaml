@@ -1,0 +1,63 @@
+# Flux HelmRelease — GitOps-safe Punks install.
+#
+# Prerequisite: a Secret named `punks-secrets` in namespace `punks`. See
+# `secret-sample.yaml`. Flux renders the chart server-side via the
+# helm-controller, which (like ArgoCD) treats chart-side `randAlphaNum`
+# autogen as non-idempotent. `existingSecret` is the only safe path.
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: punks
+  namespace: punks
+spec:
+  type: oci
+  url: oci://ghcr.io/punksbot/punksbot/charts
+  interval: 10m
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: punks
+  namespace: punks
+spec:
+  interval: 10m
+  chart:
+    spec:
+      chart: punks
+      version: "0.1.0"
+      sourceRef:
+        kind: HelmRepository
+        name: punks
+  values:
+    relayUrl: wss://punks.example.com
+    ownerPubkey: "0000000000000000000000000000000000000000000000000000000000000000"  # replace
+    replicaCount: 3
+
+    secrets:
+      existingSecret: punks-secrets
+
+
+    s3:
+      endpoint: "https://s3.us-east-1.amazonaws.com"
+      bucket: "punks-media"
+      region: "us-east-1"
+      addressingStyle: virtual
+
+    persistence:
+      git:
+        enabled: true
+        accessMode: ReadWriteOnce      # RWO is fine at any replicaCount (object-store-backed git)
+        storageClass: ""               # any RWO class; no shared/RWX filesystem needed
+        size: 50Gi
+
+    ingress:
+      enabled: true
+      className: nginx
+      annotations:
+        cert-manager.io/cluster-issuer: letsencrypt-prod
+        nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+        nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+      tls:
+        - hosts: [punks.example.com]
+          secretName: punks-tls

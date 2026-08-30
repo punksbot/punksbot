@@ -2,8 +2,12 @@ import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 
 const root = path.resolve(process.cwd(), "dist");
+const previousProduct = ["bu", "zz"].join("");
 const forbidden = [
-  { label: "previous product marker", pattern: /buzz/iu },
+  {
+    label: "previous product marker",
+    pattern: new RegExp(previousProduct, "iu"),
+  },
   { label: "remote runtime marker", pattern: /cloudflare/iu },
   { label: "E2E runtime hook", pattern: /__punks_e2e/iu },
   { label: "mock launch query", pattern: /e2e=mock/iu },

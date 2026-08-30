@@ -128,7 +128,7 @@ function RepositoryIdentity({
   inlineBranch?: boolean;
 }) {
   // Where the git data lives beats repeating the (often identical) project
-  // name — "github.com/block/punks" for external repos, "owner/repo" for
+  // name — "github.com/punksbot/punksbot" for external repos, "owner/repo" for
   // Punks-hosted ones.
   const displayPath = repositoryDisplayPath(
     repository,

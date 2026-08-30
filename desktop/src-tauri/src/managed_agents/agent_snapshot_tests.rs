@@ -7,7 +7,7 @@ use super::*;
 
 #[test]
 fn previous_product_discriminator_remains_importable() {
-    assert!(is_agent_snapshot_format("buzz-agent-snapshot"));
+    assert!(is_agent_snapshot_format("punks-agent-snapshot"));
 }
 use crate::managed_agents::types::{BackendKind, ManagedAgentRecord, RespondTo};
 use std::collections::BTreeMap;
@@ -641,7 +641,7 @@ fn avatar_url_fallback_when_over_size_limit() {
 #[test]
 fn invalid_format_discriminator_is_rejected() {
     let mut snapshot = build_snapshot(&minimal_record(), MemoryLevel::None, vec![], None);
-    snapshot.format = "not-a-buzz-snapshot".to_string();
+    snapshot.format = "not-a-punks-snapshot".to_string();
     let bytes = serde_json::to_vec(&snapshot).unwrap();
     let result = decode_snapshot_json(&bytes);
     assert!(result.is_err());

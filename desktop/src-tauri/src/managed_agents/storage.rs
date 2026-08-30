@@ -444,8 +444,8 @@ fn persist_agent_keys_with(store: &impl KeyStore, records: &mut [ManagedAgentRec
 }
 
 /// One-time migration of agent keys from the production keyring service
-/// (`"buzz-desktop"`) to the dev service (`"buzz-desktop-dev"`). Only runs
-/// in debug builds — release builds never touch `"buzz-desktop"` from this
+/// (`"punks-desktop"`) to the dev service (`"punks-desktop-dev"`). Only runs
+/// in debug builds — release builds never touch `"punks-desktop"` from this
 /// path.
 ///
 /// Idempotent: skips any key that already exists in the dev service so
@@ -857,7 +857,7 @@ pub fn read_log_tail(path: &Path, max_lines: usize) -> Result<String, String> {
 
     // Strip ANSI escapes here (not in the harness) so the desktop log view
     // renders cleanly while terminals and other tools still get the colors
-    // buzz-acp emits.
+    // punks-acp emits.
     let cleaned = strip_ansi_escapes::strip_str(String::from_utf8_lossy(&buf));
     let lines: Vec<&str> = cleaned.lines().collect();
     let start = lines.len().saturating_sub(max_lines);
@@ -891,7 +891,7 @@ pub fn meaningful_agent_error_from_log(path: &Path) -> Option<AgentLogError> {
                 });
             }
         }
-        // Legacy format (older buzz-acp builds): "Agent reported error: ..."
+        // Legacy format (older punks-acp builds): "Agent reported error: ..."
         if line.starts_with("Agent reported error:") {
             return Some(AgentLogError {
                 message: line.to_string(),

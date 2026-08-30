@@ -4,7 +4,7 @@
 # observation/récupération), #17 (inventaire de retrait).
 # ADR : docs/adr/0060-graphe-de-release-expansion-activation-contraction.md
 # Checkpoint de récupération : 50e16de180dda4365f8001a8a73503f16977a175.
-# Baseline Buzz gelée : da818eddc2f470c006a1073c8c5452f8a989f272.
+# Baseline Punks gelée : da818eddc2f470c006a1073c8c5452f8a989f272.
 #
 # Règles :
 #   - Un nœud logique par tranche, cycle de vie fermé
@@ -32,10 +32,10 @@
 #   - Le roll-forward corrige la tranche logique courante sans consommer la
 #     tranche fonctionnelle suivante : nouveau SHA, nouveau release-id,
 #     instantanés complets distincts et redémarrage E0. Il ne peut réutiliser ni
-#     un checkpoint Buzz ni un SHA Punks historique. Un retour à une version
+#     un checkpoint Punks ni un SHA Punks historique. Un retour à une version
 #     Punks antérieure exige les treize contrôles recalculés à l'instant UTC
 #     exact, une cible déjà activée et un nouveau Reçu signé ; aucun retour vers
-#     Buzz n’existe.
+#     Punks n’existe.
 #   - E0…E4, A0…A4 et P0 restent des étapes ordonnées, signées et obligatoires,
 #     mais leur durée minimale est zéro heure. Elles peuvent être fermées dans
 #     le même run lorsque leurs segments observés sont positifs, suffisamment
@@ -63,7 +63,7 @@
 
 version: 1
 checkpoint-recuperation: 50e16de180dda4365f8001a8a73503f16977a175
-baseline-buzz: da818eddc2f470c006a1073c8c5452f8a989f272
+baseline-punks: da818eddc2f470c006a1073c8c5452f8a989f272
 
 canal: punks-desktop
 
@@ -83,7 +83,7 @@ politique:
   recuperation:
     normale: roll-forward
     retour-punks-anterieur: certificat-compatibilite-exige
-    retour-buzz: interdit
+    retour-punks: interdit
   rpo-logique-nul: true
   immuabilite:
     bootstrap-r2:
@@ -127,7 +127,7 @@ preuves-obligatoires:
 controles-certificat-retour-punks:
   - bundle-manifeste-originaux
   - attestation-valide-non-revoquee
-  - securite-isolation-effacement-sans-buzz
+  - securite-isolation-effacement-sans-punks
   - profils-desktop-actifs
   - versions-etat-durable-objects
   - migrations-durable-objects-franchissables

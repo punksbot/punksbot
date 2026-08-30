@@ -536,7 +536,7 @@ pub async fn confirm_team_snapshot_import(
                     .to_bech32()
                     .map_err(|e| format!("failed to encode agent private key: {e}"))?
             };
-            // NIP-OA auth tag: bridge nostr 0.37 → 0.36 (buzz-sdk) via hex round-trip.
+            // NIP-OA auth tag: bridge nostr 0.37 → 0.36 (punks-sdk) via hex round-trip.
             let compat_owner = nostr::Keys::parse(&owner_keys.secret_key().to_secret_hex())
                 .map_err(|e| format!("failed to bridge owner keys: {e}"))?;
             let compat_agent = nostr::PublicKey::from_hex(&pubkey)

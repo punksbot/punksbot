@@ -120,7 +120,7 @@ export async function migrateLegacyCommunityStorageBeforeRender(): Promise<void>
   }
 
   migrateLegacyCommunityStorage(window.localStorage);
-  // block/punks#5078 — read through the throw-safe accessor so a denied-storage
+  // punksbot/punksbot#5078 — read through the throw-safe accessor so a denied-storage
   // origin degrades to "no community state" instead of crashing pre-render.
   const currentCommunitiesRaw = getStorageItem(PUNKS_COMMUNITIES_KEY);
   const hasCurrentActiveCommunity = getStorageItem(PUNKS_ACTIVE_COMMUNITY_KEY);

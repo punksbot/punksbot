@@ -1,16 +1,16 @@
 # Read-only deployment moderation dashboard
 
-Buzz can expose a private, deployment-wide read-only dashboard from the existing
+Punks can expose a private, deployment-wide read-only dashboard from the existing
 relay process. It shows open moderation reports and recent product feedback.
 
-Configure `BUZZ_ADMIN_HOST` to activate the dashboard. A private ingress limits
+Configure `PUNKS_ADMIN_HOST` to activate the dashboard. A private ingress limits
 access to the operator VPN or approved source IPs.
 
 Required configuration:
 
 ```text
-BUZZ_ADMIN_HOST=admin.example.com
-BUZZ_ADMIN_WEB_DIR=/srv/buzz/admin-web
+PUNKS_ADMIN_HOST=admin.example.com
+PUNKS_ADMIN_WEB_DIR=/srv/punks/admin-web
 ```
 
 The relay requires the configured admin host and matching browser origin.

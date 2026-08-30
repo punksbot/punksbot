@@ -25,21 +25,21 @@ import UserNotifications
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
     let messenger = engineBridge.applicationRegistrar.messenger()
     mediaUploadChannel = FlutterMethodChannel(
-      name: "buzz/media_upload",
+      name: "punks/media_upload",
       binaryMessenger: messenger
     )
     mediaUploadChannel?.setMethodCallHandler { [weak self] call, result in
       self?.handleMediaUploadMethodCall(call, result: result)
     }
     qrScannerChannel = FlutterMethodChannel(
-      name: "buzz/qr_scanner",
+      name: "punks/qr_scanner",
       binaryMessenger: messenger
     )
     qrScannerChannel?.setMethodCallHandler { call, result in
       Self.handleQrScannerMethodCall(call, result: result)
     }
     inlinePhotoPickerSupportChannel = FlutterMethodChannel(
-      name: "buzz/inline_photo_picker",
+      name: "punks/inline_photo_picker",
       binaryMessenger: messenger
     )
     inlinePhotoPickerSupportChannel?.setMethodCallHandler { call, result in
@@ -55,26 +55,26 @@ import UserNotifications
     }
 
     if let inlinePhotoPickerRegistrar = engineBridge.pluginRegistry.registrar(
-      forPlugin: "BuzzInlinePhotoPicker"
+      forPlugin: "PunksInlinePhotoPicker"
     ) {
       inlinePhotoPickerRegistrar.register(
         InlinePhotoPickerFactory(
           messenger: messenger,
           parentViewController: inlinePhotoPickerRegistrar.viewController
         ),
-        withId: "buzz/inline_photo_picker"
+        withId: "punks/inline_photo_picker"
       )
     }
 
     if let concentricSheetRegistrar = engineBridge.pluginRegistry.registrar(
-      forPlugin: "BuzzConcentricSheetSurface"
+      forPlugin: "PunksConcentricSheetSurface"
     ) {
       concentricSheetRegistrar.register(
         ConcentricSheetSurfaceFactory(),
-        withId: "buzz/concentric_sheet_surface"
+        withId: "punks/concentric_sheet_surface"
       )
       concentricSheetSurfaceChannel = FlutterMethodChannel(
-        name: "buzz/concentric_sheet_surface",
+        name: "punks/concentric_sheet_surface",
         binaryMessenger: messenger
       )
       concentricSheetSurfaceChannel?.setMethodCallHandler { call, result in
@@ -91,25 +91,25 @@ import UserNotifications
     }
 
     if let jumpToLatestGlassRegistrar = engineBridge.pluginRegistry.registrar(
-      forPlugin: "BuzzJumpToLatestGlassButton"
+      forPlugin: "PunksJumpToLatestGlassButton"
     ) {
       jumpToLatestGlassRegistrar.register(
         JumpToLatestGlassButtonFactory(messenger: messenger),
-        withId: "buzz/jump_to_latest_glass"
+        withId: "punks/jump_to_latest_glass"
       )
     }
 
     if let stickyDateGlassRegistrar = engineBridge.pluginRegistry.registrar(
-      forPlugin: "BuzzStickyDateGlassHeader"
+      forPlugin: "PunksStickyDateGlassHeader"
     ) {
       stickyDateGlassRegistrar.register(
         StickyDateGlassHeaderFactory(messenger: messenger),
-        withId: "buzz/sticky_date_glass"
+        withId: "punks/sticky_date_glass"
       )
     }
 
     let nativeAttachmentRegistrar = engineBridge.pluginRegistry.registrar(
-      forPlugin: "BuzzNativeAttachmentPopover"
+      forPlugin: "PunksNativeAttachmentPopover"
     )
     nativeAttachmentPopoverCoordinator = NativeAttachmentPopoverCoordinator(
       messenger: messenger,
@@ -117,7 +117,7 @@ import UserNotifications
     )
 
     let nativeEmojiPickerRegistrar = engineBridge.pluginRegistry.registrar(
-      forPlugin: "BuzzNativeEmojiPicker"
+      forPlugin: "PunksNativeEmojiPicker"
     )
     nativeEmojiPickerCoordinator = NativeEmojiPickerCoordinator(
       messenger: messenger,
@@ -125,14 +125,14 @@ import UserNotifications
     )
     if #available(iOS 16.0, *),
       let nativeMessageActionsRegistrar = engineBridge.pluginRegistry.registrar(
-        forPlugin: "BuzzNativeMessageActionSurface"
+        forPlugin: "PunksNativeMessageActionSurface"
       ) {
       nativeMessageActionsRegistrar.register(
         NativeMessageActionSurfaceFactory(messenger: messenger),
-        withId: "buzz/native_message_action_surface"
+        withId: "punks/native_message_action_surface"
       )
       nativeMessageActionSurfaceSupportChannel = FlutterMethodChannel(
-        name: "buzz/native_message_action_surface",
+        name: "punks/native_message_action_surface",
         binaryMessenger: messenger
       )
       nativeMessageActionSurfaceSupportChannel?.setMethodCallHandler { call, result in
@@ -417,7 +417,7 @@ import UserNotifications
       let exportSession = AVAssetExportSession(
         asset: composition,
         // Passthrough preserves the source's HEVC codec and container
-        // metadata. Buzz accepts only canonical H.264/AAC MP4s with no
+        // metadata. Punks accepts only canonical H.264/AAC MP4s with no
         // metadata channels, so re-encode instead of copying the movie.
         presetName: AVAssetExportPresetMediumQuality
       )
@@ -450,7 +450,7 @@ import UserNotifications
       case .completed:
         do {
           // AVFoundation writes a standard sample-dependency table (`sdtp`).
-          // Older Buzz relays mistook that playback-only box for metadata. Keep
+          // Older Punks relays mistook that playback-only box for metadata. Keep
           // its size and payload in a `free` box so chunk offsets stay valid and
           // uploads work before those relays receive the validator fix.
           try Self.neutralizeSampleDependencyBoxes(at: outputURL)
@@ -533,14 +533,14 @@ import UserNotifications
 
         guard let posterImage else {
           throw lastError ?? NSError(
-            domain: "BuzzVideoPoster",
+            domain: "PunksVideoPoster",
             code: 1,
             userInfo: [NSLocalizedDescriptionKey: "Unable to decode a video frame."]
           )
         }
         guard let jpegData = try MediaSanitizer.encodeJpeg(UIImage(cgImage: posterImage)) else {
           throw NSError(
-            domain: "BuzzVideoPoster",
+            domain: "PunksVideoPoster",
             code: 2,
             userInfo: [NSLocalizedDescriptionKey: "Unable to encode video poster."]
           )
@@ -626,7 +626,7 @@ import UserNotifications
 
   private static func invalidMp4BoxError() -> NSError {
     NSError(
-      domain: "BuzzVideoTranscode",
+      domain: "PunksVideoTranscode",
       code: 1,
       userInfo: [NSLocalizedDescriptionKey: "Invalid MP4 box structure."]
     )

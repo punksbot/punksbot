@@ -148,7 +148,7 @@ export function canonicalMessageReaction(value: string): string {
   }
   const normalized = value.trim().normalize("NFC");
   if (normalized.length === 0) {
-    // Frozen Buzz/NIP-25 compatibility: empty kind:7 content means `+`.
+    // Frozen Punks/NIP-25 compatibility: empty kind:7 content means `+`.
     return "+";
   }
 

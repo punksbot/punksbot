@@ -437,7 +437,7 @@ fn stage_provider(
     binary: &Path,
 ) -> Result<(tempfile::TempDir, PathBuf, String, std::fs::File), String> {
     let directory = tempfile::Builder::new()
-        .prefix("buzz-provider-")
+        .prefix("punks-provider-")
         .tempdir()
         .map_err(|error| format!("failed to create provider staging directory: {error}"))?;
     let suffix = if cfg!(windows) { ".exe" } else { "" };

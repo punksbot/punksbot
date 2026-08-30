@@ -1,6 +1,6 @@
-import 'package:buzz/shared/widgets/concentric_sheet_surface.dart';
-import 'package:buzz/shared/theme/theme.dart';
-import 'package:buzz/shared/widgets/modal_presentation.dart';
+import 'package:punks/shared/widgets/concentric_sheet_surface.dart';
+import 'package:punks/shared/theme/theme.dart';
+import 'package:punks/shared/widgets/modal_presentation.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -45,7 +45,7 @@ void main() {
     'replaces the Flutter fallback when native support is available',
     (tester) async {
       debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
-      const surfaceChannel = MethodChannel('buzz/concentric_sheet_surface');
+      const surfaceChannel = MethodChannel('punks/concentric_sheet_surface');
       tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
         surfaceChannel,
         (call) async => call.method == 'isSupported' ? true : null,
@@ -84,7 +84,7 @@ void main() {
     tester,
   ) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
-    const surfaceChannel = MethodChannel('buzz/concentric_sheet_surface');
+    const surfaceChannel = MethodChannel('punks/concentric_sheet_surface');
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
       surfaceChannel,
       (call) async => call.method == 'isSupported' ? true : null,
@@ -96,7 +96,7 @@ void main() {
           home: Scaffold(
             body: Builder(
               builder: (context) => FilledButton(
-                onPressed: () => showBuzzModalBottomSheet<void>(
+                onPressed: () => showPunksModalBottomSheet<void>(
                   context: context,
                   title: 'Members',
                   builder: (_) => const Text('Sheet body'),
@@ -118,11 +118,11 @@ void main() {
       );
       expect(nativeSurface.creationParams, isNot(contains('headerGradient')));
       expect(
-        find.byKey(const ValueKey('buzz-sheet-header-gradient')),
+        find.byKey(const ValueKey('punks-sheet-header-gradient')),
         findsNothing,
       );
       expect(
-        find.byKey(const ValueKey('buzz-sheet-surface-clip')),
+        find.byKey(const ValueKey('punks-sheet-surface-clip')),
         findsNothing,
       );
       final contentClip = tester.widget<ClipRSuperellipse>(
@@ -151,7 +151,7 @@ void main() {
             home: Scaffold(
               body: Builder(
                 builder: (context) => FilledButton(
-                  onPressed: () => showBuzzModalBottomSheet<void>(
+                  onPressed: () => showPunksModalBottomSheet<void>(
                     context: context,
                     title: 'Sheet title',
                     showDragHandle: true,
@@ -168,23 +168,23 @@ void main() {
         await tester.pumpAndSettle();
 
         final closeButton = find.byTooltip('Close sheet');
-        final title = find.byKey(const ValueKey('buzz-sheet-title'));
+        final title = find.byKey(const ValueKey('punks-sheet-title'));
         expect(closeButton, findsOneWidget);
         expect(title, findsOneWidget);
         expect(
-          find.byKey(const ValueKey('buzz-sheet-surface-clip')),
+          find.byKey(const ValueKey('punks-sheet-surface-clip')),
           findsOneWidget,
         );
         expect(tester.getSize(closeButton), const Size.square(44));
         expect(tester.widget<Text>(title).style?.fontSize, 16);
         expect(
-          find.byKey(const ValueKey('buzz-sheet-header-gradient')),
+          find.byKey(const ValueKey('punks-sheet-header-gradient')),
           findsNothing,
         );
         expect(
           tester
               .widget<ColoredBox>(
-                find.byKey(const ValueKey('buzz-sheet-surface')),
+                find.byKey(const ValueKey('punks-sheet-surface')),
               )
               .color,
           lightColorScheme.surface,
@@ -192,7 +192,7 @@ void main() {
         expect(
           tester.getTopLeft(find.text('Sheet body')).dy -
               tester
-                  .getTopLeft(find.byKey(const ValueKey('buzz-sheet-surface')))
+                  .getTopLeft(find.byKey(const ValueKey('punks-sheet-surface')))
                   .dy,
           80,
         );
@@ -237,7 +237,7 @@ void main() {
           isFalse,
         );
         expect(
-          find.byKey(const ValueKey('buzz-sheet-drag-handle')),
+          find.byKey(const ValueKey('punks-sheet-drag-handle')),
           findsOneWidget,
         );
         expect(
@@ -279,7 +279,7 @@ void main() {
           home: Scaffold(
             body: Builder(
               builder: (context) => FilledButton(
-                onPressed: () => showBuzzModalBottomSheet<void>(
+                onPressed: () => showPunksModalBottomSheet<void>(
                   context: context,
                   showDragHandle: true,
                   builder: (_) => const Text('Sheet body'),
@@ -299,7 +299,7 @@ void main() {
         isFalse,
       );
       final internalHandle = find.byKey(
-        const ValueKey('buzz-sheet-drag-handle'),
+        const ValueKey('punks-sheet-drag-handle'),
       );
       expect(internalHandle, findsOneWidget);
       expect(tester.getSize(internalHandle), const Size(32, 4));
@@ -329,7 +329,7 @@ void main() {
           home: Scaffold(
             body: Builder(
               builder: (context) => FilledButton(
-                onPressed: () => showBuzzModalBottomSheet<void>(
+                onPressed: () => showPunksModalBottomSheet<void>(
                   context: context,
                   showDragHandle: true,
                   showCloseButton: false,
@@ -346,7 +346,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-        find.byKey(const ValueKey('buzz-sheet-drag-handle')),
+        find.byKey(const ValueKey('punks-sheet-drag-handle')),
         findsOneWidget,
       );
       expect(find.byTooltip('Close sheet'), findsNothing);

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "punks://contracts/message.reaction-add@1",
   "title": "AddMessageReactionCommand",
-  "$comment": "Runtime canonicalizes Reaction input with trim + NFC, maps empty Buzz/NIP-25 input to '+', lowercases custom shortcodes, and enforces 64 Unicode scalars.",
+  "$comment": "Runtime canonicalizes Reaction input with trim + NFC, maps empty Punks/NIP-25 input to '+', lowercases custom shortcodes, and enforces 64 Unicode scalars.",
   "type": "object",
   "additionalProperties": false,
   "required": [

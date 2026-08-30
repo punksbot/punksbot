@@ -93,7 +93,7 @@ un nouveau candidat exécutable `active` avec tout son dossier, un nouveau
 `release-id` et `redemarrage: E0`. L'exécution referme alors sans raccourci la
 cadence Workers `E0…E4`, puis la cadence desktop `A0…A4`, avant que le Reçu de
 roll-forward terminal ne puisse être ajouté. Le nouveau SHA ne peut être ni la
-baseline Buzz, ni le checkpoint de récupération, ni aucun SHA Punks déjà
+baseline Punks, ni le checkpoint de récupération, ni aucun SHA Punks déjà
 présent dans les nœuds, leurs journaux ou leurs exécutions. Un Reçu signé lie
 la cible, l'instant, le nouveau `release-id`, le hash du nouveau graphe et la
 tête signée de l'exécution. Le RPO logique est nul, la restauration se fait sur
@@ -223,12 +223,12 @@ digests historiques et le noyau canonique du certificat avec les douze
 premières preuves ; deux signatures correspondent exactement aux deux
 approbateurs. Le treizième contrôle lie ensuite le sha256 de ce Reçu, ce qui
 scelle toute la chaîne sans dépendance circulaire. Le Reçu est publié avec la
-release et dans R2. Revenir à Buzz est impossible : aucun type de récupération
-ni aucune cible du vocabulaire fermé ne peut désigner Buzz, la baseline gelée
+release et dans R2. Revenir à Punks est impossible : aucun type de récupération
+ni aucune cible du vocabulaire fermé ne peut désigner Punks, la baseline gelée
 ou une identité Nostr publique.
 
 Chaque candidat scellé porte une attestation immuable contenant le SHA, le
-checkpoint de baseline Buzz, les versions et hashes des registres (contrats,
+checkpoint de baseline Punks, les versions et hashes des registres (contrats,
 profil, goldens, manifeste de retrait), les identifiants de staging et les
 résultats des gates. Elle scelle aussi les digests originaux du bundle et du
 manifeste production, fournis par deux preuves locales content-addressées du

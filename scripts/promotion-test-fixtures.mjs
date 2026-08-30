@@ -120,9 +120,9 @@ export function contenuScanArtefactInstalleFixture({
       forbiddenMarkers: [],
     },
     forbiddenMarkers: [
-      "buzz-media",
+      "punks-media",
       "native_websocket",
-      "buzz",
+      "punks",
       "nostr",
       "relay",
       "huddle",

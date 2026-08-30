@@ -63,7 +63,7 @@ pub(crate) fn capture_relay_target(state: &AppState) -> RelayTarget {
 ///
 /// Mirrors the verification the relay will do (per spec gotcha #3: the
 /// preimage subject is the *target* pubkey, not the request signer). The
-/// `buzz-sdk` lives on nostr 0.36; the desktop is on 0.37, so we bridge
+/// `punks-sdk` lives on nostr 0.36; the desktop is on 0.37, so we bridge
 /// via hex round-trip exactly like `relay::build_profile_event` does.
 pub(crate) fn extract_oa_owner(target_kind0: &nostr::Event) -> Option<(String, [String; 4])> {
     let target_hex = target_kind0.pubkey.to_hex();
@@ -502,7 +502,7 @@ mod tests {
 
     /// Build a fake `kind:0` with a valid NIP-OA auth tag for a fresh owner.
     fn kind0_with_auth(agent: &Keys, owner: &Keys) -> nostr::Event {
-        // Compute auth tag via buzz-sdk (nostr 0.36) and bridge.
+        // Compute auth tag via punks-sdk (nostr 0.36) and bridge.
         let agent_hex = agent.public_key().to_hex();
         let agent_compat = nostr::PublicKey::from_hex(&agent_hex).unwrap();
         let owner_compat_secret =

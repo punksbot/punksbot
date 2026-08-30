@@ -2,27 +2,27 @@
 
 Punks Bot is a Cloudflare-native, multi-Workspace collaboration platform where
 people are **Punks** and agents are **Bots**. It is being built from the complete
-local history of `block/buzz`, frozen at
+local history of `punksbot/punksbot`, frozen at
 `da818eddc2f470c006a1073c8c5452f8a989f272`, while replacing every server-side
 runtime dependency with managed Cloudflare services.
 
 The target product is a Grok Bot-like global Bot that can be installed in
-Workspaces, backed by the collaboration surface inherited from Buzz and a new
+Workspaces, backed by the collaboration surface inherited from Punks and a new
 Punks UI. The current repository is an implementation in progress, not a claim
-of complete Buzz parity or a production deployment.
+of complete Punks parity or a production deployment.
 
 ## Non-negotiable runtime boundary
 
 The Punks backend is restricted to managed Cloudflare primitives such as
 Workers, Durable Objects, D1, R2, Queues and Workflows. It does not run
-Cloudflare Containers, Docker, PostgreSQL, Redis, MinIO or the imported Buzz
+Cloudflare Containers, Docker, PostgreSQL, Redis, MinIO or the imported Punks
 relay in production, development or CI.
 
 The complete upstream code remains in the repository for functional migration
 and differential tests. Its workflow definitions are frozen under
 `.github/legacy-workflows`, outside GitHub's active workflow directory. The
 original upstream README is preserved at
-[`docs/upstream/BUZZ_README.md`](docs/upstream/BUZZ_README.md).
+[`docs/upstream/PUNKS_README.md`](docs/upstream/PUNKS_README.md).
 
 ## Implemented foundation
 
@@ -135,7 +135,7 @@ Workers AI.
 The Punks graphical client uses the single rich `desktop/src/main.tsx` entry.
 Its build graph contains only the Punks semantic client and typed native
 commands; the isolated mini-client entry has been retired. The imported `web/`
-and `mobile/` packages still implement the legacy Buzz protocol and remain
+and `mobile/` packages still implement the legacy Punks protocol and remain
 available only as migration sources; they are not started by `pnpm punks:dev`.
 
 Useful documentation:

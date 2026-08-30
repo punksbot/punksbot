@@ -5,7 +5,7 @@
 //! agent's `punks_agent_snapshot` manifest through the existing snapshot
 //! encoder so the card IS an importable `.agent.png`.
 //!
-//! Boundary rules (agreed with Wren, buzz-agent-trading-cards thread):
+//! Boundary rules (agreed with Wren, punks-agent-trading-cards thread):
 //! - Snapshot construction/injection reuses `agent_snapshot.rs` — cards
 //!   inherit manifest-v1 behavior, exclusions, and size checks. No card-only
 //!   wire format exists.

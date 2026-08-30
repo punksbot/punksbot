@@ -366,19 +366,19 @@ mod tests {
     fn requires_the_executable_to_use_the_app_bundle_layout() {
         assert!(is_application_bundle_layout(
             Path::new("/Applications/Punks.app"),
-            Path::new("/Applications/Punks.app/Contents/MacOS/buzz-desktop"),
+            Path::new("/Applications/Punks.app/Contents/MacOS/punks-desktop"),
         ));
         assert!(!is_application_bundle_layout(
             Path::new("/tmp/Fake.app"),
-            Path::new("/tmp/Fake.app/buzz-desktop"),
+            Path::new("/tmp/Fake.app/punks-desktop"),
         ));
         assert!(!is_application_bundle_layout(
-            Path::new("/Users/developer/buzz/desktop/src-tauri/target/debug"),
-            Path::new("/Users/developer/buzz/desktop/src-tauri/target/debug/buzz-desktop"),
+            Path::new("/Users/developer/punks/desktop/src-tauri/target/debug"),
+            Path::new("/Users/developer/punks/desktop/src-tauri/target/debug/punks-desktop"),
         ));
         assert!(!is_application_bundle_layout(
             Path::new("/Applications/Punks.app"),
-            Path::new("/Applications/Other.app/Contents/MacOS/buzz-desktop"),
+            Path::new("/Applications/Other.app/Contents/MacOS/punks-desktop"),
         ));
     }
 

@@ -483,7 +483,7 @@ Presence code writes to the journal, D1, R2, Queue or search.
 
 The source remains capability-gated. Until Attention T7 and the distributed T8
 promotion dossier are sealed, `presence` stays unavailable in the active
-desktop profile and no Buzz Presence withdrawal is claimed.
+desktop profile and no Punks Presence withdrawal is claimed.
 
 ## Punk authentication path
 
@@ -682,7 +682,7 @@ et n'exposent pas les identités runtime.
 
 Tests use Cloudflare's Vitest pool and real `workerd` implementations of Durable
 Objects, SQLite, R2, D1, Queue bindings, alarms, and Service Bindings. They must
-not start or contact the imported Buzz relay, Docker, PostgreSQL, Redis, MinIO,
+not start or contact the imported Punks relay, Docker, PostgreSQL, Redis, MinIO,
 or any other legacy server dependency. Bot Harness tests use the deterministic
 `workerd` model fake; tests and deployment dry-runs never call Workers AI or
 perform remote inference. Focused suites exercise each authority, service,
@@ -694,7 +694,7 @@ Exactly two Punks workflows are active:
 `.github/workflows/punks-desktop-candidate.yml` builds the signed desktop
 candidate, reobserves the exact managed staging deployment and remains
 fail-closed until every promotion-evidence fragment exists. Neither workflow
-starts a legacy runtime. The complete imported Buzz workflow sources are
+starts a legacy runtime. The complete imported Punks workflow sources are
 retained under `.github/legacy-workflows` where GitHub cannot register them.
 `cloudflare:check-boundary` fails CI if either active workflow or any package
 script in the Punks Cloudflare workspace reintroduces a legacy runtime

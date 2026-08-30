@@ -469,7 +469,7 @@ fn deploy_payload_for_policy(
 #[test]
 fn deploy_payload_matches_the_shared_full_launch_fixture() {
     let fixture_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(
-        "../../crates/buzz-backend-kubernetes/tests/fixtures/provider-wire/deploy-full-launch.request.json",
+        "../../crates/punks-backend-kubernetes/tests/fixtures/provider-wire/deploy-full-launch.request.json",
     );
     let fixture: serde_json::Value = serde_json::from_str(
         &std::fs::read_to_string(&fixture_path)
@@ -545,8 +545,8 @@ fn tauri_platform_configs_bundle_kubernetes_only_on_supported_hosts() {
 
     let config_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     for (target, expected) in [
-        (Target::MacOS, true),
-        (Target::Linux, true),
+        (Target::MacOS, false),
+        (Target::Linux, false),
         (Target::Windows, false),
     ] {
         let (config, paths) = read_from(target, config_root).expect("read Tauri config");
@@ -555,7 +555,7 @@ fn tauri_platform_configs_bundle_kubernetes_only_on_supported_hosts() {
             .expect("bundle.externalBin array");
         let has_kubernetes = external_bins
             .iter()
-            .any(|value| value == "binaries/buzz-backend-kubernetes");
+            .any(|value| value == "binaries/punks-backend-kubernetes");
         assert_eq!(
             has_kubernetes, expected,
             "unexpected Kubernetes externalBin for {target}; merged {paths:?}"

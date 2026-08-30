@@ -15,52 +15,52 @@ fn appimage_binary_matches_truncated_linux_comm_name() {
 #[test]
 fn identifier_prefix_does_not_match_longer_id() {
     // DMG identifier should NOT match inside a dev desktop's config JSON.
-    let buf = br#""identifier":"xyz.block.buzz.app.dev""#;
-    let id = b"xyz.block.buzz.app";
+    let buf = br#""identifier":"xyz.block.punks.app.dev""#;
+    let id = b"xyz.block.punks.app";
     assert!(!super::buffer_contains_identifier(buf, id));
 }
 
 #[test]
 fn identifier_prefix_does_not_match_worktree_slug() {
     // Main dev identifier should NOT match inside a worktree desktop's buffer.
-    let buf = br#""identifier":"xyz.block.buzz.app.dev.my-branch""#;
-    let id = b"xyz.block.buzz.app.dev";
+    let buf = br#""identifier":"xyz.block.punks.app.dev.my-branch""#;
+    let id = b"xyz.block.punks.app.dev";
     assert!(!super::buffer_contains_identifier(buf, id));
 }
 
 #[test]
 fn identifier_exact_match_with_quote_boundary() {
     // Exact match followed by closing quote — should match.
-    let buf = br#""identifier":"xyz.block.buzz.app.dev""#;
-    let id = b"xyz.block.buzz.app.dev";
+    let buf = br#""identifier":"xyz.block.punks.app.dev""#;
+    let id = b"xyz.block.punks.app.dev";
     assert!(super::buffer_contains_identifier(buf, id));
 }
 
 #[test]
 fn identifier_match_with_null_boundary() {
     // In KERN_PROCARGS2, entries are null-delimited.
-    let mut buf = b"PUNKS_MANAGED_AGENT=xyz.block.buzz.app.dev".to_vec();
+    let mut buf = b"PUNKS_MANAGED_AGENT=xyz.block.punks.app.dev".to_vec();
     buf.push(0);
     buf.extend_from_slice(b"OTHER_VAR=value");
-    let id = b"xyz.block.buzz.app.dev";
+    let id = b"xyz.block.punks.app.dev";
     assert!(super::buffer_contains_identifier(&buf, id));
 }
 
 #[test]
 fn identifier_exact_match_at_end_of_buffer() {
     // Exact match with end-of-buffer as the boundary — Thufir's case 1.
-    let buf = b"xyz.block.buzz.app.dev";
-    let id = b"xyz.block.buzz.app.dev";
+    let buf = b"xyz.block.punks.app.dev";
+    let id = b"xyz.block.punks.app.dev";
     assert!(super::buffer_contains_identifier(buf, id));
 }
 
 #[test]
 fn longer_id_matches_when_short_prefix_also_present() {
     // The longer ID still matches when a shorter prefix token appears earlier.
-    let mut buf = b"xyz.block.buzz.app".to_vec();
+    let mut buf = b"xyz.block.punks.app".to_vec();
     buf.push(0);
-    buf.extend_from_slice(br#""identifier":"xyz.block.buzz.app.dev""#);
-    let id = b"xyz.block.buzz.app.dev";
+    buf.extend_from_slice(br#""identifier":"xyz.block.punks.app.dev""#);
+    let id = b"xyz.block.punks.app.dev";
     assert!(super::buffer_contains_identifier(&buf, id));
 }
 
@@ -78,12 +78,12 @@ fn marker_entry_is_namespaced_by_instance_id() {
     // format and guards against a dev build (`...app.dev`) matching a
     // release build's (`...app`) agents.
     assert_eq!(
-        super::punks_marker_entry("xyz.block.buzz.app"),
-        b"PUNKS_MANAGED_AGENT=xyz.block.buzz.app".to_vec()
+        super::punks_marker_entry("xyz.block.punks.app"),
+        b"PUNKS_MANAGED_AGENT=xyz.block.punks.app".to_vec()
     );
     assert_ne!(
-        super::punks_marker_entry("xyz.block.buzz.app"),
-        super::punks_marker_entry("xyz.block.buzz.app.dev")
+        super::punks_marker_entry("xyz.block.punks.app"),
+        super::punks_marker_entry("xyz.block.punks.app.dev")
     );
 }
 
@@ -535,7 +535,7 @@ fn runtime_metadata_env_vars_skips_provider_when_locked() {
 
 #[test]
 fn runtime_metadata_env_vars_injects_model_even_with_acp_model_switching() {
-    // buzz-agent has supports_acp_model_switching=true but we still inject
+    // punks-agent has supports_acp_model_switching=true but we still inject
     // the model env var because ACP model switching is post-bootstrap
     let vars = runtime_metadata_env_vars(
         Some("PUNKS_AGENT_MODEL"),
@@ -667,7 +667,7 @@ fn grandchild_inherits_pgid_of_process_group_leader() {
     // Spawn a "harness" process in its own process group (mirrors
     // `command.process_group(0)` in the real spawn path). The harness
     // spawns an intermediate child which in turn spawns a grandchild.
-    // This mirrors the real tree: buzz-acp → goose → buzz-dev-mcp.
+    // This mirrors the real tree: punks-acp → goose → punks-dev-mcp.
     //
     // The intermediate `sh` backgrounds the grandchild and echoes its PID,
     // so the grandchild's ppid is the intermediate (not the harness).

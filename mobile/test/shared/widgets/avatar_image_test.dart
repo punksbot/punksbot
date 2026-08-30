@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:buzz/shared/widgets/avatar_image.dart';
+import 'package:punks/shared/widgets/avatar_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -65,7 +65,7 @@ void main() {
     const posterUrl = 'https://relay.example/media/poster.png';
     const animationUrl = 'https://relay.example/media/animation.png';
     final animatedUrl =
-        '$posterUrl#buzz-anim=${Uri.encodeComponent(animationUrl)}';
+        '$posterUrl#punks-anim=${Uri.encodeComponent(animationUrl)}';
 
     await tester.pumpWidget(subject(animatedUrl, backgroundColor: Colors.red));
 

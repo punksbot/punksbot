@@ -124,9 +124,9 @@ test("scans the exact updater, complete installation and embedded runtime assets
     { path: "AppRun", target: "usr/bin/punks-bot-staging" },
   ]);
   assert.deepEqual(report.forbiddenMarkers, [
-    "buzz-media",
+    "punks-media",
     "native_websocket",
-    "buzz",
+    "punks",
     "nostr",
     "relay",
     "huddle",
@@ -147,7 +147,7 @@ test("scans the exact updater, complete installation and embedded runtime assets
 test("rejects legacy bytes, existing output and any report/skip CLI", (t) => {
   const input = fixture();
   t.after(() => rmSync(input.root, { recursive: true, force: true }));
-  writeFileSync(input.nativeBinary, "legacy buzz runtime\n");
+  writeFileSync(input.nativeBinary, "legacy punks runtime\n");
   assert.throws(
     () =>
       buildInstalledArtifactScan({
@@ -159,7 +159,7 @@ test("rejects legacy bytes, existing output and any report/skip CLI", (t) => {
         embeddedAssets: input.embeddedAssets,
         output: input.output,
       }),
-    /forbidden marker buzz/i,
+    /forbidden marker punks/i,
   );
 
   assert.throws(

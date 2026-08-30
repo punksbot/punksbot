@@ -6,10 +6,10 @@
 //! single socket — a second socket per feature would multiply relay connection
 //! slots and duplicate the NIP-42 handshake for no benefit.
 //!
-//! Built on `buzz-ws-client`, which owns the wire format and the NIP-42
+//! Built on `punks-ws-client`, which owns the wire format and the NIP-42
 //! handshake. That crate is request/response shaped (one caller, `next_event`
 //! off a buffer); the session lifecycle lives here instead of being pushed down
-//! into it, because `buzz-cli` and `buzz-test-client` consume that crate and do
+//! into it, because `punks-cli` and `punks-test-client` consume that crate and do
 //! not want subscription bookkeeping.
 //!
 //! # Caller contract
@@ -887,7 +887,7 @@ mod relay_backed_tests {
     /// ```text
     /// ./scripts/start-isolated-test-relay.sh          # ws://localhost:3030
     /// PUNKS_TEST_RELAY_URL=ws://localhost:3030 \
-    ///   cargo test -p buzz-desktop -- --ignored archive_sync_session
+    ///   cargo test -p punks-desktop -- --ignored archive_sync_session
     /// ```
     #[tokio::test]
     #[ignore = "requires a local relay (set PUNKS_TEST_RELAY_URL)"]

@@ -20,7 +20,7 @@
     conclusion: "success"
   },
   helm_chart: {
-    name: "buzz",
+    name: "punks",
     compatible_version: $chart_version
   }
 }

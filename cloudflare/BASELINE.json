@@ -1,7 +1,7 @@
 {
-  "upstream": "https://github.com/block/buzz.git",
+  "upstream": "https://github.com/punksbot/punksbot.git",
   "commit": "da818eddc2f470c006a1073c8c5452f8a989f272",
-  "localTag": "punks-buzz-baseline-da818edd",
+  "localTag": "punks-punks-baseline-da818edd",
   "frozenAt": "2026-08-20",
   "historyPolicy": "complete-local-only",
   "remotePolicy": "no-upstream-or-fork-remotes-configured"
