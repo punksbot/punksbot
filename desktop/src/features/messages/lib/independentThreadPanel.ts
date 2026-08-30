@@ -1,6 +1,13 @@
 import { formatTimelineMessages } from "@/features/messages/lib/formatTimelineMessages";
 import { buildThreadPanelData } from "@/features/messages/lib/threadPanel";
 import type { RelayEvent } from "@/shared/api/types";
+import { CHANNEL_AUX_EVENT_KINDS } from "@/shared/constants/kinds";
+
+const AUX_EVENT_KINDS = new Set<number>(CHANNEL_AUX_EVENT_KINDS);
+
+function eventReferences(event: RelayEvent, targetId: string): boolean {
+  return event.tags.some((tag) => tag[0] === "e" && tag[1] === targetId);
+}
 
 export function buildIndependentThreadPanel(
   channelEvents: RelayEvent[],
@@ -17,7 +24,16 @@ export function buildIndependentThreadPanel(
     };
   }
   const head = channelEvents.find((event) => event.id === rootId);
-  const events = head ? [head, ...replyEvents] : replyEvents;
+  const headAuxEvents = channelEvents.filter(
+    (event) =>
+      AUX_EVENT_KINDS.has(event.kind) && eventReferences(event, rootId),
+  );
+  const candidates = head
+    ? [head, ...headAuxEvents, ...replyEvents]
+    : replyEvents;
+  const events = [
+    ...new Map(candidates.map((event) => [event.id, event])).values(),
+  ];
   const messages = formatTimelineMessages(events, ...formatArgs);
   return {
     ...buildThreadPanelData(messages, rootId, replyTargetId, expandedReplyIds),

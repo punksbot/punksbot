@@ -353,6 +353,7 @@ fn backfill_event_indexes(transaction: &Transaction<'_>) -> Result<(), String> {
         index_event(transaction, &event)?;
         super::reminders::project(transaction, &event)?;
     }
+    super::lifecycle::rebuild_message_search_projection(transaction)?;
     Ok(())
 }
 

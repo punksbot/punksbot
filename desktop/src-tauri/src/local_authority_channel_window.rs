@@ -16,7 +16,7 @@ const DEFAULT_LIMIT: usize = 50;
 const MAX_LIMIT: usize = 200;
 const KIND_WINDOW_BOUNDS: u16 = 39_006;
 const KIND_THREAD_SUMMARY: u16 = 39_005;
-const AUX_KINDS: [u32; 4] = [5, 7, 9_005, 40_003];
+const AUX_KINDS: [u32; 6] = [5, 7, 9_005, 40_003, 40_009, 40_010];
 const AUX_DELETE_KINDS: [u32; 2] = [5, 9_005];
 
 pub(super) fn query(

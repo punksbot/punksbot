@@ -9,6 +9,8 @@ import {
   KIND_STREAM_MESSAGE,
   KIND_STREAM_MESSAGE_V2,
   KIND_STREAM_MESSAGE_EDIT,
+  KIND_STREAM_MESSAGE_ERASED,
+  KIND_STREAM_MESSAGE_RESTORED,
 } from "@/shared/constants/kinds";
 import type { RelaySubscriptionFilter } from "@/shared/api/relayClientShared";
 
@@ -115,6 +117,8 @@ export function buildChannelStructuralAuxFilter(
     KIND_DELETION,
     KIND_NIP29_DELETE_EVENT,
     KIND_STREAM_MESSAGE_EDIT,
+    KIND_STREAM_MESSAGE_RESTORED,
+    KIND_STREAM_MESSAGE_ERASED,
   ]);
 }
 

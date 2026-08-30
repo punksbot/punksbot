@@ -136,6 +136,61 @@ fn channel_window_closes_over_replies_reactions_and_thread_summary() {
     );
 }
 
+#[test]
+fn channel_window_closes_over_message_retraction_and_restoration() {
+    let directory = tempfile::tempdir().expect("local authority directory");
+    let owner = Keys::generate();
+    let authority =
+        LocalAuthority::open(&directory.path().join("authority.sqlite3"), owner.clone())
+            .expect("open authority");
+    authority
+        .seed_minimum_authorities(&owner)
+        .expect("seed owner");
+    let root = EventBuilder::new(Kind::Custom(9), "restored root")
+        .tag(parse_tag(["h", GENERAL_CHANNEL_ID]).expect("Conversation tag"))
+        .custom_created_at(nostr::Timestamp::from(2_000))
+        .sign_with_keys(&owner)
+        .expect("sign root");
+    authority.submit(root.clone()).expect("publish root");
+    let root_id = root.id.to_hex();
+    let retract = EventBuilder::new(Kind::Custom(5), "")
+        .tags([
+            parse_tag(["h", GENERAL_CHANNEL_ID]).expect("retraction channel"),
+            parse_tag(["e", &root_id]).expect("retraction target"),
+        ])
+        .custom_created_at(nostr::Timestamp::from(2_001))
+        .sign_with_keys(&owner)
+        .expect("sign retraction");
+    authority.submit(retract.clone()).expect("retract root");
+    let restore = EventBuilder::new(Kind::Custom(40_009), "")
+        .tags([
+            parse_tag(["h", GENERAL_CHANNEL_ID]).expect("restoration channel"),
+            parse_tag(["e", &root_id]).expect("restoration target"),
+        ])
+        .custom_created_at(nostr::Timestamp::from(2_002))
+        .sign_with_keys(&owner)
+        .expect("sign restoration");
+    authority.submit(restore.clone()).expect("restore root");
+
+    let events = authority
+        .query_for_actor(
+            &owner.public_key().to_hex(),
+            &[json!({
+                "kinds": [9, 40002, 40008, 40099, 43001, 43002, 43003, 43004, 43005, 43006, 48100],
+                "#h": [GENERAL_CHANNEL_ID],
+                "limit": 50,
+                "top_level": true,
+                "include_summaries": true,
+                "include_aux": true
+            })],
+        )
+        .expect("query restored channel window closure");
+
+    assert!(events.iter().any(|event| event.id == root.id));
+    assert!(events.iter().any(|event| event.id == retract.id));
+    assert!(events.iter().any(|event| event.id == restore.id));
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn huddle_v2_relays_binary_frames_between_two_real_member_sockets() {
     use futures_util::{SinkExt, StreamExt};
