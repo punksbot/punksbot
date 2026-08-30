@@ -15,6 +15,7 @@ import { getGlobalAgentConfig } from "@/shared/api/tauriGlobalAgentConfig";
 import { listPersonas, setPersonaActive } from "@/shared/api/tauriPersonas";
 import type {
   AcpRuntime,
+  AcpRuntimeCatalogEntry,
   AgentPersona,
   CreateManagedAgentInput,
   ManagedAgent,
@@ -231,6 +232,19 @@ export async function buildWelcomeStarterCreateInput(
   };
 }
 
+type DiscoverWelcomeRuntimes = (options: {
+  force: boolean;
+}) => Promise<AcpRuntimeCatalogEntry[]>;
+
+export async function discoverAvailableWelcomeRuntimes(
+  discover: DiscoverWelcomeRuntimes = discoverAcpRuntimes,
+): Promise<AcpRuntime[]> {
+  const catalog = await discover({ force: true });
+  return catalog.filter(
+    (runtime): runtime is AcpRuntime => runtime.availability === "available",
+  );
+}
+
 export function welcomeStarterRuntimeUpdate(
   existing: ManagedAgent,
   desired: CreateManagedAgentInput,
@@ -325,20 +339,16 @@ async function provisionWelcomeTeam(
 ): Promise<WelcomeTeamAgents> {
   const existingAgents = await listManagedAgents();
   await ensureWelcomeTeamPersonasActive();
-  const [personas, runtimeCatalog, globalConfig, agentAccessOwnerOnly] =
+  const [personas, runtimes, globalConfig, agentAccessOwnerOnly] =
     await Promise.all([
       listPersonas(),
-      discoverAcpRuntimes(),
+      discoverAvailableWelcomeRuntimes(),
       getGlobalAgentConfig(),
       getAgentAccessOwnerOnly(),
     ]);
   const personasById = new Map(
     personas.map((persona) => [persona.id, persona]),
   );
-  const runtimes = runtimeCatalog.filter(
-    (runtime): runtime is AcpRuntime => runtime.availability === "available",
-  );
-
   const agents: ManagedAgent[] = [];
   for (const starter of WELCOME_TEAM_STARTERS) {
     const persona = personasById.get(starter.personaId);

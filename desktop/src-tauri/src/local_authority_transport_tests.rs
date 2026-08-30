@@ -19,6 +19,123 @@ fn local_huddle_hub_assigns_peers_and_prefixes_forwarded_opus_frames() {
     assert_eq!(hub.roster("channel").expect("remaining roster").len(), 1);
 }
 
+#[test]
+fn channel_window_query_replays_a_persisted_message_with_authoritative_bounds() {
+    let directory = tempfile::tempdir().expect("local authority directory");
+    let database_path = directory.path().join("authority.sqlite3");
+    let owner = Keys::generate();
+    let authority = LocalAuthority::open(&database_path, owner.clone()).expect("open authority");
+    authority
+        .seed_minimum_authorities(&owner)
+        .expect("seed owner");
+    let message = EventBuilder::new(Kind::Custom(9), "persisted native message")
+        .tag(parse_tag(["h", GENERAL_CHANNEL_ID]).expect("Conversation tag"))
+        .sign_with_keys(&owner)
+        .expect("sign message");
+    authority.submit(message).expect("publish message");
+    drop(authority);
+
+    let reopened = LocalAuthority::open(&database_path, owner.clone()).expect("reopen authority");
+    let events = reopened
+        .query_for_actor(
+            &owner.public_key().to_hex(),
+            &[json!({
+                "kinds": [9, 40002, 40008, 40099, 43001, 43002, 43003, 43004, 43005, 43006, 48100],
+                "#h": [GENERAL_CHANNEL_ID],
+                "limit": 50,
+                "top_level": true,
+                "include_summaries": true,
+                "include_aux": true
+            })],
+        )
+        .expect("query persisted channel window");
+
+    assert!(events
+        .iter()
+        .any(|event| event.kind == Kind::Custom(9) && event.content == "persisted native message"));
+    let bounds = events
+        .iter()
+        .filter(|event| event.kind == Kind::Custom(39_006))
+        .collect::<Vec<_>>();
+    assert_eq!(bounds.len(), 1, "one bounds event closes every window");
+    let expected_bounds_id = format!("{GENERAL_CHANNEL_ID}:head");
+    assert_eq!(
+        tag_value(bounds[0], "d").as_deref(),
+        Some(expected_bounds_id.as_str())
+    );
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&bounds[0].content).expect("bounds payload"),
+        json!({"has_more": false, "next_cursor": null})
+    );
+}
+
+#[test]
+fn channel_window_closes_over_replies_reactions_and_thread_summary() {
+    let directory = tempfile::tempdir().expect("local authority directory");
+    let owner = Keys::generate();
+    let authority =
+        LocalAuthority::open(&directory.path().join("authority.sqlite3"), owner.clone())
+            .expect("open authority");
+    authority
+        .seed_minimum_authorities(&owner)
+        .expect("seed owner");
+    let root = EventBuilder::new(Kind::Custom(9), "thread root")
+        .tag(parse_tag(["h", GENERAL_CHANNEL_ID]).expect("Conversation tag"))
+        .sign_with_keys(&owner)
+        .expect("sign root");
+    authority.submit(root.clone()).expect("publish root");
+    let root_id = root.id.to_hex();
+    let reply = EventBuilder::new(Kind::Custom(9), "thread reply")
+        .tags([
+            parse_tag(["h", GENERAL_CHANNEL_ID]).expect("Conversation tag"),
+            parse_tag(["e", &root_id, "", "root"]).expect("root tag"),
+            parse_tag(["e", &root_id, "", "reply"]).expect("reply tag"),
+        ])
+        .sign_with_keys(&owner)
+        .expect("sign reply");
+    let reply_created_at = reply.created_at.as_secs();
+    authority.submit(reply).expect("publish reply");
+    let reaction = EventBuilder::new(Kind::Custom(7), "✅")
+        .tag(parse_tag(["e", &root_id]).expect("reaction target"))
+        .sign_with_keys(&owner)
+        .expect("sign reaction");
+    authority
+        .submit(reaction.clone())
+        .expect("publish reaction");
+
+    let events = authority
+        .query_for_actor(
+            &owner.public_key().to_hex(),
+            &[json!({
+                "kinds": [9, 40002, 40008, 40099, 43001, 43002, 43003, 43004, 43005, 43006, 48100],
+                "#h": [GENERAL_CHANNEL_ID],
+                "limit": 50,
+                "top_level": true,
+                "include_summaries": true,
+                "include_aux": true
+            })],
+        )
+        .expect("query channel window closure");
+
+    assert!(events.iter().any(|event| event.id == root.id));
+    assert!(!events.iter().any(|event| event.content == "thread reply"));
+    assert!(events.iter().any(|event| event.id == reaction.id));
+    let summary = events
+        .iter()
+        .find(|event| event.kind == Kind::Custom(39_005))
+        .expect("thread summary");
+    assert_eq!(tag_value(summary, "e").as_deref(), Some(root_id.as_str()));
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&summary.content).expect("summary payload"),
+        json!({
+            "reply_count": 1,
+            "descendant_count": 1,
+            "last_reply_at": reply_created_at,
+            "participants": [owner.public_key().to_hex()]
+        })
+    );
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn huddle_v2_relays_binary_frames_between_two_real_member_sockets() {
     use futures_util::{SinkExt, StreamExt};

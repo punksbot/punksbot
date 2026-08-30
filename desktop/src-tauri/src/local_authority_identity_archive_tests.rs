@@ -47,11 +47,10 @@ fn identity_archive_and_restore_publish_durable_authority_snapshots() {
         Keys::generate(),
     )
     .expect("reopen archived authority");
-    assert!(reopened
+    assert!(!reopened
         .query(&[json!({"kinds": [13535], "#p": [&agent_pubkey], "limit": 1})])
         .expect("durable archive state")
-        .first()
-        .is_some());
+        .is_empty());
     let restore = EventBuilder::new(Kind::Custom(9_036), "")
         .tags([
             parse_tag(["-"]).expect("protected restore"),

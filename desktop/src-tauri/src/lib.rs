@@ -280,10 +280,12 @@ pub fn run() {
             }
 
             // Run all pre-identity data migrations before state loads from disk.
-            if reset_outcome.completed {
-                migration::run_boot_migrations_after_reset(&app_handle);
-            } else {
-                migration::run_boot_migrations(&app_handle);
+            if migration::legacy_boot_migrations_enabled() {
+                if reset_outcome.completed {
+                    migration::run_boot_migrations_after_reset(&app_handle);
+                } else {
+                    migration::run_boot_migrations(&app_handle);
+                }
             }
 
             // Resolve persisted identity key (env var → file → generate+save).
@@ -412,7 +414,10 @@ pub fn run() {
             // the now-inert ~/.sprout; the frontend dedupes the toast.
             // Suppressed when a reset completed this boot: the nest was wiped and
             // a fresh ~/.sprout-less state is exactly what we want.
-            if !reset_outcome.completed && migration::migrate_legacy_nest() {
+            if migration::legacy_boot_migrations_enabled()
+                && !reset_outcome.completed
+                && migration::migrate_legacy_nest()
+            {
                 let _ = app_handle.emit("legacy-nest-migrated", ());
             }
 
@@ -425,7 +430,10 @@ pub fn run() {
             let is_dev_nest = managed_agents::nest_dir()
                 .and_then(|p| p.file_name().map(|n| n.to_os_string()))
                 .is_some_and(|n| n == ".punks-dev");
-            if !reset_outcome.completed && is_dev_nest {
+            if migration::legacy_boot_migrations_enabled()
+                && !reset_outcome.completed
+                && is_dev_nest
+            {
                 migration::migrate_dev_nest();
             }
 

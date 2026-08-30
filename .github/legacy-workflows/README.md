@@ -10,3 +10,7 @@ They remain available solely as historical and differential-migration input.
 
 Do not move or copy one of these files back into the active workflow directory.
 A required behavior must be reimplemented as a Workers-only Punks workflow.
+
+`punks-pre-managed/` preserves the last fork-local variants that were still
+registered as active workflows before the managed-only boundary was enforced.
+They are historical migration inputs only and must not be executed.

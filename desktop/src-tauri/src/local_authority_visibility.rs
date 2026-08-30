@@ -10,6 +10,10 @@ impl LocalAuthority {
         filters: &[Value],
     ) -> Result<Vec<Event>, String> {
         self.assert_member_can_authenticate(actor_pubkey)?;
+        if filters.len() == 1 && filters[0].get("top_level").and_then(Value::as_bool) == Some(true)
+        {
+            return super::channel_window::query(self, actor_pubkey, &filters[0]);
+        }
         self.query(filters).map(|events| {
             events
                 .into_iter()

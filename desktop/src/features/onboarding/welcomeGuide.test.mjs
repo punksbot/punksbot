@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   activateWelcomeTeamPersonasSequentially,
   buildWelcomeStarterCreateInput,
+  discoverAvailableWelcomeRuntimes,
   LEGACY_WELCOME_GUIDE_SYSTEM_PROMPT,
   pickWelcomeGuideAgent,
   pickWelcomeGuideAgentForRelay,
@@ -22,6 +23,28 @@ const PUB_B = "b".repeat(64);
 const PUB_C = "c".repeat(64);
 const RELAY_A = "ws://localhost:3000";
 const RELAY_B = "ws://localhost:3001";
+
+test("Welcome provisioning force-discovers bundled runtimes on a cold start", async () => {
+  const calls = [];
+  const runtimes = await discoverAvailableWelcomeRuntimes(async (options) => {
+    calls.push(options);
+    return [
+      {
+        id: "punks-agent",
+        availability: "available",
+        command: "punks-agent",
+        binaryPath: "/app/punks-agent",
+      },
+      { id: "missing", availability: "not_installed" },
+    ];
+  });
+
+  assert.deepEqual(calls, [{ force: true }]);
+  assert.deepEqual(
+    runtimes.map((runtime) => runtime.id),
+    ["punks-agent"],
+  );
+});
 
 function makeAgent(overrides = {}) {
   return {
