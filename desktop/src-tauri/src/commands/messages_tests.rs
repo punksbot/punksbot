@@ -1,4 +1,5 @@
 use super::*;
+use nostr::{EventBuilder, Kind, Tag};
 
 #[test]
 fn search_messages_limit_allows_discussion_discovery_page() {
@@ -119,6 +120,47 @@ fn search_messages_filter_emits_operator_fields() {
     );
     assert_eq!(filter["since"], serde_json::json!(1_700_000_000));
     assert_eq!(filter["until"], serde_json::json!(1_700_086_400));
+}
+
+#[test]
+fn search_results_render_the_latest_author_edit_without_changing_target_identity() {
+    let author = Keys::generate();
+    let target = EventBuilder::new(Kind::Custom(9), "obsolete result text")
+        .tags([Tag::parse(["h", "channel-1"]).expect("target channel")])
+        .custom_created_at(nostr::Timestamp::from(100))
+        .sign_with_keys(&author)
+        .expect("sign search target");
+    let older = EventBuilder::new(Kind::Custom(40_003), "older edited text")
+        .tags([
+            Tag::parse(["h", "channel-1"]).expect("older edit channel"),
+            Tag::parse(["e", &target.id.to_hex()]).expect("older edit target"),
+        ])
+        .custom_created_at(nostr::Timestamp::from(101))
+        .sign_with_keys(&author)
+        .expect("sign older edit");
+    let latest = EventBuilder::new(Kind::Custom(40_003), "current edited text")
+        .tags([
+            Tag::parse(["h", "channel-1"]).expect("latest edit channel"),
+            Tag::parse(["e", &target.id.to_hex()]).expect("latest edit target"),
+        ])
+        .custom_created_at(nostr::Timestamp::from(102))
+        .sign_with_keys(&author)
+        .expect("sign latest edit");
+    let spoof = EventBuilder::new(Kind::Custom(40_003), "spoofed text")
+        .tags([
+            Tag::parse(["h", "channel-1"]).expect("spoof channel"),
+            Tag::parse(["e", &target.id.to_hex()]).expect("spoof target"),
+        ])
+        .custom_created_at(nostr::Timestamp::from(103))
+        .sign_with_keys(&Keys::generate())
+        .expect("sign spoofed edit");
+    let mut response = nostr_convert::search_response_from_events(std::slice::from_ref(&target));
+
+    apply_latest_search_edits(&mut response, &[spoof, older, latest]);
+
+    assert_eq!(response.hits[0].event_id, target.id.to_hex());
+    assert_eq!(response.hits[0].content, "current edited text");
+    assert_eq!(response.hits[0].kind, 9);
 }
 
 #[test]

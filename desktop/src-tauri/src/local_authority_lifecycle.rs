@@ -68,6 +68,10 @@ impl LocalAuthority {
         event: &Event,
     ) -> Result<Vec<Event>, String> {
         let kind = event.kind.as_u16() as u32;
+        if kind == 40_003 {
+            project_message_edit_search(transaction, event)?;
+            return Ok(Vec::new());
+        }
         if !matches!(kind, 5 | 9_005 | 40_009 | 40_010) {
             return Ok(Vec::new());
         }
@@ -131,6 +135,11 @@ impl LocalAuthority {
                 ],
             )
             .map_err(|error| format!("audit message lifecycle: {error}"))?;
+        if state == "active" {
+            restore_message_search_content(transaction, &target_id)?;
+        } else {
+            remove_message_search_content(transaction, &target_id)?;
+        }
         if kind == 40_010 {
             self.erase_message_content(transaction, event, &target)?;
         }
@@ -204,6 +213,124 @@ impl LocalAuthority {
         }
         Ok(())
     }
+}
+
+fn project_message_edit_search(transaction: &Transaction<'_>, edit: &Event) -> Result<(), String> {
+    let target_id = required_tag(edit, "e")?;
+    transaction
+        .execute(
+            "DELETE FROM events_fts WHERE event_id = ?1",
+            [edit.id.to_hex()],
+        )
+        .map_err(|error| format!("remove standalone message edit search row: {error}"))?;
+    restore_message_search_content(transaction, &target_id)
+}
+
+fn remove_message_search_content(
+    transaction: &Transaction<'_>,
+    target_id: &str,
+) -> Result<(), String> {
+    transaction
+        .execute("DELETE FROM events_fts WHERE event_id = ?1", [target_id])
+        .map_err(|error| format!("remove message search content: {error}"))?;
+    Ok(())
+}
+
+fn restore_message_search_content(
+    transaction: &Transaction<'_>,
+    target_id: &str,
+) -> Result<(), String> {
+    let target = transaction
+        .query_row(
+            "SELECT raw_json FROM events WHERE id = ?1",
+            [target_id],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|error| format!("read message search target: {error}"))?
+        .and_then(|raw| Event::from_json(raw).ok());
+    let Some(target) = target.filter(is_message_content) else {
+        return Ok(());
+    };
+    let edit = transaction
+        .query_row(
+            "SELECT events.raw_json FROM events
+             JOIN event_tags ON event_tags.event_id = events.id
+             WHERE events.kind = 40003 AND event_tags.name = 'e'
+               AND event_tags.value = ?1
+             ORDER BY events.created_at DESC, events.id DESC LIMIT 1",
+            [target_id],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|error| format!("read latest message edit for search: {error}"))?
+        .and_then(|raw| Event::from_json(raw).ok());
+    let content = edit
+        .as_ref()
+        .map(|event| event.content.as_str())
+        .unwrap_or(target.content.as_str());
+    remove_message_search_content(transaction, target_id)?;
+    transaction
+        .execute(
+            "INSERT INTO events_fts(event_id, content, kind, pubkey)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![
+                target_id,
+                content,
+                target.kind.as_u16() as i64,
+                target.pubkey.to_hex()
+            ],
+        )
+        .map_err(|error| format!("restore effective message search content: {error}"))?;
+    Ok(())
+}
+
+pub(super) fn rebuild_message_search_projection(
+    transaction: &Transaction<'_>,
+) -> Result<(), String> {
+    transaction
+        .execute(
+            "DELETE FROM events_fts WHERE event_id IN
+               (SELECT id FROM events WHERE kind = 40003)",
+            [],
+        )
+        .map_err(|error| format!("clear standalone message edit search rows: {error}"))?;
+
+    let target_ids = {
+        let mut statement = transaction
+            .prepare(
+                "SELECT DISTINCT event_tags.value FROM events
+                 JOIN event_tags ON event_tags.event_id = events.id
+                 WHERE events.kind = 40003 AND event_tags.name = 'e'",
+            )
+            .map_err(|error| format!("prepare edited message search rebuild: {error}"))?;
+        let rows = statement
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|error| format!("query edited message search rebuild: {error}"))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|error| format!("read edited message search target: {error}"))?
+    };
+    for target_id in target_ids {
+        restore_message_search_content(transaction, &target_id)?;
+    }
+
+    let hidden_ids = {
+        let mut statement = transaction
+            .prepare(
+                "SELECT target_event_id FROM message_lifecycle
+                 WHERE state IN ('retracted', 'erased')",
+            )
+            .map_err(|error| format!("prepare hidden message search rebuild: {error}"))?;
+        let rows = statement
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|error| format!("query hidden message search rebuild: {error}"))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|error| format!("read hidden message search target: {error}"))?
+    };
+    for target_id in hidden_ids {
+        remove_message_search_content(transaction, &target_id)?;
+    }
+    Ok(())
 }
 
 fn lifecycle_system_event(

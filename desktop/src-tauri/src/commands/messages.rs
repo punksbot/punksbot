@@ -229,11 +229,56 @@ pub async fn search_messages(
     );
 
     let events = query_relay(&state, &[filter]).await?;
-    Ok(nostr_convert::search_response_from_events(&events))
+    let mut response = nostr_convert::search_response_from_events(&events);
+    let target_ids = response
+        .hits
+        .iter()
+        .map(|hit| hit.event_id.clone())
+        .collect::<Vec<_>>();
+    if !target_ids.is_empty() {
+        let edits = query_relay(
+            &state,
+            &[serde_json::json!({ "kinds": [40003], "#e": target_ids })],
+        )
+        .await?;
+        apply_latest_search_edits(&mut response, &edits);
+    }
+    Ok(response)
 }
 
 fn search_messages_limit(limit: Option<u32>) -> u32 {
     limit.unwrap_or(20).min(500)
+}
+
+fn apply_latest_search_edits(response: &mut SearchResponse, edits: &[Event]) {
+    for hit in &mut response.hits {
+        let latest = edits
+            .iter()
+            .filter(|edit| {
+                edit.kind.as_u16() as u32 == 40_003
+                    && edit.pubkey.to_hex().eq_ignore_ascii_case(&hit.pubkey)
+                    && first_event_tag_value(edit, "e") == Some(hit.event_id.as_str())
+                    && first_event_tag_value(edit, "h") == hit.channel_id.as_deref()
+            })
+            .max_by(|left, right| {
+                left.created_at
+                    .as_secs()
+                    .cmp(&right.created_at.as_secs())
+                    .then_with(|| left.id.to_hex().cmp(&right.id.to_hex()))
+            });
+        if let Some(edit) = latest {
+            hit.content.clone_from(&edit.content);
+        }
+    }
+}
+
+fn first_event_tag_value<'a>(event: &'a Event, name: &str) -> Option<&'a str> {
+    event.tags.iter().find_map(|tag| {
+        let values = tag.as_slice();
+        (values.first().map(String::as_str) == Some(name))
+            .then(|| values.get(1).map(String::as_str))
+            .flatten()
+    })
 }
 
 /// Fetch the reply subtree and its auxiliary events under a thread root.

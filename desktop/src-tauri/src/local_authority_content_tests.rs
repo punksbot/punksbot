@@ -293,6 +293,90 @@ fn pulse_uses_a_stable_timestamp_and_event_id_cursor_with_replies_and_reactions(
 }
 
 #[test]
+fn message_edit_replaces_search_content_across_retract_restore_and_restart() {
+    let (directory, authority, owner) = authority();
+    authority
+        .seed_minimum_authorities(&owner)
+        .expect("seed search lifecycle owner");
+    let message = EventBuilder::new(Kind::Custom(9), "obsolete searchable wording")
+        .tags([parse_tag(["h", GENERAL_CHANNEL_ID]).expect("message channel")])
+        .custom_created_at(nostr::Timestamp::from(900))
+        .sign_with_keys(&owner)
+        .expect("sign searchable message");
+    authority
+        .submit(message.clone())
+        .expect("publish searchable message");
+
+    let edit = EventBuilder::new(Kind::Custom(40_003), "current searchable wording")
+        .tags([
+            parse_tag(["h", GENERAL_CHANNEL_ID]).expect("edit channel"),
+            parse_tag(["e", &message.id.to_hex()]).expect("edit target"),
+        ])
+        .custom_created_at(nostr::Timestamp::from(901))
+        .sign_with_keys(&owner)
+        .expect("sign searchable edit");
+    authority.submit(edit).expect("publish searchable edit");
+
+    assert_eq!(
+        authority
+            .query(&[json!({"kinds": [9], "search": "current searchable wording"})])
+            .expect("search edited wording"),
+        vec![message.clone()]
+    );
+    assert!(authority
+        .query(&[json!({"kinds": [9], "search": "obsolete searchable wording"})])
+        .expect("search obsolete wording")
+        .is_empty());
+
+    let retract = EventBuilder::new(Kind::Custom(5), "")
+        .tags([
+            parse_tag(["h", GENERAL_CHANNEL_ID]).expect("retract channel"),
+            parse_tag(["e", &message.id.to_hex()]).expect("retract target"),
+        ])
+        .custom_created_at(nostr::Timestamp::from(902))
+        .sign_with_keys(&owner)
+        .expect("sign search retraction");
+    authority
+        .submit(retract)
+        .expect("retract searchable message");
+    assert!(authority
+        .query(&[json!({"kinds": [9], "search": "current searchable wording"})])
+        .expect("search retracted wording")
+        .is_empty());
+
+    let restore = EventBuilder::new(Kind::Custom(40_009), "")
+        .tags([
+            parse_tag(["h", GENERAL_CHANNEL_ID]).expect("restore channel"),
+            parse_tag(["e", &message.id.to_hex()]).expect("restore target"),
+        ])
+        .custom_created_at(nostr::Timestamp::from(903))
+        .sign_with_keys(&owner)
+        .expect("sign search restoration");
+    authority
+        .submit(restore)
+        .expect("restore searchable message");
+    assert_eq!(
+        authority
+            .query(&[json!({"kinds": [9], "search": "current searchable wording"})])
+            .expect("search restored wording"),
+        vec![message.clone()]
+    );
+    drop(authority);
+
+    let reopened = LocalAuthority::open(
+        &directory.path().join("authority.sqlite3"),
+        Keys::generate(),
+    )
+    .expect("reopen searchable lifecycle authority");
+    assert_eq!(
+        reopened
+            .query(&[json!({"kinds": [9], "search": "current searchable wording"})])
+            .expect("search restored wording after restart"),
+        vec![message]
+    );
+}
+
+#[test]
 fn message_retract_restore_edit_and_permanent_erase_are_audited() {
     let (directory, authority, owner) = authority();
     authority
