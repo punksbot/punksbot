@@ -90,15 +90,9 @@ impl LocalAuthority {
             (ttl, deadline)
         } else {
             let ttl = current.as_ref().and_then(|item| tag_value(item, "ttl"));
-            let deadline = if was_archived && !archived {
-                ttl.as_deref()
-                    .map(|ttl| channel_ttl::new_deadline(ttl, event.created_at.as_secs() as i64))
-                    .transpose()?
-            } else {
-                current
-                    .as_ref()
-                    .and_then(|item| tag_value(item, "ttl_deadline"))
-            };
+            let deadline = current
+                .as_ref()
+                .and_then(|item| tag_value(item, "ttl_deadline"));
             (ttl, deadline)
         };
         let members = self.channel_members(&channel_id)?;

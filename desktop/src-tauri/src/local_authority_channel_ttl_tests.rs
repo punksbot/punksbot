@@ -1,6 +1,73 @@
 use super::*;
 
 #[test]
+fn temporary_conversation_metadata_and_lifecycle_never_renew_the_deadline() {
+    let (_directory, authority, owner) = authority();
+    authority
+        .seed_minimum_authorities(&owner)
+        .expect("seed temporary Conversation owner");
+    let channel_id = Uuid::new_v4().to_string();
+    let created_at = 1_700_000_000_u64;
+    let create = EventBuilder::new(Kind::Custom(9_007), "")
+        .tags([
+            parse_tag(["h", &channel_id]).expect("temporary Conversation id"),
+            parse_tag(["name", "fixed-deadline"]).expect("Conversation name"),
+            parse_tag(["ttl", "60"]).expect("Conversation TTL"),
+        ])
+        .custom_created_at(nostr::Timestamp::from(created_at))
+        .sign_with_keys(&owner)
+        .expect("sign temporary Conversation create");
+    authority.submit(create).expect("create Conversation");
+    let initial_deadline = tag_value(
+        &authority
+            .channel_metadata(&channel_id)
+            .expect("read Conversation")
+            .expect("Conversation metadata"),
+        "ttl_deadline",
+    )
+    .expect("initial deadline");
+
+    for (offset, tags) in [
+        (
+            10,
+            vec![
+                parse_tag(["h", &channel_id]).expect("rename scope"),
+                parse_tag(["name", "renamed"]).expect("renamed Conversation"),
+            ],
+        ),
+        (
+            20,
+            vec![
+                parse_tag(["h", &channel_id]).expect("archive scope"),
+                parse_tag(["archived", "true"]).expect("archive flag"),
+            ],
+        ),
+        (
+            30,
+            vec![
+                parse_tag(["h", &channel_id]).expect("restore scope"),
+                parse_tag(["archived", "false"]).expect("restore flag"),
+            ],
+        ),
+    ] {
+        let update = EventBuilder::new(Kind::Custom(9_002), "")
+            .tags(tags)
+            .custom_created_at(nostr::Timestamp::from(created_at + offset))
+            .sign_with_keys(&owner)
+            .expect("sign Conversation update");
+        authority.submit(update).expect("update Conversation");
+        let metadata = authority
+            .channel_metadata(&channel_id)
+            .expect("read updated Conversation")
+            .expect("updated Conversation metadata");
+        assert_eq!(
+            tag_value(&metadata, "ttl_deadline").as_deref(),
+            Some(initial_deadline.as_str())
+        );
+    }
+}
+
+#[test]
 fn temporary_conversation_deadline_renews_and_archives_durably() {
     let (directory, authority, owner) = authority();
     authority
