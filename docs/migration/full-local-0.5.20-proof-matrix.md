@@ -11,7 +11,8 @@ persisté.
 
 - Version : `0.5.20`
 - Branche : `staging`
-- Base consolidée : `ad920681c5ae7db5fc77025fc11d158389ed8743`
+- Base consolidée publiée : `e85f8c65fb9a24340bc07a2ffe00b2861f0b9616`
+- Correctif sous preuve locale : `dbafde7e6f2157fe2eb1368b89ca74c7023266bb`
 - Autorité : `LocalAuthority` SQLite embarquée, loopback `127.0.0.1:18787`
 - Interdits : Cloudflare, workerd, relay historique, Docker, PostgreSQL, Redis,
   MinIO, Helm et Kubernetes
@@ -23,13 +24,13 @@ persisté.
 |---|---|
 | Frontend check | Vert ; avertissements Biome non bloquants uniquement |
 | TypeScript | Vert |
-| Frontend tests | `5527 passed`, `0 failed` |
+| Frontend tests | `5532 passed`, `0 failed` |
 | Build Vite `VITE_PUNKS_LOCAL=1` | Vert |
 | Scan frontend Punks | Vert |
-| Rust desktop | `2934 passed`, `19 ignored` avant les corrections natives de reprise ; relance finale requise |
-| Clippy `punks-local,mesh-llm` | Vert après trois corrections mécaniques |
+| Rust desktop | `2938 passed`, `19 ignored`, `0 failed` avec `punks-local,mesh-llm` après le correctif TTL |
+| Clippy `punks-local,mesh-llm` | Vert avec `-D warnings` après le correctif TTL |
 | Frontière CI managed-only | Verte ; 14 workflows Punks actifs |
-| Lancement natif | Réalisé ; a révélé puis motivé deux corrections TDD (import Buzz interdit et découverte froide du runtime Welcome) |
+| Lancement natif | Bundle `.app` reconstruit après le correctif TTL ; comptes, Workspaces, Messages, Fil et Conversation temporaire relus après relaunch réel |
 
 ## Matrice 1–31
 
@@ -39,12 +40,12 @@ frais n’a pas produit les observations correspondantes.
 
 | T | Capacité | Coutures présentes | UI native | Commit + relecture | Événement / projection | Redémarrage + persistance | Verdict |
 |---:|---|---|---|---|---|---|---|
-| 1 | Boucle sociale Punks | `local_authority_content*`, HTTP/WS loopback | Message racine publié et relu dans le `.app` | Événement kind 9 confirmé dans SQLite et relu via la fenêtre autoritaire | Livraison live puis page `Message + bounds` observées | Même Message relu après fermeture/réouverture des mêmes octets | PARTIELLE — réponse, sujet et réaction restent à prouver |
+| 1 | Boucle sociale Punks | `local_authority_content*`, HTTP/WS loopback | Message racine publié et relu dans le `.app` | Événement kind 9 confirmé dans SQLite et relu via la fenêtre autoritaire | Livraison live puis page `Message + bounds` observées | Même Message relu après fermeture/réouverture des mêmes octets | PARTIELLE — sujet et parcours social complet restent à prouver |
 | 2 | Cycle de vie des Messages | `local_authority_content*`, `local_authority_lifecycle` | Réaction 👍 et réponse publiées puis relues dans le `.app` | Événements de réaction/réponse committés et rechargés | Fermeture auxiliaire + résumé signé `1 reply` observés | Réaction, compteur et texte exact de la réponse relus après redémarrage | PARTIELLE — édition, rétraction, restauration et effacement restent à prouver |
 | 3 | Fusion de Comptes Punks | `local_accounts`, `local_authority_account_tests` | Second Compte créé ; bascules premier ↔ second exercées | Compte/génération actifs committés avant relaunch | Roster passé à 4 et vues propres à chaque identité observées | Deux Comptes et identité active relus après plusieurs relaunchs | PARTIELLE — Plan/Reçu et Fusion irréversible restent à prouver |
 | 4 | Identité sociale et gouvernance | `local_authority_accounts`, `local_authority_membership`, `local_authority_governance` | À prouver | À prouver | À prouver | À prouver | NON TERMINALE |
 | 5 | Cycle de vie d’un Workspace | `local_workspaces`, `local_authority_workspace_hub`, `local_authority_workspace` | `Research Local` créé et bascules primaire ↔ Research exercées | Registre + autorité SQLite par UUID committés | URLs loopback distinctes et Messages mutuellement absents observés | Deux Workspaces et Message Research exact relus après redémarrage | PARTIELLE — rename/archive/restore/delete restent à prouver |
-| 6 | Gestion des Conversations | `local_authority_channels`, `local_authority_channel_ttl` | À prouver | À prouver | À prouver | À prouver | NON TERMINALE |
+| 6 | Gestion des Conversations | `local_authority_channels`, `local_authority_channel_ttl` | Conversation temporaire créée, renommée `research-lab`, archivée puis désarchivée dans le `.app` | Métadonnées, description et échéance autoritaires relues ; test TDD garantit la conservation exacte du `ttl_deadline` | Sidebar, composer désactivé en archive, retour actif et projection TTL « Aug 30 at 12:39 PM » observés | Workspace, nom, état désarchivé et même échéance `12:39 PM` relus après relaunch du bundle | PARTIELLE — accès, managers, topic/purpose et suppression restent à prouver |
 | 7 | Attention | projections de lecture/non-lus et UI existante | À prouver | À prouver | À prouver | À prouver | NON TERMINALE |
 | 8 | Présence | transport loopback et projections éphémères | À prouver à deux identités | À prouver | À prouver | Sans persistance métier ; extinction à prouver | NON TERMINALE |
 | 9 | Recherche de Conversation | `local_authority_query`, index SQLite | À prouver | À prouver | À prouver | À prouver | NON TERMINALE |
@@ -73,14 +74,14 @@ frais n’a pas produit les observations correspondantes.
 
 ## Écarts natifs ouverts
 
-1. Étendre la fenêtre autoritaire locale aux résumés de Fil et à la fermeture
-   auxiliaire avant de considérer réponses/réactions/éditions persistantes.
+1. Prouver encore les éditions, rétractions, restaurations et effacements de
+   Messages au-dessus de la fenêtre autoritaire désormais persistante.
 2. Rejouer l’amorçage Welcome après découverte ACP forcée et obtenir trois
    installations configurées ou un état d’action honnête si un modèle/credential
    manque.
 3. Conserver captures, arbre d’accessibilité et actions natives par ligne du
    `.app` désormais adressable à l’automatisation macOS.
-4. Auditer les fallbacks `command kind … not implemented locally` et
-   `action not implemented locally` contre l’ensemble exact annoncé par l’UI.
+4. Étendre les preuves natives aux sept actions de Workflow maintenant routées
+   vers `LocalAuthority` sans avertissement backend trompeur.
 5. Construire et scanner le bundle release distribué, ses sidecars, plist,
    menus, espaces de stockage et trafic observé.
