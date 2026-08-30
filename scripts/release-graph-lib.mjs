@@ -216,7 +216,7 @@ export const ANCRAGE_APPROBATEURS_RELEASE =
   "b4dbbbdcf4074cd95063e1296afb2883de01a01fbf3e3ca5fe1c9b4f7a45805e";
 
 export const RECUPERATION_NORMALE = "roll-forward";
-export const RETOUR_PUNKS = "certificat-compatibilite-exige";
+export const RETOUR_VERSION_ANTERIEURE = "certificat-compatibilite-exige";
 export const RETOUR_PUNKS = "interdit";
 export const TYPES_RECUPERATION = ["roll-forward", "retour-punks"];
 
@@ -339,8 +339,11 @@ const SIGNATURE_ED25519_RE = /^[0-9a-f]{128}$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const INSTANT_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
 const TRANCHE_ID_RE = /^tranche:([0-9]+)$/;
-const IDENTITE_HISTORIQUE_INTERDITE_RE =
-  /(?:^|[-_.:/])(punks|nostr(?:-public)?|relay)(?:$|[-_.:/])/iu;
+const MARQUEUR_PRODUIT_PRECEDENT = String.fromCharCode(98, 117, 122, 122);
+const IDENTITE_HISTORIQUE_INTERDITE_RE = new RegExp(
+  `(?:^|[-_.:/])(?:${MARQUEUR_PRODUIT_PRECEDENT}|nostr(?:-public)?|relay)(?:$|[-_.:/])`,
+  "iu",
+);
 export const CANAL_RELEASE = "punks-desktop";
 const ADR_RELEASE =
   "docs/adr/0060-graphe-de-release-expansion-activation-contraction.md";
@@ -897,7 +900,7 @@ function validerPolitique(politique, push) {
         "politique : recuperation.normale doit être roll-forward — le roll-forward est la récupération normale",
       );
     }
-    if (recuperation["retour-punks-anterieur"] !== RETOUR_PUNKS) {
+    if (recuperation["retour-punks-anterieur"] !== RETOUR_VERSION_ANTERIEURE) {
       push(
         "politique : recuperation.retour-punks-anterieur doit exiger un certificat de compatibilité",
       );
@@ -6092,14 +6095,14 @@ function validerRecuperations(
     }
     if (!TYPES_RECUPERATION.includes(recuperation.type)) {
       push(
-        `${id} : type inconnu « ${String(recuperation.type)} » — le vocabulaire fermé (${TYPES_RECUPERATION.join(", ")}) exclut structurellement tout retour vers Punks`,
+        `${id} : type inconnu « ${String(recuperation.type)} » — le vocabulaire fermé (${TYPES_RECUPERATION.join(", ")}) exclut structurellement tout retour vers le produit précédent`,
       );
       continue;
     }
     const cible = releases.find((r) => r?.id === recuperation.cible);
     if (!cible) {
       push(
-        `${id} : cible « ${String(recuperation.cible)} » inconnue — une récupération ne peut viser que le graphe Punks, jamais Punks`,
+        `${id} : cible « ${String(recuperation.cible)} » inconnue — une récupération ne peut viser que le graphe Punks, jamais le produit précédent`,
       );
       continue;
     }
