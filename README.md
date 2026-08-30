@@ -63,8 +63,9 @@ multi-Worker end-to-end test is claimed.
 
 Public trigger integration, discovery, prompts beyond the fixed Reaction
 release, memory, schedules, consequential and critical approval flows, unread
-state, attachments, general product workflows, GitHub App repository access
-and the Punks clients remain under active migration. The exact ledger is
+state, attachments, general product workflows and GitHub App repository access
+remain under active migration. The Punks desktop client owns the implemented
+`desktop-social-loop@1` profile. The exact ledger is
 maintained in
 [`cloudflare/PARITY.md`](cloudflare/PARITY.md).
 
@@ -78,9 +79,9 @@ pnpm punks:check
 ```
 
 This gate checks the managed-only boundary, generated runtime/contract types,
-formatting, TypeScript, all Cloudflare `workerd` suites, the Punks desktop UI
-and its minimal Rust/Tauri crate. It must not start or contact any legacy server
-dependency.
+formatting, TypeScript, all Cloudflare `workerd` suites, the rich Punks desktop
+entry and its Punks-only Rust/Tauri graph. It must not start or contact any
+legacy server dependency.
 
 To start the functional local Punks desktop application from the repository
 root:
@@ -90,12 +91,19 @@ pnpm punks:dev
 ```
 
 The command prepares and starts the eight-Worker Cloudflare graph, waits for its
-exact health response, then launches the native `Punks Bot Dev` Tauri window.
+exact health response, then launches the native `Punks Bot Local` Tauri window.
 If a healthy local graph is already listening on `127.0.0.1:8787`, it is reused
 and left running when the Tauri window closes. The first UI bootstrap creates an
-idempotent local-only Punk session, a private `Punks Bot local` Workspace, its
-`general` Conversation and three starter Messages through the same
-authoritative APIs used by the client.
+idempotent local-only Punk session, a private `Punks Bot local` Workspace and
+its empty `general` Conversation through the same authoritative APIs used by
+the client. Messages appear only after a Punk publishes them through the UI.
+
+The local runtime is autonomous after dependencies are installed: its desktop
+CSP permits only the two loopback origins, OAuth browser ceremonies are
+disabled, updater endpoints are empty, Workers AI selects the deterministic
+local model, and Wrangler telemetry, error reporting and update prompts are
+disabled. Staging and production keep their separately configured external
+authorities; none of them are used by `pnpm punks:dev`.
 
 For backend-only diagnostics, the components remain independently runnable:
 
@@ -115,7 +123,7 @@ is served by Vite at `http://localhost:1420` inside the Tauri window.
 To run only the native shell against an already-running backend:
 
 ```bash
-pnpm --filter @punks/desktop tauri:dev
+pnpm --dir desktop punks:dev
 ```
 
 The gateway forwards ordinary requests to the API. It also exposes the strictly
@@ -124,10 +132,11 @@ local `POST /__dev/bot-wakes` test seam for a known lower-case UUIDv8
 staging or production. Local Bot decisions are deterministic and never invoke
 Workers AI.
 
-The new `punks-desktop/` package is the Punks graphical client. The imported
-`web/`, `desktop/` and `mobile/` packages still implement the legacy Buzz
-protocol and remain available only as migration sources; they are not started
-by `pnpm punks:dev`.
+The Punks graphical client uses the single rich `desktop/src/main.tsx` entry.
+Its build graph contains only the Punks semantic client and typed native
+commands; the isolated mini-client entry has been retired. The imported `web/`
+and `mobile/` packages still implement the legacy Buzz protocol and remain
+available only as migration sources; they are not started by `pnpm punks:dev`.
 
 Useful documentation:
 

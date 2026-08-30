@@ -8,7 +8,7 @@ const runtime = await readFile(
 );
 const handler = runtime.match(/tauri::generate_handler!\[([\s\S]*?)\]\)/u)?.[1];
 
-test("inactive migration slices register zero native Tauri commands", () => {
+test("the rich local runtime registers every authoritative desktop command already implemented", () => {
   assert.ok(handler, "Punks Tauri handler must remain statically inspectable");
   for (const command of [
     // T2 — message lifecycle.
@@ -38,6 +38,6 @@ test("inactive migration slices register zero native Tauri commands", () => {
     // T9 — private search.
     "punks_search_messages",
   ]) {
-    assert.doesNotMatch(handler, new RegExp(`\\b${command}\\b`, "u"), command);
+    assert.match(handler, new RegExp(`\\b${command}\\b`, "u"), command);
   }
 });

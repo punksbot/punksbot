@@ -9,8 +9,8 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use punks_account_client::ceremony::{
-    AuthenticationMethod, NativeVerifier, PendingAuthIntent, PendingAuthPhase, QuarantineJar,
-    RenewalPolicy,
+    AuthenticationMethod, CompiledPunksEnvironment, NativeVerifier, PendingAuthIntent,
+    PendingAuthPhase, QuarantineJar, RenewalPolicy, SessionPersistence,
 };
 use punks_account_client::desktop_auth::{
     ClaimedDelivery, ClaimedSession, DesktopAuthClient, DesktopAuthStartIntent, DesktopAuthStatus,
@@ -143,6 +143,18 @@ async fn start_authentication(
     store: &KeyringSessionPersistence,
     input: NativeAuthStart,
 ) -> Result<CeremonyPhaseView, ClientFailure> {
+    if CompiledPunksEnvironment::current().map_err(|_| {
+        native_failure(
+            FailureKind::ContractViolation,
+            "unknown compiled Punks environment",
+        )
+    })? == CompiledPunksEnvironment::Local
+    {
+        return Err(native_failure(
+            FailureKind::ContractViolation,
+            "external authentication is disabled for local Punks",
+        ));
+    }
     let NativeAuthStart {
         intent,
         method,
@@ -244,6 +256,44 @@ async fn start_authentication(
     }
     let runtime = client.authentication.lock().await;
     Ok(runtime.last_phase.clone())
+}
+
+async fn local_account_state(
+    client: &PunksDesktopClient,
+    store: &KeyringSessionPersistence,
+) -> Result<AccountSessionStateView, ClientFailure> {
+    if let AccountSessionStateView::Authenticated { session, .. } =
+        account_state_from_store(client, store, CeremonyPhaseView::Idle).await?
+    {
+        return Ok(AccountSessionStateView::Authenticated {
+            session,
+            authentication: CeremonyPhaseView::Idle,
+            resume_available: false,
+        });
+    }
+    let _ = store.sign_out_local().map_err(|_| store_failure())?;
+    client.invalidate_for_sign_out().await?;
+    let prepared = client.account()?.prepare_local_bootstrap().await?;
+    client.activate_prepared_session(&prepared.cookie).await?;
+    let session = client.account()?.get_session().await?;
+    if session != prepared.session {
+        client.invalidate_for_sign_out().await?;
+        return Err(native_failure(
+            FailureKind::ContractViolation,
+            "local Punks Session does not match its bootstrap response",
+        ));
+    }
+    if store.persist(&prepared.cookie, &prepared.metadata).is_err() {
+        client.invalidate_for_sign_out().await?;
+        return Err(store_failure());
+    }
+    Ok(AccountSessionStateView::Authenticated {
+        authentication: CeremonyPhaseView::Confirmed {
+            session_id: session.session_id.clone(),
+        },
+        session,
+        resume_available: false,
+    })
 }
 
 fn update_flow_from_status(flow: &mut PendingAuthFlow, status: &DesktopAuthStatus) {
@@ -586,6 +636,15 @@ pub async fn punks_get_account_session_state(
     store: tauri::State<'_, Arc<KeyringSessionPersistence>>,
 ) -> Result<AccountSessionStateView, ClientFailure> {
     let _transition = client.transitions.write().await;
+    if CompiledPunksEnvironment::current().map_err(|_| {
+        native_failure(
+            FailureKind::ContractViolation,
+            "unknown compiled Punks environment",
+        )
+    })? == CompiledPunksEnvironment::Local
+    {
+        return local_account_state(&client, &store).await;
+    }
     let _ = flush_revocations(&client, &store).await?;
     if let Some(renewal) = store.reread_renewal().map_err(|_| store_failure())? {
         return Ok(AccountSessionStateView::SignedOut {

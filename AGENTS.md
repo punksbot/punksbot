@@ -21,6 +21,10 @@ ce fichier :
 
 Les tickets sont gérés comme des issues GitHub dans `punksbot/punksbot` avec la CLI `gh`. Voir `docs/agents/issue-tracker.md`.
 
+### Étiquettes de triage
+
+Le triage utilise les cinq étiquettes canoniques `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human` et `wontfix`. Voir `docs/agents/triage-labels.md`.
+
 ### Documentation du domaine
 
 Le dépôt utilise un contexte unique avec `CONTEXT.md` à la racine et les ADR dans `docs/adr/`. Voir `docs/agents/domain.md`.

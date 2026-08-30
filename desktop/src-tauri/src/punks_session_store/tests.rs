@@ -37,6 +37,46 @@ fn store() -> (KeyringSessionPersistence, Arc<MemoryCredentialStore>) {
     )
 }
 
+#[test]
+fn debug_local_file_store_round_trips_and_deletes_one_opaque_state() {
+    let root = std::env::temp_dir().join(format!(
+        "punks-local-session-store-{}",
+        uuid::Uuid::new_v4()
+    ));
+    let credentials = LocalDebugCredentialStore::with_root(root.clone());
+    let service = "punks-bot-local-full-v2";
+
+    credentials
+        .store(service, ACCOUNT_STATE_KEY, "opaque-local-session")
+        .expect("store local state");
+    assert_eq!(
+        credentials
+            .load(service, ACCOUNT_STATE_KEY)
+            .expect("load local state")
+            .as_deref(),
+        Some("opaque-local-session")
+    );
+    #[cfg(unix)]
+    assert_eq!(
+        fs::metadata(root.join("account-state.json"))
+            .expect("local state metadata")
+            .permissions()
+            .mode()
+            & 0o777,
+        0o600
+    );
+    credentials
+        .delete(service, ACCOUNT_STATE_KEY)
+        .expect("delete local state");
+    assert_eq!(
+        credentials
+            .load(service, ACCOUNT_STATE_KEY)
+            .expect("load deleted state"),
+        None
+    );
+    fs::remove_dir_all(root).expect("remove local test directory");
+}
+
 fn at(seconds: u64) -> std::time::SystemTime {
     UNIX_EPOCH + Duration::from_secs(seconds)
 }

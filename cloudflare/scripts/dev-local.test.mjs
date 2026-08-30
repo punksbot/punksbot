@@ -5,8 +5,20 @@ import test from "node:test";
 import {
   LOCAL_D1_DATABASES,
   localD1MigrationArguments,
+  localRuntimeEnvironment,
   localWranglerArguments,
 } from "./dev-local.mjs";
+
+test("disables Wrangler network telemetry and update prompts locally", () => {
+  assert.deepEqual(localRuntimeEnvironment({ PRESERVED: "yes" }), {
+    PRESERVED: "yes",
+    DO_NOT_TRACK: "1",
+    WRANGLER_HIDE_BANNER: "true",
+    WRANGLER_NO_SKILLS_UPDATE_PROMPTS: "true",
+    WRANGLER_SEND_ERROR_REPORTS: "false",
+    WRANGLER_SEND_METRICS: "false",
+  });
+});
 
 test("uses one persistent local state for all D1 migrations", () => {
   const root = "/workspace/punksbot";
@@ -45,8 +57,14 @@ test("starts the complete local Worker graph without remote bindings", () => {
   assert.ok(args.includes("--local"));
   assert.ok(!args.includes("--remote"));
   assert.equal(args.filter((value) => value === "--config").length, 8);
-  assert.ok(args.includes(join(root, "cloudflare/workers/dev-gateway/wrangler.jsonc")));
-  assert.ok(args.includes(join(root, "cloudflare/workers/bot-runtime/wrangler.jsonc")));
-  assert.ok(args.includes(join(root, "cloudflare/workers/projector/wrangler.jsonc")));
+  assert.ok(
+    args.includes(join(root, "cloudflare/workers/dev-gateway/wrangler.jsonc")),
+  );
+  assert.ok(
+    args.includes(join(root, "cloudflare/workers/bot-runtime/wrangler.jsonc")),
+  );
+  assert.ok(
+    args.includes(join(root, "cloudflare/workers/projector/wrangler.jsonc")),
+  );
   assert.equal(args.at(-1), join(root, "cloudflare/.wrangler/local"));
 });

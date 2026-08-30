@@ -165,7 +165,7 @@ fn status_failure(status: u16) -> ClientFailure {
     )
 }
 
-fn parse_iso8601(value: &str) -> Result<SystemTime, ClientFailure> {
+pub(crate) fn parse_iso8601(value: &str) -> Result<SystemTime, ClientFailure> {
     let bytes = value.as_bytes();
     let fractional_millis = match bytes.len() {
         20 if bytes[19] == b'Z' => 0,
@@ -815,7 +815,7 @@ fn status_outcome_code(value: contracts::DesktopAuthStatusResponseOutcomeCode) -
     .to_string()
 }
 
-fn extract_session_cookie(headers: &HeaderMap) -> Result<SessionSecret, ClientFailure> {
+pub(crate) fn extract_session_cookie(headers: &HeaderMap) -> Result<SessionSecret, ClientFailure> {
     for value in headers.get_all(reqwest::header::SET_COOKIE) {
         let raw = value
             .to_str()

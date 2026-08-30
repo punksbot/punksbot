@@ -1,5 +1,5 @@
 {
-  "name": "buzz",
+  "name": "@punks/app",
   "private": true,
   "version": "0.6.0",
   "type": "module",
@@ -12,9 +12,9 @@
     "check:px-text": "node ./scripts/check-px-text.mjs",
     "check:pubkey-truncation": "node ./scripts/check-pubkey-truncation.mjs",
     "check:punks-candidate": "node ./scripts/check-punks-candidate.mjs --base ./src-tauri/tauri.conf.json --config ./src-tauri/tauri.punks.conf.json",
-    "check:punks-product": "node ./scripts/check-punks-frontend-product.mjs --root .",
-    "check:punks-product-dist": "node ./scripts/check-punks-frontend-product.mjs --root . --dist",
+    "check:punks-full": "node --test ./scripts/punks-full-entry.test.mjs ./scripts/check-punks-full-product.test.mjs && node ./scripts/check-punks-full-product.mjs --root . && pnpm exec tsc --project tsconfig.punks.json && pnpm exec vite build && node ./scripts/check-punks-full-product.mjs --root . --dist",
     "check:punks-capabilities": "node ./scripts/check-punks-capabilities.mjs",
+    "punks:dev": "node ./scripts/dev-punks.mjs",
     "lint": "biome lint .",
     "check": "biome check . && pnpm check:px-text && pnpm check:pubkey-truncation",
     "format": "biome format --write .",

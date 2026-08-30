@@ -42,6 +42,62 @@ async fn stream_directory_rejects_items_outside_the_workspace_scope() {
 }
 
 #[tokio::test]
+async fn stream_detail_accepts_the_complete_authoritative_view() {
+    let conversation_id = "33333333-3333-4333-8333-333333333333";
+    let expected_path = format!("/w/{WORKSPACE_ID}/conversations/{conversation_id}");
+    let client = client_with(move |_method, path, _body, _idempotency_key| {
+        let expected_path = expected_path.clone();
+        Box::pin(async move {
+            Ok(match path.as_str() {
+                "/api/v1/desktop/compatibility" => compatibility(),
+                "/api/auth/v1/session" => session(),
+                path if path.starts_with("/api/v1/workspaces?") => workspaces(),
+                path if path.ends_with(conversation_id) => json!({
+                    "conversation": {
+                        "id": conversation_id,
+                        "workspaceId": WORKSPACE_ID,
+                        "name": "general",
+                        "type": "stream",
+                        "visibility": "open",
+                        "description": null,
+                        "topic": null,
+                        "purpose": null,
+                        "topicRequired": false,
+                        "maxMembers": null,
+                        "ttlSeconds": null,
+                        "ttlDeadline": null,
+                        "ownerPunkId": PUNK_ID,
+                        "members": [{
+                            "punkId": PUNK_ID,
+                            "access": "owner",
+                            "joinedAt": "2026-08-29T10:00:00.000Z",
+                            "invitedByPunkId": null
+                        }],
+                        "status": "active",
+                        "revision": 1,
+                        "cursor": 1,
+                        "createdAt": "2026-08-29T10:00:00.000Z",
+                        "updatedAt": "2026-08-29T10:00:00.000Z",
+                        "archivedAt": null
+                    },
+                    "canonicalPath": expected_path
+                }),
+                _ => return Err(ClientFailure::new(FailureKind::Problem, "unexpected")),
+            })
+        })
+    });
+    prepare_account(&client).await;
+    let workspace = client.open_workspace(WORKSPACE_ID).await.unwrap();
+
+    let stream = workspace.get_stream(conversation_id).await.unwrap();
+
+    assert_eq!(stream.name, "general");
+    let renderer_view = serde_json::to_value(stream).unwrap();
+    assert!(renderer_view.get("ownerPunkId").is_none());
+    assert!(renderer_view.get("members").is_none());
+}
+
+#[tokio::test]
 async fn message_history_rejects_non_monotone_pages() {
     let conversation_id = "33333333-3333-4333-8333-333333333333";
     let first_message_id = "44444444-4444-4444-8444-444444444444";

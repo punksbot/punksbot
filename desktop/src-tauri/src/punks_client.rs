@@ -9,7 +9,6 @@ use punks_account_client::{
     PunksNavigationTarget, ReactionMutationResult, StreamSummary, StreamView, WorkspaceLease,
     WorkspaceSession, WorkspaceSummary,
 };
-#[cfg(test)]
 use punks_account_client::{
     PresenceDelivery, PunkProfile, PunkSearchInput, PunkSearchPage, PunkSummaryPage,
 };
@@ -20,21 +19,6 @@ use crate::{
     punks_auth_state::NativeAuthenticationRuntime,
     punks_promotion_audit::{observe_result, record_ipc_coordinates},
 };
-
-#[cfg(test)]
-#[path = "punks_message_lifecycle.rs"]
-/// Tauri commands for capability-gated Message lifecycle mutations.
-pub mod punks_message_lifecycle;
-
-#[cfg(test)]
-#[path = "punks_identity_governance.rs"]
-/// Tauri commands for capability-gated Workspace identity governance.
-pub mod punks_identity_governance;
-
-#[cfg(test)]
-#[path = "punks_conversation_search.rs"]
-/// Tauri command for capability-gated Conversation and Fil search.
-pub mod punks_conversation_search;
 
 /// Native state for the single Punks Account and mounted Workspace.
 pub struct PunksDesktopClient {
@@ -208,7 +192,6 @@ impl PunksDesktopClient {
             .ok_or_else(|| ClientFailure::cancelled("Punks FOLLOW operation is closed"))
     }
 
-    #[cfg(test)]
     async fn presence(&self, operation_id: &str) -> Result<Arc<PresenceConnection>, ClientFailure> {
         self.presences
             .lock()
@@ -291,7 +274,6 @@ pub async fn punks_list_workspaces(
     observe_result("punks_list_workspaces", "workspace.summary[]@1", result)
 }
 
-#[cfg(test)]
 #[tauri::command]
 pub async fn punks_get_punk_profile(
     client: tauri::State<'_, PunksDesktopClient>,
@@ -300,7 +282,6 @@ pub async fn punks_get_punk_profile(
     client.account()?.get_punk_profile().await
 }
 
-#[cfg(test)]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdatePunkProfileInput {
@@ -309,7 +290,6 @@ pub struct UpdatePunkProfileInput {
     avatar_url: Option<String>,
 }
 
-#[cfg(test)]
 #[tauri::command]
 pub async fn punks_update_punk_profile(
     client: tauri::State<'_, PunksDesktopClient>,
@@ -499,7 +479,6 @@ pub async fn punks_resolve_authors(
         .await
 }
 
-#[cfg(test)]
 #[tauri::command]
 pub async fn punks_get_punk_summaries(
     client: tauri::State<'_, PunksDesktopClient>,
@@ -514,7 +493,6 @@ pub async fn punks_get_punk_summaries(
         .await
 }
 
-#[cfg(test)]
 #[derive(Debug, Deserialize)]
 #[serde(
     tag = "kind",
@@ -527,7 +505,6 @@ pub enum PunkSearchQueryInput {
     PunkId { punk_id: String },
 }
 
-#[cfg(test)]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SearchPunksInput {
@@ -536,7 +513,6 @@ pub struct SearchPunksInput {
     cursor: Option<String>,
 }
 
-#[cfg(test)]
 #[tauri::command]
 pub async fn punks_search_punks(
     client: tauri::State<'_, PunksDesktopClient>,
@@ -717,7 +693,6 @@ pub async fn punks_close_follow(
     result
 }
 
-#[cfg(test)]
 #[tauri::command]
 pub async fn punks_hold_presence(
     client: tauri::State<'_, PunksDesktopClient>,
@@ -737,7 +712,6 @@ pub async fn punks_hold_presence(
     Ok(operation_id)
 }
 
-#[cfg(test)]
 #[tauri::command]
 pub async fn punks_presence_next(
     client: tauri::State<'_, PunksDesktopClient>,
@@ -746,7 +720,6 @@ pub async fn punks_presence_next(
     client.presence(&operation_id).await?.next_delivery().await
 }
 
-#[cfg(test)]
 #[tauri::command]
 pub async fn punks_set_presence_status(
     client: tauri::State<'_, PunksDesktopClient>,
@@ -760,7 +733,6 @@ pub async fn punks_set_presence_status(
         .await
 }
 
-#[cfg(test)]
 #[tauri::command]
 pub async fn punks_signal_presence_typing(
     client: tauri::State<'_, PunksDesktopClient>,
@@ -775,7 +747,6 @@ pub async fn punks_signal_presence_typing(
         .await
 }
 
-#[cfg(test)]
 #[tauri::command]
 pub async fn punks_close_presence(
     client: tauri::State<'_, PunksDesktopClient>,

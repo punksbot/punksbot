@@ -1,7 +1,7 @@
 use punks_account_client::{ClientFailure, MessageSearchPage, WorkspaceLease};
 use serde::Deserialize;
 
-use super::PunksDesktopClient;
+use crate::punks_client::PunksDesktopClient;
 
 /// Exact body carried by the typed Conversation search IPC command.
 #[derive(Debug, Deserialize)]

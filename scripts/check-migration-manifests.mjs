@@ -5,7 +5,7 @@
  * docs/migration/goldens-ledger.yaml :
  *
  *   - doublons : deux actifs ne portent pas le même chemin (qualificatif inclus) ;
- *   - omissions : tout fichier suivi (git ls-files) est couvert par un actif,
+ *   - omissions : tout fichier suivi ou nouveau non ignoré est couvert par un actif,
  *     et tout golden dérivé de la baseline Buzz figée a sa ligne au registre ;
  *   - références invalides : chaque chemin d’actif et chaque source/preuve
  *     résout un fichier réel du dépôt ;
@@ -84,6 +84,19 @@ function trackedFiles(treeish) {
     .filter((f) => f.length > 0);
 }
 
+function workingFiles() {
+  const out = execFileSync(
+    "git",
+    ["ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+    {
+      cwd: repoRoot,
+      encoding: null,
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+  return [...new Set(out.toString("utf8").split("\0").filter(Boolean))].sort();
+}
+
 function baselineTrackedFiles() {
   try {
     return trackedFiles(BASELINE_BUZZ);
@@ -99,7 +112,7 @@ export function runValidation() {
   const ledger = loadYamlDocument(ledgerPath);
   const universe = loadYamlDocument(universePath);
   const testsUniverse = loadYamlDocument(testsUniversePath);
-  const files = trackedFiles();
+  const files = workingFiles();
   const baselineFiles = baselineTrackedFiles();
   const historicalGoldenSources =
     baselineFiles === null ? undefined : discoverGoldenSources(baselineFiles);

@@ -1,10 +1,15 @@
-import {
-  DESKTOP_SOCIAL_LOOP_CAPABILITIES,
-  type DesktopSocialLoopCapability,
-} from "@punks/contracts/desktop-profile";
+import { DESKTOP_SOCIAL_LOOP_CAPABILITIES } from "@punks/contracts/desktop-profile";
 
-/** Exact capability set compiled into the current Punks desktop product. */
-export const PUNKS_MOUNTED_CAPABILITIES = DESKTOP_SOCIAL_LOOP_CAPABILITIES;
+/** Capabilities backed by real local authorities in the rich desktop graph. */
+export const PUNKS_MOUNTED_CAPABILITIES = [
+  ...DESKTOP_SOCIAL_LOOP_CAPABILITIES,
+  "message-lifecycle",
+  "identity-governance",
+  "presence",
+  "search",
+] as const;
+
+type PunksMountedCapability = (typeof PUNKS_MOUNTED_CAPABILITIES)[number];
 
 /** Intersects environment capabilities with code actually mounted by this build. */
 export function intersectPunksCapabilities(
@@ -37,7 +42,7 @@ type PunksRouteShape = {
 };
 
 const ROUTE_REQUIREMENTS: Readonly<
-  Record<PunksRouteShape["kind"], readonly DesktopSocialLoopCapability[]>
+  Record<PunksRouteShape["kind"], readonly PunksMountedCapability[]>
 > = {
   home: ["account-session", "authentication", "workspace-selection"],
   workspace: ["workspace-selection", "stream-list"],

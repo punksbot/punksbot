@@ -4,7 +4,6 @@
 # expands to a set that excludes this crate, and its gates pass green-and-empty
 # over a real defect. Verified: Sami Arm A/D, Dawn `.scratch/armA`.
 members = [
-  "crates/buzz-terminal",
   "crates/punks-account-client",
   "crates/punks-promotion-session",
 ]
@@ -26,7 +25,7 @@ name = "desktop_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [features]
-default = ["buzz-desktop", "system-keyring"]
+default = ["punks-desktop-social-loop"]
 buzz-desktop = [
   "dep:arboard",
   "dep:anyhow",
@@ -35,13 +34,6 @@ buzz-desktop = [
   "dep:axum",
   "dep:base64",
   "dep:block2",
-  "dep:buzz_agent_pkg",
-  "dep:buzz_core_pkg",
-  "dep:buzz_persona_pkg",
-  "dep:buzz_sdk_pkg",
-  "dep:buzz_terminal",
-  "dep:buzz_voice_pkg",
-  "dep:buzz_ws_client_pkg",
   "dep:bytes",
   "dep:bzip2",
   "dep:chrono",
@@ -103,7 +95,7 @@ mesh-llm = ["buzz-desktop", "dep:iroh", "dep:mesh-llm-sdk", "dep:mesh-llm-host-r
 # OS keyring backing for desktop secret storage (nsec private keys). When
 # disabled, secrets fall back to 0o600 files. On by default for real builds.
 system-keyring = ["dep:keyring"]
-punks-desktop-social-loop = ["dep:keyring", "dep:punks-account-client", "dep:sha2"]
+punks-desktop-social-loop = ["dep:dirs", "dep:keyring", "dep:punks-account-client", "dep:sha2"]
 
 [build-dependencies]
 base64 = "0.22"
@@ -179,13 +171,6 @@ percent-encoding = { version = "2", optional = true }
 reqwest = { version = "0.13", features = ["json", "query", "stream", "blocking"], optional = true }
 rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std"], optional = true }
 url = { version = "2", optional = true }
-buzz_core_pkg = { package = "buzz-core", path = "../../crates/buzz-core", optional = true }
-buzz_persona_pkg = { package = "buzz-persona", path = "../../crates/buzz-persona", optional = true }
-buzz_sdk_pkg = { package = "buzz-sdk", path = "../../crates/buzz-sdk", optional = true }
-buzz_agent_pkg = { package = "buzz-agent", path = "../../crates/buzz-agent", optional = true }
-buzz_voice_pkg = { package = "buzz-voice", path = "../../crates/buzz-voice", optional = true }
-buzz_terminal = { package = "buzz-terminal", path = "crates/buzz-terminal", optional = true }
-buzz_ws_client_pkg = { package = "buzz-ws-client", path = "../../crates/buzz-ws-client", optional = true }
 portable-pty = { version = "0.9", optional = true }
 iroh = { version = "1.0.2", optional = true }
 mesh-llm-sdk = { git = "https://github.com/Mesh-LLM/mesh-llm.git", tag = "v0.75.1", package = "mesh-llm-sdk", default-features = false, features = ["client", "serving"], optional = true }
@@ -231,6 +216,3 @@ tauri-utils = "2"
 # `test-util` enables tokio's paused-clock (`start_paused`) so the relay
 # admission gate tests can assert exact wait durations without real sleeps.
 tokio = { version = "1", features = ["test-util"] }
-# The relay's media validation, so the snapshot-sharing tests can prove the
-# full export → sanitize → relay-accept → import contract end to end.
-buzz_media_pkg = { package = "buzz-media", path = "../../crates/buzz-media" }

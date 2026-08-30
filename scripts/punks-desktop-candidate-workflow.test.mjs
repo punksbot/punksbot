@@ -495,7 +495,7 @@ function validateWorkflow(workflow) {
     "pnpm migration:check",
     "pnpm cloudflare:check",
     "pnpm --dir desktop check:punks-candidate",
-    "pnpm --dir desktop check:punks-product",
+    "pnpm --dir desktop check:punks-full",
     "pnpm --dir desktop test:e2e:punks-capabilities",
     "node scripts/check-punks-rust.mjs",
     'tauri_config="$(jq -c . desktop/src-tauri/tauri.punks.conf.json)"',
@@ -948,7 +948,7 @@ function validateWorkflow(workflow) {
     "Windows binary, installers and updater signatures are ordered incorrectly",
   );
   const dist = workflowStep(build, "verify_product_dist");
-  requireRun(dist, ["pnpm --dir desktop check:punks-product-dist"]);
+  requireRun(dist, ["pnpm --dir desktop check:punks-full"]);
   const nativeArtifact = workflowStep(build, "verify_native_artifact");
   requireRun(nativeArtifact, [
     "punks-bot-staging",

@@ -16,6 +16,7 @@ use super::{
     ClientPlatform, FailureKind, FollowPhase, FollowServerFrame, FollowState, PunksAccountClient,
 };
 
+mod local_bootstrap;
 mod message_mutations;
 mod message_search;
 mod presence;

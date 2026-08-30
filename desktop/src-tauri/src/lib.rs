@@ -74,6 +74,12 @@ mod punks_auth_state;
 #[cfg(feature = "punks-desktop-social-loop")]
 mod punks_client;
 #[cfg(feature = "punks-desktop-social-loop")]
+mod punks_conversation_search;
+#[cfg(feature = "punks-desktop-social-loop")]
+mod punks_identity_governance;
+#[cfg(feature = "punks-desktop-social-loop")]
+mod punks_message_lifecycle;
+#[cfg(feature = "punks-desktop-social-loop")]
 mod punks_promotion_audit;
 #[cfg(feature = "punks-desktop-social-loop")]
 mod punks_runtime;

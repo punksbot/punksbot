@@ -143,7 +143,6 @@ export function discoverBuzzTestSources(baselineFiles) {
  * une famille ou un répertoire ancêtre est ajouté au manifeste.
  */
 export const DERNIERS_CONSOMMATEURS_DESKTOP = new Map([
-  ["desktop/src/main.tsx", "scellement"],
   ["desktop/src/app/App.tsx", "scellement"],
   ["desktop/src/app/AppShell.tsx", "scellement"],
   ["desktop/src/app/routes/root.tsx", "scellement"],
@@ -186,10 +185,11 @@ export const SEPARATIONS_DESKTOP_OBLIGATOIRES = new Set([
 ]);
 
 const ACTIFS_PUNKS_DESKTOP = [
-  /^desktop\/punks-product\//,
-  /^desktop\/scripts\/(?:check-punks-|punks-product-entry)/,
+  /^desktop\/scripts\/(?:check-punks-|punks-full-entry)/,
+  /^desktop\/src\/app\/PunksFullApp\.tsx$/,
+  /^desktop\/src\/main\.tsx$/,
   /^desktop\/src\/features\/punks\//,
-  /^desktop\/src\/punks(?:-main\.tsx|\.css)$/,
+  /^desktop\/src\/punks\.css$/,
   /^desktop\/src\/shared\/api\/punks[^/]*$/,
   /^desktop\/src\/shared\/capabilities\//,
   /^desktop\/src-tauri\/capabilities\/punks\.json$/,

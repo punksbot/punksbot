@@ -8,10 +8,10 @@ import {
 import { isPunksRouteMounted } from "@/shared/capabilities/punksProfile";
 import { lazy, Suspense, useMemo, useState, useSyncExternalStore } from "react";
 
-import { parsePunksPath, type PunksRoute } from "./routes";
+import { parsePunksPath, type PunksRoute } from "@/features/punks/routes";
 
 const LazyPunksRuntime = lazy(() =>
-  import("./PunksRuntime").then((module) => ({
+  import("@/features/punks/PunksRuntime").then((module) => ({
     default: module.TauriPunksRuntime,
   })),
 );
@@ -49,7 +49,7 @@ function PunksCapabilityLoading() {
       data-testid="punks-capability-loading"
       role="status"
     >
-      <p className="text-sm">Checking availability…</p>
+      <p className="text-sm">Checking local Punks authorities…</p>
     </div>
   );
 }
@@ -62,10 +62,11 @@ function PunksCapabilityError({ onRetry }: { onRetry(): void }) {
       role="alert"
     >
       <div className="max-w-md text-center">
-        <h1 className="text-message font-semibold">Connection unavailable</h1>
+        <h1 className="text-message font-semibold">
+          Local Workers unavailable
+        </h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Punks Bot could not reach the service. Try again when the connection
-          is available.
+          Punks Bot could not reach its local authoritative runtime.
         </p>
         <button
           className="mt-4 rounded-md border border-border px-3 py-2 text-sm hover:bg-accent"
@@ -103,18 +104,14 @@ function PunksProduct({ route }: { route: PunksRoute }) {
   );
 }
 
-function PunksAvailableRoute({ route }: { route: PunksRoute }) {
+/** The single rich desktop product entry. Network and Session state stay native. */
+export default function PunksFullApp() {
+  const route = useCurrentPunksRoute();
   const [client] = useState(createTauriPunksCompatibilityClient);
+  if (route === null) return <PunksUnavailableScreen />;
   return (
     <PunksCapabilityProvider client={client}>
       <PunksProduct route={route} />
     </PunksCapabilityProvider>
   );
-}
-
-/** Entry point for the product Punks distribution. */
-export default function PunksApp() {
-  const route = useCurrentPunksRoute();
-  if (route === null) return <PunksUnavailableScreen />;
-  return <PunksAvailableRoute route={route} />;
 }

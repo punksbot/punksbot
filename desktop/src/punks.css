@@ -1,6 +1,7 @@
 @import "tailwindcss" source(none);
 
-@source "./punks-main.tsx";
+@source "./main.tsx";
+@source "./app/PunksFullApp.tsx";
 @source "./features/punks";
 @config "../tailwind.punks.config.js";
 

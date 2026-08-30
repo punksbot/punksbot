@@ -185,10 +185,10 @@ async function reauthenticateGoogle(
 }
 
 describe("Punks Auth Worker", () => {
-  it("starts GitHub OAuth with browser-bound state and only identity scopes", async () => {
+  it("keeps local GitHub OAuth on loopback with only identity scopes", async () => {
     const started = await start("github");
     expect(started.response.status).toBe(201);
-    expect(started.authorizationUrl.origin).toBe("https://github.com");
+    expect(started.authorizationUrl.origin).toBe("http://127.0.0.1:9");
     expect(started.authorizationUrl.searchParams.get("scope")).toBe(
       "read:user user:email",
     );

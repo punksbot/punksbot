@@ -1,7 +1,6 @@
 import type {
   CreateConversationCommand,
   CreateWorkspaceCommand,
-  PostMessageCommand,
 } from "@punks/contracts";
 import { WorkerEntrypoint } from "cloudflare:workers";
 
@@ -16,22 +15,6 @@ const SESSION_COOKIE =
 const WORKSPACE_SLUG = "local";
 const WORKSPACE_COMMAND_ID = "eb3124e5-7b1a-4d8e-bc54-47fb3c95f001";
 const CONVERSATION_COMMAND_ID = "eb3124e5-7b1a-4d8e-bc54-47fb3c95f002";
-const SEED_MESSAGES = [
-  {
-    commandId: "eb3124e5-7b1a-4d8e-bc54-47fb3c95f003",
-    content: "Bienvenue dans Punks Bot.",
-  },
-  {
-    commandId: "eb3124e5-7b1a-4d8e-bc54-47fb3c95f004",
-    content: "Ce Workspace local est prêt pour développer la Punks UI.",
-  },
-  {
-    commandId: "eb3124e5-7b1a-4d8e-bc54-47fb3c95f005",
-    content:
-      "Publiez un Message ici pour vérifier la persistance et le temps réel.",
-  },
-] as const;
-
 type LocalDevBootstrapProps = {
   role: "punks-local-dev-bootstrap";
   environment: "local";
@@ -206,42 +189,6 @@ export class LocalDevApiBootstrapService extends WorkerEntrypoint<
     );
     if (conversationId === null) {
       return { ok: false as const, code: "internal" as const };
-    }
-
-    for (const seed of SEED_MESSAGES) {
-      const messageCommand: PostMessageCommand = {
-        contract: "message.post@1",
-        commandId: seed.commandId,
-        workspaceId,
-        conversationId,
-        actor: { kind: "punk", punkId: input.punkId },
-        payload: {
-          content: seed.content,
-          topic: null,
-          replyToMessageId: null,
-          broadcast: false,
-          mentionedPunkIds: [],
-          mediaIds: [],
-        },
-      };
-      const messageResponse = await route(
-        new Request(
-          `https://punks.local/api/v1/workspaces/${workspaceId}/conversations/${conversationId}/messages`,
-          {
-            method: "POST",
-            headers: {
-              cookie,
-              "content-type": "application/json",
-              "idempotency-key": messageCommand.commandId,
-            },
-            body: JSON.stringify(messageCommand),
-          },
-        ),
-        this.env,
-      );
-      if (messageResponse.status !== 200 && messageResponse.status !== 201) {
-        return requestFailure(messageResponse);
-      }
     }
 
     return {

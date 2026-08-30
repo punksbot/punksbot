@@ -621,7 +621,7 @@ test("validateManifest : les actifs Punks desktop ne peuvent pas être absorbés
   const fichiers = [
     "desktop/src/shared/api/punksFailure.ts",
     "desktop/src/shared/capabilities/availability.ts",
-    "desktop/src/features/punks/PunksApp.tsx",
+    "desktop/src/app/PunksFullApp.tsx",
     "desktop/src-tauri/src/punks_runtime.rs",
     "desktop/tests/e2e/capability-masking.spec.ts",
   ];

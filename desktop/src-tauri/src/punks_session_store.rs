@@ -6,8 +6,14 @@ mod retirement;
 #[cfg(test)]
 mod tests;
 
+use std::fs::{self, OpenOptions};
+use std::io::Write;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::SystemTime;
+
+#[cfg(unix)]
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 
 use punks_account_client::ceremony::{
     CompiledPunksEnvironment, SessionMetadata, SessionPersistence, SessionSecret,
@@ -45,6 +51,86 @@ impl OsKeyringCredentialStore {
     }
 }
 
+/// Debug-local persistence that avoids unstable unsigned macOS keychain ACLs.
+/// The opaque Session remains native-only and is stored with owner-only mode.
+struct LocalDebugCredentialStore {
+    root: Option<PathBuf>,
+}
+
+impl LocalDebugCredentialStore {
+    fn new() -> Self {
+        Self {
+            root: dirs::data_local_dir()
+                .map(|root| root.join("Punks Bot Local").join("secure-account-state-v1")),
+        }
+    }
+
+    #[cfg(test)]
+    fn with_root(root: PathBuf) -> Self {
+        Self { root: Some(root) }
+    }
+
+    fn path(&self, service: &str, key: &str) -> Result<PathBuf, String> {
+        if !service.starts_with("punks-bot-local-") || key != ACCOUNT_STATE_KEY {
+            return Err(storage_unavailable());
+        }
+        self.root
+            .as_ref()
+            .map(|root| root.join("account-state.json"))
+            .ok_or_else(storage_unavailable)
+    }
+
+    fn ensure_parent(path: &Path) -> Result<(), String> {
+        let parent = path.parent().ok_or_else(storage_unavailable)?;
+        fs::create_dir_all(parent).map_err(|_| storage_unavailable())?;
+        #[cfg(unix)]
+        fs::set_permissions(parent, fs::Permissions::from_mode(0o700))
+            .map_err(|_| storage_unavailable())?;
+        Ok(())
+    }
+}
+
+impl CredentialStore for LocalDebugCredentialStore {
+    fn load(&self, service: &str, key: &str) -> Result<Option<String>, String> {
+        let path = self.path(service, key)?;
+        match fs::read_to_string(path) {
+            Ok(value) => Ok(Some(value)),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(_) => Err(storage_unavailable()),
+        }
+    }
+
+    fn store(&self, service: &str, key: &str, value: &str) -> Result<(), String> {
+        let path = self.path(service, key)?;
+        Self::ensure_parent(&path)?;
+        let temporary = path.with_extension("tmp");
+        let mut options = OpenOptions::new();
+        options.create(true).truncate(true).write(true);
+        #[cfg(unix)]
+        options.mode(0o600);
+        let mut file = options
+            .open(&temporary)
+            .map_err(|_| storage_unavailable())?;
+        file.write_all(value.as_bytes())
+            .and_then(|_| file.sync_all())
+            .map_err(|_| storage_unavailable())?;
+        fs::rename(&temporary, &path).map_err(|_| storage_unavailable())?;
+        #[cfg(unix)]
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600))
+            .map_err(|_| storage_unavailable())?;
+        Ok(())
+    }
+
+    fn delete(&self, service: &str, key: &str) -> Result<(), String> {
+        let path = self.path(service, key)?;
+        match fs::remove_file(path) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(_) => Err(storage_unavailable()),
+        }
+    }
+}
+
 impl CredentialStore for OsKeyringCredentialStore {
     fn load(&self, service: &str, key: &str) -> Result<Option<String>, String> {
         match Self::entry(service, key)?.get_password() {
@@ -77,11 +163,21 @@ pub struct KeyringSessionPersistence {
 
 impl KeyringSessionPersistence {
     pub fn new() -> Self {
+        let environment = CompiledPunksEnvironment::current();
+        let credentials: Arc<dyn CredentialStore> = if cfg!(debug_assertions)
+            && environment
+                .as_ref()
+                .is_ok_and(|value| *value == CompiledPunksEnvironment::Local)
+        {
+            Arc::new(LocalDebugCredentialStore::new())
+        } else {
+            Arc::new(OsKeyringCredentialStore)
+        };
         Self {
-            service: CompiledPunksEnvironment::current()
-                .map(|value| value.keyring_service())
+            service: environment
+                .and_then(CompiledPunksEnvironment::keyring_service_for_build)
                 .map_err(|_| ()),
-            credentials: Arc::new(OsKeyringCredentialStore),
+            credentials,
             transaction: Mutex::new(()),
         }
     }
@@ -344,7 +440,6 @@ impl KeyringSessionPersistence {
         self.take_reauthorization_with_binding_at(target, None, SystemTime::now())
     }
 
-    #[cfg(test)]
     pub(crate) fn take_workspace_ownership_reauthorization(
         &self,
         binding: &WorkspaceOwnershipTransferBinding,

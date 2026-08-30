@@ -191,24 +191,29 @@ actifs:
     separation: >
       reste de l'orchestration de shell partagé ; les routes et capacités dont
       le dernier consommateur est connu ont une entrée plus spécifique ci-dessus
+  - chemin: desktop/src/app/PunksFullApp.tsx
+    classe: route
+    verdict: conserve
+    conservation: actif-punks
+    note: "façade unique du produit desktop riche vers le client sémantique Punks"
   - chemin: desktop/src/main.tsx
     classe: route
-    verdict: scellement
+    verdict: conserve
+    conservation: actif-punks
     separation: >
-      bootstrap, providers, onboarding, communautés, profil Nostr et Huddle Buzz
-      meurent avec leurs derniers consommateurs ; l’entrée produit Punks est déjà
-      extraite dans desktop/punks-product/main.tsx et desktop/src/punks-main.tsx
-    note: dernière entrée React Buzz, retirée au gate terminal après extraction des mécanismes neutres
+      l'ancien bootstrap Buzz est retiré ; cette entrée monte uniquement la façade
+      riche Punks et son client sémantique natif
+    note: entrée React unique du produit desktop Punks
   - chemin: desktop/src/{features-manifest.d.ts,jdenticon.d.ts,types/,upng-js.d.ts,vite-env.d.ts}
     classe: ui
     verdict: conserve
     conservation: ui-neutre
     note: "déclarations de types et shims sans sémantique Buzz"
-  - chemin: desktop/src/{punks-main.tsx,punks.css}
+  - chemin: desktop/src/punks.css
     classe: ui
     verdict: conserve
     conservation: actif-punks
-    note: entrée et styles du produit desktop Punks vérifié
+    note: styles du produit desktop Punks vérifié
 
   # ── Desktop : features ─────────────────────────────────────────────────────
   - chemin: desktop/src/features/channels/
@@ -553,11 +558,6 @@ actifs:
     verdict: conserve
     conservation: outillage
     note: configuration de build du desktop (package.json, biome, vite, tsconfig, tailwind…)
-  - chemin: desktop/punks-product/
-    classe: client
-    verdict: conserve
-    conservation: actif-punks
-    note: entrée HTML/TypeScript isolée du produit desktop Punks
   - chemin: desktop/{tailwind.punks.config.js,tsconfig.punks.json}
     classe: manifeste
     verdict: conserve

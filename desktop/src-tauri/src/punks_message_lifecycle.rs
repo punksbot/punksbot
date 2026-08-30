@@ -1,7 +1,7 @@
 use punks_account_client::{ClientFailure, MessageMutationResponse, WorkspaceLease};
 use serde::Deserialize;
 
-use super::PunksDesktopClient;
+use crate::punks_client::PunksDesktopClient;
 
 /// Payload for editing an author-owned Message.
 #[derive(Debug, Deserialize)]

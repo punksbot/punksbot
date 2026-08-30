@@ -23,6 +23,17 @@ const LOCAL_WORKERS = Object.freeze([
   "bot-runtime",
 ]);
 
+export function localRuntimeEnvironment(environment = process.env) {
+  return {
+    ...environment,
+    DO_NOT_TRACK: "1",
+    WRANGLER_HIDE_BANNER: "true",
+    WRANGLER_NO_SKILLS_UPDATE_PROMPTS: "true",
+    WRANGLER_SEND_ERROR_REPORTS: "false",
+    WRANGLER_SEND_METRICS: "false",
+  };
+}
+
 function localStateDirectory(repoRoot) {
   return join(repoRoot, "cloudflare/.wrangler/local");
 }
@@ -80,7 +91,7 @@ function runPnpm(args, options = {}) {
     });
     child.once("error", reject);
     child.once("exit", (code, signal) => {
-      if (code === 0) {
+      if (code === 0 || (signal !== null && options.expectedSignal?.())) {
         resolvePromise();
         return;
       }
@@ -102,7 +113,7 @@ export async function prepareLocalEnvironment(repoRoot) {
   for (const database of LOCAL_D1_DATABASES) {
     await runPnpm(localD1MigrationArguments(repoRoot, database), {
       cwd: repoRoot,
-      env: { ...process.env, CI: "1" },
+      env: { ...localRuntimeEnvironment(), CI: "1" },
     });
   }
   return bindings;
@@ -111,12 +122,18 @@ export async function prepareLocalEnvironment(repoRoot) {
 export async function startLocalEnvironment(repoRoot, port = 8787) {
   await prepareLocalEnvironment(repoRoot);
   let child;
-  const forward = (signal) => child?.kill(signal);
+  let stopping = false;
+  const forward = (signal) => {
+    stopping = true;
+    child?.kill(signal);
+  };
   process.once("SIGINT", forward);
   process.once("SIGTERM", forward);
   try {
     await runPnpm(localWranglerArguments(repoRoot, port), {
       cwd: repoRoot,
+      env: localRuntimeEnvironment(),
+      expectedSignal: () => stopping,
       onChild(value) {
         child = value;
       },

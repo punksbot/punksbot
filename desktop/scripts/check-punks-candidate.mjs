@@ -223,6 +223,15 @@ export function validateCandidateFiles({ base, config }) {
   ) {
     throw new Error("the Punks-only Info.plist retains a legacy capability");
   }
+  const conventionalInfoPlist = readFileSync(
+    join(configRoot, "Info.plist"),
+    "utf8",
+  );
+  if (/buzz|nostr|relay/iu.test(conventionalInfoPlist)) {
+    throw new Error(
+      "the bundled macOS Info.plist retains a retired product marker",
+    );
+  }
   assertEnvironmentIsolation(configRoot, candidatePatch);
 }
 

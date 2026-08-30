@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import test from "node:test";
 
 import { localDevelopmentCommands, runLocalApplication } from "./dev-app.mjs";
@@ -23,8 +25,19 @@ function childProcessDouble() {
 test("describes the managed Punks backend and Tauri commands", () => {
   assert.deepEqual(localDevelopmentCommands(), {
     backend: ["cloudflare:dev"],
-    desktop: ["--filter", "@punks/desktop", "tauri:dev"],
+    desktop: ["--dir", "desktop", "punks:dev"],
   });
+});
+
+test("the desktop command resolves to a checked-in package script", () => {
+  const manifest = JSON.parse(
+    readFileSync(
+      resolve(import.meta.dirname, "../../desktop/package.json"),
+      "utf8",
+    ),
+  );
+  assert.equal(manifest.name, "@punks/app");
+  assert.equal(typeof manifest.scripts?.["punks:dev"], "string");
 });
 
 test("starts Tauri only after the local Punks API is healthy", async () => {
@@ -61,7 +74,7 @@ test("starts Tauri only after the local Punks API is healthy", async () => {
     "start:cloudflare:dev",
     "wait:backend",
     "ready:backend",
-    "start:--filter @punks/desktop tauri:dev",
+    "start:--dir desktop punks:dev",
   ]);
 
   desktop.emit("exit", 0, null);
@@ -106,7 +119,7 @@ test("reuses a healthy local backend without taking ownership of it", async () =
   });
 
   await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(starts, [["--filter", "@punks/desktop", "tauri:dev"]]);
+  assert.deepEqual(starts, [["--dir", "desktop", "punks:dev"]]);
 
   desktop.emit("exit", 0, null);
   await running;

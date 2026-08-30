@@ -60,10 +60,51 @@ impl CompiledPunksEnvironment {
     /// Returns the isolated operating-system credential namespace.
     pub const fn keyring_service(self) -> &'static str {
         match self {
-            Self::Local => "punks-desktop-development",
+            Self::Local => "punks-bot-local-full-v2",
             Self::Staging => "punks-desktop-staging",
             Self::Production => "punks-desktop",
         }
+    }
+
+    /// Resolves the build-specific local namespace while keeping remote
+    /// distributions immutable. Dev and packaged binaries must not trigger
+    /// macOS ACL prompts by sharing one unsigned credential.
+    pub fn keyring_service_for_build(self) -> Result<&'static str, CompiledEnvironmentError> {
+        if self != Self::Local {
+            return Ok(self.keyring_service());
+        }
+        match option_env!("PUNKS_LOCAL_KEYRING_SERVICE") {
+            None => Ok(self.keyring_service()),
+            Some("punks-bot-local-dev-v1") => Ok("punks-bot-local-dev-v1"),
+            Some(_) => Err(CompiledEnvironmentError),
+        }
+    }
+}
+
+#[cfg(test)]
+mod compiled_environment_tests {
+    use super::CompiledPunksEnvironment;
+
+    #[test]
+    fn local_full_uses_a_fresh_punks_only_keyring_namespace() {
+        assert_eq!(
+            CompiledPunksEnvironment::Local.keyring_service(),
+            "punks-bot-local-full-v2"
+        );
+        assert_ne!(
+            CompiledPunksEnvironment::Local.keyring_service(),
+            CompiledPunksEnvironment::Staging.keyring_service()
+        );
+        assert_ne!(
+            CompiledPunksEnvironment::Local.keyring_service(),
+            CompiledPunksEnvironment::Production.keyring_service()
+        );
+        assert_eq!(
+            CompiledPunksEnvironment::Local
+                .keyring_service_for_build()
+                .expect("valid local build namespace"),
+            "punks-bot-local-full-v2"
+        );
     }
 }
 

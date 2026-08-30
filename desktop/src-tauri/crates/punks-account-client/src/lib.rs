@@ -5,7 +5,11 @@ use std::{
     sync::Arc,
 };
 
-use reqwest::{cookie::Jar, Client, Method};
+use reqwest::{
+    cookie::Jar,
+    header::{HeaderValue, ORIGIN},
+    Client, Method,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use social_validation::{
@@ -156,6 +160,38 @@ struct SessionEnvelope {
     session: AccountSession,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct LocalBootstrapCoordinates {
+    workspace_slug: String,
+    workspace_id: String,
+    conversation_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LocalBootstrapEnvelope {
+    session: AccountSession,
+    coordinates: LocalBootstrapCoordinates,
+}
+
+/// Native-only Session prepared by the strictly local development gateway.
+#[derive(Debug)]
+pub struct PreparedLocalSession {
+    pub session: AccountSession,
+    pub cookie: ceremony::SessionSecret,
+    pub metadata: ceremony::SessionMetadata,
+}
+
+fn valid_local_slug(value: &str) -> bool {
+    (1..=48).contains(&value.len())
+        && !value.starts_with('-')
+        && !value.ends_with('-')
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+}
+
 /// Accessible Workspace projection returned by the private directory.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -206,7 +242,17 @@ struct StreamListResponse {
     next_cursor: Option<String>,
 }
 
-/// Full Stream view returned by its authoritative Conversation Durable Object.
+/// Bounded Conversation member decoded only inside the native trust boundary.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct StreamMemberView {
+    pub(crate) punk_id: String,
+    pub(crate) access: String,
+    pub(crate) joined_at: String,
+    pub(crate) invited_by_punk_id: Option<String>,
+}
+
+/// Sanitized Stream view allowed to cross the native IPC boundary.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct StreamView {
@@ -231,10 +277,63 @@ pub struct StreamView {
     pub archived_at: Option<String>,
 }
 
+/// Complete authority response validated before it is reduced for React.
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct AuthoritativeStreamView {
+    pub(crate) id: String,
+    pub(crate) workspace_id: String,
+    pub(crate) name: String,
+    #[serde(rename = "type")]
+    pub(crate) stream_type: String,
+    pub(crate) visibility: String,
+    pub(crate) description: Option<String>,
+    pub(crate) topic: Option<String>,
+    pub(crate) purpose: Option<String>,
+    pub(crate) topic_required: bool,
+    pub(crate) max_members: Option<u64>,
+    pub(crate) ttl_seconds: Option<u64>,
+    pub(crate) ttl_deadline: Option<String>,
+    pub(crate) owner_punk_id: String,
+    pub(crate) members: Vec<StreamMemberView>,
+    pub(crate) status: String,
+    pub(crate) revision: u64,
+    pub(crate) cursor: u64,
+    pub(crate) created_at: String,
+    pub(crate) updated_at: String,
+    pub(crate) archived_at: Option<String>,
+}
+
+impl From<AuthoritativeStreamView> for StreamView {
+    fn from(stream: AuthoritativeStreamView) -> Self {
+        Self {
+            id: stream.id,
+            workspace_id: stream.workspace_id,
+            name: stream.name,
+            stream_type: stream.stream_type,
+            visibility: stream.visibility,
+            description: stream.description,
+            topic: stream.topic,
+            purpose: stream.purpose,
+            topic_required: stream.topic_required,
+            max_members: stream.max_members,
+            ttl_seconds: stream.ttl_seconds,
+            ttl_deadline: stream.ttl_deadline,
+            status: stream.status,
+            revision: stream.revision,
+            cursor: stream.cursor,
+            created_at: stream.created_at,
+            updated_at: stream.updated_at,
+            archived_at: stream.archived_at,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct StreamEnvelope {
-    conversation: StreamView,
+    conversation: AuthoritativeStreamView,
+    canonical_path: String,
 }
 
 /// Stable author coordinates admitted into desktop collaborative caches.
@@ -503,6 +602,103 @@ impl PunksAccountClient {
         let envelope: SessionEnvelope = decode("auth.session@1", response)?;
         self.inner.state.lock().await.session = Some(envelope.session.clone());
         Ok(envelope.session)
+    }
+
+    /// Prepares the deterministic local Session and development fixtures.
+    ///
+    /// This seam is available only to a Development client pinned to an HTTP
+    /// loopback origin. It never exists in staging or production and never
+    /// opens a browser or contacts an identity provider.
+    pub async fn prepare_local_bootstrap(&self) -> Result<PreparedLocalSession, ClientFailure> {
+        if !matches!(self.inner.distribution, ClientDistribution::Development) {
+            return Err(ClientFailure::new(
+                FailureKind::ContractViolation,
+                "local Punks bootstrap is unavailable outside development",
+            ));
+        }
+        self.require_compatible().await?;
+        #[cfg(not(test))]
+        let Transport::Http(transport) = &self.inner.transport;
+        #[cfg(test)]
+        let transport = match &self.inner.transport {
+            Transport::Http(transport) => transport,
+            Transport::Test(_) => {
+                return Err(ClientFailure::new(
+                    FailureKind::ContractViolation,
+                    "local Punks bootstrap requires the native HTTP transport",
+                ));
+            }
+        };
+        if transport.origin.scheme() != "http"
+            || !transport
+                .origin
+                .host_str()
+                .is_some_and(|host| matches!(host, "127.0.0.1" | "localhost" | "::1"))
+        {
+            return Err(ClientFailure::new(
+                FailureKind::ContractViolation,
+                "local Punks bootstrap requires a loopback origin",
+            ));
+        }
+        let url = transport.origin.join("__dev/bootstrap").map_err(|_| {
+            ClientFailure::new(
+                FailureKind::ContractViolation,
+                "local Punks bootstrap path is invalid",
+            )
+        })?;
+        let response = transport
+            .client
+            .request(Method::POST, url.clone())
+            .header(ORIGIN, HeaderValue::from_static("http://localhost:1420"))
+            .send()
+            .await
+            .map_err(|_| {
+                ClientFailure::new(
+                    FailureKind::Transport,
+                    "local Punks bootstrap did not produce a response",
+                )
+            })?;
+        let status = response.status();
+        let headers = response.headers().clone();
+        promotion_audit::record_network_request("POST", &url, status.as_u16());
+        let value = response.json::<Value>().await.map_err(|_| {
+            ClientFailure::new(
+                FailureKind::ContractViolation,
+                "local Punks bootstrap response was not valid JSON",
+            )
+        })?;
+        if !status.is_success() {
+            return match transport::problem_failure(status, value) {
+                Err(error) => Err(error),
+                Ok(_) => Err(ClientFailure::contract("local-bootstrap@1")),
+            };
+        }
+        let envelope: LocalBootstrapEnvelope = decode("local-bootstrap@1", value)?;
+        validate_uuid(&envelope.session.session_id, "local-bootstrap@1")?;
+        validate_uuid(&envelope.session.punk_id, "local-bootstrap@1")?;
+        validate_uuid(&envelope.session.punk.id, "local-bootstrap@1")?;
+        if envelope.session.punk.id != envelope.session.punk_id
+            || !valid_local_slug(&envelope.coordinates.workspace_slug)
+        {
+            return Err(ClientFailure::contract("local-bootstrap@1"));
+        }
+        validate_uuid(&envelope.coordinates.workspace_id, "local-bootstrap@1")?;
+        validate_uuid(&envelope.coordinates.conversation_id, "local-bootstrap@1")?;
+        let _ = desktop_auth::parse_iso8601(&envelope.session.authenticated_at)?;
+        if let Some(recent) = envelope.session.recent_reauth_until.as_deref() {
+            let _ = desktop_auth::parse_iso8601(recent)?;
+        }
+        let metadata = ceremony::SessionMetadata {
+            session_id: envelope.session.session_id.clone(),
+            punk_id: envelope.session.punk_id.clone(),
+            expires_at: desktop_auth::parse_iso8601(&envelope.session.expires_at)?,
+            last_renewed_at: None,
+        };
+        Ok(PreparedLocalSession {
+            session: envelope.session,
+            cookie: desktop_auth::extract_session_cookie(&headers)?,
+            metadata,
+        })
     }
 
     /// Lists every currently accessible Workspace using opaque continuations.
@@ -834,12 +1030,19 @@ impl WorkspaceSession {
         self.assert_current().await?;
         let envelope: StreamEnvelope = decode("conversation.view@1", response)?;
         self.assert_current().await?;
+        let expected_path = format!(
+            "/w/{}/conversations/{conversation_id}",
+            self.lease.workspace_id
+        );
+        if envelope.canonical_path != expected_path {
+            return Err(ClientFailure::contract("conversation.view@1"));
+        }
         validate_stream_view(
             &envelope.conversation,
             &self.lease.workspace_id,
             conversation_id,
         )?;
-        Ok(envelope.conversation)
+        Ok(envelope.conversation.into())
     }
 
     /// Loads an authoritative timeline page with an opaque continuation.

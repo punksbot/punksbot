@@ -8,7 +8,7 @@ import {
   PUNKS_MOUNTED_CAPABILITIES,
 } from "./punksProfile.ts";
 
-test("le candidat monte exactement le profil desktop-social-loop@1", () => {
+test("le produit local riche monte le profil social et les capacités autoritaires prêtes", () => {
   assert.deepEqual(PUNKS_MOUNTED_CAPABILITIES, [
     "compatibility",
     "account-session",
@@ -21,9 +21,13 @@ test("le candidat monte exactement le profil desktop-social-loop@1", () => {
     "conversation-follow",
     "message-post",
     "unicode-reactions",
+    "message-lifecycle",
+    "identity-governance",
+    "presence",
+    "search",
   ]);
   assert.equal(PUNKS_MOUNTED_CAPABILITIES.includes("home"), false);
-  assert.equal(PUNKS_MOUNTED_CAPABILITIES.includes("message-lifecycle"), false);
+  assert.equal(PUNKS_MOUNTED_CAPABILITIES.includes("message-lifecycle"), true);
 });
 
 test("chaque route canonique est liée au profil monté", () => {
@@ -35,9 +39,9 @@ test("chaque route canonique est liée au profil monté", () => {
 test("la disponibilité est l'intersection fermée du client et de l'environnement", () => {
   const available = intersectPunksCapabilities([
     ...PUNKS_MOUNTED_CAPABILITIES,
-    "message-lifecycle",
+    "moderation",
   ]);
-  assert.equal(available.has("message-lifecycle"), false);
+  assert.equal(available.has("moderation"), false);
   assert.equal(hasCompletePunksCapabilitySet(available), true);
 
   available.delete("unicode-reactions");

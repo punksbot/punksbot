@@ -26,6 +26,25 @@ test("the Punks candidate flavor removes every Buzz distribution edge", () => {
   );
 });
 
+test("the base Tauri shell is Punks-owned", () => {
+  const shell = JSON.parse(readFileSync(base, "utf8"));
+  assert.equal(shell.productName, "Punks Bot");
+  assert.equal(shell.mainBinaryName, "punks-bot");
+  assert.equal(shell.identifier, "bot.punks.desktop");
+  assert.deepEqual(shell.plugins?.["deep-link"]?.desktop?.schemes, ["punks"]);
+  assert.deepEqual(shell.bundle?.externalBin, []);
+  assert.doesNotMatch(JSON.stringify(shell), /buzz/iu);
+});
+
+test("the conventional macOS bundle metadata is Punks-owned", () => {
+  const info = readFileSync(
+    join(desktopRoot, "src-tauri", "Info.plist"),
+    "utf8",
+  );
+  assert.match(info, /<string>Punks Bot<\/string>/u);
+  assert.doesNotMatch(info, /buzz|nostr|relay/iu);
+});
+
 test("the signed staging candidate is accepted by its backend and official updater", () => {
   const candidate = JSON.parse(readFileSync(flavor, "utf8"));
   assert.equal(
@@ -65,6 +84,26 @@ test("local, staging and production own distinct app and protocol identities", (
       JSON.parse(readFileSync(join(desktopRoot, "src-tauri", name), "utf8")),
     );
   }
+});
+
+test("the local flavor disables updates with a complete updater configuration", () => {
+  const local = JSON.parse(
+    readFileSync(
+      join(desktopRoot, "src-tauri", "tauri.punks.local.conf.json"),
+      "utf8",
+    ),
+  );
+  const staging = JSON.parse(readFileSync(flavor, "utf8"));
+  assert.deepEqual(local.plugins?.updater?.endpoints, []);
+  assert.equal(
+    local.plugins?.updater?.pubkey,
+    staging.plugins?.updater?.pubkey,
+  );
+  const csp = local.app?.security?.csp;
+  assert.equal(typeof csp, "string");
+  assert.match(csp, /http:\/\/127\.0\.0\.1:8787/u);
+  assert.match(csp, /ws:\/\/localhost:1420/u);
+  assert.doesNotMatch(csp, /https:|wss:|buzz/iu);
 });
 
 test("the public checker rejects a flavor that leaves a Buzz sidecar", () => {

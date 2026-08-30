@@ -80,7 +80,7 @@ import { StartupWindowDragRegion } from "@/shared/ui/StartupWindowDragRegion";
 
 const LOADING_TEXT = "Setting up your community...";
 
-const PunksApp = lazy(() => import("@/features/punks/PunksApp"));
+const PunksApp = lazy(() => import("@/app/PunksFullApp"));
 
 // Minimum time the cold-boot splash stays on screen. A real boot resolves the
 // community in well under 100ms, and the native window setup plus first paint

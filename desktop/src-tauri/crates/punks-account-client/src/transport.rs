@@ -170,7 +170,7 @@ pub(crate) fn problem_failure_kind(status: u16, code: &str, retry: &str) -> Fail
     }
 }
 
-fn problem_failure(status: StatusCode, value: Value) -> Result<Value, ClientFailure> {
+pub(crate) fn problem_failure(status: StatusCode, value: Value) -> Result<Value, ClientFailure> {
     let problem = serde_json::from_value::<Problem>(value.clone()).map_err(|_| {
         ClientFailure::new(
             FailureKind::ContractViolation,

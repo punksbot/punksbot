@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 
 use crate::{
-    validate_uuid, ClientFailure, MessageAuthor, MessagePage, MessageView, StreamSummary,
-    StreamView,
+    validate_uuid, AuthoritativeStreamView, ClientFailure, MessageAuthor, MessagePage, MessageView,
+    StreamSummary,
 };
 
 pub(crate) fn valid_rfc3339(value: &str) -> bool {
@@ -48,12 +48,31 @@ pub(crate) fn validate_stream_summary(
 }
 
 pub(crate) fn validate_stream_view(
-    stream: &StreamView,
+    stream: &AuthoritativeStreamView,
     workspace_id: &str,
     conversation_id: &str,
 ) -> Result<(), ClientFailure> {
     validate_uuid(&stream.id, "conversationId")?;
     validate_uuid(&stream.workspace_id, "workspaceId")?;
+    validate_uuid(&stream.owner_punk_id, "ownerPunkId")?;
+    let mut member_ids = HashSet::with_capacity(stream.members.len());
+    let mut owner_present = false;
+    for member in &stream.members {
+        validate_uuid(&member.punk_id, "member.punkId")?;
+        if let Some(inviter) = member.invited_by_punk_id.as_deref() {
+            validate_uuid(inviter, "member.invitedByPunkId")?;
+        }
+        if !member_ids.insert(member.punk_id.as_str())
+            || !matches!(
+                member.access.as_str(),
+                "owner" | "manager" | "member" | "guest"
+            )
+            || !valid_rfc3339(&member.joined_at)
+        {
+            return Err(ClientFailure::contract("conversation.view@1"));
+        }
+        owner_present |= member.punk_id == stream.owner_punk_id && member.access == "owner";
+    }
     let valid = stream.id == conversation_id
         && stream.workspace_id == workspace_id
         && stream.stream_type == "stream"
@@ -79,7 +98,12 @@ pub(crate) fn validate_stream_view(
             .ttl_seconds
             .is_none_or(|value| (1..=2_147_483_647).contains(&value))
         && valid_optional_rfc3339(stream.ttl_deadline.as_ref())
-        && matches!(stream.status.as_str(), "active" | "archived")
+        && (1..=100_000).contains(&stream.members.len())
+        && owner_present
+        && matches!(
+            stream.status.as_str(),
+            "active" | "archived" | "deleting" | "deleted"
+        )
         && stream.revision >= 1
         && stream.cursor >= 1
         && valid_rfc3339(&stream.created_at)

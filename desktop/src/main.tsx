@@ -1,157 +1,63 @@
-import React from "react";
-import ReactDOM from "react-dom/client";
-import { App } from "@/app/App";
-import { RootErrorBoundary } from "@/app/RootErrorBoundary";
-import { NostrBindConsentDialog } from "@/features/profile/ui/NostrBindConsentDialog";
 import "@fontsource-variable/inter/opsz.css";
 import "@fontsource-variable/inter/opsz-italic.css";
 import "@fontsource/jetbrains-mono/400.css";
 import "@fontsource/jetbrains-mono/700.css";
-import "@/shared/styles/globals.css";
-import { UpdaterProvider } from "@/features/settings/hooks/UpdaterProvider";
-import { migrateLegacyCommunityStorageBeforeRender } from "@/features/communities/legacyCommunityStorage";
-import { CommunitiesProvider } from "@/features/communities/useCommunities";
-import { huddleWindowChannelId } from "@/features/huddle/lib/huddleWindow";
-import { CommunityOnboardingProvider } from "@/features/onboarding/communityOnboarding";
-import { ThemeProvider } from "@/shared/theme/ThemeProvider";
-import { EmojiBurstProvider } from "@/shared/ui/EmojiBurstProvider";
-import { PoofBurstProvider } from "@/shared/ui/PoofBurstProvider";
-import { Toaster } from "@/shared/ui/sonner";
-import { TooltipProvider } from "@/shared/ui/tooltip";
-import { recoverLocalStorageQuotaOnStartup } from "@/shared/lib/localStorageQuota";
-import { startLocalStorageSweep } from "@/shared/lib/localStorageSweep";
-import { initializeConversationDensityPreference } from "@/shared/lib/conversationDensityPreference";
-import { initializeFontSizePreference } from "@/shared/lib/fontSizePreference";
-import { CapabilityProvider } from "@/shared/capabilities";
-import { useCapabilityAvailability } from "@/shared/capabilities";
+import React, { Component, type ReactNode } from "react";
+import ReactDOM from "react-dom/client";
 
-type E2eWindow = Window & {
-  __BUZZ_E2E__?: unknown;
-};
+import PunksFullApp from "@/app/PunksFullApp";
+import "@/punks.css";
 
-const E2E_DEFAULT_PUBKEY = "deadbeef".repeat(8);
-const E2E_COMMUNITY_ID = "e2e-default-community";
-const ONBOARDING_COMPLETION_STORAGE_KEY_PREFIX = "buzz-onboarding-complete.v1:";
-const DEV_STATE_RESET_PARAM = "resetDevState";
+type BoundaryState = { error: Error | null };
 
-function resetDevWebviewStateFromUrl() {
-  if (!import.meta.env.DEV) {
-    return;
+class PunksRootErrorBoundary extends Component<
+  { children: ReactNode },
+  BoundaryState
+> {
+  override state: BoundaryState = { error: null };
+
+  static getDerivedStateFromError(error: unknown): BoundaryState {
+    return { error: error instanceof Error ? error : new Error(String(error)) };
   }
 
-  const url = new URL(window.location.href);
-  if (url.searchParams.get(DEV_STATE_RESET_PARAM) !== "1") {
-    return;
-  }
-
-  // WebKit groups every Buzz binary under one disk directory, but storage is
-  // isolated by origin. Clearing here resets only this dev server's origin;
-  // deleting the shared WebKit directory would also destroy installed-app state.
-  window.localStorage.clear();
-  window.sessionStorage.clear();
-  url.searchParams.delete(DEV_STATE_RESET_PARAM);
-  window.history.replaceState(window.history.state, "", url);
-}
-
-function configureDevE2eBridgeFromUrl() {
-  if (!import.meta.env.DEV) {
-    return;
-  }
-
-  const url = new URL(window.location.href);
-  if (url.searchParams.get("e2e") !== "mock") {
-    return;
-  }
-
-  const e2eWindow = window as E2eWindow;
-  e2eWindow.__BUZZ_E2E__ ??= { mode: "mock" };
-
-  const community = {
-    addedAt: new Date().toISOString(),
-    id: E2E_COMMUNITY_ID,
-    name: "E2E Test",
-    relayUrl: "ws://localhost:3000",
-  };
-  window.localStorage.setItem("buzz-communities", JSON.stringify([community]));
-  window.localStorage.setItem("buzz-active-community-id", E2E_COMMUNITY_ID);
-  window.localStorage.setItem(
-    `${ONBOARDING_COMPLETION_STORAGE_KEY_PREFIX}${E2E_DEFAULT_PUBKEY}`,
-    "true",
-  );
-}
-
-function renderApp() {
-  ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-    <React.StrictMode>
-      {/* block/buzz#5078 — catch any uncaught render error so a WebKit
-          SecurityError from localStorage can't blank the whole window. */}
-      <RootErrorBoundary>
-        <CapabilityProvider>
-          <ProductSurface />
-        </CapabilityProvider>
-      </RootErrorBoundary>
-    </React.StrictMode>,
-  );
-}
-
-function ProductSurface() {
-  const availability = useCapabilityAvailability();
-  if (availability.distribution === "punks") {
-    return (
-      <ThemeProvider defaultTheme="buzz">
-        <TooltipProvider>
-          <App />
-          <Toaster />
-        </TooltipProvider>
-      </ThemeProvider>
+  override componentDidCatch(error: unknown, info: React.ErrorInfo): void {
+    console.error(
+      "[PunksRootErrorBoundary] uncaught render error",
+      error,
+      info,
     );
   }
 
-  return (
-    <CommunitiesProvider>
-      <CommunityOnboardingProvider enabled={huddleWindowChannelId() === null}>
-        <ThemeProvider defaultTheme="buzz">
-          <TooltipProvider>
-            <EmojiBurstProvider>
-              <PoofBurstProvider>
-                <UpdaterProvider>
-                  <App />
-                  <NostrBindConsentDialog />
-                </UpdaterProvider>
-                <Toaster />
-              </PoofBurstProvider>
-            </EmojiBurstProvider>
-          </TooltipProvider>
-        </ThemeProvider>
-      </CommunityOnboardingProvider>
-    </CommunitiesProvider>
-  );
-}
-
-async function installE2eBridgeIfConfigured() {
-  // The mock bridge is compiled only into dev and explicit E2E builds. A
-  // pre-bootstrap global alone must never activate mock IPC in production.
-  if (
-    !(import.meta.env.DEV || import.meta.env.MODE === "e2e") ||
-    !(window as E2eWindow).__BUZZ_E2E__
-  ) {
-    return;
+  override render(): ReactNode {
+    if (this.state.error === null) return this.props.children;
+    return (
+      <main className="flex min-h-dvh items-center justify-center bg-background px-6 text-foreground">
+        <section className="max-w-md text-center" role="alert">
+          <h1 className="text-base font-semibold">Punks Bot could not start</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Reload the application. If the problem continues, inspect the local
+            Workers output.
+          </p>
+          <button
+            className="mt-5 rounded-md border border-border px-3 py-2 text-sm"
+            onClick={() => window.location.reload()}
+            type="button"
+          >
+            Reload
+          </button>
+        </section>
+      </main>
+    );
   }
-
-  const { maybeInstallE2eTauriMocks } = await import("@/testing/e2eBridge");
-  maybeInstallE2eTauriMocks();
 }
 
-async function bootstrap() {
-  resetDevWebviewStateFromUrl();
-  configureDevE2eBridgeFromUrl();
-  recoverLocalStorageQuotaOnStartup();
-  initializeConversationDensityPreference();
-  initializeFontSizePreference();
-  startLocalStorageSweep();
-  await installE2eBridgeIfConfigured();
-  await migrateLegacyCommunityStorageBeforeRender();
-  renderApp();
-}
+const root = document.getElementById("root");
+if (root === null) throw new Error("Punks root element is missing");
 
-void bootstrap();
+ReactDOM.createRoot(root).render(
+  <React.StrictMode>
+    <PunksRootErrorBoundary>
+      <PunksFullApp />
+    </PunksRootErrorBoundary>
+  </React.StrictMode>,
+);

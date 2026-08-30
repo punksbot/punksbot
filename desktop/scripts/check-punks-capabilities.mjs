@@ -31,7 +31,6 @@ export function checkPunksCapabilities() {
   ]);
   runPnpm(["exec", "tsc", "--project", "tsconfig.punks.json"]);
   runPnpm(["exec", "vite", "build"]);
-  runPnpm(["check:punks-product-dist"]);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
