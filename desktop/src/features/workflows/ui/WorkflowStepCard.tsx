@@ -10,6 +10,7 @@ import { WorkflowTemplateTextarea } from "./WorkflowTemplateTextarea";
 import { WorkflowDurationField } from "./WorkflowDurationField";
 import { WorkflowMessageTextCondition } from "./WorkflowMessageTextConditionEditor";
 import { FieldLabel, FormSelect } from "./workflowFormPrimitives";
+import { workflowBackendSupportWarning } from "./workflowBackendSupport";
 import { WorkflowWebhookHeadersEditor } from "./WorkflowWebhookHeadersEditor";
 import {
   isThreadReplyEligibleTrigger,
@@ -79,31 +80,16 @@ function runControlsSummary(step: StepFormState): string {
 }
 
 function BackendSupportHint({ action }: { action: StepFormState["action"] }) {
-  switch (action) {
-    case "send_dm":
-      return (
-        <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-xs text-amber-700">
-          Backend note: `send_dm` is not executed yet, so runs fail at this
-          step.
-        </p>
-      );
-    case "set_channel_topic":
-      return (
-        <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-xs text-amber-700">
-          Backend note: `set_channel_topic` is not executed yet, so runs fail at
-          this step.
-        </p>
-      );
-    case "request_approval":
-      return (
-        <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-xs text-amber-700">
-          Backend note: approval gates still stop runs with WF-08; approval
-          records are not persisted yet.
-        </p>
-      );
-    default:
-      return null;
-  }
+  const warning = workflowBackendSupportWarning(
+    action,
+    import.meta.env.VITE_PUNKS_LOCAL === "1",
+  );
+  if (!warning) return null;
+  return (
+    <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-xs text-amber-700">
+      {warning}
+    </p>
+  );
 }
 
 function StepConfigFields({
