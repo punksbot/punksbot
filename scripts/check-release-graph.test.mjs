@@ -2459,7 +2459,7 @@ test("les références de spec, décisions et ADR sont exigées", () => {
     [],
   );
   attendu(
-    erreurs(graphValide({ canal: "punks-desktop" })),
+    erreurs(graphValide({ canal: "previous-desktop" })),
     "canal doit être punks-desktop",
   );
 });
@@ -5618,18 +5618,27 @@ test("la référence historique utilise l'instant exact même le jour d'une acti
   assert.deepEqual(erreurs(graph), []);
 });
 
-test("aucun retour vers Punks n'existe dans le vocabulaire fermé", () => {
+test("aucun retour vers le produit précédent n'existe dans le vocabulaire fermé", () => {
   const graph = graphValide({
-    recuperations: [{ date: "2026-08-10", type: "retour-punks", cible: "punks" }],
-  });
-  attendu(erreurs(graph), "type inconnu");
-  attendu(erreurs(graph), "exclut structurellement tout retour vers Punks");
-  const graph2 = graphValide({
     recuperations: [
-      { date: "2026-08-10", type: "roll-forward", cible: "punks" },
+      {
+        date: "2026-08-10",
+        type: "retour-previous-product",
+        cible: "previous-product",
+      },
     ],
   });
-  attendu(erreurs(graph2), "cible « punks » inconnue");
+  attendu(erreurs(graph), "type inconnu");
+  attendu(
+    erreurs(graph),
+    "exclut structurellement tout retour vers le produit précédent",
+  );
+  const graph2 = graphValide({
+    recuperations: [
+      { date: "2026-08-10", type: "roll-forward", cible: "previous-product" },
+    ],
+  });
+  attendu(erreurs(graph2), "cible « previous-product » inconnue");
   const graph3 = graphValide({
     releases: [candidatPreparation()],
     recuperations: [
