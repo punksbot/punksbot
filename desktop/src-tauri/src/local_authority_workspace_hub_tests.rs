@@ -180,3 +180,34 @@ async fn loopback_host_selects_the_workspace_authority_and_rejects_unknown_hosts
         axum::http::StatusCode::MISDIRECTED_REQUEST
     );
 }
+
+#[test]
+fn managed_agent_membership_is_repaired_only_in_its_relay_workspace() {
+    let directory = tempfile::tempdir().expect("hub directory");
+    let owner = Keys::generate();
+    let hub = LocalAuthorityHub::open(directory.path(), owner.clone()).expect("open hub");
+    let research = hub
+        .create_workspace("Research", &owner)
+        .expect("create Research Workspace");
+    let agent = Keys::generate().public_key().to_hex();
+    let relay_url = format!("ws://{}.localhost:18787", research.id);
+
+    hub.ensure_agent_member_for_relay(&relay_url, &agent)
+        .expect("repair Research agent membership");
+
+    assert_eq!(
+        hub.authority(&research.id)
+            .expect("Research authority")
+            .member_role(&agent)
+            .expect("read Research role")
+            .as_deref(),
+        Some("bot")
+    );
+    assert_eq!(
+        hub.primary()
+            .member_role(&agent)
+            .expect("read primary role"),
+        None,
+        "agent membership must not leak into another Workspace"
+    );
+}

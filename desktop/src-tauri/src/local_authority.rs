@@ -81,6 +81,20 @@ use workspace_hub::LocalAuthorityHub;
 const DEFAULT_PORT: u16 = 18_787;
 const GENERAL_CHANNEL_ID: &str = "00000000-0000-4000-8000-000000000001";
 
+#[cfg(feature = "punks-local")]
+pub(crate) fn ensure_managed_agent_workspace_member(
+    app: &tauri::AppHandle,
+    relay_url: &str,
+    pubkey: &str,
+) -> Result<(), String> {
+    use tauri::Manager;
+
+    let hub = app
+        .try_state::<Arc<LocalAuthorityHub>>()
+        .ok_or_else(|| "local Workspace authority is unavailable".to_string())?;
+    hub.ensure_agent_member_for_relay(relay_url, pubkey)
+}
+
 #[derive(Clone)]
 pub(crate) struct LocalAuthority {
     database: Arc<Mutex<Connection>>,
@@ -551,7 +565,11 @@ impl LocalAuthority {
             9000 => {
                 let target = required_tag(event, "p")?;
                 let role = tag_value(event, "role").unwrap_or_else(|| "member".to_string());
-                upsert_member(&mut members, target, role);
+                upsert_member(&mut members, target.clone(), role.clone());
+                if role == "bot" {
+                    self.ensure_community_member(&target, "bot")?;
+                    self.publish_membership_snapshot()?;
+                }
             }
             9001 => {
                 let target = required_tag(event, "p")?;
